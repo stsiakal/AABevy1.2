@@ -297,13 +297,13 @@ pub enum Command {
     RequestCommonFarmList,
     /// App-captured persistent identity; the native CS079 body is empty.
     RequestJuryWaitingNumber { character_id:u32 },
-    /// Express emotion `emotion_id` (an `express_texts` id), at `target_obj_id` (0: nobody); the server answers every unit in range with
-    /// `Event::Emote(EmoteEvent::Expressed)`, the player included.
-    ExpressEmotion { emotion_id: u32, target_obj_id: u32 },
     /// Challenge the player `challenged_id` (a character id) to a duel; the answer is `Event::Duel`.
     ChallengeDuel { challenged_id: u32 },
     /// Accept or refuse the duel challenge of `challenger_id` (the character id `SCDuelChallenged` named).
     AnswerDuel { challenger_id: u32, accept: bool },
+    /// Express emotion `emotion_id` (an `express_texts` id), at `target_obj_id` (0: nobody); the server answers every unit in range with
+    /// `Event::Emote(EmoteEvent::Expressed)`, the player included.
+    ExpressEmotion { emotion_id: u32, target_obj_id: u32 },
     /// Show the appellation (title) `id`, 0 for none; the answer is `Event::Appellation(Changed)` for the own unit.
     ChangeAppellation { id: u32 },
     /// Self-only explicit cancellation; app resolves the native good-buff ordinal/system gate.
@@ -579,13 +579,6 @@ pub enum Event {
     GameDecodeFailed { message:String },
     Trial(crate::trial::TrialEvent),
     Crime(crate::crime::CrimeEvent),
-    Duel(crate::duel::DuelEvent),
-    /// An emote or a speech bubble ([`crate::emote`]).
-    Emote(crate::emote::EmoteEvent),
-    /// A duel request was sent (`Command::ChallengeDuel` / `Command::AnswerDuel`).
-    DuelRequested { challenged_id: u32 },
-    DuelAnswered { challenger_id: u32, accept: bool },
-    DuelRequestRejected { message: String },
     Appellation(crate::appellation::AppellationEvent),
     /// `CSChangeAppellation` was sent (`Command::ChangeAppellation`).
     AppellationRequested { id: u32 },
@@ -595,6 +588,13 @@ pub enum Event {
     /// `CSDeletePortal` was sent: the lane answers nothing, the entry is gone from the book.
     PortalDeleteSent { portal_type: u8, portal_id: u32 },
     PortalRequestRejected { command: crate::portal::PortalCommand, message: String },
+    Duel(crate::duel::DuelEvent),
+    /// A duel request was sent (`Command::ChallengeDuel` / `Command::AnswerDuel`).
+    DuelRequested { challenged_id: u32 },
+    DuelAnswered { challenger_id: u32, accept: bool },
+    DuelRequestRejected { message: String },
+    /// An emote or a speech bubble ([`crate::emote`]).
+    Emote(crate::emote::EmoteEvent),
     Bounty(crate::BountyEvent),
     Ranking(crate::RankingEvent),
     RankingRequested { character_id:u32,command:crate::RankingCommand },
@@ -1222,12 +1222,6 @@ impl Session {
                 else if self.send_game(game::ClientMsg::Trial(command)).await {self.emit(Event::TrialRequested{character_id,command});}
                 else {self.emit(Event::TrialRequestRejected{character_id,command,message:"trial request was not sent".into()});}
             }
-            Command::ExpressEmotion { emotion_id, target_obj_id } => {
-                if self.phase == Phase::InWorld && self.self_obj != 0 && emotion_id != 0 {
-                    let obj_id = self.self_obj;
-                    self.send_game(game::ClientMsg::ExpressEmotion { obj_id, target_obj_id, emotion_id }).await;
-                }
-            }
             Command::ChallengeDuel { challenged_id } => {
                 if self.phase != Phase::InWorld || self.self_obj == 0 || challenged_id == 0 {
                     // Challenging oneself is the server's to refuse (BAD_DUEL_SELF 513); the HUD's popup never offers it.
@@ -1244,6 +1238,12 @@ impl Session {
                     if self.send_game(game::ClientMsg::StartDuel { challenger_id, error }).await {
                         self.emit(Event::DuelAnswered { challenger_id, accept });
                     }
+                }
+            }
+            Command::ExpressEmotion { emotion_id, target_obj_id } => {
+                if self.phase == Phase::InWorld && self.self_obj != 0 && emotion_id != 0 {
+                    let obj_id = self.self_obj;
+                    self.send_game(game::ClientMsg::ExpressEmotion { obj_id, target_obj_id, emotion_id }).await;
                 }
             }
             Command::ChangeAppellation { id } => {
@@ -1864,8 +1864,6 @@ impl Session {
                 }
             },
             M::Crime(e) => self.emit(Event::Crime(e)),
-            M::Duel(e) => self.emit(Event::Duel(e)),
-            M::Emote(e) => self.emit(Event::Emote(e)),
             M::Appellation(e) => self.emit(Event::Appellation(e)),
             M::Portal(e) => {
                 // `SCNaviTeleport` (a navi doodad): the 1.2 client moves the player as for `SCTeleportUnit` (reason 0, yaw 0)
@@ -1876,6 +1874,8 @@ impl Session {
                 }
                 self.emit(Event::Portal(e));
             }
+            M::Duel(e) => self.emit(Event::Duel(e)),
+            M::Emote(e) => self.emit(Event::Emote(e)),
             M::Bounty(e) => self.emit(Event::Bounty(e)),
             M::Ranking(e) => self.emit(Event::Ranking(e)),
             M::Achievement(e) => self.emit(Event::Achievement(e)),

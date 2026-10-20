@@ -117,13 +117,13 @@ pub struct HudData {
     pub(super) achievement: super::achievement::View,
     pub(super) chat_config: super::chat::config::View,
     pub(super) crime: super::crime::View,
-    pub(super) duel: super::duel::View,
     /// Where the speech bubbles go on the screen and who the speakers are (`speech.rs`).
     pub(super) speech: super::speech::View,
     pub(super) appellation: super::appellation::View,
     pub(super) portal: super::portal::View,
     /// The doodad in reach, the bar and the interaction list (`doodad.rs`).
     pub(super) doodad: super::doodad::View,
+    pub(super) duel: super::duel::View,
     pub(super) trial: super::trial::View,
     pub(super) ranking: super::ranking::View,
     pub(super) buff_cancel: super::buffs::cancel::View,
@@ -186,11 +186,11 @@ impl Default for HudData {
             achievement: Default::default(),
             chat_config: Default::default(),
             crime: Default::default(),
-            duel: Default::default(),
             speech: Default::default(),
             appellation: Default::default(),
             portal: Default::default(),
             doodad: Default::default(),
+            duel: Default::default(),
             trial: Default::default(),
             ranking: Default::default(),
             buff_cancel: Default::default(),
@@ -313,11 +313,11 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     crate::settings::install_hud(lua)?;
     super::chat::config::install(lua, bridge)?;
     super::crime::install(lua, bridge)?;
-    super::duel::install(lua, bridge)?;
     super::speech::install(lua, bridge)?;
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
+    super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;
     super::ranking::install(lua, bridge)?;
     super::buffs::cancel::install(lua, bridge)?;
@@ -938,8 +938,9 @@ pub fn mark_pushed(bridge: &Shared) {
 /// Push what changed into the Lua state and raise the events the scripts listen for.
 pub fn push_changes(rt: &UiRuntime, bridge: &Shared) {
     super::pets::push(rt, bridge);
-    push_character_stats(rt, bridge);
     push_state(rt, bridge);
+    // after the state: the character window's handler reads HUD.state (level, ...)
+    push_character_stats(rt, bridge);
     push_panels(rt, bridge);
 }
 

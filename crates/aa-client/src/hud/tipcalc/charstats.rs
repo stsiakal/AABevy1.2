@@ -177,6 +177,12 @@ enum Offhand {
     Other,
 }
 
+/// Attack delays (seconds) of the bare hands in the retail client: main hand, off hand (only with both hands
+/// empty) and ranged.
+const UNARMED_MAINHAND_SPEED: f64 = 1.5;
+const UNARMED_OFFHAND_SPEED: f64 = 3.0;
+const UNARMED_RANGED_SPEED: f64 = 1.5;
+
 #[derive(Clone, Debug, Default)]
 struct Gear {
     stats: [i32; 5],
@@ -188,6 +194,8 @@ struct Gear {
 }
 
 type Values = HashMap<&'static str, f64>;
+/// Sheets computed with only some bonuses, by those bonuses.
+type SheetsWith = Vec<(Vec<(u8, bool, i32)>, Values)>;
 
 impl TipTables {
     /// The Character Info sheet of the player at `level` wearing `equipment` with `buffs` (buff id,
@@ -203,13 +211,27 @@ impl TipTables {
         let all = self.values(level, &gear, &mods);
         let none = self.values(level, &gear, &[]);
         let info = INFO_KEYS.iter().map(|k| (*k, all[k])).collect();
-        let own = |key: &str| -> f64 {
+        // keys of one attribute set (the melee DPS keys, ...) share the sheet with only their bonuses
+        let mut with_only: SheetsWith = Vec::new();
+        let mut modifiers = Vec::with_capacity(MODIFIER_KEYS.len());
+        for key in MODIFIER_KEYS {
             let attrs = modifier_attrs(key);
             let only: Vec<(u8, bool, i32)> = mods.iter().filter(|m| attrs.contains(&m.0)).copied().collect();
-            let with = if only.is_empty() { none.clone() } else { self.values(level, &gear, &only) };
-            modifier_delta(key, &with, &none)
-        };
-        let modifiers = MODIFIER_KEYS.iter().map(|k| (*k, own(k))).collect();
+            let with = if only.is_empty() {
+                &none
+            } else {
+                let i = match with_only.iter().position(|(m, _)| *m == only) {
+                    Some(i) => i,
+                    None => {
+                        let values = self.values(level, &gear, &only);
+                        with_only.push((only, values));
+                        with_only.len() - 1
+                    }
+                };
+                &with_only[i].1
+            };
+            modifiers.push((*key, modifier_delta(key, with, &none)));
+        }
         PlayerSheet { info, modifiers }
     }
 
@@ -266,7 +288,7 @@ impl TipTables {
         }
         let [str_, dex, sta, int, spi, fai] = p.map(f64::from);
         let all = HashMap::from([("level", f64::from(level)), ("str", str_), ("dex", dex), ("sta", sta), ("int", int), ("spi", spi), ("fai", fai)]);
-        let facets = cwb(formula(kind::FACET, &lv), attr::FACETS) as i32 as f32;
+        let facets = (cwb(formula(kind::FACET, &lv), attr::FACETS) as i32 as f32).max(1.0);
         let accuracy = |res: f64| -> f64 {
             let mut r = (1.0 - (f64::from(facets / 10.0) - res) * f64::from(1.0f32 / facets)) * 100.0;
             r = (r + 100.0 - (r - 100.0).abs()) / 2.0;
@@ -302,8 +324,8 @@ impl TipTables {
         let resist = f64::from(cwb(f64::from(formula(kind::MAGIC_RESIST, &all) as i32 + gear.magic_resistance), attr::MAGIC_RESIST) as i32);
         v.insert("armor", armor);
         v.insert("magic_resist", resist);
-        let armor_pct = armor / (armor + RESIST_CONSTANT) * 100.0;
-        let resist_pct = resist / (resist + RESIST_CONSTANT) * 100.0;
+        let armor_pct = armor / (armor + RESIST_CONSTANT).max(1.0) * 100.0;
+        let resist_pct = resist / (resist + RESIST_CONSTANT).max(1.0) * 100.0;
         v.insert("armor_percentage", armor_pct);
         v.insert("magic_resist_percentage", resist_pct);
         v.insert("magic_effect_resist_percentage", resist_pct / 4.0);
@@ -394,20 +416,21 @@ impl TipTables {
         v.insert("spell_dps", spell);
         v.insert("heal_dps", heal);
         // damage range of one hit: dps * attack delay, spread by the weapon's damage scale
-        let range = |dps: f64, w: Option<Weapon>| -> (f64, f64) {
-            let (speed, scale) = w.map_or((1.0, 0.0), |w| (w.speed, f64::from(w.scale) / 100.0));
+        // unarmed (retail capture): no spread, and the melee hit is the dps over the off hand's 3.0 s delay
+        let range = |dps: f64, w: Option<Weapon>, unarmed_delay: f64| -> (f64, f64) {
+            let (speed, scale) = w.map_or((unarmed_delay, 0.0), |w| (w.speed, f64::from(w.scale) / 100.0));
             let hit = dps * speed;
             ((hit * (1.0 - scale)).floor(), (hit * (1.0 + scale)).floor())
         };
-        let (lo, hi) = range(melee, main);
+        let (lo, hi) = range(melee, main, UNARMED_OFFHAND_SPEED);
         v.insert("melee_min_dps", lo);
         v.insert("melee_max_dps", hi);
-        let (lo, hi) = range(ranged_dps, ranged);
+        let (lo, hi) = range(ranged_dps, ranged, UNARMED_RANGED_SPEED);
         v.insert("ranged_min_dps", lo);
         v.insert("ranged_max_dps", hi);
-        v.insert("mainhand_melee_speed", f64::from(main.map_or(1.0, |w| w.speed) as f32));
-        v.insert("offhand_melee_speed", f64::from(off.map_or(0.0, |w| w.speed) as f32));
-        v.insert("ranged_speed", f64::from(ranged.map_or(1.0, |w| w.speed) as f32));
+        v.insert("mainhand_melee_speed", f64::from(main.map_or(UNARMED_MAINHAND_SPEED, |w| w.speed) as f32));
+        v.insert("offhand_melee_speed", f64::from(off.map_or(if main.is_none() && gear.offhand == Offhand::Empty { UNARMED_OFFHAND_SPEED } else { 0.0 }, |w| w.speed) as f32));
+        v.insert("ranged_speed", f64::from(ranged.map_or(UNARMED_RANGED_SPEED, |w| w.speed) as f32));
         v
     }
 }
@@ -561,6 +584,24 @@ mod tests {
             ("ranged_min_dps", 32.0), ("ranged_max_dps", 40.0), ("incoming_spell_damage_val", -37.0), ("mana_regen", 36.0),
         ] {
             close(get(&l50.info, key), want, &format!("L50 {key}"));
+        }
+    }
+
+    /// The retail client at level 10 with nothing in the hands (Civilian Lute in the instrument slot, shirt, pants,
+    /// shoes; buffs 8000012, 8000011, 5754): unarmed attack speeds 1.5 / 3.0 / 1.5 and no damage spread.
+    #[test]
+    fn unarmed_matches_the_retail_oracle() {
+        let Some(t) = tables() else { return };
+        let mut e = Equipment::default();
+        for (slot, id) in [(18, 6177), (2, 23387), (4, 23388), (6, 23390)] {
+            e.slots[slot] = Some(Item { template_id: id, ..Item::default() });
+        }
+        let s = t.player_sheet(10, &e, &[(8_000_012, 0), (8_000_011, 0), (5754, 0)]);
+        for (key, want) in [
+            ("melee_dps", 5.6), ("ranged_dps", 5.6), ("melee_min_dps", 16.0), ("melee_max_dps", 16.0), ("ranged_min_dps", 8.0),
+            ("ranged_max_dps", 8.0), ("mainhand_melee_speed", 1.5), ("offhand_melee_speed", 3.0), ("ranged_speed", 1.5), ("move_speed", 5.4),
+        ] {
+            close(get(&s.info, key), want, &format!("unarmed L10 {key}"));
         }
     }
 
