@@ -47,13 +47,13 @@ the world is left.
 
 | member | meaning |
 |---|---|
-| `ADDON_API.Log:Info(message)` / `Log:Err(message)` | a yellow / red line in chat |
+| `ADDON_API.Log:Info(message)` / `Log:Err(message)` | a line in chat on the client's system channel (`CMF_SYSTEM`, 12), yellow / red |
 | `ADDON_API.GetSettings(addonId)` | this addon's settings table (the id must be its own folder) |
 | `ADDON_API.SaveSettings()` | write the settings table now |
 | `ADDON_API.On(event, fn)` | register `UPDATE`, `CHAT_MESSAGE`, `TEAM_MEMBERS_CHANGED` or an addon-local event |
 | `ADDON_API:DoIn(msec, fn, ...)` | one-shot timer on the UI clock (`X2Time:GetUiMsec`), arguments passed to `fn` |
 | `ADDON_API:Emit(event, ...)` | call this addon's own handlers for `event` |
-| `ADDON_API.Interface:CreateWindow(id, title, x, y)` | a standard window (680 x 615; `tabs` is accepted but not built yet) |
+| `ADDON_API.Interface:CreateWindow(id, title, x, y)` | a standard window (680 x 615; `tabs` is accepted but not built yet); the addon root is visible, so it opens immediately |
 | `ADDON_API.Interface:CreateWidget(type, id, parent)` | `UIParent:CreateWidget` with `rootWindow` as the default parent |
 | `ADDON_API.Interface:CreateEmptyWindow(id)` | a window without a title |
 | `ADDON_API.Interface:Free(wnd)` | hide and remove a window (`EnableHidingIsRemove`) |
@@ -120,8 +120,8 @@ the user chose to run; the loader is not a security boundary against a local att
 ## Example
 
 Copy `crates/aa-client/addons/hello` into the addons directory and put `hello` in `addons.txt`.
-It logs to chat, creates a small window, counts `UPDATE` calls, fires a `DoIn` timer, counts
-`CHAT_MESSAGE` lines and saves a run counter in its settings.
+It logs to chat, creates a small window that opens on load, counts `UPDATE` calls, fires a `DoIn`
+timer, counts `CHAT_MESSAGE` lines and saves a run counter in its settings.
 
 Tests (`cargo test -p aa-client addons`) cover folder/id sanitising, `require` traversal, JSON
 round-trips and limits, callback isolation and the five-errors-per-minute disable, the read-only

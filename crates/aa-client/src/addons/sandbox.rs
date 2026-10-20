@@ -18,6 +18,10 @@ const MAX_MODULES: u32 = 64;
 const MAX_REQUIRE_DEPTH: u32 = 8;
 const MAX_EVENT_NAME: usize = 64;
 const MAX_LOG_BYTES: usize = 1024;
+/// `CMF_SYSTEM`: the client's system-text channel. `chat_msg_event.lua` maps
+/// `CHAT_SYSTEM`/`CHAT_SYSTEM_TEXT` and `CHAT_DAILY_MSG` to `CMF_SYSTEM` (12), and the default
+/// "All" tab takes it (`hud/chat/config/native_defaults.json`, `filters.general`).
+const SYSTEM_CHAT_FILTER: i64 = 12;
 
 const SAFE_BASE: [&str; 15] = [
     "assert", "error", "ipairs", "next", "pairs", "pcall", "rawequal", "rawget", "rawset", "select",
@@ -204,7 +208,12 @@ fn create_root(lua: &Lua, id: &str) -> mlua::Result<Table> {
         .ok_or_else(|| error("UIParent is not installed"))?;
     let create: Function = ui.get("CreateWidget")?;
     let name: String = format!("addon_{}_root", id.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect::<String>());
-    create.call::<Table>((ui, "emptywidget", name, "UIParent"))
+    let root = create.call::<Table>((ui, "emptywidget", name, "UIParent"))?;
+    // Top-level widgets start hidden (aa-ui `Tree::create_widget`); the addon root is the default
+    // parent of every addon widget, so it must be shown or the whole addon stays invisible.
+    let show: Function = root.get("Show")?;
+    show.call::<()>((root.clone(), true))?;
+    Ok(root)
 }
 
 fn free_widget(widget: &Table) {
@@ -248,7 +257,7 @@ fn dispatch_chat(lua: &Lua, text: &str) -> bool {
         let Some(dispatch) = chat.raw_get::<Option<Function>>("DispatchChatMessage")? else {
             return Ok(());
         };
-        dispatch.call::<()>((chat, 0i64, text))?;
+        dispatch.call::<()>((chat, SYSTEM_CHAT_FILTER, text))?;
         Ok(())
     })();
     result.is_ok()

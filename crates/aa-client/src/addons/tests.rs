@@ -228,3 +228,50 @@ return {
     assert_eq!(addon.modules, 1);
     assert!(addon.last_error.is_none());
 }
+
+#[test]
+fn addon_chat_lines_use_the_system_channel() {
+    let rt = runtime();
+    assert_eq!(value::<i64>(&rt, "return CMF_SYSTEM"), 12);
+    rt.lua
+        .load(
+            "local dispatch = X2Chat.DispatchChatMessage \
+             X2Chat.DispatchChatMessage = function(self, filter, text) \
+               CAPTURED_FILTER, CAPTURED_TEXT = filter, text \
+             end",
+        )
+        .exec()
+        .unwrap();
+    super::sandbox::say(&rt.lua, "hello", false);
+    assert_eq!(value::<i64>(&rt, "return CAPTURED_FILTER"), 12);
+    assert_eq!(value::<String>(&rt, "return CAPTURED_TEXT"), "hello");
+}
+
+#[test]
+fn the_sample_addon_window_is_visible_without_a_command() {
+    let dir = TempDir::new("window");
+    dir.enabled("hello\n");
+    dir.addon("hello", include_str!("../../addons/hello/main.lua"));
+
+    let rt = runtime();
+    load(&rt, &dir);
+    assert!(rt.errors.is_empty(), "{:?}", rt.errors);
+
+    let (root_visible, window_visible, width, height, label) = {
+        let u = aa_ui::lua::ui(&rt.lua);
+        let root = u.tree.find("addon_hello_root").expect("addon root");
+        let window = u.tree.find("hello_window").expect("hello window");
+        let label = u.tree.find("hello_label").expect("hello label");
+        (
+            u.tree.visible(root),
+            u.tree.visible(window),
+            u.tree.get(window).width,
+            u.tree.get(window).height,
+            u.tree.get(label).text().map(|text| text.text.clone()),
+        )
+    };
+    assert!(root_visible, "the addon root must be shown");
+    assert!(window_visible, "the sample window must be visible in world");
+    assert_eq!((width, height), (260.0, 96.0));
+    assert_eq!(label.as_deref(), Some("Hello from an addon!"));
+}
