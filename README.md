@@ -64,6 +64,7 @@ create, the loading screen, and in game. The aim is a client that looks and beha
 - Party and raid, friends, guilds and families.
 - Duels (challenge, countdown, result), titles over the name plate, emotes and speech bubbles.
 - Quests, the world map and minimap, chat, skills, crafting, achievements, rankings, battlefields, pets.
+- ArcheAge-Classic-compatible local Lua addons, sandboxed with `ADDON_API` and `/addons` commands ([docs](docs/aa-client-addons.md)).
 
 **Audio:** FMOD sound banks are decoded and played, including ambience, music, skill sounds and reverb.
 
