@@ -11,6 +11,8 @@
 //! * [`priority`]: the process runs above normal priority (`AA_PRIORITY=normal` keeps the default)
 
 mod hud;
+#[allow(unused_imports)]
+pub(crate) use hud::addons;
 mod ingame;
 mod login;
 mod priority;

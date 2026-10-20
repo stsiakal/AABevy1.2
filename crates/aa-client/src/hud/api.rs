@@ -69,6 +69,8 @@ pub struct HudData {
     pub disconnected: bool,
     pub game: SharedGameData,
     pub requests: Vec<Request>,
+    /// `/addons ...` lines typed into chat, carried out by `addons::handle_commands`.
+    pub addon_commands: Vec<String>,
     /// The local player's entity (found by its name once), its game position and facing.
     pub player_entity: Option<Entity>,
     pub pos: Vec3,
@@ -151,6 +153,7 @@ impl Default for HudData {
             disconnected: false,
             game: SharedGameData::default(),
             requests: Vec::new(),
+            addon_commands: Vec::new(),
             player_entity: None,
             pos: Vec3::ZERO,
             yaw: 0.0,
@@ -864,6 +867,11 @@ pub fn handle_requests(
                 }
             }
             Request::Chat { chat_type, message, target } => {
+                // `/addons list|enable|disable|reload|log ...` is the loader's own command, not a chat line
+                if super::addons::is_command(&message) {
+                    bridge.0.borrow_mut().addon_commands.push(message.trim().to_string());
+                    continue;
+                }
                 // a slash command that names an emote (`/sad`) expresses it, at the target, instead of saying it
                 if let Some(emotion_id) = emote_command(emotes.as_deref(), &message) {
                     let target_obj_id = selected.filter(|&t| t != skills.obj_id).unwrap_or(0);

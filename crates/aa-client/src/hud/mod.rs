@@ -32,6 +32,8 @@
 //! (`ingame::player::control_player`, camera, hotkeys) should skip their key handling while
 //! `HudKeyboardFocus.0` is true.
 
+#[path = "../addons/mod.rs"]
+pub(crate) mod addons;
 mod achievement;
 mod alerts;
 mod battlefield;
@@ -480,7 +482,16 @@ impl Plugin for HudPlugin {
             .add_systems(Update,cooldown::advance_frame.before(aa_ui::UiInput).before(prebuild_hud).before(build_hud).before(sync_hud))
             .add_systems(Update,cooldown::sync_caption_option.after(aa_ui::UiInput).before(aa_ui::UiFrame))
             .add_systems(OnExit(Screen::InGame), |mut built: ResMut<HudBuilt>| *built = HudBuilt::default())
-            .add_systems(OnExit(Screen::InGame), |world: &mut World| drop(world.remove_non_send::<SuspendedStage>()))
+            .add_systems(
+                OnExit(Screen::InGame),
+                |world: &mut World| {
+                    addons::unload_world(world);
+                    if let Some(stage) = world.get_non_send::<SuspendedStage>() {
+                        addons::unload(&stage.0.lua);
+                    }
+                    drop(world.remove_non_send::<SuspendedStage>());
+                },
+            )
             .add_systems(OnExit(Screen::InGame), |mut actions: ResMut<crate::settings::Actions>| *actions = default())
             .add_systems(OnEnter(Screen::Loading), |mut state: ResMut<PrebuildState>| *state = PrebuildState::default())
             .add_systems(Update, prebuild_hud.run_if(in_state(Screen::Loading)))
@@ -503,9 +514,10 @@ impl Plugin for HudPlugin {
                     build_hud.run_if(hud_wanted),
                     session::route_session,
                     session::scripted_session.run_if(hud_up),
-                    (sync_hud, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, targeting::escape_key, api::handle_requests, alerts::show).run_if(hud_up),
+                    (sync_hud, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
                     cameras::match_world_camera,
                     cameras::dev_fov,
+                    addons::tick.after(sync_hud).before(aa_ui::UiFrame),
                 )
                     .after(HudInputReady)
                     .chain()
@@ -662,6 +674,7 @@ fn build_hud(world: &mut World) {
     if let Some(PrebuiltStage(rt)) = world.remove_non_send::<PrebuiltStage>() {
         // what changed since it was built (position, zone, bars ...) reaches the scripts through `sync_hud`
         api::refresh_snapshot(world, &bridge);
+        addons::load(&rt.lua);
         api::enter_world(&rt, &bridge, &chat_state);
         world.insert_non_send(rt);
         // the new tree starts counting generations again: force a full redraw
@@ -677,6 +690,7 @@ fn build_hud(world: &mut World) {
             error!("hud: game API: {e}");
         }
         rt.run_stage(aa_ui::Stage::World);
+        addons::load(&rt.lua);
         api::enter_world(rt, &bridge, &chat_state);
     });
     if ok {
