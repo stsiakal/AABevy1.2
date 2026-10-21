@@ -130,6 +130,8 @@ pub struct HudData {
     pub party_pushed: Option<aa_net::Party>,
     pub character_id: u32,
     pub store: super::store::View,
+    /// The NPC function menu and the priest blessing requests (`services.rs`).
+    pub(super) services: super::services::View,
     pub(super) specialty: super::specialty::View,
 }
 
@@ -196,6 +198,7 @@ impl Default for HudData {
             party_pushed: None,
             character_id: 0,
             store: Default::default(),
+            services: Default::default(),
             specialty: Default::default(),
         }
     }
@@ -274,6 +277,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::friends::install(lua, bridge)?;
     super::store::install(lua, &hud, bridge)?;
     lua.globals().raw_set("HUD", hud.clone())?;
+    super::services::install(lua, bridge)?;
     push_snapshot(lua, &hud, &bridge.borrow().snapshot)?;
     panels::push(lua, &hud, &bridge.borrow().panels, None)?;
     let frames: Table = lua.load(ROAD_FRAMES_LUA).set_name("@road_frames.lua").eval()?;

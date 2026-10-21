@@ -173,6 +173,7 @@ opcodes! {
         CSBuyItemsPacket = 0x0ae,
         CSSellItemsPacket = 0x0b0,
         CSListSoldItemPacket = 0x0b1,
+        CSBuyPriestBuffPacket = 0x0b2,
         CSTeleportEndedPacket = 0x0b4,
         CSUpdateActionSlotPacket = 0x0b6,
         CSStartQuestContextPacket = 0x0d5,

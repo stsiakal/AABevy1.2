@@ -882,10 +882,10 @@ roster refresh alone loses the original localized notices and specific offline/u
 ## NPC shops and banks (2026-10-17)
 
 `Command::Shop(ShopCommand)` exposes `ListSold { npc_obj_id }`,
-`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`, and
+`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`,
 `Buy { npc_obj_id, doodad_obj_id, buy: Vec<BuyEntry { item_id, grade, count, currency }>,
-buy_back: Vec<i32>, use_aa_point }`. A sale moves the entire stack; split beforehand for a
-partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
+buy_back: Vec<i32>, use_aa_point }`, and `PriestBuff { npc_obj_id, priest_buff_id }`. A sale moves
+the entire stack; split beforehand for a partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
 are bytes (at most 255); non-positive purchase counts, invalid buyback slots, duplicate
 sale/buyback entries and invalid containers are rejected locally before sending.
 `Event::Shop(ShopEvent::RequestRejected(message))` reports that local failure.
@@ -924,6 +924,14 @@ already arrive at login in `Inventory.bank_slots` / `bank`; read them with `bank
 `first_free_bank_slot()`. Moves and splits use the existing `plan_move` and `SwapItems` /
 `SplitItem` commands with container3. Balances are `PlayerStats.money` / `bank_money`, updated
 by the money tasks; expansion is acknowledged by `InventoryExpanded` and preserves slot items.
+
+`ShopCommand::PriestBuff { npc_obj_id, priest_buff_id }` is `CSBuyPriestBuff` 0x0b2:
+u32 `priest_buffs.id`, then BC NPC object (the server's `read_body`, matching
+`systems/economy/store.rs`). Both zero IDs are refused locally; the server checks the active
+interaction object, dead state, the blessing's copper cost and its buff before the buff/item
+tasks. `ShopCommand::Buy` carries the catalog currency byte unchanged for money(0), honor(1)
+and vocation badges(2), the three values the lane checkout accepts; siege(3) remains a wire
+value only. Tests cover the exact blessing bytes and money/honor/vocation carts.
 
 Opening services uses `Interact::Npc`, then `Interact::Start`: its `SkillList` contains 12087
 for a merchant or 13238 for a banker. Original `ShowInteraction` categories are STORE_NPC=3,
@@ -1925,8 +1933,9 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   variant to `game::ServerMsg` + `Event` for each as the UI needs it. A packet in a `DD04` batch
   that is not decoded ends that batch.
 * Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
-  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions.
-  Coin/doodad shops, priest buffs and the other NPC functions still need their own requests.
+  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions,
+  priest blessing (`CSBuyPriestBuff`). Coin/doodad shops (`CSBuyCoinItem`) and the other NPC functions
+  still need their own requests.
 * No maximum HP / MP on the wire: `PlayerStats::max_hp` is the highest value seen (a character that
   spawns dead or hurt shows too small a maximum until it has been at full health once) unless the
   application sets the formula value with `PlayerStats::set_max` (the HUD does).

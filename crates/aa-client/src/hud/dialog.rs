@@ -7,10 +7,11 @@
 //! The scripts are the original's; this module and `quest.lua` are the client's native side of them.
 //!
 //! 1. A right click on an NPC in reach, or F with one in reach and no loot (F loots first), starts the
-//!    talk: `CSChangeTarget` and `CSInteractNPC`. What the NPC does for the player is worked out from
-//!    the quest tables ([`QuestTables::talks`], `completes`, `offers`) and goes to the scripts, in
-//!    that order of preference, as `NPC_INTERACTION_START("quest", "talk" | "complete" | "start",
-//!    npcId)` (`npc_interaction.lua`). An NPC with nothing to say ends the talk at once.
+//!    talk: `CSChangeTarget`, `CSInteractNPC` and `CSStartInteraction`. The quest actions are worked out
+//!    from the quest tables ([`QuestTables::talks`], `completes`, `offers`); `services.rs` combines
+//!    them with the received `SCNpcInteractionSkillList` and raises `NPC_INTERACTION_START` — the
+//!    preferred quest action (`"talk"` | `"complete"` | `"start"`, `npc_interaction.lua`) when there
+//!    is no function, the lone service, or the original greeting/function menu.
 //! 2. The scripts ask `X2Quest:CallQuestUi` / `CallQuestTalk`, which raise
 //!    `START_QUEST_CONTEXT_NPC` / `COMPLETE_QUEST_CONTEXT_NPC` / `PROGRESS_TALK_QUEST_CONTEXT(qtype,
 //!    true, npcId)`: the dialog opens (`X2Quest:EnterQuestDirectingMode`: the rest of the HUD is hidden,
@@ -45,7 +46,7 @@ use super::quests::{PlayerFacts, Texts, kind};
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
 /// How far the player reaches to talk to an NPC (F, a right click), metres.
-const TALK_RANGE: f32 = 6.0;
+pub(super) const TALK_RANGE: f32 = 6.0;
 /// How near the view ray has to pass a unit's middle for a right click to pick it, metres.
 const PICK_RADIUS: f32 = 1.1;
 /// A press that moves more than this many pixels before it is released was a camera drag.
@@ -558,14 +559,17 @@ fn begin_talk(d: &mut HudData, facts: &PlayerFacts, npc: (u32, u32), target: Opt
         None
     };
     info!("hud: talk to npc {obj_id} (template {template}): start {:?}, complete {:?}, talk {:?}", d.dialog.start, d.dialog.complete, d.dialog.talk);
-    if what.is_none() {
-        if d.game.get().is_some_and(|g| g.stores.has_service(template) || g.pets.stables.contains(&template) || g.battlefield.field(template).is_some() || g.expedition.is_creator(template)) {
-            net.write(NetCommand(Command::Interact(Interact::Start { npc_obj_id:obj_id, obj_id:d.snapshot.unit_id.parse().unwrap_or(0), extra_info:0, pick_id:0, mouse_button:2, modifier_keys:0 })));
-        } else {
-            net.write(NetCommand(Command::Interact(Interact::NpcEnd { obj_id })));
-            d.dialog.npc = None;
-        }
-    }
+    // The original sends CSStartInteraction for every selected NPC. Its answer
+    // (SCNpcInteractionSkillList) is what `services.rs` turns into the function menu or the
+    // lone service window; only then does it open the quest action or end a silent talk.
+    net.write(NetCommand(Command::Interact(Interact::Start {
+        npc_obj_id: obj_id,
+        obj_id: d.snapshot.unit_id.parse().unwrap_or(0),
+        extra_info: 0,
+        pick_id: 0,
+        mouse_button: 2,
+        modifier_keys: 0,
+    })));
     what
 }
 
@@ -681,10 +685,9 @@ pub fn talk_input(
     }
     let what = begin_talk(&mut d, &player_facts, npc, target.obj_id, &mut net);
     script_pick.talked(npc.0, what);
+    // `services.rs` opens the quest action (or the function menu) from the server's
+    // SCNpcInteractionSkillList, so a quest and a shop on the same NPC can both be offered.
     drop(d);
-    if let Some(what) = what {
-        rt.fire_event("NPC_INTERACTION_START", ("quest", what, npc.0.to_string()));
-    }
 }
 
 /// The scripts' requests become packets; the dialog hides the HUD and brings it back. A doodad's quest
@@ -740,7 +743,7 @@ pub fn handle_dialog(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>,
     }
 }
 
-fn end_talk(d: &mut HudData, net: &mut MessageWriter<NetCommand>) {
+pub(super) fn end_talk(d: &mut HudData, net: &mut MessageWriter<NetCommand>) {
     d.dialog.doodad = None;
     if let Some((obj_id, _)) = d.dialog.npc.take() {
         net.write(NetCommand(Command::Interact(Interact::NpcEnd { obj_id })));
