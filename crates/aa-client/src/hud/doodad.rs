@@ -31,7 +31,7 @@
 use std::collections::HashMap;
 
 use aa_net::interaction::Interact;
-use aa_net::state::{Doodads, Units};
+use aa_net::state::{Doodads, Houses, Units};
 use aa_net::{Command, NetCommand};
 use aa_ui::UiRuntime;
 use bevy::prelude::*;
@@ -40,6 +40,7 @@ use mlua::{Lua, Table, Value};
 use rusqlite::Connection;
 
 use super::api::{HudBridge, HudData, Shared};
+use super::houses::{HouseState, INFO_SKILL, step_skill};
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
 /// Skills the dynamic action bar leaves out (`dynamic_action_bar.lua`, `ShoulPassShow`).
@@ -141,12 +142,21 @@ impl Tables {
     }
 }
 
-/// The usable doodad in reach.
+/// What a ray or the focus selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pick {
+    Doodad(u32),
+    House(u32),
+}
+
+/// The usable doodad or unfinished house in reach.
 #[derive(Clone, Debug, PartialEq)]
 struct Focus {
     obj_id: u32,
     skills: Vec<u32>,
     dist: f32,
+    /// `Some` for an unfinished house: the bar's first skill builds it, the second opens the info window.
+    house: Option<HouseState>,
 }
 
 /// One row of the interaction list.
@@ -159,8 +169,8 @@ struct Entry {
 #[derive(Default)]
 pub(super) struct View {
     focus: Option<Focus>,
-    /// The doodad and skills the bar was last shown for.
-    shown: Option<(u32, Vec<u32>)>,
+    /// The doodad/house and skills the bar was last shown for.
+    shown: Option<(u32, Vec<u32>, bool)>,
     /// F goes to the doodad (it is nearer than any NPC).
     claims_key: bool,
     /// Dynamic action indices (1 based) the bar or a key asked for.
@@ -169,8 +179,8 @@ pub(super) struct View {
     menu: Option<(u32, Vec<Entry>)>,
     /// The ids picked from the list.
     chosen: Vec<i64>,
-    /// The doodad under the pointer (its name tooltip is up).
-    hover: Option<u32>,
+    /// The doodad or house under the pointer (its tooltip is up).
+    hover: Option<Pick>,
     /// The doodad last right clicked: the bar is about it while it is in reach.
     preferred: Option<u32>,
 }
@@ -195,10 +205,10 @@ fn to_vec(p: aa_net::Pos) -> Vec3 {
 /// The doodad in reach whose phase has a skill to use that the bar is about: the one last right clicked, else the
 /// nearest, a doodad behind the player counting up to [`BEHIND`] metres further away than one in front (an inn's
 /// chairs around the Memory Tome).
-fn find_focus(data: &HudData, doodads: &Doodads) -> Option<Focus> {
+fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses) -> Option<Focus> {
     let game = data.game.get()?;
     let forward = Vec2::new(-data.yaw.sin(), data.yaw.cos());
-    let candidates = doodads.by_id.values().filter_map(|o| {
+    let doodad_candidates = doodads.by_id.values().filter_map(|o| {
         let uses = game.doodad.uses(o.func_group_id)?;
         if uses.skills.is_empty() {
             return None;
@@ -209,9 +219,25 @@ fn find_focus(data: &HudData, doodads: &Doodads) -> Option<Focus> {
         }
         let toward = (to_vec(o.pos) - data.pos).truncate().normalize_or_zero();
         let score = if data.doodad.preferred == Some(o.obj_id) { f32::MIN } else { dist + BEHIND * 0.5 * (1.0 - forward.dot(toward)) };
-        Some((score, Focus { obj_id: o.obj_id, skills: uses.skills.clone(), dist }))
+        Some((score, Focus { obj_id: o.obj_id, skills: uses.skills.clone(), dist, house: None }))
     });
-    candidates.min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
+    let house_candidates = units.iter().filter_map(|u| {
+        let aa_net::model::UnitKind::Housing { tl_id, .. } = u.kind else { return None };
+        let state = HouseState::of(&houses.by_tl_id.get(&tl_id)?.snapshot);
+        if !state.under_construction() {
+            return None;
+        }
+        let skill = step_skill(game, state.template_id, state.current_actions)?;
+        let range = game.skills.get(&skill).map_or(0.0, |s| s.max_range as f32);
+        let dist = data.pos.distance(to_vec(u.pos));
+        if dist > if range > 0.0 { range + REACH_SLACK } else { BASE_REACH } {
+            return None;
+        }
+        let toward = (to_vec(u.pos) - data.pos).truncate().normalize_or_zero();
+        let score = dist + BEHIND * 0.5 * (1.0 - forward.dot(toward));
+        Some((score, Focus { obj_id: u.obj_id, skills: vec![skill, INFO_SKILL], dist, house: Some(state) }))
+    });
+    doodad_candidates.chain(house_candidates).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
 }
 
 pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
@@ -342,10 +368,10 @@ fn hit(ray: Ray3d, centre: Vec3, radius: f32) -> Option<f32> {
     (along > 0.0 && (ray.origin + *ray.direction * along).distance(centre) <= radius).then_some(along)
 }
 
-/// The usable doodad the ray picks, unless an NPC is in front of it.
-fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) -> Option<u32> {
+/// The usable doodad or house the ray picks, unless an NPC is in front of it.
+fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) -> Option<Pick> {
     let game = data.game.get()?;
-    let mut best: Option<(f32, u32)> = None;
+    let mut best: Option<(f32, Pick)> = None;
     for o in doodads.by_id.values() {
         if game.doodad.uses(o.func_group_id).is_none() || data.pos.distance(to_vec(o.pos)) > PICK_DISTANCE {
             continue;
@@ -355,14 +381,51 @@ fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) 
         if let Some(along) = hit(ray, centre, 1.3 * scale.max(0.7))
             && best.is_none_or(|(a, _)| along < a)
         {
-            best = Some((along, o.obj_id));
+            best = Some((along, Pick::Doodad(o.obj_id)));
         }
     }
-    let (along, obj_id) = best?;
+    for u in units.iter().filter(|u| matches!(u.kind, aa_net::model::UnitKind::Housing { .. })) {
+        if data.pos.distance(to_vec(u.pos)) > PICK_DISTANCE {
+            continue;
+        }
+        let radius = match u.kind {
+            aa_net::model::UnitKind::Housing { template_id, .. } => game.housing.housings.get(&template_id).map_or(2.0, |h| h.garden_radius.max(2.0)),
+            _ => 2.0,
+        };
+        if let Some(along) = hit(ray, to_vec(u.pos) + Vec3::Z * 0.9 * u.scale.max(0.5), radius)
+            && best.is_none_or(|(a, _)| along < a)
+        {
+            best = Some((along, Pick::House(u.obj_id)));
+        }
+    }
+    let (along, picked) = best?;
     let npc_in_front = units.iter().filter(|u| u.obj_id != own && matches!(u.kind, aa_net::model::UnitKind::Npc { .. })).any(|u| {
         hit(ray, to_vec(u.pos) + Vec3::Z * 0.9 * u.scale.max(0.5), 1.1 * u.scale.max(0.7)).is_some_and(|a| a < along)
     });
-    (!npc_in_front).then_some(obj_id)
+    (!npc_in_front).then_some(picked)
+}
+
+/// The name, owner, permission and progress the original `DRAW_DOODAD_TOOLTIP` shows for a house.
+struct HouseInfo {
+    name: String,
+    owner: String,
+    permission: i64,
+    current: i64,
+    all: i64,
+}
+
+fn house_info(units: &Units, houses: &Houses, obj_id: u32) -> Option<HouseInfo> {
+    let unit = units.by_id.get(&obj_id)?;
+    let aa_net::model::UnitKind::Housing { tl_id, .. } = unit.kind else { return None };
+    let house = houses.by_tl_id.get(&tl_id)?;
+    let snapshot = &house.snapshot;
+    Some(HouseInfo {
+        name: if snapshot.name.is_empty() { unit.name.clone() } else { snapshot.name.clone() },
+        owner: snapshot.owner_name.clone(),
+        permission: i64::from(snapshot.permission),
+        current: i64::from(snapshot.current_actions),
+        all: i64::from(snapshot.all_actions),
+    })
 }
 
 /// Finds the doodad in reach, shows / hides the bar, reads the keys, the right click and the pointer.
@@ -372,6 +435,7 @@ fn track(
     bridge: NonSend<HudBridge>,
     doodads: Res<Doodads>,
     units: Res<Units>,
+    houses: Res<Houses>,
     player: Res<aa_net::state::Player>,
     actions: Res<crate::settings::Actions>,
     focus_kb: Res<HudKeyboardFocus>,
@@ -384,9 +448,15 @@ fn track(
     let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
     script.since += time.delta_secs();
     let mut d = bridge.0.borrow_mut();
-    let focus = find_focus(&d, &doodads);
+    let focus = find_focus(&d, &doodads, &units, &houses);
+    let focused_house = focus.as_ref().and_then(|f| f.house.as_ref().map(|_| f.obj_id));
+    let end_interaction = d.house.material_open && d.house.material_house != focused_house;
+    if end_interaction {
+        d.house.material_open = false;
+        d.house.material_house = None;
+    }
     // the bar
-    let wanted = focus.as_ref().map(|f| (f.obj_id, f.skills.clone()));
+    let wanted = focus.as_ref().map(|f| (f.obj_id, f.skills.clone(), f.house.is_some()));
     let directing = d.dialog.directing;
     d.doodad.claims_key = focus.as_ref().is_some_and(|f| {
         !units.iter().any(|u| u.obj_id != own && !u.dead && matches!(u.kind, aa_net::model::UnitKind::Npc { .. }) && d.pos.distance(to_vec(u.pos)) < f.dist)
@@ -396,12 +466,18 @@ fn track(
         d.doodad.shown = wanted.clone();
         drop(d);
         match &wanted {
-            Some((obj_id, skills)) => {
+            Some((obj_id, skills, is_house)) => {
                 info!("doodad: {obj_id} in reach, uses {skills:?}");
-                rt.fire_event("DYNAMIC_ACTION_BAR_SHOW", ("doodad", obj_id.to_string()));
+                let kind = if *is_house { "npc" } else { "doodad" };
+                rt.fire_event("DYNAMIC_ACTION_BAR_SHOW", (kind, obj_id.to_string()));
             }
             None => rt.fire_event("DYNAMIC_ACTION_BAR_HIDE", ()),
         }
+        d = bridge.0.borrow_mut();
+    }
+    if end_interaction {
+        drop(d);
+        rt.fire_event("HOUSE_INTERACTION_END", ());
         d = bridge.0.borrow_mut();
     }
     // the keys
@@ -432,7 +508,10 @@ fn track(
         && let (Some(start), Some(end), Some(ray)) = (pressed_at.take(), cursor, ray)
         && start.distance(end) <= CLICK_SLOP
     {
-        clicked = pick(ray, &d, &doodads, &units, own);
+        clicked = match pick(ray, &d, &doodads, &units, own) {
+            Some(Pick::Doodad(id)) => Some(id),
+            _ => None,
+        };
     }
     if script.rclicks.last().is_some_and(|t| script.since >= *t) {
         script.rclicks.pop();
@@ -443,20 +522,44 @@ fn track(
     let hover_changed = hover != d.doodad.hover;
     d.doodad.hover = hover;
     let menu = clicked.is_some_and(|obj_id| right_click(&mut d, &doodads, obj_id));
-    let hover_name = hover.and_then(|id| doodads.by_id.get(&id)).and_then(|o| d.game.get().and_then(|g| g.doodad.name(o.template_id)).map(str::to_string));
+    let hover_name = match hover {
+        Some(Pick::Doodad(id)) => doodads.by_id.get(&id).and_then(|o| d.game.get().and_then(|g| g.doodad.name(o.template_id)).map(str::to_string)),
+        _ => None,
+    };
+    let hover_house = match hover {
+        Some(Pick::House(id)) => house_info(&units, &houses, id),
+        _ => None,
+    };
     drop(d);
     if menu {
         rt.fire_event("INTERACTION_START", ());
     }
     if hover_changed {
-        match hover_name {
-            Some(name) => {
-                let info = rt.lua.create_table().and_then(|t| t.set("name", name).map(|()| t));
-                if let Ok(info) = info {
-                    rt.fire_event("DRAW_DOODAD_TOOLTIP", info);
-                }
+        if let Some(house) = hover_house {
+            let info = rt.lua.create_table().and_then(|t| {
+                t.set("name", house.name)?;
+                t.set("owner", house.owner)?;
+                t.set("permission", house.permission)?;
+                t.set("alignLeft", true)?;
+                let progress = rt.lua.create_table()?;
+                progress.set("curCount", house.current)?;
+                progress.set("maxCount", house.all)?;
+                t.set("progress", progress)?;
+                Ok(t)
+            });
+            if let Ok(info) = info {
+                rt.fire_event("DRAW_DOODAD_TOOLTIP", info);
             }
-            None => rt.fire_event("DRAW_DOODAD_SIGN_TAG", ()),
+        } else {
+            match hover_name {
+                Some(name) => {
+                    let info = rt.lua.create_table().and_then(|t| t.set("name", name).map(|()| t));
+                    if let Ok(info) = info {
+                        rt.fire_event("DRAW_DOODAD_TOOLTIP", info);
+                    }
+                }
+                None => rt.fire_event("DRAW_DOODAD_SIGN_TAG", ()),
+            }
         }
     }
 }
@@ -515,13 +618,32 @@ fn right_click(d: &mut HudData, doodads: &Doodads, obj_id: u32) -> bool {
 }
 
 /// The uses the bar, the keys and the list asked for become packets.
-fn execute(bridge: NonSend<HudBridge>, doodads: Res<Doodads>, mut out: MessageWriter<NetCommand>) {
+fn execute(
+    rt: Option<NonSend<UiRuntime>>,
+    bridge: NonSend<HudBridge>,
+    doodads: Res<Doodads>,
+    mut out: MessageWriter<NetCommand>,
+) {
     let mut d = bridge.0.borrow_mut();
     let execute = std::mem::take(&mut d.doodad.execute);
     let chosen = std::mem::take(&mut d.doodad.chosen);
+    let focus = d.doodad.focus.clone();
     let mut commands = Vec::new();
+    let mut opened: Option<(u32, HouseState)> = None;
     for i in execute {
-        let Some(f) = d.doodad.focus.as_ref() else { continue };
+        let Some(f) = focus.as_ref() else { continue };
+        if let Some(state) = &f.house {
+            if i == 1 {
+                if let Some(&skill_id) = f.skills.first() {
+                    commands.push((f.obj_id, Command::Target { obj_id: f.obj_id }));
+                    commands.push((f.obj_id, Command::UseSkill { skill_id, target_obj_id: f.obj_id }));
+                    opened = Some((f.obj_id, state.clone()));
+                }
+            } else if i == 2 {
+                opened = Some((f.obj_id, state.clone()));
+            }
+            continue;
+        }
         if let Some(&skill_id) = f.skills.get(i.wrapping_sub(1)) {
             commands.push((f.obj_id, Command::UseDoodadSkill { skill_id, doodad_obj_id: f.obj_id }));
         }
@@ -538,11 +660,28 @@ fn execute(bridge: NonSend<HudBridge>, doodads: Res<Doodads>, mut out: MessageWr
             commands.push((obj_id, command));
         }
     }
+    if let Some((obj_id, state)) = &opened {
+        d.house.selected = Some(state.clone());
+        d.house.material_open = true;
+        d.house.material_house = Some(*obj_id);
+    }
     let game = d.game.get();
     for (obj_id, command) in commands {
-        let name = doodads.by_id.get(&obj_id).and_then(|o| game.and_then(|g| g.doodad.name(o.template_id))).unwrap_or("?");
-        info!("doodad: use {name} ({obj_id}): {command:?}");
+        if let Some((house_obj, state)) = &opened
+            && *house_obj == obj_id
+        {
+            info!("housing: use {} ({obj_id}): {command:?}", state.name);
+        } else {
+            let name = doodads.by_id.get(&obj_id).and_then(|o| game.and_then(|g| g.doodad.name(o.template_id))).unwrap_or("?");
+            info!("doodad: use {name} ({obj_id}): {command:?}");
+        }
         out.write(NetCommand(command));
+    }
+    drop(d);
+    if opened.is_some()
+        && let Some(rt) = rt
+    {
+        super::houses::open_material_window(&rt);
     }
 }
 
@@ -588,6 +727,110 @@ pub(super) fn plugin(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aa_net::housing::{House, HouseSnapshot};
+    use crate::hud::data::GameData;
+
+    fn house_at(x: f32, y: f32) -> aa_net::Unit {
+        aa_net::Unit {
+            obj_id: 77,
+            name: "Scarecrow Garden".into(),
+            kind: aa_net::model::UnitKind::Housing { tl_id: 13, template_id: 267, build_step: 0 },
+            owner_name: "Farmax".into(),
+            pos: aa_net::Pos::new(x, y, 0.0),
+            rotation: [0.0; 3],
+            scale: 1.0,
+            level: 1,
+            model_id: 989,
+            equipment: Default::default(),
+            model_params: Default::default(),
+            hp: 200,
+            mp: 0,
+            max_hp: 200,
+            max_mp: 0,
+            dead: false,
+            race_gender: 0,
+            movement: None,
+            faction_id: 0,
+            expedition_id: 0,
+            appellation: 0,
+            flags: 0,
+            gm_modes: [0; 4],
+            bounty_money: None,
+            pvp_honor: 0,
+            pvp_kills: 0,
+            skills: vec![],
+            passive_buffs: vec![],
+            ability_exp: vec![],
+            active_abilities: vec![],
+            buffs: vec![],
+            anim_action: 0,
+            attached_to: None,
+            house_posture: None,
+            state_attachments: None,
+        }
+    }
+
+    fn house_game() -> (HudData, Units, Houses) {
+        let mut game = GameData::default();
+        game.skills.insert(18553, Default::default());
+        game.skills.get_mut(&18553).unwrap().max_range = 10;
+        game.skills.insert(INFO_SKILL, Default::default());
+        game.skills.get_mut(&INFO_SKILL).unwrap().max_range = 6;
+        game.housing.housings.insert(267, Default::default());
+        let template = game.housing.housings.get_mut(&267).unwrap();
+        template.garden_radius = 4.0;
+        template.build_steps.push(Default::default());
+        template.build_steps[0].skill_id = 18553;
+        template.build_steps[0].num_actions = 1;
+        let mut data = HudData::default();
+        data.game.0.set(game).ok().expect("one load");
+        data.pos = Vec3::ZERO;
+        let mut units = Units::default();
+        units.by_id.insert(77, house_at(2.0, 0.0));
+        let mut houses = Houses::default();
+        houses.by_tl_id.insert(
+            13,
+            House {
+                snapshot: HouseSnapshot {
+                    tl_id: 13,
+                    db_id: 1,
+                    obj_id: 77,
+                    template_id: 267,
+                    model_id: 989,
+                    co_owner_id: 0,
+                    owner_id: 7,
+                    owner_name: "Farmax".into(),
+                    account_id: 1,
+                    permission: 0,
+                    all_actions: 1,
+                    current_actions: 0,
+                    tax: 0,
+                    x: 0,
+                    y: 0,
+                    z: 0.0,
+                    name: "Scarecrow Garden".into(),
+                    allow_recover: true,
+                    sell_price: 0,
+                    sell_to_player_id: 0,
+                    sell_to_name: String::new(),
+                },
+                demolished: false,
+                build_pay: None,
+                tax: None,
+                sale: None,
+            },
+        );
+        (data, units, houses)
+    }
+
+    #[test]
+    fn an_unfinished_house_offers_build_and_info_actions() {
+        let (data, units, houses) = house_game();
+        let focus = find_focus(&data, &Doodads::default(), &units, &houses).expect("the house is in reach");
+        assert_eq!(focus.obj_id, 77);
+        assert_eq!(focus.skills, vec![18553, INFO_SKILL]);
+        assert_eq!(focus.house.as_ref().map(|h| h.current_actions), Some(0));
+    }
 
     #[test]
     fn phases_list_their_skills_and_navi_uses() {

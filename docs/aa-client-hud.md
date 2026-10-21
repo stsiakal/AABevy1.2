@@ -2397,7 +2397,15 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   `ingame/houses.rs::sync_house_models` follows each `SCHouseBuildProgress.model_id` by updating the received unit and
   letting `units::sync_views` rebuild its entity. Right-clicking an unfinished house casts the current
   `housing_build_steps.skill_id` at it (the server's `CraftEffect` checks it; the skill is `need_learn=false`) and
-  raises `HOUSE_INTERACTION_START`, which shows the original material/progress window. When the last action
+  raises `HOUSE_INTERACTION_START`, which shows the original material/progress window. The dynamic action bar
+  (`hud/doodad.rs`) also treats an unfinished house in reach as an interactable: slot 1 (F) casts the same build
+  skill (`Command::Target` + `UseSkill`), slot 2 (G) raises `HOUSE_INTERACTION_START` for the material window without
+  a cast. Slot 2's icon is skill `15212` ("Check Construction Info", the housing-category skill with 6 m range;
+  `11001` is the generic 4 m construction-info skill). `SCHouseBuildProgress` while the window is up refreshes the
+  selected snapshot and raises `HOUSE_STEP_INFO_UPDATED` (the 1.2 handler ignores its argument and redraws from
+  `X2House`); leaving the house's range/target raises `HOUSE_INTERACTION_END`. Hovering a house feeds the original
+  `DRAW_DOODAD_TOOLTIP` with its name, owner, permission and `{curCount,maxCount}` progress. House design ids are
+  never looked up in the NPC table: design 267 collides with NPC 267 "Seagull". When the last action
   completes, the server's finished model (and bound doodads) arrive; the house is a normal selectable unit target
   (health/buff come from the server).
 * **Script**: `house_place ITEM DX DY [YAW]` aims the real session without a cursor (for headless captures), then

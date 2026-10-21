@@ -95,8 +95,8 @@ fn show_damage(
     let hit = hit_name(d.hit_type);
     let missed = hit_type::is_miss(d.hit_type);
     if d.target_obj_id == own {
-        let source = unit_name(&units, game, &player, d.caster_obj_id);
-        let target = unit_name(&units, game, &player, own);
+        let source = unit_name(units, game, player, d.caster_obj_id);
+        let target = unit_name(units, game, player, own);
         let spell = info.map_or_else(String::new, |s| s.named.name.clone());
         let (event, with_spell) = match (missed, d.action.kind == 2, auto) {
             (true, _, true) => ("MELEE_MISSED", false),

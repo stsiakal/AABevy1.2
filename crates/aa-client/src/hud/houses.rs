@@ -28,6 +28,9 @@ use crate::ingame::units::Views;
 pub const TAX_ITEM: u32 = 31891;
 /// The server's `COPPER_PER_TAX_CERTIFICATE` (10,000 copper = 1 gold).
 pub const COPPER_PER_CERTIFICATE: i64 = 10_000;
+/// The house-specific "Check Construction Info" skill (`skills.category_id = 3`, the housing category, range 6 m).
+/// `11001` is the generic construction info skill (category 1, range 4 m); 1.2's housing interaction uses 15212.
+pub const INFO_SKILL: u32 = 15212;
 /// How near the view ray has to pass a house's middle for a right click, metres (as `targeting::PICK_RADIUS`).
 const PICK_RADIUS: f32 = 1.1;
 const CLICK_SLOP: f32 = 6.0;
@@ -46,7 +49,7 @@ pub struct HouseState {
 }
 
 impl HouseState {
-    fn of(snapshot: &HouseSnapshot) -> HouseState {
+    pub(super) fn of(snapshot: &HouseSnapshot) -> HouseState {
         HouseState {
             tl_id: snapshot.tl_id,
             template_id: snapshot.template_id,
@@ -73,6 +76,9 @@ pub struct HouseView {
     pub design: u32,
     /// The house the material window / interaction is about.
     pub selected: Option<HouseState>,
+    /// The material window is up for [`Self::material_house`].
+    pub material_open: bool,
+    pub material_house: Option<u32>,
     pub tax_item: u32,
 }
 
@@ -116,6 +122,35 @@ pub fn refresh(world: &mut World, data: &mut HudData) {
             let UnitKind::Housing { tl_id, .. } = unit.kind else { return None };
             world.get_resource::<aa_net::Houses>()?.by_tl_id.get(&tl_id).map(|h| HouseState::of(&h.snapshot))
         })();
+    }
+}
+
+/// `SCHouseBuildProgress` while the original material window is up: refresh [`HouseView::selected`] and let
+/// `housing_manager.alb` redraw its progress and next-material icons (`HOUSE_STEP_INFO_UPDATED`).
+pub fn route_build_progress(
+    mut events: MessageReader<aa_net::NetEvent>,
+    bridge: NonSend<HudBridge>,
+    houses: Option<Res<aa_net::Houses>>,
+    rt: Option<NonSend<UiRuntime>>,
+) {
+    let Some(rt) = rt else { return };
+    let Some(houses) = houses else { return };
+    let mut updated = false;
+    for aa_net::NetEvent(event) in events.read() {
+        let aa_net::Event::Housing(aa_net::housing::HousingEvent::BuildProgress { tl_id, .. }) = event else {
+            continue;
+        };
+        let mut d = bridge.0.borrow_mut();
+        if !d.house.material_open || d.house.selected.as_ref().is_none_or(|h| h.tl_id != *tl_id) {
+            continue;
+        }
+        if let Some(house) = houses.by_tl_id.get(tl_id) {
+            d.house.selected = Some(HouseState::of(&house.snapshot));
+            updated = true;
+        }
+    }
+    if updated {
+        rt.fire_event("HOUSE_STEP_INFO_UPDATED", ());
     }
 }
 
@@ -258,7 +293,7 @@ fn steps_table(lua: &Lua, game: &super::data::GameData, housing_id: u32) -> mlua
         let row = lua.create_table()?;
         row.set("step", i64::from(step.step.max(0) + 1))?;
         row.set("lookType", i64::from(step.consume_item))?;
-        row.set("itemGrade", 1i64)?;
+        row.set("itemGrade", game.items.get(&step.consume_item).map_or(0, |item| item.fixed_grade.max(0)))?;
         row.set("consumeItemStack", i64::from(step.consume_count.max(0)))?;
         row.set("needActions", i64::from(step.num_actions.max(0)))?;
         row.set("isLaborPower", step.consume_item == 0 && step.labor > 0)?;
@@ -416,18 +451,25 @@ fn start_construction(
     {
         let mut d = bridge.borrow_mut();
         d.house.selected = Some(state);
+        d.house.material_open = true;
+        d.house.material_house = Some(unit.obj_id);
     }
     out.push(aa_net::Command::Target { obj_id: unit.obj_id });
     out.push(aa_net::Command::UseSkill { skill_id: skill, target_obj_id: unit.obj_id });
     if let Some(rt) = rt {
-        rt.fire_event("HOUSE_INTERACTION_START", "housing");
-        // `ShowMaterialWindow(true)` creates the original window but leaves it hidden in the 1.2 script;
-        // the retail interaction shows it, so raise the already populated window.
-        if let Err(e) = rt.exec("@house_interaction", "if housing.materialWindow then housing.materialWindow:Show(true) end") {
-            warn!("housing: cannot show the material window: {e}");
-        }
+        open_material_window(rt);
     }
     Ok(skill)
+}
+
+/// Raises the original client's house interaction events and shows its material/progress window.
+pub(super) fn open_material_window(rt: &UiRuntime) {
+    rt.fire_event("HOUSE_INTERACTION_START", "housing");
+    // `ShowMaterialWindow(true)` creates the original window but leaves it hidden in the 1.2 script;
+    // the retail interaction shows it, so raise the already populated window.
+    if let Err(e) = rt.exec("@house_interaction", "if housing.materialWindow then housing.materialWindow:Show(true) end") {
+        warn!("housing: cannot show the material window: {e}");
+    }
 }
 
 /// World-space bounds of a unit's meshes (the root's descendants with an `Aabb`).
@@ -486,7 +528,7 @@ fn ray_aabb(ray: &Ray3d, min: Vec3, max: Vec3) -> Option<f32> {
 }
 
 /// The `housing_build_steps.skill_id` of the step that owns `current_actions`.
-fn step_skill(game: &super::data::GameData, design: u32, current_actions: i32) -> Option<u32> {
+pub(super) fn step_skill(game: &super::data::GameData, design: u32, current_actions: i32) -> Option<u32> {
     let template = game.housing.housings.get(&design)?;
     let mut done = 0;
     for step in &template.build_steps {
@@ -580,6 +622,22 @@ mod tests {
             house_posture: None,
             state_attachments: None,
         }
+    }
+
+    #[test]
+    fn build_step_item_grade_comes_from_the_material_item() {
+        let lua = Lua::new();
+        let mut game = super::super::data::GameData::default();
+        game.items.insert(8337, Default::default());
+        game.items.get_mut(&8337).unwrap().fixed_grade = 3;
+        game.housing.housings.insert(267, Default::default());
+        let template = game.housing.housings.get_mut(&267).unwrap();
+        template.build_steps.push(Default::default());
+        template.build_steps[0].skill_id = 18553;
+        template.build_steps[0].consume_item = 8337;
+        let table = steps_table(&lua, &game, 267).unwrap();
+        let row: Table = table.get(1).unwrap();
+        assert_eq!(row.get::<i64>("itemGrade").unwrap(), 3);
     }
 
     #[test]
