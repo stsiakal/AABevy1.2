@@ -529,8 +529,17 @@ end
 local fakeIconSet, fakeStackable, fakeLevel = X2Item.GetItemIconSet, X2Item.IsStackable, X2Item.GetLevelRequirement
 X2Item.GetItemIconSet = function(self, itemType, grade)
   local name, icon, maxStack, fixedGrade = HUD.item_info(itemType)
-  if icon == nil or icon == "" then return fakeIconSet(self, itemType, grade) end
-  return { itemIcon = icon, frameIcon = gradeFrame(grade or fixedGrade) }
+  -- A real item always gets a table, even without an icon: SetInfo indexes the
+  -- result without a nil check when itemType is not nil (tooltip.alb [1333]-[1334],
+  -- [1372]). itemType 0 (an empty worn slot) takes the same path, so it gets an
+  -- empty icon set rather than the fallback's nil (tooltip.alb [1372], [1378]).
+  if name ~= nil then
+    return { itemIcon = icon or "", frameIcon = gradeFrame(grade or fixedGrade) }
+  end
+  local fallback = fakeIconSet(self, itemType, grade)
+  if fallback ~= nil then return fallback end
+  if itemType == 0 then return {} end
+  return nil
 end
 X2Item.IsStackable = function(self, itemType)
   local name, icon, maxStack = HUD.item_info(itemType)
@@ -559,11 +568,21 @@ local function equippedInfo(slot)
 end
 X2Equipment.GetEquippedItemTooltipText = function(self, unit, slot)
   if not bagKnown() then return fakeEquipText(self, unit, slot) end
+  -- The character panel reads lookType/itemGrade of every worn slot, empty ones
+  -- included (equipped_item.alb [243]-[247]), so the text API keeps the itemType 0
+  -- placeholder table.
   return equippedInfo(slot)
 end
 X2Equipment.GetEquippedItemTooltipInfo = function(self, slot, flags)
   if not bagKnown() then return fakeEquipInfo(self, slot, flags) end
-  return equippedInfo(slot)
+  -- ShowEtcNeedCompareTooltip skips a nil result and must not compare an empty
+  -- worn slot (tooltip.alb [3422]-[3424]); repair.alb [185]-[187] likewise
+  -- returns without a tooltip when this getter is nil.
+  local s = HUD.equipment[slot]
+  if s == nil then return nil end
+  local info = realInfo(s)
+  info.equip = true
+  return info
 end
 X2Equipment.ItemIdentifier = function(self, slot)
   if not bagKnown() then return fakeEquipId(self, slot) end

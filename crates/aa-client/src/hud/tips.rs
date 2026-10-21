@@ -252,10 +252,16 @@ fn equipment_stats(lua: &Lua, game: &GameData, state: &TipState, t: &Table, id: 
             }
         }
     }
-    if s.armor != 0 {
+    // MakeItemDiffInfo (tooltip.alb [641]-[656]) compares armour with
+    // CalcDiffValue(source.armor, target.armor) and then multiplies the result by -1
+    // without a nil guard, so every armour/accessory item must carry `armor`, 0
+    // included (a costume's slot_type 31 coverage is 0). `magicResistance` is read
+    // for the same comparison at [678]-[682]. The armour line builders hide the
+    // zero values themselves ([1005]-[1011], [1032]-[1034]).
+    if s.armor != 0 || class != Class::Weapon {
         t.raw_set("armor", s.armor)?;
     }
-    if s.magic_resistance != 0 {
+    if s.magic_resistance != 0 || class != Class::Weapon {
         t.raw_set("magicResistance", s.magic_resistance)?;
     }
     if s.max_durability > 0 {
@@ -401,6 +407,70 @@ mod tests {
         assert_ne!(item_impl(11), item_impl(22));
         assert_eq!(item_impl(21), "socket");
         assert_eq!(item_impl(30), "invalid item_impl");
+        Ok(())
+    }
+
+    #[test]
+    fn costume_and_armour_keep_the_defence_keys_the_diff_reads() -> Result<(), Box<dyn std::error::Error>> {
+        let Ok(game) = GameData::load(aa_anim::db::DEFAULT_DB) else { return Ok(()) };
+        let lua = Lua::new();
+        let state = TipState::default();
+        let costume = item_tip(&lua, &game, &state, 28439, Some(1), Some(1), Instance::default())?.unwrap();
+        assert_eq!(costume.get::<i32>("armor")?, 0);
+        assert_eq!(costume.get::<i32>("magicResistance")?, 0);
+        let armour = item_tip(&lua, &game, &state, 23387, Some(1), Some(1), Instance::default())?.unwrap();
+        assert!(armour.get::<i32>("armor")? > 0);
+        assert!(armour.get::<i32>("magicResistance")? > 0);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "loads the original world-stage tooltip scripts and read-only game catalog"]
+    fn original_tooltips_diff_costumes_against_worn_slots() -> Result<(), Box<dyn std::error::Error>> {
+        let (rt, _bridge, path) = super::super::breath::fixture::runtime(1280.0, 720.0)?;
+        rt.lua
+            .load(
+                r#"
+        HUD.bag[1] = { id = 28439, grade = 1, count = 1 } -- sk_maid_butler001, slot_type 31
+        HUD.bag[2] = { id = 23387, grade = 1, count = 1 } -- chest armour
+        local costume = X2Bag:GetBagItemInfo(0, 1)
+        local armour = X2Bag:GetBagItemInfo(0, 2)
+        local failures = {}
+        local function show(label, info)
+          local ok, err = pcall(ShowTooltip, info)
+          if not ok then failures[#failures + 1] = label .. ': ' .. tostring(err) end
+        end
+        -- The second compare window anchors to the first (tooltip_view.alb [488] reads
+        -- its stickMeH); a window that has been shown before already carries those.
+        tooltip.tooltipWindows[1].stickMeV = 'TOP'
+        tooltip.tooltipWindows[1].stickMeH = 'LEFT'
+        -- ShowEtcNeedCompareTooltip calls GetEquippedItemTooltipInfo for the compatible
+        -- worn slots and skips nil (tooltip.alb [3422]-[3424]); an empty ES_COSPLAY is
+        -- therefore not compared and no second window opens.
+        HUD.equipment[ES_COSPLAY] = nil
+        show('costume, empty worn slot', costume)
+        -- Worn costume: MakeItemDiffInfo compares the two armour-item tables, whose
+        -- armour/magicResistance must both be present (tooltip.alb [641]-[656], [678]-[682]).
+        HUD.equipment[ES_COSPLAY] = { id = 28439, grade = 1, count = 1 }
+        show('costume, worn costume', costume)
+        -- Chest armour against a worn chest piece.
+        HUD.equipment[ES_CHEST] = { id = 23387, grade = 1, count = 1 }
+        show('chest armour, worn chest', armour)
+        assert(#failures == 0, table.concat(failures, '\n'))
+        assert(tooltip.tooltipWindows[1]:IsVisible())
+        assert(tooltip.tooltipWindows[2]:IsVisible())
+        assert(costume.armor == 0 and costume.magicResistance == 0)
+        assert(type(armour.armor) == 'number' and armour.armor > 0)
+        -- GetItemIconSet(0, 0) is read by SetInfo (tooltip.alb [1333]-[1334], [1372])
+        -- when an item table has itemType 0; it must return a table, not nil.
+        assert(type(X2Item:GetItemIconSet(0, 0)) == 'table')
+    "#,
+            )
+            .exec()?;
+        assert!(rt.errors.is_empty(), "{:?}", rt.errors);
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
         Ok(())
     }
 }
