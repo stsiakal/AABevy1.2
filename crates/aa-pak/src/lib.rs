@@ -101,16 +101,16 @@ impl Pak {
             let file = match File::open(overlay) {
                 Ok(file) => file,
                 Err(e) => {
-                    eprintln!("aa-pak: skipping overlay {}: {e}", overlay.display());
+                    tracing::warn!("aa-pak: skipping overlay {}: {e}", overlay.display());
                     continue;
                 }
             };
             match pak.add_file(file) {
                 Ok(count) => {
                     pak.overlays.push(overlay.to_path_buf());
-                    eprintln!("aa-pak: overlay {}: {count} files", overlay.display());
+                    tracing::info!("aa-pak: overlay {}: {count} files", overlay.display());
                 }
-                Err(e) => eprintln!("aa-pak: skipping overlay {}: {e}", overlay.display()),
+                Err(e) => tracing::warn!("aa-pak: skipping overlay {}: {e}", overlay.display()),
             }
         }
         Ok(pak)
@@ -215,7 +215,7 @@ fn overlays_for(base: &str, env: Option<&str>) -> Vec<PathBuf> {
                 overlays = found;
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => eprintln!("aa-pak: cannot read overlay directory {}: {e}", dir.display()),
+            Err(e) => tracing::warn!("aa-pak: cannot read overlay directory {}: {e}", dir.display()),
         }
     }
     if let Some(list) = env {
