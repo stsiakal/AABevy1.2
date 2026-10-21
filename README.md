@@ -121,6 +121,21 @@ The native cursors are read from the original `archeage.exe`. Set `AA_EXE` to it
 client uses `bin32\archeage.exe` next to the `game_pak` named by `AA_PAK` (the 1.2 layout). Without either,
 cursors fall back to `D:/aa-re/client12/bin/archeage.exe`; a missing file leaves the OS cursor in place.
 
+**Overlay paks** let later-version art (armor, weapons, costumes) ship beside the stock `game_pak`
+without merging a multi-gigabyte copy. An overlay is an ordinary `game_pak`-format file: it
+replaces files with the same name and adds new ones. Overlays load after the base pak and later
+ones win:
+
+1. every `*.pak` in an `overlays` folder next to `game_pak` (the base pak's directory), in file-name order;
+2. every path in `AA_PAK_OVERLAYS`, separated by `;`, in the order listed (highest priority).
+
+```
+set AA_PAK_OVERLAYS=D:\AA1.2\gear.pak;D:\AA1.2\costumes.pak
+```
+
+Paths may be absolute or relative to the working directory. Missing or corrupt overlays are
+reported and skipped; the client logs one line per loaded overlay with its file count.
+
 **Build and run**, from the repository root:
 ```
 cargo build -p aa-client
