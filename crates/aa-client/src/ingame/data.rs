@@ -492,8 +492,9 @@ fn prefab_effects_of(path: &str) -> Vec<aa_world::placement::PlacedEffect> {
     aa_world::placement::parse_effect_entities(export).into_iter().filter(|e| !e.effect.to_ascii_lowercase().starts_with("x2_sounds.")).collect()
 }
 
-/// The model file of a prefab element path (`prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02`): the first `object_Model`
-/// of that prefab in its xml file.
+/// The model file of a prefab element path (`prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02`): the
+/// prefab's first static `Brush` (`Prefab="...cgf"`, the houses / farms) or, for an effect-only prefab, its first
+/// `object_Model`.
 fn prefab_model_file(path: &str) -> Option<String> {
     let rest = path.strip_prefix("prefab://")?;
     let (file, name) = rest.rsplit_once('/')?;
@@ -501,9 +502,19 @@ fn prefab_model_file(path: &str) -> Option<String> {
     let from = xml.find(&format!("<Prefab Name=\"{name}\""))?;
     let tail = &xml[from..];
     let tail = &tail[..tail.find("</Prefab>").unwrap_or(tail.len())];
-    let start = tail.find("object_Model=\"")? + "object_Model=\"".len();
+    if let Some(start) = tail.find("object_Model=\"") {
+        let start = start + "object_Model=\"".len();
+        let model = norm(&tail[start..start + tail[start..].find('"')?]);
+        if !model.is_empty() {
+            return Some(model);
+        }
+    }
+    // static house/farm prefabs use a Brush instead of an object_Model entity
+    let start = tail.find("Type=\"Brush\"")?;
+    let start = start + tail[start..].find("Prefab=\"")? + "Prefab=\"".len();
     let model = &tail[start..start + tail[start..].find('"')?];
-    Some(norm(model)).filter(|m| !m.is_empty())
+    let model = norm(model);
+    model.ends_with(".cgf").then_some(model)
 }
 
 /// Lower case with `/` separators, as the pak wants paths.
@@ -514,6 +525,19 @@ pub fn norm(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A house prefab's static part is a `Brush` (`Prefab="...cgf"`), not an `object_Model` entity: the single
+    /// `object_Model` fallback would choose a sprinkler or nothing.
+    #[test]
+    fn a_house_prefab_uses_its_brush_model() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let model = prefab_model_file("prefab://Prefabs/housing_farm.xml/housing_farm.step1").expect("step1 model");
+        assert!(model.ends_with("nuia_housing_scarecrow_b.cgf"), "{model}");
+        let step0 = prefab_model_file("prefab://Prefabs/housing_farm.xml/housing_farm.step0").expect("step0 model");
+        assert!(step0.ends_with("nuia_housing_scarecrow_a.cgf"), "{step0}");
+    }
 
     /// The training dummies are prefab models: their model file is the `object_Model` of the prefab.
     #[test]

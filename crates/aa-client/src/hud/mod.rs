@@ -62,6 +62,7 @@ mod specialty;
 mod formula;
 mod family;
 pub(crate) mod farm;
+pub(crate) mod houses;
 mod expedition;
 mod friends;
 mod input;
@@ -483,6 +484,7 @@ impl Plugin for HudPlugin {
             .insert_resource(alerts::ScriptedFails::from_args())
             .add_message::<alerts::UseFailed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
             .add_message::<crate::ingame::combat::DamageLanded>()
             .insert_resource(session::ScriptedSession::from_args())
             .insert_resource(cameras::DevFov::from_args())
@@ -529,7 +531,7 @@ impl Plugin for HudPlugin {
                     build_hud.run_if(hud_wanted),
                     session::route_session,
                     session::scripted_session.run_if(hud_up),
-                    (sync_hud, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
+                    (sync_hud, houses::sync_window, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, houses::right_click_build, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
                     cameras::match_world_camera,
                     cameras::dev_fov,
                     addons::tick.after(sync_hud).before(aa_ui::UiFrame),

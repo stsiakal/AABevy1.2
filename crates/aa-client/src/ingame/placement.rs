@@ -1,5 +1,8 @@
-//! Planting: using a seed, sapling or livestock item starts a placement with a ghost of the doodad's start phase
-//! under the cursor; a left click sends `CSCreateDoodad`, Escape / right click cancels.
+//! Placement: using a seed, sapling or livestock item starts a placement with a ghost of the doodad's start phase
+//! under the cursor; a left click sends `CSCreateDoodad`, Escape / right click cancels. A house / farm design item
+//! (`item_housings`) uses the same session: its ghost is the housing model, the plot is an axis-aligned square of
+//! `garden_radius`, and a valid left click asks `CSConstructHouseTax` for the original "Start Construction" window
+//! (see `hud/houses.rs`) instead of creating anything itself.
 //!
 //! ## Which doodad an item plants
 //!
@@ -33,7 +36,8 @@ use std::collections::HashMap;
 
 use aa_cry::scene::{CryAssets, ModelOptions, spawn_loaded};
 use aa_net::farm::CreateDoodad;
-use aa_net::state::{Doodads, Inventory, Skills};
+use aa_net::housing::{ConstructHouseTax, HouseCommand};
+use aa_net::state::{Doodads, Houses, Inventory, Skills};
 use aa_net::{Command, NetCommand, Pos};
 use aa_world::coords::cry_rot_to_bevy;
 use aa_world::collide::SurfaceKind;
@@ -49,6 +53,7 @@ use rusqlite::{Connection, OpenFlags};
 use super::camera::OrbitCamera;
 use super::data::Db;
 use super::ground_target::spot_under;
+use super::houses::HousingAreas;
 use super::player::{LocalPlayer, Mover};
 use super::virtual_input::VirtualInput;
 use crate::Screen;
@@ -82,6 +87,19 @@ pub struct Plantable {
     /// The template's phases include a `DoodadFuncWaterVolume`: it must be placed on water.
     pub requires_water: bool,
     pub grounding: Grounding,
+    /// A design item (`item_housings`): the placement is a house plot, not a doodad.
+    pub house: Option<HouseDesign>,
+}
+
+/// A house / farm design (`item_housings.item_id` -> `housings.id`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HouseDesign {
+    /// `housings.id`, the design id the server calls `design_id`.
+    pub design: u32,
+    pub name: String,
+    /// `housings.garden_radius`: the half extent of the axis-aligned plot square (m).
+    pub garden_radius: f32,
+    pub heavy_tax: bool,
 }
 
 /// The offset fields a placement template may carry. The 1.2 server database has none on doodads (only `housings`),
@@ -100,6 +118,10 @@ pub struct Catalog {
     by_item: HashMap<u32, Plantable>,
     /// `doodad_almighties.id` -> `sim_radius` (metres).
     radius: HashMap<u32, f32>,
+    /// `housings.id` (design) -> plot radius and name.
+    houses: HashMap<u32, HouseDesign>,
+    /// `housing_areas.id` the server knows (the client's `housing_area.xml` tags).
+    area_ids: std::collections::HashSet<u32>,
 }
 
 impl Catalog {
@@ -161,7 +183,73 @@ impl Catalog {
                     footprint: radius,
                     requires_water: water,
                     grounding: Grounding::default(),
+                    house: None,
                 });
+            }
+        }
+        // Design items: `item_housings.item_id` -> `housings` (the server's design and plot radius).
+        {
+            let mut q = conn
+                .prepare(
+                    "SELECT ih.item_id, h.id, COALESCE(l.en_us, h.name), h.garden_radius, h.main_model_id, \
+                     i.use_skill_id, s.cooldown_time, s.cooldown_tag_id, \
+                     CASE WHEN h.auto_z IN ('t', 'T', 1) THEN 1 ELSE 0 END, \
+                     h.auto_z_offset_x, h.auto_z_offset_y, h.auto_z_offset_z, \
+                     CASE WHEN h.heavy_tax IN ('t', 'T', 1) THEN 1 ELSE 0 END \
+                     FROM item_housings ih JOIN housings h ON h.id = ih.design_id \
+                     LEFT JOIN items i ON i.id = ih.item_id \
+                     LEFT JOIN skills s ON s.id = i.use_skill_id \
+                     LEFT JOIN localized_texts l ON l.tbl_name = 'housings' AND l.tbl_column_name = 'name' AND l.idx = h.id",
+                )
+                .ok()?;
+            let mut rows = q.query([]).ok()?;
+            while let Ok(Some(r)) = rows.next() {
+                let item: u32 = r.get::<_, Option<i64>>(0).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let design: u32 = r.get::<_, Option<i64>>(1).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                if item == 0 || design == 0 {
+                    continue;
+                }
+                let name: String = r.get::<_, Option<String>>(2).unwrap_or_default().unwrap_or_default();
+                let garden: f32 = r.get::<_, Option<f64>>(3).unwrap_or_default().unwrap_or(0.0) as f32;
+                let model_id: u32 = r.get::<_, Option<i64>>(4).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let use_skill: u32 = r.get::<_, Option<i64>>(5).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let cooldown_ms: u32 = r.get::<_, Option<i64>>(6).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let cooldown_tag: u32 = r.get::<_, Option<i64>>(7).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let auto_z: bool = r.get::<_, Option<i64>>(8).unwrap_or_default().unwrap_or(0) != 0;
+                let (ox, oy, oz) = (
+                    r.get::<_, Option<f64>>(9).unwrap_or_default().unwrap_or(0.0) as f32,
+                    r.get::<_, Option<f64>>(10).unwrap_or_default().unwrap_or(0.0) as f32,
+                    r.get::<_, Option<f64>>(11).unwrap_or_default().unwrap_or(0.0) as f32,
+                );
+                let heavy_tax: bool = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0) != 0;
+                let house = HouseDesign { design, name: name.clone(), garden_radius: garden, heavy_tax };
+                catalog.houses.insert(design, house.clone());
+                catalog.by_item.entry(item).or_insert(Plantable {
+                    item,
+                    doodad: 0,
+                    use_skill,
+                    // the server does not range-check a house placement: the plot is valid anywhere in the
+                    // housing area
+                    use_range: 0.0,
+                    cooldown_ms,
+                    cooldown_tag,
+                    start_group: 0,
+                    model: db.and_then(|db| db.actor_model_file(model_id)),
+                    footprint: garden,
+                    requires_water: false,
+                    grounding: Grounding { auto_z, offset: Vec3::new(ox, oy, oz) },
+                    house: Some(house),
+                });
+            }
+        }
+        // The housing polygons' `value1` tags must be rows the server knows, or `validate_house` refuses them.
+        if let Ok(mut q) = conn.prepare("SELECT id FROM housing_areas")
+            && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                if let Ok(id) = r.get::<_, i64>(0) {
+                    catalog.area_ids.insert(id.max(0) as u32);
+                }
             }
         }
         Some(catalog)
@@ -176,9 +264,22 @@ impl Catalog {
         self.radius.get(&doodad).copied().unwrap_or(0.0)
     }
 
+    /// The plot half extent of a housing design (m).
+    pub fn house_radius(&self, design: u32) -> f32 {
+        self.houses.get(&design).map_or(0.0, |h| h.garden_radius)
+    }
+
+    /// The housing area tags the server's `housing_areas` table knows.
+    pub fn area_known(&self, id: u32) -> bool {
+        self.area_ids.contains(&id)
+    }
+
     #[cfg(test)]
     fn insert(&mut self, plant: Plantable) {
         self.radius.insert(plant.doodad, plant.footprint);
+        if let Some(house) = &plant.house {
+            self.houses.insert(house.design, house.clone());
+        }
         self.by_item.insert(plant.item, plant);
     }
 }
@@ -190,7 +291,14 @@ pub struct PlantPressed {
     pub item_template: u32,
 }
 
-/// Why a spot cannot take a plant.
+/// A house / farm design item was used (`item_housings`): the HUD sends this instead of its use skill.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HousePressed {
+    pub item_id: u64,
+    pub item_template: u32,
+}
+
+/// Why a spot cannot take a plant or a house.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Invalid {
     NoGround,
@@ -199,6 +307,9 @@ pub enum Invalid {
     Underwater,
     Footprint,
     BadSurface,
+    OutsideHousingArea,
+    Overlap,
+    Player,
 }
 
 impl Invalid {
@@ -210,6 +321,9 @@ impl Invalid {
             Self::Underwater => "this plant cannot stand in water",
             Self::Footprint => "another doodad is in the way",
             Self::BadSurface => "the surface cannot be planted on",
+            Self::OutsideHousingArea => "outside a housing area",
+            Self::Overlap => "another house is in the way",
+            Self::Player => "the player is in the way",
         }
     }
 }
@@ -231,6 +345,14 @@ pub struct Session {
     /// The left button was released after the session started: only then may a click confirm (the bag click that
     /// used the seed must not carry into the placement).
     left_armed: bool,
+    /// House only: the tax quote asked from the server, its answer, and the original build window.
+    pub quote_requested: bool,
+    pub quote: Option<ConstructHouseTax>,
+    pub window_open: bool,
+    /// House only: the create was sent (the ghost goes when the frame is done).
+    pub done: bool,
+    /// A spot set by a script (`house_place`): the cursor may not move it off-screen in a headless run.
+    pub scripted: bool,
 }
 
 impl Session {
@@ -246,6 +368,11 @@ impl Session {
             model_failed: false,
             changed: true,
             left_armed: false,
+            quote_requested: false,
+            quote: None,
+            window_open: false,
+            done: false,
+            scripted: false,
         }
     }
 
@@ -253,9 +380,17 @@ impl Session {
         self.invalid.is_none() && self.spot.is_some()
     }
 
-    /// The request a confirmation sends; `None` while the spot is not valid.
+    pub fn is_house(&self) -> bool {
+        self.plant.house.is_some()
+    }
+
+    pub fn house_design(&self) -> Option<u32> {
+        self.plant.house.as_ref().map(|h| h.design)
+    }
+
+    /// The request a doodad confirmation sends; `None` for a house or while the spot is not valid.
     pub fn request(&self) -> Option<CreateDoodad> {
-        if !self.valid() {
+        if self.is_house() || !self.valid() {
             return None;
         }
         let spot = self.spot?;
@@ -265,6 +400,37 @@ impl Session {
             z_rot: self.yaw,
             scale: self.scale,
             item_id: self.item_id,
+        })
+    }
+
+    /// `CSConstructHouseTax`: ask the server for the retail build window's numbers.
+    pub fn tax_request(&self) -> Option<HouseCommand> {
+        if !self.valid() {
+            return None;
+        }
+        let design = self.house_design()?;
+        let spot = self.spot?;
+        Some(HouseCommand::ConstructHouseTax { design_id: design, x: spot.x, y: spot.y, z: spot.z })
+    }
+
+    /// `CSCreateHouse`: the build window's Build button.
+    pub fn create_house(&self) -> Option<HouseCommand> {
+        if !self.valid() {
+            return None;
+        }
+        let design = self.house_design()?;
+        let spot = self.spot?;
+        let quote = self.quote.as_ref()?;
+        Some(HouseCommand::CreateHouse {
+            design_id: design,
+            x: spot.x,
+            y: spot.y,
+            z: spot.z,
+            z_rot: self.yaw,
+            item_id: self.item_id,
+            money_amount: quote.total_tax_money_amount,
+            ht: 0,
+            auto_use_aa_point: false,
         })
     }
 }
@@ -291,6 +457,8 @@ struct Visuals {
     failed: bool,
     yellow: Option<Handle<StandardMaterial>>,
     red: Option<Handle<StandardMaterial>>,
+    stone: Option<Handle<StandardMaterial>>,
+    post: Option<Handle<StandardMaterial>>,
     arrow_image: Option<Handle<Image>>,
     cursor_mesh: Option<Handle<Mesh>>,
     cursor_good: Option<Handle<StandardMaterial>>,
@@ -310,17 +478,29 @@ struct RingPart {
 struct RingParts {
     yellow: Option<RingPart>,
     red: Option<RingPart>,
+    /// The house plot's flat grey stones.
+    stones: Option<RingPart>,
+    /// The housing area's small yellow posts.
+    posts: Option<RingPart>,
 }
 
 pub fn plugin(app: &mut App) {
     app.add_message::<PlantPressed>()
+        .add_message::<HousePressed>()
         .init_resource::<Placement>()
         .init_resource::<Visuals>()
         .insert_resource(Catalog::default())
         .add_systems(Startup, load_catalog)
         .add_systems(PreUpdate, input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
-        .add_systems(Update, (start, track, cursor_icon, log_server).chain().run_if(in_state(Screen::InGame)))
+        .add_systems(Update, (start, finish, track, cursor_icon, log_server).chain().run_if(in_state(Screen::InGame)))
         .add_systems(OnExit(Screen::InGame), leave);
+}
+
+/// A house create was sent: put the ghost, ring, stones and arrow away in this frame.
+fn finish(mut commands: Commands, mut placement: ResMut<Placement>, visuals: Res<Visuals>) {
+    if placement.session.as_ref().is_some_and(|s| s.done) {
+        end_session(&mut commands, &mut placement, &visuals);
+    }
 }
 
 fn load_catalog(mut catalog: ResMut<Catalog>, db: Option<Res<Db>>) {
@@ -369,7 +549,7 @@ pub fn check(
     water: Option<f32>,
     surface: Option<SurfaceKind>,
 ) -> Result<(), Invalid> {
-    if spot.distance(player) > plant.use_range {
+    if plant.use_range > 0.0 && spot.distance(player) > plant.use_range {
         return Err(Invalid::OutOfRange);
     }
     if matches!(surface, Some(SurfaceKind::Stone | SurfaceKind::Metal)) {
@@ -398,6 +578,44 @@ pub fn check(
     Ok(())
 }
 
+/// Validity of a house plot, mirroring `systems/housing/placement.rs`: inside a housing area the server knows,
+/// clear of other houses as an axis-aligned square (half extent = each template's `garden_radius`), on land, and
+/// not on the player.
+pub fn check_house(
+    design: &HouseDesign,
+    spot: Vec3,
+    player: Vec3,
+    houses: &Houses,
+    catalog: &Catalog,
+    areas: Option<&HousingAreas>,
+    water: Option<f32>,
+) -> Result<(), Invalid> {
+    if Vec2::new(spot.x - player.x, spot.y - player.y).length() < 0.6 {
+        return Err(Invalid::Player);
+    }
+    if water.is_some_and(|h| h > spot.z + 0.05) {
+        return Err(Invalid::NoGround);
+    }
+    let Some(areas) = areas else { return Err(Invalid::OutsideHousingArea) };
+    let tags = areas.area_at(spot.x, spot.y);
+    if tags.is_empty() || !tags.iter().any(|id| catalog.area_known(*id)) {
+        return Err(Invalid::OutsideHousingArea);
+    }
+    let extent = design.garden_radius.max(0.0);
+    for house in houses.by_tl_id.values() {
+        if house.demolished {
+            continue;
+        }
+        let p = house.snapshot.position();
+        let other = catalog.house_radius(house.snapshot.template_id);
+        let reach = extent + other;
+        if (spot.x - p.x).abs() < reach && (spot.y - p.y).abs() < reach {
+            return Err(Invalid::Overlap);
+        }
+    }
+    Ok(())
+}
+
 /// Ends the placement: the ghost goes with it.
 fn end_session(commands: &mut Commands, placement: &mut Placement, visuals: &Visuals) {
     if let Some(session) = placement.session.take()
@@ -416,6 +634,7 @@ fn end_session(commands: &mut Commands, placement: &mut Placement, visuals: &Vis
 fn start(
     mut commands: Commands,
     mut pressed: MessageReader<PlantPressed>,
+    mut houses: MessageReader<HousePressed>,
     catalog: Res<Catalog>,
     mut placement: ResMut<Placement>,
     player: Query<&Mover, With<LocalPlayer>>,
@@ -423,20 +642,38 @@ fn start(
     visuals: Res<Visuals>,
     mut virtual_input: ResMut<VirtualInput>,
 ) {
-    for press in pressed.read() {
-        let Some(plant) = catalog.plantable(press.item_template).cloned() else {
-            warn!("planting: item {} (template {}) is not in item_spawn_doodads", press.item_id, press.item_template);
-            continue;
+    let session_for = |item_id: u64, template: u32, kind: &str| -> Option<Session> {
+        let Some(plant) = catalog.plantable(template).cloned() else {
+            warn!("{kind}: item {item_id} (template {template}) has no placement data");
+            return None;
         };
-        end_session(&mut commands, &mut placement, &visuals);
-        virtual_input.clear_edges();
         // the retail client's first yaw is the camera heading (two captures: 4.2020082 and 3.166932 rad)
         let yaw = camera.single().map(|c| c.yaw).or_else(|_| player.single().map(|m| m.facing)).unwrap_or(0.0);
-        info!(
-            "planting: {} (item {}) places doodad {} (phase {}, model {:?}, range {:.1} m, footprint {:.2} m)",
-            press.item_template, press.item_id, plant.doodad, plant.start_group, plant.model, plant.use_range, plant.footprint
-        );
-        placement.session = Some(Session::new(press.item_id, plant, yaw));
+        match &plant.house {
+            Some(house) => info!(
+                "{kind}: {} (item {}) places house {} \"{}\" (plot {:.1} m, model {:?})",
+                template, item_id, house.design, house.name, house.garden_radius, plant.model
+            ),
+            None => info!(
+                "{kind}: {} (item {}) places doodad {} (phase {}, model {:?}, range {:.1} m, footprint {:.2} m)",
+                template, item_id, plant.doodad, plant.start_group, plant.model, plant.use_range, plant.footprint
+            ),
+        }
+        Some(Session::new(item_id, plant, yaw))
+    };
+    for press in pressed.read() {
+        if let Some(session) = session_for(press.item_id, press.item_template, "planting") {
+            end_session(&mut commands, &mut placement, &visuals);
+            virtual_input.clear_edges();
+            placement.session = Some(session);
+        }
+    }
+    for press in houses.read() {
+        if let Some(session) = session_for(press.item_id, press.item_template, "housing") {
+            end_session(&mut commands, &mut placement, &visuals);
+            virtual_input.clear_edges();
+            placement.session = Some(session);
+        }
     }
 }
 
@@ -449,6 +686,8 @@ fn track(
     catalog: Res<Catalog>,
     player: Query<&Mover, With<LocalPlayer>>,
     doodads: Res<Doodads>,
+    houses: Res<Houses>,
+    areas: Option<Res<HousingAreas>>,
     over_ui: Option<Res<HudPointerOverUi>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -462,12 +701,32 @@ fn track(
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
     let Some(mover) = player.single().ok() else { return };
-    let cursor = if over_ui.is_some_and(|o| o.0) { None } else { virtual_input.cursor_position(windows.single().ok()) };
+    let raw_cursor = virtual_input.cursor_position(windows.single().ok());
+    let over_ui = over_ui.is_some_and(|o| o.0);
+    let cursor = if over_ui { None } else { raw_cursor };
+    let house = session.is_house();
+    // a scripted house placement keeps its spot without a pointer (`--offscreen-shot`, headless runs)
+    if house && session.scripted && raw_cursor.is_none() {
+        show_ghost(&mut commands, root, session);
+        update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
+        return;
+    }
     let hit = cursor.and_then(|c| {
         let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
         spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref())
     });
     let Some(hit) = hit else {
+        // the retail house ghost stays at its last valid spot when the cursor leaves the ground or points at
+        // the UI; plants hide instead (their capture shows no ghost over the sky)
+        if house && session.spot.is_some() {
+            if raw_cursor.is_some() || over_ui {
+                session.invalid = Some(Invalid::NoGround);
+                session.changed = true;
+            }
+            show_ghost(&mut commands, root, session);
+            update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
+            return;
+        }
         session.spot = None;
         session.invalid = Some(Invalid::NoGround);
         if let Some(root) = root {
@@ -482,36 +741,46 @@ fn track(
     let spot = grounded(hit, ground, wet, &session.plant);
     let before = (session.spot, session.invalid);
     session.spot = Some(spot);
-    session.invalid = check(&session.plant, spot, mover.pos, &doodads, &catalog, wet, surface).err();
-    let mixed = ring_blocked(&session.plant, spot, &doodads, &catalog).is_some();
-    if mixed && session.invalid.is_none() {
-        session.invalid = Some(Invalid::Footprint);
-    }
+    session.invalid = match &session.plant.house {
+        Some(design) => check_house(design, spot, mover.pos, &houses, &catalog, areas.as_deref(), wet).err(),
+        None => {
+            let mut invalid = check(&session.plant, spot, mover.pos, &doodads, &catalog, wet, surface).err();
+            if invalid.is_none() && ring_blocked(&session.plant, spot, &doodads, &catalog).is_some() {
+                invalid = Some(Invalid::Footprint);
+            }
+            invalid
+        }
+    };
     if (session.spot, session.invalid) != before {
         session.changed = true;
     }
-    if let Some(root) = root {
-        let cry_q = cry_rot_to_bevy(Quat::from_xyzw(0.0, 0.0, (session.yaw * 0.5).sin(), (session.yaw * 0.5).cos()));
-        commands.entity(root).insert((
-            Transform {
-                translation: cry_to_bevy(spot),
-                rotation: cry_q,
-                scale: Vec3::splat(session.scale),
-            },
-            Visibility::Visible,
-        ));
-    }
+    show_ghost(&mut commands, root, session);
     if session.changed {
         session.changed = false;
         info!(
-            "planting: spot ({:.1}, {:.1}, {:.1}) {}",
+            "{}: spot ({:.1}, {:.1}, {:.1}) {}",
+            if house { "housing" } else { "planting" },
             spot.x,
             spot.y,
             spot.z,
             session.invalid.map_or("is valid", Invalid::text)
         );
     }
-    update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &catalog, collision.as_deref(), terrain.as_deref());
+    update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
+}
+
+/// Puts the ghost root at the session's spot (the last valid one for a house over the UI).
+fn show_ghost(commands: &mut Commands, root: Option<Entity>, session: &Session) {
+    let (Some(root), Some(spot)) = (root, session.spot) else { return };
+    let cry_q = cry_rot_to_bevy(Quat::from_xyzw(0.0, 0.0, (session.yaw * 0.5).sin(), (session.yaw * 0.5).cos()));
+    commands.entity(root).insert((
+        Transform {
+            translation: cry_to_bevy(spot),
+            rotation: cry_q,
+            scale: Vec3::splat(session.scale),
+        },
+        Visibility::Visible,
+    ));
 }
 
 /// The ghost entity of the session, loaded once; `None` when the doodad has no model.
@@ -720,10 +989,13 @@ fn update_ring(
     visuals: &mut Visuals,
     session: &Session,
     doodads: &Doodads,
+    houses: &Houses,
     catalog: &Catalog,
+    areas: Option<&HousingAreas>,
     collision: Option<&WorldCollision>,
     terrain: Option<&TerrainQuery>,
 ) {
+    let _ = houses;
     if !visuals.ready {
         return;
     }
@@ -732,15 +1004,119 @@ fn update_ring(
         return;
     };
     let floor = |p: Vec2| ground_at(collision, terrain, p.x, p.y, spot.z, spot.z);
+    if session.is_house() {
+        let stones = stone_quads(&session.plant, spot, session.yaw, floor);
+        let posts = areas.map_or_else(Vec::new, |areas| post_quads(areas, spot, floor));
+        let (Some(stone_mat), Some(post_mat)) = (visuals.stone.clone(), visuals.post.clone()) else { return };
+        let empty: [Quad; 0] = [];
+        if let Some(mat) = visuals.yellow.clone() {
+            show_ring_part(commands, meshes, &mut visuals.ring.yellow, &mat, "planting ring (valid)", &empty);
+        }
+        if let Some(mat) = visuals.red.clone() {
+            show_ring_part(commands, meshes, &mut visuals.ring.red, &mat, "planting ring (blocked)", &empty);
+        }
+        show_ring_part(commands, meshes, &mut visuals.ring.stones, &stone_mat, "housing plot stones", &stones);
+        show_ring_part(commands, meshes, &mut visuals.ring.posts, &post_mat, "housing area posts", &posts);
+        return;
+    }
     let all_red = matches!(session.invalid, Some(i) if i != Invalid::Footprint);
     let (yellow, red) = ring_quads(&session.plant, spot, doodads, catalog, floor, all_red);
     let (Some(yellow_mat), Some(red_mat)) = (visuals.yellow.clone(), visuals.red.clone()) else { return };
     show_ring_part(commands, meshes, &mut visuals.ring.yellow, &yellow_mat, "planting ring (valid)", &yellow);
     show_ring_part(commands, meshes, &mut visuals.ring.red, &red_mat, "planting ring (blocked)", &red);
+    if let Some(mat) = visuals.stone.clone() {
+        show_ring_part(commands, meshes, &mut visuals.ring.stones, &mat, "housing plot stones", &[]);
+    }
+    if let Some(mat) = visuals.post.clone() {
+        show_ring_part(commands, meshes, &mut visuals.ring.posts, &mat, "housing area posts", &[]);
+    }
+}
+
+/// The flat grey stones along the plot square (half extent = the housing's `garden_radius`), turned with the
+/// ghost: the retail capture's boundary.
+fn stone_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
+    let half = plant.footprint.max(0.5);
+    let (sin, cos) = yaw.sin_cos();
+    let to_world = |u: f32, v: f32| Vec2::new(spot.x + u * cos - v * sin, spot.y + u * sin + v * cos);
+    let corners = [(-half, -half), (half, -half), (half, half), (-half, half)];
+    let spacing = 0.78;
+    let mut out = Vec::new();
+    for i in 0..4 {
+        let (a, b) = (corners[i], corners[(i + 1) % 4]);
+        let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        let n = (len / spacing).ceil().max(1.0) as usize;
+        let dir = ((b.0 - a.0) / len, (b.1 - a.1) / len);
+        let side = (-dir.1, dir.0);
+        for k in 0..n {
+            let t = (k as f32 + 0.5) / n as f32;
+            let (u, v) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+            let jitter = ((k * 37 + i * 11) % 13) as f32 / 13.0 - 0.5;
+            let (wu, wv) = (u + side.0 * jitter * 0.06, v + side.1 * jitter * 0.06);
+            let (hw, hd) = (0.30f32, 0.20f32);
+            let local = [
+                (wu - dir.0 * hw - side.0 * hd, wv - dir.1 * hw - side.1 * hd),
+                (wu + dir.0 * hw - side.0 * hd, wv + dir.1 * hw - side.1 * hd),
+                (wu + dir.0 * hw + side.0 * hd, wv + dir.1 * hw + side.1 * hd),
+                (wu - dir.0 * hw + side.0 * hd, wv - dir.1 * hw + side.1 * hd),
+            ];
+            let p = local.map(|(u, v)| {
+                let g = to_world(u, v);
+                cry_to_bevy(Vec3::new(g.x, g.y, floor(g) + 0.025))
+            });
+            out.push(Quad { p, uv: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]] });
+        }
+    }
+    out
+}
+
+/// The small yellow posts along the housing area polygon that contains the spot (the retail boundary markers).
+fn post_quads(areas: &HousingAreas, spot: Vec3, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
+    let Some(shape) = areas.shape_at(spot.x, spot.y) else { return Vec::new() };
+    let mut out = Vec::new();
+    let spacing = 5.5;
+    for i in 0..shape.points.len() {
+        let (a, b) = (shape.points[i], shape.points[(i + 1) % shape.points.len()]);
+        let len = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+        if len < 0.5 {
+            continue;
+        }
+        let dir = ((b[0] - a[0]) / len, (b[1] - a[1]) / len);
+        let n = (len / spacing).ceil().max(1.0) as usize;
+        for k in 0..n {
+            let t = (k as f32 + 0.5) / n as f32;
+            let g = Vec2::new(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+            if g.distance(Vec2::new(spot.x, spot.y)) > 80.0 {
+                continue;
+            }
+            let z = floor(g) + 0.02;
+            let base = cry_to_bevy(Vec3::new(g.x, g.y, z));
+            let along = Vec3::new(dir.0, 0.0, -dir.1).normalize_or_zero();
+            let across = Vec3::new(-dir.1, 0.0, -dir.0).normalize_or_zero();
+            let (half_w, height) = (0.045f32, 0.55);
+            for side in [along, across] {
+                let p = [
+                    base - side * half_w,
+                    base + side * half_w,
+                    base + side * half_w + Vec3::Y * height,
+                    base - side * half_w + Vec3::Y * height,
+                ];
+                out.push(Quad { p, uv: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]] });
+            }
+        }
+    }
+    out
 }
 
 fn hide_ring(commands: &mut Commands, visuals: &Visuals) {
-    for part in [visuals.ring.yellow.as_ref(), visuals.ring.red.as_ref()].into_iter().flatten() {
+    for part in [
+        visuals.ring.yellow.as_ref(),
+        visuals.ring.red.as_ref(),
+        visuals.ring.stones.as_ref(),
+        visuals.ring.posts.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
         commands.entity(part.entity).insert(Visibility::Hidden);
     }
     if let Some(arrow) = visuals.arrow {
@@ -774,6 +1150,21 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         };
         visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.72, 0.12, 1.0))));
         visuals.red = Some(materials.add(leaf_material(Color::srgba(0.95, 0.10, 0.06, 1.0))));
+        // the house plot boundary: the 1.2 capture's flat grey stones and yellow posts
+        visuals.stone = Some(materials.add(StandardMaterial {
+            base_color: Color::srgba(0.62, 0.61, 0.57, 1.0),
+            unlit: true,
+            cull_mode: None,
+            ..default()
+        }));
+        visuals.post = Some(materials.add(StandardMaterial {
+            base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
+            unlit: true,
+            cull_mode: None,
+            alpha_mode: AlphaMode::Blend,
+            depth_bias: 20.0,
+            ..default()
+        }));
 
         let arrow = dds_image("textures/decal/roadsign/arrow.dds")?;
         visuals.arrow_image = Some(images.add(arrow));
@@ -982,7 +1373,8 @@ fn input(
 ) {
     let Some(session) = placement.session.as_mut() else { return };
     let over_ui = over_ui.is_some_and(|o| o.0);
-    if focus.is_some_and(|f| f.0) {
+    // the tax window owns the pointer and Escape; Cancel closes it and keeps the placement (retail)
+    if session.window_open || focus.is_some_and(|f| f.0) {
         return;
     }
     // picking an item up onto the cursor ends the placement mode (the retail client does the same)
@@ -1027,7 +1419,7 @@ fn input(
     if left_just && !over_ui {
         mouse.clear_just_pressed(MouseButton::Left);
     }
-    if left_confirm(&mut session.left_armed, left_down, left_just, over_ui) {
+    if !session.quote_requested && left_confirm(&mut session.left_armed, left_down, left_just, over_ui) {
         let cooldown = skills
             .cooldown_left(session.plant.use_skill, session.plant.cooldown_tag, session.plant.cooldown_ms)
             .filter(|left| !left.is_zero())
@@ -1037,7 +1429,15 @@ fn input(
         } else if let Some(reason) = session.invalid {
             match error_message(reason) {
                 Some(text) => notify(rt.as_deref(), text.into()),
-                None => info!("planting: not confirmed: {}", reason.text()),
+                None => info!("placement: not confirmed: {}", reason.text()),
+            }
+        } else if session.is_house() {
+            if let Some(request) = session.tax_request() {
+                if let HouseCommand::ConstructHouseTax { design_id, x, y, z } = &request {
+                    info!("housing: tax quote for design {design_id} at ({x:.2}, {y:.2}, {z:.2})");
+                }
+                net.write(NetCommand(Command::House(request)));
+                session.quote_requested = true;
             }
         } else if let Some(request) = session.request() {
             let spot = request.pos;
@@ -1050,7 +1450,7 @@ fn input(
         }
     }
     if cancel {
-        info!("planting: cancelled");
+        info!("{}: cancelled", if session.is_house() { "housing" } else { "planting" });
         end_session(&mut commands, &mut placement, &visuals);
     }
 }
@@ -1099,7 +1499,7 @@ fn notify(rt: Option<&aa_ui::UiRuntime>, text: String) {
 /// an out-of-range click stays silent, as in the retail capture.
 fn error_message(reason: Invalid) -> Option<&'static str> {
     match reason {
-        Invalid::Footprint => Some("Too close to other objects."),
+        Invalid::Footprint | Invalid::Overlap => Some("Too close to other objects."),
         Invalid::OutOfRange => None,
         _ => Some("Can't be installed here."),
     }
@@ -1138,6 +1538,42 @@ fn leave(mut placement: ResMut<Placement>, ghosts: Query<Entity, With<Ghost>>, m
     for mut cursor in &mut windows {
         cursor.visible = true;
     }
+}
+
+/// The scripted `house_place <design item> <dx> <dy> [yaw]`: aim the real PlacementSession at a spot without a
+/// cursor (the ghost and boundary stay for a screenshot; the virtual `click left` then asks for the tax quote).
+#[allow(clippy::too_many_arguments)]
+pub fn house_place_now(
+    catalog: &Catalog,
+    houses: &Houses,
+    areas: Option<&HousingAreas>,
+    inventory: &Inventory,
+    collision: Option<&WorldCollision>,
+    terrain: Option<&TerrainQuery>,
+    water: Option<&WaterQuery>,
+    player: Vec3,
+    facing: f32,
+    item: u32,
+    dx: f32,
+    dy: f32,
+    yaw: Option<f32>,
+) -> Result<Session, String> {
+    let plant = catalog.plantable(item).ok_or_else(|| format!("item {item} is not in item_housings"))?;
+    let Some(design) = plant.house.as_ref() else {
+        return Err(format!("item {item} is not a house design"));
+    };
+    let (_, item_instance) = inventory.find_template(item).ok_or_else(|| format!("no item {item} in the bag"))?;
+    let x = player.x + dx;
+    let y = player.y + dy;
+    let ground = ground_at(collision, terrain, x, y, player.z, player.z);
+    let wet = water_surface(water, x, y, ground);
+    let spot = grounded(Vec3::new(x, y, ground), ground, wet, plant);
+    let invalid = check_house(design, spot, player, houses, catalog, areas, wet).err();
+    let mut session = Session::new(item_instance.id, plant.clone(), yaw.unwrap_or(facing));
+    session.scripted = true;
+    session.spot = Some(spot);
+    session.invalid = invalid;
+    Ok(session)
 }
 
 /// The scripted `plant <item template> <dx> <dy> [yaw]`: the same spot maths and validity as the ghost, without a
@@ -1192,6 +1628,7 @@ mod tests {
             footprint: 0.5,
             requires_water: false,
             grounding: Grounding::default(),
+            house: None,
         }
     }
 
@@ -1421,9 +1858,218 @@ mod tests {
         assert_eq!(quads_signature(&yellow), quads_signature(&yellow.clone()));
     }
 
+    fn house_plantable(design: u32, radius: f32) -> Plantable {
+        Plantable {
+            item: 15596,
+            doodad: 0,
+            use_skill: 17496,
+            use_range: 0.0,
+            cooldown_ms: 0,
+            cooldown_tag: 0,
+            start_group: 0,
+            model: Some("objects/housing/hs_common_farm_b/hs_common_farm_b.cgf".into()),
+            footprint: radius,
+            requires_water: false,
+            grounding: Grounding::default(),
+            house: Some(HouseDesign {
+                design,
+                name: "Scarecrow Garden".into(),
+                garden_radius: radius,
+                heavy_tax: true,
+            }),
+        }
+    }
+
+    fn house_catalog() -> Catalog {
+        let mut c = Catalog::default();
+        c.insert(house_plantable(267, 4.0));
+        c
+    }
+
+    #[test]
+    fn the_catalog_maps_a_design_item_to_its_housing_and_plot_radius() {
+        let path = std::env::temp_dir().join(format!("aa_house_catalog_{}.sqlite3", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE item_spawn_doodads (id INT, item_id INT, doodad_id INT);
+                 CREATE TABLE doodad_almighties (id INT, sim_radius INT);
+                 CREATE TABLE doodad_func_groups (id INT, doodad_almighty_id INT, doodad_func_group_kind_id INT);
+                 CREATE TABLE doodad_phase_funcs (doodad_func_group_id INT, actual_func_type TEXT);
+                 CREATE TABLE items (id INT, use_skill_id INT);
+                 CREATE TABLE skills (id INT, max_range REAL, cooldown_time INT, cooldown_tag_id INT);
+                 CREATE TABLE localized_texts (tbl_name TEXT, idx INT, tbl_column_name TEXT, en_us TEXT);
+                 CREATE TABLE item_housings (id INT, item_id INT, design_id INT);
+                 CREATE TABLE housings (id INT, name TEXT, main_model_id INT, garden_radius REAL, heavy_tax NUM,
+                     auto_z NUM, auto_z_offset_x REAL, auto_z_offset_y REAL, auto_z_offset_z REAL);
+                 CREATE TABLE housing_areas (id INT, name TEXT, housing_group_id INT, comments TEXT);
+                 INSERT INTO items VALUES (15596, 17496);
+                 INSERT INTO skills VALUES (17496, 0.0, 0, 0);
+                 INSERT INTO localized_texts VALUES ('housings', 267, 'name', 'Scarecrow Garden');
+                 INSERT INTO item_housings VALUES (58, 15596, 267);
+                 INSERT INTO housings VALUES (267, 'Korean', 987, 4.0, 't', 't', 0.0, 0.0, 0.0);
+                 INSERT INTO housing_areas VALUES (128, 'gwe_housing', 1, '');",
+            )
+            .unwrap();
+        }
+        let catalog = Catalog::load_path(path.to_string_lossy().as_ref(), None).expect("catalog");
+        let plant = catalog.plantable(15596).expect("design item");
+        let house = plant.house.as_ref().expect("house design");
+        assert_eq!((house.design, house.garden_radius), (267, 4.0));
+        assert_eq!(house.name, "Scarecrow Garden");
+        assert!(house.heavy_tax);
+        assert_eq!(catalog.house_radius(267), 4.0);
+        assert!(catalog.area_known(128) && !catalog.area_known(129));
+        assert_eq!(plant.doodad, 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_plot_stones_follow_the_garden_radius_and_the_yaw() {
+        let p = house_plantable(267, 4.0);
+        let spot = Vec3::new(100.0, 200.0, 10.0);
+        let stones = stone_quads(&p, spot, 0.0, |_| 10.0);
+        assert!(!stones.is_empty());
+        for q in &stones {
+            for v in q.p {
+                assert!((v.y - 10.025).abs() < 1e-3, "the stones lie on the ground: {v:?}");
+                assert!(v.x >= 100.0 - 4.4 && v.x <= 100.0 + 4.4, "inside the plot: {v:?}");
+                assert!(v.z >= -200.0 - 4.4 && v.z <= -200.0 + 4.4, "inside the plot: {v:?}");
+            }
+        }
+        let turned = stone_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
+        assert_ne!(quads_signature(&stones), quads_signature(&turned), "rotating the ghost rotates the square");
+    }
+
+    #[test]
+    fn the_yellow_posts_follow_the_housing_area_polygon() {
+        let area = HousingAreas {
+            shapes: vec![crate::ingame::houses::HousingShape {
+                id: 128,
+                bounds: [90.0, 190.0, 110.0, 210.0],
+                points: vec![[90.0, 190.0], [110.0, 190.0], [110.0, 210.0], [90.0, 210.0]],
+            }],
+        };
+        let posts = post_quads(&area, Vec3::new(100.0, 200.0, 10.0), |_| 10.0);
+        assert!(!posts.is_empty());
+        for q in &posts {
+            for v in q.p {
+                assert!((v.y - 10.02).abs() < 1e-3 || (v.y - 10.57).abs() < 1e-3, "posts stand on the ground: {v:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_house_plot_needs_a_known_area_and_no_other_house() {
+        let cat = {
+            let mut c = house_catalog();
+            c.area_ids.insert(128);
+            c
+        };
+        let design = cat.plantable(15596).unwrap().house.clone().unwrap();
+        let area = HousingAreas {
+            shapes: vec![crate::ingame::houses::HousingShape {
+                id: 128,
+                bounds: [0.0, 0.0, 20.0, 20.0],
+                points: vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]],
+            }],
+        };
+        let houses = Houses::default();
+        let me = Vec3::new(100.0, 100.0, 10.0);
+        assert_eq!(check_house(&design, Vec3::new(10.0, 10.0, 10.0), me, &houses, &cat, Some(&area), None), Ok(()));
+        assert_eq!(
+            check_house(&design, Vec3::new(40.0, 10.0, 10.0), me, &houses, &cat, Some(&area), None),
+            Err(Invalid::OutsideHousingArea)
+        );
+        assert_eq!(
+            check_house(&design, Vec3::new(10.0, 10.0, 10.0), me, &houses, &cat, None, None),
+            Err(Invalid::OutsideHousingArea)
+        );
+        let mut occupied = Houses::default();
+        occupied.by_tl_id.insert(
+            7,
+            aa_net::housing::House {
+                snapshot: aa_net::housing::HouseSnapshot {
+                    tl_id: 7,
+                    db_id: 1,
+                    obj_id: 50,
+                    template_id: 267,
+                    model_id: 989,
+                    co_owner_id: 0,
+                    owner_id: 1,
+                    owner_name: "Owner".into(),
+                    account_id: 1,
+                    permission: 0,
+                    all_actions: 1,
+                    current_actions: 0,
+                    tax: 0,
+                    x: aa_net::wire::coord_to_long(13.0),
+                    y: aa_net::wire::coord_to_long(10.0),
+                    z: 10.0,
+                    name: "Other".into(),
+                    allow_recover: true,
+                    sell_price: 0,
+                    sell_to_player_id: 0,
+                    sell_to_name: String::new(),
+                },
+                demolished: false,
+                build_pay: None,
+                tax: None,
+                sale: None,
+            },
+        );
+        assert_eq!(
+            check_house(&design, Vec3::new(10.0, 10.0, 10.0), me, &occupied, &cat, Some(&area), None),
+            Err(Invalid::Overlap)
+        );
+        assert_eq!(
+            check_house(&design, Vec3::new(10.0, 10.0, 10.0), Vec3::new(10.0, 10.0, 10.0), &houses, &cat, Some(&area), None),
+            Err(Invalid::Player)
+        );
+    }
+
+    #[test]
+    fn a_house_session_asks_for_the_quote_then_builds_with_the_quote_total() {
+        let mut session = Session::new(77, house_plantable(267, 4.0), 0.5);
+        session.spot = Some(Vec3::new(1000.5, 2000.25, 100.0));
+        session.invalid = None;
+        assert!(session.is_house());
+        assert_eq!(session.house_design(), Some(267));
+        assert!(session.request().is_none(), "a design does not send CSCreateDoodad");
+        assert_eq!(
+            session.tax_request(),
+            Some(HouseCommand::ConstructHouseTax { design_id: 267, x: 1000.5, y: 2000.25, z: 100.0 })
+        );
+        assert!(session.create_house().is_none(), "no quote yet");
+        session.quote = Some(ConstructHouseTax {
+            design_id: 267,
+            heavy_tax_house_count: 1,
+            normal_tax_house_count: 0,
+            is_heavy_tax_house: true,
+            base_tax_money_amount: 50000,
+            deposit_tax_money_amount: 100000,
+            total_tax_money_amount: 150000,
+        });
+        assert_eq!(
+            session.create_house(),
+            Some(HouseCommand::CreateHouse {
+                design_id: 267,
+                x: 1000.5,
+                y: 2000.25,
+                z: 100.0,
+                z_rot: 0.5,
+                item_id: 77,
+                money_amount: 150000,
+                ht: 0,
+                auto_use_aa_point: false,
+            })
+        );
+    }
+
     #[test]
     fn the_real_database_maps_seeds_and_saplings() {
-        let Ok(path) = std::env::var("AA_DB") else { return };
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
         if !std::path::Path::new(&path).exists() {
             return;
         }
@@ -1439,6 +2085,12 @@ mod tests {
         // the capture shows the full-grown spruce, not the start-phase `grow03` sprout: the template's own model
         assert!(spruce.model.as_deref().is_some_and(|m| m.ends_with("sub_tree_bigfir02.cgf")), "{:?}", spruce.model);
         assert_ne!(spruce.model.as_deref(), Some("objects/env/05_nature/04_subpol/sub_tree_bigfir01_grow03.cgf"));
+        let farm = catalog.plantable(15596).expect("Scarecrow Garden design");
+        let house = farm.house.as_ref().expect("housing design");
+        assert_eq!((house.design, house.garden_radius), (267, 4.0));
+        assert!(farm.model.as_deref().is_some_and(|m| m.ends_with("nuia_housing_scarecrow_b.cgf")), "{:?}", farm.model);
+        let pumpkin = catalog.plantable(15566).expect("Pumpkin-head farm design");
+        assert_eq!(pumpkin.house.as_ref().map(|h| (h.design, h.garden_radius)), Some((89, 8.0)));
         let _ = db;
     }
 
@@ -1462,7 +2114,9 @@ mod tests {
             .add_plugins(crate::hud::farm::plugin)
             .add_message::<aa_net::NetCommand>()
             .add_message::<aa_net::NetEvent>()
+            .add_message::<HousePressed>()
             .init_resource::<aa_net::Farms>()
+            .init_resource::<aa_net::Houses>()
             .init_resource::<aa_net::state::Doodads>()
             .init_resource::<aa_net::state::Inventory>()
             .init_resource::<aa_net::state::Skills>()

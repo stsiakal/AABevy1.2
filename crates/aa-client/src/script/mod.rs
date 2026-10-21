@@ -270,7 +270,9 @@ struct Ctx<'w, 's> {
     offscreen: Option<Res<'w, aa_dev::OffscreenTarget>>,
     exit: MessageWriter<'w, AppExit>,
     catalog: Res<'w, crate::ingame::placement::Catalog>,
-    placement: Res<'w, crate::ingame::placement::Placement>,
+    placement: ResMut<'w, crate::ingame::placement::Placement>,
+    houses: Res<'w, aa_net::Houses>,
+    housing_areas: Option<Res<'w, crate::ingame::houses::HousingAreas>>,
     virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
     terrain: Option<Res<'w, aa_world::TerrainQuery>>,
     collision: Option<Res<'w, aa_world::WorldCollision>>,
@@ -321,7 +323,12 @@ impl Ctx<'_, '_> {
             })),
             Spec::Corpse => nearest(&mut others().filter(|u| u.dead)),
             Spec::Template(t) => {
-                let of = |alive: bool| others().filter(move |u| matches!(u.kind, UnitKind::Npc { template_id, .. } if template_id == *t) && (!alive || !u.dead));
+                let of = |alive: bool| {
+                    others().filter(move |u| {
+                        matches!(u.kind, UnitKind::Npc { template_id, .. } | UnitKind::Housing { template_id, .. } if template_id == *t)
+                            && (!alive || !u.dead)
+                    })
+                };
                 nearest(&mut of(true)).or_else(|| nearest(&mut of(false)))
             }
             Spec::Name(n) => {
@@ -659,6 +666,74 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                 }
             }
         }
+        Cmd::HousePlace { item, dx, dy, yaw } => {
+            let Some(me) = c.me() else {
+                r.fail("no player".into());
+                return None;
+            };
+            let facing = c.movers.single().map_or(0.0, |m| m.facing);
+            match crate::ingame::placement::house_place_now(
+                &c.catalog,
+                &c.houses,
+                c.housing_areas.as_deref(),
+                &c.inventory,
+                c.collision.as_deref(),
+                c.terrain.as_deref(),
+                c.water.as_deref(),
+                me,
+                facing,
+                *item,
+                *dx,
+                *dy,
+                *yaw,
+            ) {
+                Ok(session) => {
+                    let spot = session.spot.unwrap_or_default();
+                    let valid = session.invalid.is_none();
+                    let design = session.house_design().unwrap_or(0);
+                    say(
+                        r,
+                        &format!(
+                            "house design {design} at ({:.2}, {:.2}, {:.2}), yaw {:.2}: {}",
+                            spot.x,
+                            spot.y,
+                            spot.z,
+                            session.yaw,
+                            if valid { "valid" } else { "invalid" }
+                        ),
+                    );
+                    c.virtual_input.clear_edges();
+                    c.placement.session = Some(session);
+                    Some(Active::Wait { until: now + 0.5 })
+                }
+                Err(why) => {
+                    r.fail(format!("house_place {item}: {why}"));
+                    None
+                }
+            }
+        }
+        Cmd::HouseBuild => {
+            let Some(session) = c.placement.session.as_mut() else {
+                r.fail("no house placement is active".into());
+                return None;
+            };
+            if !session.window_open {
+                r.fail("the Start Construction window is not open".into());
+                return None;
+            }
+            match session.create_house() {
+                Some(request) => {
+                    say(r, "confirming the Start Construction window");
+                    session.done = true;
+                    c.net.write(NetCommand(Command::House(request)));
+                    Some(Active::Await { event: "SCMyHouse".into(), deadline: now + 10.0, must: false })
+                }
+                None => {
+                    r.fail("no tax quote yet".into());
+                    None
+                }
+            }
+        }
         Cmd::Gm(text) => {
             c.net.write(NetCommand(Command::Chat { chat_type: aa_net::model::chat_type::SAY, target: String::new(), message: format!("/{}", text.trim_start_matches('/')) }));
             Some(Active::Wait { until: now + 0.6 })
@@ -787,9 +862,13 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Wait { until: now + 0.5 })
         }
         Cmd::Key(k) => {
-            c.virtual_input.queue_key_name(k);
-            // while placing, Escape belongs to the placement (retail opens no Menu); do not hand it to the UI
-            if !(c.placement.session.is_some() && matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc")) {
+            let escape = matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc");
+            // while aiming, Escape belongs to the placement (retail opens no Menu); with the tax window open it
+            // belongs to the original Lua window (Cancel), so only then does it reach the HUD
+            let placing_escape = escape && c.placement.session.as_ref().is_some_and(|s| !s.window_open);
+            if placing_escape {
+                c.virtual_input.queue_key_name(k);
+            } else {
                 c.keys.push_now(k, false);
             }
             Some(Active::Wait { until: now + 0.3 })

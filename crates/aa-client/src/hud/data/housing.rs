@@ -43,6 +43,11 @@ pub struct HousingBuildStep {
     pub model_id: u32,
     pub skill_id: u32,
     pub num_actions: i32,
+    /// `skill_effects.consume_item_id` of the build skill (the material the step uses), 0 for none.
+    pub consume_item: u32,
+    pub consume_count: i32,
+    /// `skills.consume_lp` of the build skill.
+    pub labor: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -207,22 +212,40 @@ impl Tables {
         }
 
         {
-            let mut q = conn.prepare("SELECT * FROM housing_build_steps")?;
+            let mut q = conn.prepare(
+                "SELECT s.id, s.housing_id, s.step, s.model_id, s.skill_id, s.num_actions, \
+                 COALESCE((SELECT e.consume_item_id FROM skill_effects e \
+                           WHERE e.skill_id = s.skill_id AND e.consume_item_id IS NOT NULL AND e.consume_item_id <> 0 \
+                           ORDER BY e.id LIMIT 1), 0), \
+                 COALESCE((SELECT e.consume_item_count FROM skill_effects e \
+                           WHERE e.skill_id = s.skill_id AND e.consume_item_id IS NOT NULL AND e.consume_item_id <> 0 \
+                           ORDER BY e.id LIMIT 1), 0), \
+                 COALESCE((SELECT k.consume_lp FROM skills k WHERE k.id = s.skill_id), 0) \
+                 FROM housing_build_steps s ORDER BY s.id",
+            )?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let housing_id = any_int(r, 1)?.max(0) as u32;
-                let Some(template) = t.housings.get_mut(&housing_id) else {
+                if !t.housings.contains_key(&housing_id) {
                     continue;
-                };
-                template.build_steps.push(HousingBuildStep {
+                }
+                let step = HousingBuildStep {
                     id: any_int(r, 0)?.max(0) as u32,
                     housing_id,
                     step: any_int(r, 2)? as i16,
                     model_id: any_int(r, 3)?.max(0) as u32,
                     skill_id: any_int(r, 4)?.max(0) as u32,
                     num_actions: any_int(r, 5)? as i32,
-                });
+                    consume_item: any_int(r, 6)?.max(0) as u32,
+                    consume_count: any_int(r, 7)?.max(0) as i32,
+                    labor: any_int(r, 8)?.max(0) as u32,
+                };
+                t.housings.get_mut(&housing_id).expect("checked").build_steps.push(step);
             }
+        }
+
+        for house in t.housings.values_mut() {
+            house.build_steps.sort_by_key(|step| step.step);
         }
 
         {
@@ -420,6 +443,8 @@ mod tests {
                 absolute_deco_limit INT, housing_deco_limit_id INT, is_sellable NUM, heavy_tax NUM,
                 always_public NUM, demolish_refund_item_id INT);
             CREATE TABLE housing_build_steps (id INT, housing_id INT, step INT, model_id INT, skill_id INT, num_actions INT);
+            CREATE TABLE skills (id INT, consume_lp INT);
+            CREATE TABLE skill_effects (id INT, skill_id INT, consume_item_id INT, consume_item_count INT);
             CREATE TABLE item_housings (id INT, item_id INT, design_id INT);
             CREATE TABLE housing_decorations (id INT, name TEXT, allow_on_floor NUM, allow_on_wall NUM,
                 allow_on_ceiling NUM, doodad_id INT, allow_pivot_on_garden NUM, actability_group_id INT,
@@ -438,6 +463,8 @@ mod tests {
                 3, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 40, 60, NULL, 61, 0, 'f', 't', 'f', 0);
             INSERT INTO housings VALUES (101, 'Second', 1, 921, 0, 0, 'f', 'f', 4000, 10, 0.0, 'f',
                 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 40, 60, NULL, 61, 0, 't', 'f', 't', 0);
+            INSERT INTO skills VALUES (11026, 25);
+            INSERT INTO skill_effects VALUES (1, 11026, 8337, 2);
             INSERT INTO housing_build_steps VALUES (1, 100, 0, 733, 11026, 1);
             INSERT INTO housing_build_steps VALUES (2, 100, 1, 734, 11026, 2);
             INSERT INTO housing_build_steps VALUES (3, 999, 0, 1, 2, 3);
@@ -472,6 +499,9 @@ mod tests {
         assert_eq!((house.main_model_id, house.hp, house.tax), (737, 1600, 150000));
         assert!(house.heavy_tax && !house.is_sellable && !house.always_public);
         assert_eq!(house.build_steps.len(), 2);
+        let first = &house.build_steps[0];
+        assert_eq!((first.step, first.model_id, first.skill_id, first.num_actions), (0, 733, 11026, 1));
+        assert_eq!((first.consume_item, first.consume_count, first.labor), (8337, 2, 25));
         assert_eq!(t.housings[&101].name, "Second");
         assert_eq!(t.all_actions(100), 3, "orphan build step 3 is not counted");
         assert_eq!(t.housing_design_for_item(14805), Some(100));
@@ -493,9 +523,10 @@ mod tests {
 
     #[test]
     fn real_compact_db_housing_and_farm_tables_match_row_counts() {
-        let Ok(path) = std::env::var("AA_DB") else {
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        if !std::path::Path::new(&path).exists() {
             return;
-        };
+        }
         let conn = Connection::open_with_flags(
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -526,5 +557,12 @@ mod tests {
         assert_eq!(loaded as i64, attached, "orphan build steps are skipped");
         assert!(t.housings.values().all(|h| h.build_steps.iter().all(|s| s.housing_id == h.id)));
         assert_eq!(t.decorations.len(), count("housing_decorations"));
+        // The phase-4 designs: one step each, the farm build skill and its wood reagent.
+        let garden = &t.housings[&267];
+        assert_eq!((garden.garden_radius, garden.heavy_tax), (4.0, true));
+        assert_eq!(garden.build_steps[0].skill_id, 18553);
+        assert_eq!((garden.build_steps[0].consume_item, garden.build_steps[0].consume_count), (8337, 1));
+        let pumpkin = &t.housings[&89];
+        assert_eq!((pumpkin.garden_radius, pumpkin.build_steps[0].skill_id), (8.0, 14574));
     }
 }

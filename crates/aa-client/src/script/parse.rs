@@ -117,6 +117,11 @@ pub enum Cmd {
     /// Plant an item (`item_spawn_doodads`) `dx`/`dy` metres from the player, at its use range and ground rules;
     /// the optional yaw is in radians (default: the player's facing).
     Plant { item: u32, dx: f32, dy: f32, yaw: Option<f32> },
+    /// Aim a house design item's placement at `dx`/`dy` metres from the player (the ghost and boundary stay for
+    /// `click left`); the optional yaw is in radians (default: the player's facing).
+    HousePlace { item: u32, dx: f32, dy: f32, yaw: Option<f32> },
+    /// Confirm the open original build window (`X2House:NextStepFromBuildCheck`).
+    HouseBuild,
     /// Turn the character and camera to a heading (degrees, counter-clockwise from north).
     Face(f32),
     /// Turn the character and camera to a unit.
@@ -284,6 +289,13 @@ pub fn parse_line(line: &str) -> Result<Option<Cmd>, String> {
             dy: num(a.get(2), "dy")?,
             yaw: a.get(3).map(|s| s.parse::<f32>().map_err(|_| format!("bad yaw '{s}'"))).transpose()?,
         },
+        "house_place" | "houseplace" => Cmd::HousePlace {
+            item: int(a.first(), "design item")?,
+            dx: num(a.get(1), "dx")?,
+            dy: num(a.get(2), "dy")?,
+            yaw: a.get(3).map(|s| s.parse::<f32>().map_err(|_| format!("bad yaw '{s}'"))).transpose()?,
+        },
+        "house_build" | "housebuild" => Cmd::HouseBuild,
         "gm" | "gmq" => Cmd::Gm(rest(text, 1)),
         "chat" | "say" => Cmd::Chat(rest(text, 1)),
         "target" => Cmd::Target(spec(a, 0, Spec::Nearest)?),
@@ -383,6 +395,15 @@ mod tests {
         assert_eq!(lines[6].cmd, Cmd::WaitFor(Cond { negate: false, kind: CondKind::Quest(7) }, 5.0));
         assert_eq!(lines[7].cmd, Cmd::Await { event: "QuestStarted".into(), secs: 12.0, must: true });
         assert_eq!(lines[8].cmd, Cmd::Interact(Spec::Template(24)));
+    }
+
+    #[test]
+    fn parses_the_house_commands() {
+        let lines = parse("house_place 15596 0 5\nhouse_place 15566 -2 3 1.5\nhouse_build\n", "t").unwrap();
+        assert_eq!(lines[0].cmd, Cmd::HousePlace { item: 15596, dx: 0.0, dy: 5.0, yaw: None });
+        assert_eq!(lines[1].cmd, Cmd::HousePlace { item: 15566, dx: -2.0, dy: 3.0, yaw: Some(1.5) });
+        assert_eq!(lines[2].cmd, Cmd::HouseBuild);
+        assert!(parse("house_place 15596 0", "s").is_err());
     }
 
     #[test]

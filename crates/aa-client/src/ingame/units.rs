@@ -159,6 +159,11 @@ impl Views {
         self.units.get(&obj_id).and_then(|v| v.entity)
     }
 
+    /// Forget a unit so a changed model is prepared and spawned again: the old entity (the caller despawns it).
+    pub fn forget_unit(&mut self, obj_id: u32) -> Option<Entity> {
+        self.units.remove(&obj_id).and_then(|v| v.entity)
+    }
+
     pub fn unit_entities(&self) -> usize {
         self.units.values().filter(|v| v.entity.is_some()).count()
     }

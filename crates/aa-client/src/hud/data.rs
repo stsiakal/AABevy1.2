@@ -277,6 +277,11 @@ impl GameData {
     pub fn doodad_for_item(&self, item: u32) -> Option<u32> {
         self.housing.doodad_by_item.get(&item).copied()
     }
+
+    /// The housing design an item places (`item_housings`, the design item link).
+    pub fn housing_design_for_item(&self, item: u32) -> Option<u32> {
+        self.housing.housing_design_for_item(item)
+    }
 }
 
 /// The server's experience table (`levels.total_exp`, levels 1..=55), which replaces the client's
