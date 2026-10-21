@@ -2370,8 +2370,9 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   (item `15596` -> design `267` "Scarecrow Garden", radii 4 and 8 for `15566` -> `89`). The ghost is the housing's
   `main_model_id` through `Db::actor_model_file` (the prefab's first object, e.g. `scarecrow_farm1`); the plot square
   half extent is `housings.garden_radius`, and the 1.2 `auto_z` offset fields are applied (`Grounding`).
-* **Preview**: the plain, untinted house model follows the cursor; a square of flat grey stones runs along the plot
-  edge (turned with the ghost) and small yellow posts mark the housing-area polygon (the
+* **Preview**: the plain, untinted house model follows the cursor; a square of glowing orange dots runs along the plot
+  edge (turned with the ghost; the 1.2 pak lare_08.dds, the flare texture of its housing line/twinkle effects)
+  and existing plots nearby get white/grey dot squares; small yellow posts mark the housing-area polygon (the
   `housing_area.xml` shape that contains the spot, `ingame/houses.rs`). The white / pink crosshair is the same
   `housing_position.dds` / `housing_invalid.dds`; when the cursor is over the UI or no ground the house ghost stays
   at its last valid spot (the retail capture shows this; plants hide instead). The ghost stops following the pointer

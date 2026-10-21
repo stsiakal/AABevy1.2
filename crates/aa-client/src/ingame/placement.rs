@@ -482,7 +482,8 @@ struct Visuals {
     failed: bool,
     yellow: Option<Handle<StandardMaterial>>,
     red: Option<Handle<StandardMaterial>>,
-    stone: Option<Handle<StandardMaterial>>,
+    dot_valid: Option<Handle<StandardMaterial>>,
+    dot_neighbour: Option<Handle<StandardMaterial>>,
     post: Option<Handle<StandardMaterial>>,
     arrow_image: Option<Handle<Image>>,
     cursor_mesh: Option<Handle<Mesh>>,
@@ -503,8 +504,10 @@ struct RingPart {
 struct RingParts {
     yellow: Option<RingPart>,
     red: Option<RingPart>,
-    /// The house plot's flat grey stones.
-    stones: Option<RingPart>,
+    /// The active plot's glowing dots.
+    dots: Option<RingPart>,
+    /// Nearby finished plots' white/grey dots.
+    neighbours: Option<RingPart>,
     /// The housing area's small yellow posts.
     posts: Option<RingPart>,
 }
@@ -1047,7 +1050,6 @@ fn update_ring(
     collision: Option<&WorldCollision>,
     terrain: Option<&TerrainQuery>,
 ) {
-    let _ = houses;
     if !visuals.ready {
         return;
     }
@@ -1057,9 +1059,14 @@ fn update_ring(
     };
     let floor = |p: Vec2| ground_at(collision, terrain, p.x, p.y, spot.z, spot.z);
     if session.is_house() {
-        let stones = stone_quads(&session.plant, spot, session.yaw, floor);
+        let dots = plot_dot_quads(&session.plant, spot, session.yaw, floor);
+        let neighbours = neighbour_dot_quads(houses, catalog, spot, floor);
         let posts = areas.map_or_else(Vec::new, |areas| post_quads(areas, spot, floor));
-        let (Some(stone_mat), Some(post_mat)) = (visuals.stone.clone(), visuals.post.clone()) else { return };
+        let (Some(dot_mat), Some(neighbour_mat), Some(post_mat)) =
+            (visuals.dot_valid.clone(), visuals.dot_neighbour.clone(), visuals.post.clone())
+        else {
+            return;
+        };
         let empty: [Quad; 0] = [];
         if let Some(mat) = visuals.yellow.clone() {
             show_ring_part(commands, meshes, &mut visuals.ring.yellow, &mat, "planting ring (valid)", &empty);
@@ -1067,7 +1074,8 @@ fn update_ring(
         if let Some(mat) = visuals.red.clone() {
             show_ring_part(commands, meshes, &mut visuals.ring.red, &mat, "planting ring (blocked)", &empty);
         }
-        show_ring_part(commands, meshes, &mut visuals.ring.stones, &stone_mat, "housing plot stones", &stones);
+        show_ring_part(commands, meshes, &mut visuals.ring.dots, &dot_mat, "housing plot dots", &dots);
+        show_ring_part(commands, meshes, &mut visuals.ring.neighbours, &neighbour_mat, "housing neighbour dots", &neighbours);
         show_ring_part(commands, meshes, &mut visuals.ring.posts, &post_mat, "housing area posts", &posts);
         return;
     }
@@ -1076,45 +1084,74 @@ fn update_ring(
     let (Some(yellow_mat), Some(red_mat)) = (visuals.yellow.clone(), visuals.red.clone()) else { return };
     show_ring_part(commands, meshes, &mut visuals.ring.yellow, &yellow_mat, "planting ring (valid)", &yellow);
     show_ring_part(commands, meshes, &mut visuals.ring.red, &red_mat, "planting ring (blocked)", &red);
-    if let Some(mat) = visuals.stone.clone() {
-        show_ring_part(commands, meshes, &mut visuals.ring.stones, &mat, "housing plot stones", &[]);
+    if let Some(mat) = visuals.dot_valid.clone() {
+        show_ring_part(commands, meshes, &mut visuals.ring.dots, &mat, "housing plot dots", &[]);
+    }
+    if let Some(mat) = visuals.dot_neighbour.clone() {
+        show_ring_part(commands, meshes, &mut visuals.ring.neighbours, &mat, "housing neighbour dots", &[]);
     }
     if let Some(mat) = visuals.post.clone() {
         show_ring_part(commands, meshes, &mut visuals.ring.posts, &mat, "housing area posts", &[]);
     }
 }
 
-/// The flat grey stones along the plot square (half extent = the housing's `garden_radius`), turned with the
-/// ghost: the retail capture's boundary.
-fn stone_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
+/// The glowing dots along the plot square (half extent = the housing's garden_radius), turned with the
+/// ghost. The 1.2 pak's lare_08.dds is the flare texture of its housing line/twinkle effects; the retail
+/// 3.5 capture shows the same dotted orange boundary for the active plot.
+fn plot_dot_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
     let half = plant.footprint.max(0.5);
     let (sin, cos) = yaw.sin_cos();
     let to_world = |u: f32, v: f32| Vec2::new(spot.x + u * cos - v * sin, spot.y + u * sin + v * cos);
-    let corners = [(-half, -half), (half, -half), (half, half), (-half, half)];
-    let spacing = 0.78;
+    let corners = [to_world(-half, -half), to_world(half, -half), to_world(half, half), to_world(-half, half)].map(|p| (p.x, p.y));
+    edge_dot_quads(corners, 0.55, 0.16, floor)
+}
+
+/// Existing plots around the placement are marked by white/grey dots (the retail 3.5 capture).
+fn neighbour_dot_quads(houses: &Houses, catalog: &Catalog, spot: Vec3, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
+    let here = Vec2::new(spot.x, spot.y);
+    let mut out = Vec::new();
+    for house in houses.by_tl_id.values() {
+        if house.demolished {
+            continue;
+        }
+        let radius = catalog.house_radius(house.snapshot.template_id);
+        if radius <= 0.0 {
+            continue;
+        }
+        let p = house.snapshot.position();
+        if Vec2::new(p.x, p.y).distance(here) > 80.0 {
+            continue;
+        }
+        out.extend(edge_dot_quads(
+            [(p.x - radius, p.y - radius), (p.x + radius, p.y - radius), (p.x + radius, p.y + radius), (p.x - radius, p.y + radius)],
+            0.7,
+            0.13,
+            &floor,
+        ));
+    }
+    out
+}
+
+fn edge_dot_quads(corners: [(f32, f32); 4], spacing: f32, size: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
     let mut out = Vec::new();
     for i in 0..4 {
         let (a, b) = (corners[i], corners[(i + 1) % 4]);
         let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        if len < 1e-3 {
+            continue;
+        }
         let n = (len / spacing).ceil().max(1.0) as usize;
-        let dir = ((b.0 - a.0) / len, (b.1 - a.1) / len);
-        let side = (-dir.1, dir.0);
         for k in 0..n {
             let t = (k as f32 + 0.5) / n as f32;
-            let (u, v) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
-            let jitter = ((k * 37 + i * 11) % 13) as f32 / 13.0 - 0.5;
-            let (wu, wv) = (u + side.0 * jitter * 0.06, v + side.1 * jitter * 0.06);
-            let (hw, hd) = (0.30f32, 0.20f32);
-            let local = [
-                (wu - dir.0 * hw - side.0 * hd, wv - dir.1 * hw - side.1 * hd),
-                (wu + dir.0 * hw - side.0 * hd, wv + dir.1 * hw - side.1 * hd),
-                (wu + dir.0 * hw + side.0 * hd, wv + dir.1 * hw + side.1 * hd),
-                (wu - dir.0 * hw + side.0 * hd, wv - dir.1 * hw + side.1 * hd),
+            let g = Vec2::new(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+            let z = floor(g) + 0.05;
+            let h = size * 0.5;
+            let p = [
+                cry_to_bevy(Vec3::new(g.x - h, g.y - h, z)),
+                cry_to_bevy(Vec3::new(g.x + h, g.y - h, z)),
+                cry_to_bevy(Vec3::new(g.x + h, g.y + h, z)),
+                cry_to_bevy(Vec3::new(g.x - h, g.y + h, z)),
             ];
-            let p = local.map(|(u, v)| {
-                let g = to_world(u, v);
-                cry_to_bevy(Vec3::new(g.x, g.y, floor(g) + 0.025))
-            });
             out.push(Quad { p, uv: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]] });
         }
     }
@@ -1163,7 +1200,8 @@ fn hide_ring(commands: &mut Commands, visuals: &Visuals) {
     for part in [
         visuals.ring.yellow.as_ref(),
         visuals.ring.red.as_ref(),
-        visuals.ring.stones.as_ref(),
+        visuals.ring.dots.as_ref(),
+        visuals.ring.neighbours.as_ref(),
         visuals.ring.posts.as_ref(),
     ]
     .into_iter()
@@ -1202,13 +1240,21 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         };
         visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.72, 0.12, 1.0))));
         visuals.red = Some(materials.add(leaf_material(Color::srgba(0.95, 0.10, 0.06, 1.0))));
-        // the house plot boundary: the 1.2 capture's flat grey stones and yellow posts
-        visuals.stone = Some(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.62, 0.61, 0.57, 1.0),
+        // the retail dotted plot boundary: the 1.2 pak's `flare_08.dds` (the texture of its housing
+        // line/twinkle effects), orange for the active plot and white/grey for the neighbours
+        let flare = dds_image("textures/p_effects/flare_08.dds")?;
+        let flare = images.add(flare);
+        let dot_material = |color: Color| StandardMaterial {
+            base_color: color,
+            base_color_texture: Some(flare.clone()),
             unlit: true,
+            alpha_mode: AlphaMode::Add,
             cull_mode: None,
+            depth_bias: 20.0,
             ..default()
-        }));
+        };
+        visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 0.62, 0.06, 1.0))));
+        visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(0.82, 0.82, 0.78, 0.8))));
         visuals.post = Some(materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
             unlit: true,
@@ -1979,20 +2025,64 @@ mod tests {
     }
 
     #[test]
-    fn the_plot_stones_follow_the_garden_radius_and_the_yaw() {
+    fn the_plot_dots_follow_the_garden_radius_and_the_yaw() {
         let p = house_plantable(267, 4.0);
         let spot = Vec3::new(100.0, 200.0, 10.0);
-        let stones = stone_quads(&p, spot, 0.0, |_| 10.0);
-        assert!(!stones.is_empty());
-        for q in &stones {
+        let dots = plot_dot_quads(&p, spot, 0.0, |_| 10.0);
+        assert!(!dots.is_empty());
+        for q in &dots {
             for v in q.p {
-                assert!((v.y - 10.025).abs() < 1e-3, "the stones lie on the ground: {v:?}");
-                assert!(v.x >= 100.0 - 4.4 && v.x <= 100.0 + 4.4, "inside the plot: {v:?}");
-                assert!(v.z >= -200.0 - 4.4 && v.z <= -200.0 + 4.4, "inside the plot: {v:?}");
+                assert!((v.y - 10.05).abs() < 1e-3, "the dots float just over the ground: {v:?}");
+                assert!(v.x >= 100.0 - 4.2 && v.x <= 100.0 + 4.2, "inside the plot: {v:?}");
+                assert!(v.z >= -200.0 - 4.2 && v.z <= -200.0 + 4.2, "inside the plot: {v:?}");
             }
         }
-        let turned = stone_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
-        assert_ne!(quads_signature(&stones), quads_signature(&turned), "rotating the ghost rotates the square");
+        let turned = plot_dot_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
+        assert_ne!(quads_signature(&dots), quads_signature(&turned), "rotating the ghost rotates the square");
+    }
+
+    #[test]
+    fn existing_plots_have_their_own_white_dot_square() {
+        let mut houses = Houses::default();
+        houses.by_tl_id.insert(
+            7,
+            aa_net::housing::House {
+                snapshot: aa_net::housing::HouseSnapshot {
+                    tl_id: 7,
+                    db_id: 1,
+                    obj_id: 50,
+                    template_id: 267,
+                    model_id: 987,
+                    co_owner_id: 0,
+                    owner_id: 1,
+                    owner_name: "Owner".into(),
+                    account_id: 1,
+                    permission: 0,
+                    all_actions: 1,
+                    current_actions: 1,
+                    tax: 0,
+                    x: aa_net::wire::coord_to_long(13.0),
+                    y: aa_net::wire::coord_to_long(10.0),
+                    z: 10.0,
+                    name: "Other".into(),
+                    allow_recover: true,
+                    sell_price: 0,
+                    sell_to_player_id: 0,
+                    sell_to_name: String::new(),
+                },
+                demolished: false,
+                build_pay: None,
+                tax: None,
+                sale: None,
+            },
+        );
+        let dots = neighbour_dot_quads(&houses, &house_catalog(), Vec3::new(10.0, 10.0, 10.0), |_| 10.0);
+        assert!(!dots.is_empty());
+        for q in &dots {
+            for v in q.p {
+                assert!((v.y - 10.05).abs() < 1e-3, "neighbour dots float over the ground: {v:?}");
+            }
+        }
     }
 
     #[test]
