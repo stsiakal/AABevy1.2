@@ -288,6 +288,16 @@ pub(super) fn floor_at(terrain: &TerrainQuery, collision: &WorldCollision, pos: 
     )
 }
 
+/// The on-foot controller owns the character only while the server has not seated it. A rider is
+/// driven by `mount::drive_mount` instead (and the seat position by `mount::pose_local_riders`).
+pub(super) fn on_foot_control(player: &aa_net::state::Player) -> bool {
+    on_foot_attached(player.spawn.as_ref().and_then(|spawn| spawn.unit.attached_to))
+}
+
+pub(super) fn on_foot_attached(attached: Option<aa_net::model::Attachment>) -> bool {
+    attached.is_none()
+}
+
 /// Keyboard movement, jumping, standing on the ground, swimming and the movement packets.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn control_player(
@@ -311,7 +321,7 @@ pub fn control_player(
     let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting)) = player.single_mut() else { return };
     // A rider sits where the mount's seat is (`mount::pose_local_riders`) and the server ignores its
     // own movement while attached; the get-off one-shot holds the on-foot controls until it ends.
-    if net_player.spawn.as_ref().is_some_and(|s| s.unit.attached_to.is_some()) || dismounting {
+    if !on_foot_control(&net_player) || dismounting {
         *motion = Motion::default();
         *input_state = PlayerInput::default();
         mover.velocity = Vec3::ZERO;

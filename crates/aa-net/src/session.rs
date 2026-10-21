@@ -205,6 +205,10 @@ pub enum Command {
     /// Select the character and enter the world (select, spawn, notify in game).
     EnterGame { character_id: u32 },
     Move(MoveCommand),
+    /// Move a unit the character controls (its owned mate, e.g. while riding) instead of itself:
+    /// `CSMoveUnit` names `obj_id` and the server checks the owner. The mate uses the ordinary
+    /// unit movement body; its rider follows through the server's attachment.
+    MoveUnit { obj_id: u32, command: MoveCommand },
     Chat { chat_type: i16, target: String, message: String },
     /// Put `action` into hotbar slot `slot` (0 based). The server does not echo it: the session
     /// reports `ActionSlotChanged` itself.
@@ -239,6 +243,9 @@ pub enum Command {
     /// are explicit; target must be a real nonzero 24-bit unit ID (self buffs name the mate).
     /// No local learned-skill gate or automatic target/slot/auto-use choice is imposed.
     UseMateSkill { skill_id: u32, mate_obj_id: u32, mount_skill_id: u32, target_obj_id: u32 },
+    /// A position-targeted mount skill (leap, cannon, harpoon): the same mount caster and a
+    /// `SkillTargetType::Pos` target. `pos` must be finite.
+    UseMateSkillAt { skill_id: u32, mate_obj_id: u32, mount_skill_id: u32, pos: Pos },
     /// Cast `skill_id` at a spot of the ground (area skills).
     UseSkillAt { skill_id: u32, pos: Pos },
     /// Cancel the cast or channel of the player: `tl` is the timeline of a plain skill (`SkillStarted::tl`), `plot_tl` the one
@@ -1062,6 +1069,7 @@ impl Session {
                 self.send_game(game::ClientMsg::SelectCharacter { id: character_id }).await;
             }
             Command::Move(m) => self.send_move(m).await,
+            Command::MoveUnit { obj_id, command } => self.send_move_unit(obj_id, command).await,
             Command::Chat { chat_type, target, message } => {
                 self.send_game(game::ClientMsg::Chat { chat_type, target, message }).await;
             }
@@ -1452,6 +1460,24 @@ impl Session {
                     self.emit(Event::Mate(crate::mate::MateEvent::SkillRequested { skill_id, mate_obj_id, mount_skill_id, target_obj_id }));
                 }
             }
+            Command::UseMateSkillAt { skill_id, mate_obj_id, mount_skill_id, pos } => {
+                let valid = skill_id != 0
+                    && mount_skill_id != 0
+                    && mate_obj_id != 0
+                    && mate_obj_id <= 0xffffff
+                    && pos.x.is_finite()
+                    && pos.y.is_finite()
+                    && pos.z.is_finite();
+                if valid && self.phase == Phase::InWorld {
+                    self.send_game(game::ClientMsg::StartSkill {
+                        skill_id,
+                        self_obj_id: self.self_obj,
+                        caster: StartCaster::Mount { obj_id: mate_obj_id, mount_skill_id },
+                        target: SkillTarget::position(pos),
+                    })
+                    .await;
+                }
+            }
             Command::StopCasting { tl, plot_tl } => {
                 let obj_id = self.self_obj;
                 self.send_game(game::ClientMsg::StopCasting { tl, plot_tl, obj_id }).await;
@@ -1546,6 +1572,15 @@ impl Session {
         }
         let movement = m.to_movement(self.started.elapsed().as_millis() as u32);
         let obj_id = self.self_obj;
+        self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
+    }
+
+    async fn send_move_unit(&mut self, obj_id: u32, m: MoveCommand) {
+        if self.self_obj == 0 || self.phase != Phase::InWorld || obj_id == 0 || obj_id > 0xffffff {
+            tracing::debug!("ignoring MoveUnit {obj_id}: not a valid controlled unit in the world");
+            return;
+        }
+        let movement = m.to_movement(self.started.elapsed().as_millis() as u32);
         self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
     }
 
@@ -4209,7 +4244,7 @@ mod tests {
         assert_eq!(channel_types(6), vec![6]);
         assert_eq!(channel_types(14), vec![14]);
     }
-    use crate::opcodes::pp;
+    use crate::opcodes::{cs, pp};
     use std::net::SocketAddrV4;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
@@ -4288,6 +4323,28 @@ mod tests {
         (addr, task)
     }
 
+    /// Like [`game_stub`], with the full payload of every frame.
+    async fn game_stub_bytes(frames: usize) -> (SocketAddrV4, tokio::task::JoinHandle<Vec<Vec<u8>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let std::net::SocketAddr::V4(addr) = listener.local_addr().unwrap() else { unreachable!() };
+        let task = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut seen = Vec::new();
+            for _ in 0..frames {
+                let mut len = [0u8; 2];
+                match tokio::time::timeout(Duration::from_millis(300), sock.read_exact(&mut len)).await {
+                    Ok(Ok(_)) => {}
+                    _ => break,
+                }
+                let mut payload = vec![0u8; usize::from(u16::from_le_bytes(len))];
+                sock.read_exact(&mut payload).await.unwrap();
+                seen.push(payload);
+            }
+            seen
+        });
+        (addr, task)
+    }
+
     fn session_for(addr: SocketAddrV4, options: ClientOptions) -> Session {
         let (evt, _events) = unbounded_channel();
         let mut s = Session::new(evt, options);
@@ -4310,6 +4367,31 @@ mod tests {
         assert_eq!(seen.len(), 2, "{seen:?}");
         assert_eq!(seen[0], (game::LEVEL_PROXY, pp::PingPacket));
         assert_eq!(seen[1].0, game::LEVEL_GAME);
+    }
+
+    #[tokio::test]
+    async fn mate_position_skill_sends_the_mount_caster_and_a_position_target() {
+        let (addr, stub) = game_stub_bytes(2).await;
+        let options = ClientOptions { first_ping_delay: Duration::from_secs(60), ..ClientOptions::default() };
+        let mut s = session_for(addr, options);
+        s.connect_world().await;
+        s.phase = Phase::InWorld;
+        s.self_obj = 7;
+        let pos = Pos::new(10.5, 20.25, 30.0);
+        s.command(Command::UseMateSkillAt { skill_id: 11016, mate_obj_id: 0x445566, mount_skill_id: 5, pos }).await;
+        let frames = stub.await.unwrap();
+        assert_eq!(frames.len(), 2);
+        let frame = &frames[1];
+        assert_eq!(frame[1], game::LEVEL_GAME);
+        assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), cs::CSStartSkillPacket);
+        let expected = game::ClientMsg::StartSkill {
+            skill_id: 11016,
+            self_obj_id: 7,
+            caster: StartCaster::Mount { obj_id: 0x445566, mount_skill_id: 5 },
+            target: SkillTarget::position(pos),
+        }
+        .encode_body();
+        assert_eq!(&frame[6..], &expected[..]);
     }
 
     #[tokio::test]

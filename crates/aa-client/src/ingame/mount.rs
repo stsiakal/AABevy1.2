@@ -8,16 +8,19 @@
 
 use aa_anim::pose::BoundClip;
 use aa_anim::{Animator, Cal, Character, ClipLibrary};
-use aa_net::model::{Attachment, Equipment, ModelParams, Movement, UnitKind};
+use aa_net::model::{Attachment, Equipment, ModelParams, Movement, UnitKind, stance};
 use aa_net::state::{Player, Units};
-use aa_net::{Event, NetEvent, Pos};
+use aa_net::{Command, Event, MoveCommand, MoveState, NetCommand, NetEvent, Pos};
 use aa_world::coords::bevy_to_cry;
+use aa_world::{TerrainQuery, WaterQuery, WorldCollision};
 use bevy::prelude::*;
 
 use super::anim::{Locomotion, Motion, bind_clip};
-use super::data::Db;
-use super::player::{LocalPlayer, Mover, placement};
+use super::camera::OrbitCamera;
+use super::data::{Db, MountMove};
+use super::player::{LocalPlayer, Mover, PlayerInput, approach_angle, forward, placement, right};
 use super::units::{RemoteUnit, Views};
+use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
 
 /// The clip prefix of a rider on a mount of this kind (`models.mount_pose_id`).
 fn rider_prefix(pose: u32) -> Option<&'static str> {
@@ -34,6 +37,16 @@ fn rider_prefix(pose: u32) -> Option<&'static str> {
 /// The bone of a mount a rider at `point` sits on (`model_attach_point_strings`: `$driver` is `bone_spine_driver`).
 fn seat_bone(point: u8) -> &'static str {
     if point <= 1 { "bone_spine_driver" } else { "bone_spine_passenger" }
+}
+
+/// The mate whose driver seat holds the local player, if any: only then do the player's keys move
+/// the mount. A passenger or an on-foot player returns `None`.
+pub(super) fn driver_mount(player: &Player) -> Option<u32> {
+    mounted_driver(player.spawn.as_ref().and_then(|spawn| spawn.unit.attached_to))
+}
+
+fn mounted_driver(attached: Option<Attachment>) -> Option<u32> {
+    attached.filter(|a| a.point == 1).map(|a| a.obj_id)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -102,6 +115,90 @@ pub struct Dismounting {
     remaining: f32,
     on_foot: Option<Locomotion>,
 }
+
+/// A mate the local player drives from its driver seat. While this component exists the mount
+/// ignores its received movement track and follows the player's input; every sent packet names the
+/// mate object id (`CSMoveUnit`).
+#[derive(Component)]
+pub struct DrivenMount {
+    body: MountMove,
+    pos: Vec3,
+    facing: f32,
+    vz: f32,
+    grounded: bool,
+    swimming: bool,
+    walking: bool,
+    autorun: bool,
+    since_sent: f32,
+    was_active: bool,
+    sent_first: bool,
+}
+
+impl DrivenMount {
+    fn new(pos: Vec3, facing: f32, body: MountMove) -> Self {
+        Self {
+            body,
+            pos,
+            facing,
+            vz: 0.0,
+            grounded: true,
+            swimming: false,
+            walking: false,
+            autorun: false,
+            since_sent: 0.0,
+            was_active: false,
+            sent_first: false,
+        }
+    }
+
+    /// The world-space ground step of this frame's input (m/s in x/y), before collision and gravity.
+    fn step(&self, local_dir: Vec2, walk: bool) -> Vec2 {
+        let speed = if self.swimming {
+            self.body.run * 0.45
+        } else if walk {
+            self.body.walk
+        } else {
+            self.body.run
+        };
+        let mult = if local_dir.y < -0.1 {
+            0.65
+        } else if local_dir.x.abs() > local_dir.y.abs() {
+            0.8
+        } else {
+            1.0
+        };
+        let (f, r) = (forward(self.facing), right(self.facing));
+        (f * local_dir.y + r * local_dir.x) * speed * mult
+    }
+
+    /// The packet for the mate: `CSMoveUnit` with the mount object id, the same unit body the
+    /// player sends (the server's `apply_unit_move` handles a mate target through
+    /// `on_mate_unit_move` and broadcasts the mount; the rider follows by attachment).
+    pub(crate) fn packet(&self, obj_id: u32, moving: bool, velocity: Vec3, delta: [i8; 3], state: MoveState, landed: Option<f32>) -> Command {
+        let to_wire = |v: f32| (v * 1024.0).round().clamp(-32767.0, 32767.0) as i16;
+        let mut cmd = MoveCommand {
+            pos: Pos::new(self.pos.x, self.pos.y, self.pos.z),
+            yaw: self.facing,
+            moving,
+            stance: if self.swimming { stance::SWIM } else { stance::RELAXED },
+            velocity: if moving { [to_wire(velocity.x), to_wire(velocity.y), to_wire(velocity.z)] } else { [0; 3] },
+            delta_movement: delta,
+            ..MoveCommand::default()
+        }
+        .with_state(state);
+        if let Some(speed) = landed {
+            cmd = cmd.landing(speed);
+        }
+        Command::MoveUnit { obj_id, command: cmd }
+    }
+}
+
+const MOUNT_STEP_UP: f32 = 0.5;
+const MOUNT_DROP: f32 = 0.6;
+const MOUNT_CLIMB_LOOK: f32 = 0.5;
+const MOUNT_MAX_CLIMB_TAN: f32 = 1.19;
+const MOUNT_SEND_INTERVAL: f32 = 0.1;
+const MOUNT_ALIGN_RATE: f32 = 12.0;
 
 /// Seats the units the server attached to a mount and lets the ones that got off walk again.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -235,6 +332,7 @@ pub fn start_stop_local_riding(
     mut commands: Commands,
     player: Res<Player>,
     net: Res<Units>,
+    views: Res<Views>,
     db: Option<Res<Db>>,
     clips: Res<ClipLibrary>,
     locals: Query<(Entity, &LocalPlayer, Option<&LocalRider>, Option<&Character>, Option<&Animator>)>,
@@ -253,10 +351,18 @@ pub fn start_stop_local_riding(
                 let RidingClips { idle, walk, run, geton, .. } = clis;
                 let boarding = geton.as_ref().map(|c| c.clip.duration);
                 let (mount_id, point) = (a.obj_id, a.point);
+                let body = db.mount_move(mount.model_id);
+                let (mount_pos, mount_yaw) = (Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z), mount.yaw());
+                let mount_entity = views.unit_entity(mount_id);
                 debug!("local player rides {mount_id} at point {point}");
                 commands.queue(move |world: &mut World| {
                     if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
                         animator.play_once_then(on, idle.clone(), 0.15);
+                    }
+                    if point == 1
+                        && let Some(mount_entity) = mount_entity
+                    {
+                        world.entity_mut(mount_entity).insert(DrivenMount::new(mount_pos, mount_yaw, body));
                     }
                     let on_foot = world.entity_mut(entity).take::<Locomotion>();
                     world.entity_mut(entity).insert(LocalRider { mount: mount_id, point, idle, walk, run, gait: None, boarding, on_foot });
@@ -272,9 +378,21 @@ pub fn start_stop_local_riding(
                 })()
                 .flatten();
                 let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
+                let mount_entity = views.unit_entity(rider.mount);
                 commands.queue(move |world: &mut World| {
                     if let (Some(off), Some(mut animator)) = (getoff, world.entity_mut(entity).get_mut::<Animator>()) {
                         animator.play(off, false, 0.15);
+                    }
+                    if let Some(mount_entity) = mount_entity {
+                        let mut mount = world.entity_mut(mount_entity);
+                        mount.remove::<DrivenMount>();
+                        if let Some(mut unit) = mount.get_mut::<RemoteUnit>() {
+                            let (pos, facing) = (unit.pos, unit.facing);
+                            unit.reset_track(pos, facing);
+                        }
+                        if let Some(mut motion) = mount.get_mut::<Motion>() {
+                            *motion = Motion::default();
+                        }
                     }
                     let Some(rider) = world.entity_mut(entity).take::<LocalRider>() else { return };
                     if remaining > 0.0 {
@@ -368,6 +486,171 @@ pub fn finish_dismount(time: Res<Time>, mut commands: Commands, mut dismounting:
     }
 }
 
+/// Drives the mate the local player sits on as its driver: the player's keys move the mount and the
+/// player's own movement packets are replaced by `CSMoveUnit` for the mate object (`MoveUnit`). The
+/// mount's speed/body come from its actor model (`game_stances`, `actor_models`), the camera follows
+/// the rider that `pose_local_riders` keeps on the seat, and a dismount removes `DrivenMount` and
+/// gives control back to `control_player` at the seat position.
+#[allow(clippy::too_many_arguments)]
+pub fn drive_mount(
+    time: Res<Time>,
+    (keys, actions): (Res<ButtonInput<KeyCode>>, Res<crate::settings::Actions>),
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut cameras: Query<&mut OrbitCamera>,
+    player: Res<Player>,
+    views: Res<Views>,
+    (units, db): (Res<Units>, Option<Res<Db>>),
+    terrain: Res<TerrainQuery>,
+    collision: Res<WorldCollision>,
+    water: Res<WaterQuery>,
+    mut out: MessageWriter<NetCommand>,
+    mut input_state: ResMut<PlayerInput>,
+    typing: Option<Res<HudKeyboardFocus>>,
+    over_ui: Option<Res<HudPointerOverUi>>,
+    mut mounts: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>, Option<&mut DrivenMount>)>,
+    mut commands: Commands,
+) {
+    let Some(mount_id) = driver_mount(&player) else { return };
+    let Some(entity) = views.unit_entity(mount_id) else { return };
+    let Ok((mut unit, mut transform, motion, drive)) = mounts.get_mut(entity) else { return };
+    let Some(mut drive) = drive else {
+        // The attach frame did not have the mount's entity ready; adopt it now.
+        let Some(mount_unit) = units.get(mount_id) else { return };
+        let body = db.as_deref().map_or_else(MountMove::default, |db| db.mount_move(mount_unit.model_id));
+        let pos = Vec3::new(mount_unit.pos.x, mount_unit.pos.y, mount_unit.pos.z);
+        commands.entity(entity).insert(DrivenMount::new(pos, mount_unit.yaw(), body));
+        return;
+    };
+    let Ok(mut orbit) = cameras.single_mut() else { return };
+    let typing = typing.is_some_and(|f| f.0);
+    let over_ui = over_ui.is_some_and(|o| o.0);
+    let pressed = |action: &str| !typing && actions.pressed(action, 0);
+    let tapped = |action: &str| !typing && actions.just_pressed(action, 0);
+    let dt = time.delta_secs().min(0.1);
+    if dt <= 0.0 {
+        return;
+    }
+    drive.since_sent += dt;
+    if tapped("toggle_walk") {
+        drive.walking = !drive.walking;
+    }
+    if tapped("autorun") {
+        drive.autorun = !drive.autorun;
+    }
+    let back = pressed("moveback");
+    if back {
+        drive.autorun = false;
+    }
+    let both = mouse.pressed(MouseButton::Left) && mouse.pressed(MouseButton::Right) && !over_ui;
+    let forward_input = (pressed("moveforward") || drive.autorun || both) as i32 as f32 - back as i32 as f32;
+    let strafe = pressed("moveright") as i32 as f32 - pressed("moveleft") as i32 as f32;
+    let turn = pressed("turnleft") as i32 as f32 - pressed("turnright") as i32 as f32;
+    let jump = tapped("jump");
+    let before_facing = drive.facing;
+    if turn != 0.0 {
+        let d = turn * drive.body.turn * dt;
+        drive.facing += d;
+        orbit.yaw += d;
+    }
+    let local_dir = Vec2::new(strafe, forward_input).normalize_or_zero();
+    if mouse.pressed(MouseButton::Right) && !over_ui {
+        drive.facing = orbit.yaw;
+    } else if local_dir != Vec2::ZERO {
+        drive.facing = approach_angle(drive.facing, orbit.yaw, MOUNT_ALIGN_RATE * dt);
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let step = drive.step(local_dir, drive.walking != shift);
+    let old = drive.pos;
+    let mut pos = old;
+    if step != Vec2::ZERO {
+        let candidate = collision.slide(pos, step * dt, drive.body.radius, drive.body.height, MOUNT_STEP_UP).pos;
+        if terrain.height_at(candidate.x, candidate.y).is_some() {
+            let ahead = Vec2::new(candidate.x, candidate.y) + step.normalize_or_zero() * MOUNT_CLIMB_LOOK;
+            let rise = terrain.ground_at(ahead.x, ahead.y).map_or(0.0, |ground| ground.height - pos.z);
+            let climbing = !drive.swimming && drive.grounded && rise > MOUNT_CLIMB_LOOK * MOUNT_MAX_CLIMB_TAN;
+            let on_brush = climbing && collision.ground_below(candidate.x, candidate.y, pos.z, MOUNT_STEP_UP).is_some();
+            if !climbing || on_brush {
+                pos.x = candidate.x;
+                pos.y = candidate.y;
+            }
+        }
+    }
+    let step_up = if drive.grounded || drive.swimming { MOUNT_STEP_UP } else { 0.05 };
+    let ground = super::player::floor_at(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z), step_up);
+    let wet = water.water_at(pos).map(|(surface, _)| (surface, (surface - ground).max(0.0)));
+    let want_swim = wet.is_some_and(|(_, depth)| depth > drive.body.height * 0.6);
+    if want_swim {
+        if !drive.swimming {
+            drive.swimming = true;
+            drive.grounded = false;
+            drive.vz = 0.0;
+        }
+        if let Some((surface, _)) = wet {
+            pos.z = surface - drive.body.height * 0.3;
+        }
+    } else if drive.swimming {
+        drive.swimming = false;
+        drive.grounded = false;
+    }
+    let mut landed = None;
+    let mut jumped = false;
+    if !drive.swimming {
+        if drive.grounded {
+            if pos.z - ground > MOUNT_DROP {
+                drive.grounded = false;
+                drive.vz = 0.0;
+            } else {
+                pos.z = ground;
+            }
+        }
+        if drive.grounded && jump {
+            drive.vz = (2.0 * drive.body.gravity * drive.body.jump_height).sqrt();
+            drive.grounded = false;
+            jumped = true;
+        }
+        if !drive.grounded {
+            drive.vz -= drive.body.gravity * dt;
+            pos.z += drive.vz * dt;
+            if pos.z <= ground && drive.vz <= 0.0 {
+                pos.z = ground;
+                landed = Some(-drive.vz);
+                drive.vz = 0.0;
+                drive.grounded = true;
+            }
+        }
+    }
+    let actual = if dt > 0.0 { Vec2::new(pos.x - old.x, pos.y - old.y) / dt } else { Vec2::ZERO };
+    let velocity = Vec3::new(actual.x, actual.y, if drive.swimming || !drive.grounded { drive.vz } else { 0.0 });
+    let moving = local_dir != Vec2::ZERO && actual.length() > 0.05;
+    let airborne = !drive.grounded && !drive.swimming;
+    drive.pos = pos;
+    unit.pos = pos;
+    unit.facing = drive.facing;
+    *transform = placement(pos, drive.facing, unit.scale());
+    if let Some(mut m) = motion {
+        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne };
+    }
+    let turned = (drive.facing - before_facing).abs() > 1e-4;
+    *input_state = PlayerInput { moving, jumped, turned };
+    let active = moving || airborne || turned || (drive.swimming && moving);
+    let due = drive.since_sent >= MOUNT_SEND_INTERVAL;
+    let first = !drive.sent_first && active;
+    let state = if drive.grounded || drive.swimming {
+        MoveState::Ground
+    } else if drive.vz > 0.0 {
+        MoveState::Jump
+    } else {
+        MoveState::Fall
+    };
+    if (active && due) || (!active && drive.was_active) || first || landed.is_some() {
+        let delta = [(local_dir.x * 127.0).round() as i8, (local_dir.y * 127.0).round() as i8, 0];
+        out.write(NetCommand(drive.packet(mount_id, active, velocity, delta, state, landed)));
+        drive.since_sent = 0.0;
+        drive.sent_first = true;
+    }
+    drive.was_active = active;
+}
+
 /// `AA_FAKE_MOUNT=1`, a check for the riders (the server has no command that summons a mount): a horse (model 139) and a
 /// rider that looks like the local player appear beside the player, the rider is attached to the horse, and the horse runs a
 /// circle at 5 m/s, reported ten times a second like the walkthrough's circle. `AA_FAKE_MOUNT=still` parks the horse 4 m from the
@@ -424,4 +707,52 @@ pub fn fake_mount(time: Res<Time>, player: Res<Player>, mut units: ResMut<Units>
     }
     events.write(NetEvent(Event::UnitMoved { obj_id: HORSE, movement }));
     *state = Some((started, now));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn horse() -> MountMove {
+        MountMove { walk: 1.8, run: 9.0, radius: 1.0, height: 1.0, jump_height: 1.3, gravity: 30.0, turn: 360.0_f32.to_radians() }
+    }
+
+    #[test]
+    fn mounted_forward_input_makes_a_mate_move_packet() {
+        let mut drive = DrivenMount::new(Vec3::new(10.0, 20.0, 30.0), 0.0, horse());
+        let step = drive.step(Vec2::Y, false);
+        assert!((step.length() - 9.0).abs() < 1e-4, "horse run speed: {step:?}");
+        drive.pos += Vec3::new(step.x, step.y, 0.0) * 0.1;
+        let command = drive.packet(0x445566, true, Vec3::new(step.x, step.y, 0.0), [0, 127, 0], MoveState::Ground, None);
+        match command {
+            Command::MoveUnit { obj_id, command } => {
+                assert_eq!(obj_id, 0x445566, "the packet names the mate object, not the player");
+                assert!(command.moving);
+                assert_eq!(command.yaw, 0.0);
+                assert!((command.pos.y - 20.9).abs() < 0.01, "{:?}", command.pos);
+                assert_eq!(command.velocity, [0, 9 * 1024, 0]);
+                assert_eq!(command.delta_movement, [0, 127, 0]);
+            }
+            other => panic!("not a mate movement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mount_walk_and_swim_speeds_follow_the_model() {
+        let drive = DrivenMount::new(Vec3::ZERO, 0.0, horse());
+        assert!((drive.step(Vec2::Y, true).length() - 1.8).abs() < 1e-4, "walk");
+        assert!((drive.step(Vec2::Y, false).length() - 9.0).abs() < 1e-4, "run");
+        let swimming = DrivenMount { swimming: true, ..DrivenMount::new(Vec3::ZERO, 0.0, horse()) };
+        assert!((swimming.step(Vec2::Y, false).length() - 4.05).abs() < 1e-4, "swim is 45 % of the run");
+    }
+
+    #[test]
+    fn only_the_driver_seat_drives_and_dismount_restores_on_foot_control() {
+        assert_eq!(mounted_driver(Some(Attachment { obj_id: 201, point: 1 })), Some(201));
+        assert_eq!(mounted_driver(Some(Attachment { obj_id: 201, point: 2 })), None);
+        assert_eq!(mounted_driver(None), None);
+        assert!(!super::super::player::on_foot_attached(Some(Attachment { obj_id: 201, point: 1 })));
+        assert!(!super::super::player::on_foot_attached(Some(Attachment { obj_id: 201, point: 2 })));
+        assert!(super::super::player::on_foot_attached(None));
+    }
 }

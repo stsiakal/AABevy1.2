@@ -1489,7 +1489,8 @@ decompiled `FUN_3909ae90` reason byte (mount→player direction: rear3, front4, 
 occupied-seat override). `DismissPet` mounted on the same pet first sends the reason10 unmount and
 sends `CSRemoveMate` after the server's `SCUnitDetached`, as the native model-action continuation.
 `GetSpeedInfo` returns one f32 from the last received movement report (m/s); position-targeted
-mount skills are not sent. The pet bar's `ISLOT_PET_ACTION` slots now reach the app through
+mount skills send a mate-caster position target at the selected unit's spot. The pet bar's
+`ISLOT_PET_ACTION` slots now reach the app through
 `AAUI.UseSlot`; a click sends a mate-cast `CSStartSkill` with the mate as the self target and the
 player's selection for unit-target skills. Summon stays the original item use: the summon item's
 `use_skill_id` goes through the existing item-caster `CSStartSkill`, so its cast bar and the
@@ -1498,8 +1499,9 @@ server's `SCErrorMsg` texts are the same paths as any other item, not a new mate
 Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
 target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
 a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`
-for the pet action bar, and the movement speed getter. The full client suite passes415 tests /39
-ignored.
+for the pet action bar, and the movement speed getter. Mounted locomotion checks cover the mate-cast
+forward packet's object id/velocity and the driver-seat gate that hands control back on dismount. The
+full client suite passes418 tests /39 ignored.
 
 Validation:160 client tests /27 ignored (5.31s), plus the exact original pet probe passes in1.89s.
 It requires both original widgets and completed250x105 bar sizing, exercises physical rename

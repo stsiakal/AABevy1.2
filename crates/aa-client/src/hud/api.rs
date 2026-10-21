@@ -903,7 +903,8 @@ pub fn handle_requests(
                 panels::use_bag_slot(slot - 1, &env, &inventory, &target, &mut pressed, &mut failed);
             }
             Request::UsePetAction { slot } => {
-                if let Some(command) = super::pets::use_pet_action(&bridge.0.borrow(), slot, selected.unwrap_or(0)) {
+                let data = bridge.0.borrow();
+                if let Some(command) = super::pets::use_pet_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
                     net.write(NetCommand(command));
                 }
             }

@@ -47,6 +47,7 @@ fn displayed_skills_preserve_received_order_and_first_seat_only() {
                 first_seat: seat,
                 level: 1,
                 target_type: 0,
+                target_selection: 0,
             },
         );
     };
@@ -80,6 +81,7 @@ fn local_modes_use_attackable_and_active_command_duplicate_guards() {
             first_seat: None,
             level: 1,
             target_type: 0,
+            target_selection: 0,
         },
     );
     assert!(data.game.0.set(game).is_ok());
@@ -135,26 +137,32 @@ fn mount_skill_slot_uses_mate_self_and_player_hostile_targets() -> Result<(), Bo
         pet.level = 30;
         pet.spawn.skills[0] = 5; // mount_skills 5: combat 11028, target_type 0 (self)
     }
-    let command = use_pet_action(&data, 1, 0).expect("self skill");
+    let command = use_pet_action(&data, 1, 0, None).expect("self skill");
     assert!(matches!(
         command,
         aa_net::Command::UseMateSkill { skill_id: 11028, mate_obj_id: 201, mount_skill_id: 5, target_obj_id: 201 }
     ));
     data.pets.owned.current.as_mut().expect("fixture pet").spawn.skills[0] = 2; // mount_skills 2: combat 11017, target_type 4
-    assert!(use_pet_action(&data, 1, 0).is_none(), "a hostile mount skill needs a target");
-    let command = use_pet_action(&data, 1, 987).expect("hostile skill");
+    assert!(use_pet_action(&data, 1, 0, None).is_none(), "a hostile mount skill needs a target");
+    let command = use_pet_action(&data, 1, 987, None).expect("hostile skill");
     assert!(matches!(
         command,
         aa_net::Command::UseMateSkill { skill_id: 11017, mate_obj_id: 201, mount_skill_id: 2, target_obj_id: 987 }
     ));
-    data.pets.owned.current.as_mut().expect("fixture pet").spawn.skills[0] = 12; // target_type 6 (position)
-    assert!(use_pet_action(&data, 1, 987).is_none(), "position skills are not sent as unit targets");
+    data.pets.owned.current.as_mut().expect("fixture pet").spawn.skills[0] = 12; // target_type 6, target_selection 2
+    assert!(use_pet_action(&data, 1, 987, None).is_none(), "a position mount skill needs the target's spot");
+    let command = use_pet_action(&data, 1, 987, Some(Vec3::new(10.0, 20.0, 30.0))).expect("position skill");
+    assert!(matches!(
+        command,
+        aa_net::Command::UseMateSkillAt { skill_id: 11328, mate_obj_id: 201, mount_skill_id: 12, pos }
+            if (pos.x, pos.y, pos.z) == (10.0, 20.0, 30.0)
+    ));
     {
         let pet = data.pets.owned.current.as_mut().expect("fixture pet");
         pet.level = 1; // skill 5 needs ability level 20
         pet.spawn.skills[0] = 5;
     }
-    assert!(use_pet_action(&data, 1, 0).is_none(), "unlearned mount skills do not start");
+    assert!(use_pet_action(&data, 1, 0, None).is_none(), "unlearned mount skills do not start");
     drop(data);
     drop(bridge);
     if path.exists() {

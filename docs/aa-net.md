@@ -171,8 +171,11 @@ while let Some(event) = client.recv().await { /* or client.try_recv() from a gam
 never blocks. `Client` is the only handle; dropping it closes the connections. `spawn_on_with` /
 `spawn_thread_with(ClientOptions)` take the keep-alive tunables (defaults are right for apps).
 
-`Move(MoveCommand)` sends `CSMoveUnit` for the local player (ignored until `InWorld`). `MoveCommand`
-is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
+`Move(MoveCommand)` sends `CSMoveUnit` for the local player (ignored until `InWorld`).
+`MoveUnit { obj_id, command }` sends the same exact body for a unit the character controls (its owned
+mate while riding); the server's `apply_unit_move` checks the owner and runs `on_mate_unit_move` for a
+mate target. The object id and state still have to be nonzero/24-bit and the session must be `InWorld`.
+`MoveCommand` is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
 `MoveCommand::running(pos, yaw, speed_mps)` (velocity along the facing + full forward input),
 `MoveCommand::stopped(pos, yaw)`, `.with_state(..)`, `.landing(fall_speed_mps)` or struct update
 syntax:
@@ -1893,6 +1896,12 @@ For a pet self buff the caller explicitly supplies mate_obj_id as target. The ex
 u8 targetKind 0, bc targetObjId, u8 flag 0. The low-level
 `skill::StartCaster::Mount { obj_id, mount_skill_id }` is also available.
 The player's own object ID is not substituted into the mount caster.
+
+`Command::UseMateSkillAt { skill_id, mate_obj_id, mount_skill_id, pos }` sends the same mount
+caster with a `SkillTargetType::Pos` target (`targetKind` 1 and the packed position): leap,
+cannon, harpoon and artillery mount skills. The IDs have the same nonzero/24-bit rules and the
+position must be finite. No automatic spot/target selection is imposed. `aa-net` has no local
+`MateEvent` for this send; authoritative `SCPlotEvent`/`SCSkillStarted` remain the evidence.
 
 Local `MateEvent::SkillRequested { skill_id, mate_obj_id, mount_skill_id, target_obj_id }`
 and `SkillRejected { same fields, message }` do not create a cast or consume resources.

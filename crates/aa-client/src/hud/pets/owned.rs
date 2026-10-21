@@ -20,6 +20,7 @@ struct Skill {
     first_seat: Option<u32>,
     level: i32,
     target_type: u32,
+    target_selection: u32,
 }
 
 impl Tables {
@@ -50,7 +51,7 @@ impl Tables {
             first.entry(any_int(row, 2)? as u32).or_insert(any_int(row, 1)? as u32);
         }
         let mut query =
-            conn.prepare("SELECT m.id,m.skill_id,s.ability_level,s.target_type_id FROM mount_skills m INNER JOIN skills s ON s.id=m.skill_id ORDER BY m.id")?;
+            conn.prepare("SELECT m.id,m.skill_id,s.ability_level,s.target_type_id,s.target_selection_id FROM mount_skills m INNER JOIN skills s ON s.id=m.skill_id ORDER BY m.id")?;
         let mut rows = query.query([])?;
         while let Some(row) = rows.next()? {
             let id = any_int(row, 0)? as u32;
@@ -61,6 +62,7 @@ impl Tables {
                     first_seat: first.get(&id).copied(),
                     level: any_int(row, 2)? as i32,
                     target_type: any_int(row, 3)? as u32,
+                    target_selection: any_int(row, 4)? as u32,
                 },
             );
         }
@@ -514,38 +516,55 @@ fn kick_passenger(data: &mut HudData) {
 
 /// The native pet action slot (`ISLOT_PET_ACTION`): resolve the displayed mount skill and choose the
 /// target of its `target_type_id`. Self-target skills name the mate (the server's mount caster
-/// resolves `SelfTarget` there); unit-target skills use the player's selection. Position-targeted
-/// mount skills have no mate-caster request in aa-net and are not sent.
-pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32) -> Option<aa_net::Command> {
+/// resolves `SelfTarget` there); unit-target skills use the player's selection; position-targeted
+/// skills (`Pos`, `BallisticPos`, `RelativePos`, `ArtilleryPos`) send the mate-caster position target
+/// at the selected unit's spot (the mount skill rows use `target_selection_id = 2`). A source-position
+/// row centers on the mate's own spot.
+pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<aa_net::Command> {
     let pet = data.pets.owned.current.as_ref()?;
     let game = data.game.get()?;
     let (raw, skill) = displayed(&game.pets.owned, pet, index)?;
     if i32::from(pet.level) < skill.level {
         return None;
     }
-    let target_obj_id = match skill.target_type {
-        0 => pet.object,
-        4 | 5 | 16 | 17 => {
-            if target_obj_id == 0 || target_obj_id == pet.object {
-                return None;
-            }
-            target_obj_id
-        }
-        6 | 11 | 12 | 13 | 14 | 15 | 18 => return None,
-        _ => {
-            if target_obj_id == 0 { pet.object } else { target_obj_id }
-        }
-    };
     let mount_skill_id = *pet.spawn.skills.get(raw)?;
     if mount_skill_id == 0 {
         return None;
     }
-    Some(aa_net::Command::UseMateSkill {
-        skill_id: skill.combat,
-        mate_obj_id: pet.object,
-        mount_skill_id,
-        target_obj_id,
-    })
+    match skill.target_type {
+        0 => Some(aa_net::Command::UseMateSkill {
+            skill_id: skill.combat,
+            mate_obj_id: pet.object,
+            mount_skill_id,
+            target_obj_id: pet.object,
+        }),
+        4 | 5 | 16 | 17 => {
+            if target_obj_id == 0 || target_obj_id == pet.object {
+                return None;
+            }
+            Some(aa_net::Command::UseMateSkill { skill_id: skill.combat, mate_obj_id: pet.object, mount_skill_id, target_obj_id })
+        }
+        6 | 11 | 13 | 15 => {
+            let pos = if skill.target_selection == 1 {
+                pet.pos
+            } else {
+                if target_obj_id == 0 {
+                    return None;
+                }
+                target_pos?
+            };
+            Some(aa_net::Command::UseMateSkillAt {
+                skill_id: skill.combat,
+                mate_obj_id: pet.object,
+                mount_skill_id,
+                pos: aa_net::Pos::new(pos.x, pos.y, pos.z),
+            })
+        }
+        _ => {
+            let target_obj_id = if target_obj_id == 0 { pet.object } else { target_obj_id };
+            Some(aa_net::Command::UseMateSkill { skill_id: skill.combat, mate_obj_id: pet.object, mount_skill_id, target_obj_id })
+        }
+    }
 }
 
 fn table(lua: &Lua, pet: &Pet) -> mlua::Result<Table> {

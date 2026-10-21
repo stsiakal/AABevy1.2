@@ -1619,6 +1619,22 @@ mod tests {
     }
 
     #[test]
+    fn move_unit_body_names_the_controlled_object() {
+        use crate::model::Movement;
+        let movement = Movement::unit(crate::Pos::new(1.0, 2.0, 3.0), 0.5, 42);
+        let msg = ClientMsg::Move { obj_id: 0x445566, movement: movement.clone() };
+        assert_eq!(msg.opcode(), cs::CSMoveUnitPacket);
+        let body = msg.encode_body();
+        assert_eq!(&body[..3], &[0x66, 0x55, 0x44], "bc controlled object id");
+        let mut r = Reader::new(&body[3..]);
+        let back = Movement::read(&mut r).unwrap();
+        assert_eq!((back.move_type, back.time, back.flags), (movement.move_type, movement.time, movement.flags));
+        assert!((back.pos.x - 1.0).abs() < 1e-4 && (back.pos.y - 2.0).abs() < 1e-4 && (back.pos.z - 3.0).abs() < 1e-3);
+        assert_eq!(back.direction, crate::model::radians_to_direction(0.5));
+        assert!(r.is_empty());
+    }
+
+    #[test]
     fn client_item_move_bytes() {
         // CSSwapItems: from item id, to item id (u64 each), then from container, slot, to container, slot. Equipping into
         // an empty worn slot is "from the empty equipment slot (item 0) to the bag item".

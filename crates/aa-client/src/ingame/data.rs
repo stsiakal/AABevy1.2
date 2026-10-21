@@ -27,6 +27,27 @@ struct Lookups {
     backpacks: HashMap<u32, Option<Weapon>>,
     anim_actions: HashMap<u32, Option<String>>,
     mount_poses: HashMap<u32, u32>,
+    mount_moves: HashMap<u32, MountMove>,
+}
+
+/// How a ridden mate moves: the actor model's base stance speeds and body (the same `game_stances`
+/// rows the server's `Npc.BaseMoveSpeed` reads), plus its jump/gravity and turn rate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MountMove {
+    pub walk: f32,
+    pub run: f32,
+    pub radius: f32,
+    pub height: f32,
+    pub jump_height: f32,
+    pub gravity: f32,
+    /// Radians per second (`actor_models.turn_speed` is degrees per second).
+    pub turn: f32,
+}
+
+impl Default for MountMove {
+    fn default() -> Self {
+        Self { walk: 1.8, run: 5.4, radius: 0.6, height: 1.8, jump_height: 1.3, gravity: 25.0, turn: 360.0_f32.to_radians() }
+    }
 }
 
 /// How a weapon item is drawn (`item_weapons` + its `item_assets` row).
@@ -144,6 +165,7 @@ impl Db {
                 backpacks: HashMap::new(),
                 anim_actions: HashMap::new(),
                 mount_poses: HashMap::new(),
+                mount_moves: HashMap::new(),
             })),
         })
     }
@@ -213,6 +235,45 @@ impl Db {
             .unwrap_or(0);
         l.mount_poses.insert(model_id, pose);
         pose
+    }
+
+    /// The actor model's base stance speeds/body a driven mate moves with. The first stance row
+    /// (`stance_id = 1`) is the normal one the server's `Npc.BaseMoveSpeed` uses outside battle.
+    pub fn mount_move(&self, model_id: u32) -> MountMove {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(m) = l.mount_moves.get(&model_id) {
+            return *m;
+        }
+        let d = MountMove::default();
+        let out = l
+            .conn
+            .query_row(
+                "SELECT g.ai_move_speed_walk, g.ai_move_speed_run, a.radius, a.height, \
+                        a.game_jump_height, a.physics_living_gravity, a.turn_speed \
+                 FROM models m \
+                 JOIN actor_models a ON a.id = m.sub_id AND m.sub_type = 'ActorModel' \
+                 JOIN game_stances g ON g.actor_model_id = a.id \
+                 WHERE m.id = ?1 AND g.stance_id = 1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let n = |i: usize, default: f32| -> f32 {
+                        r.get::<_, Option<f64>>(i).ok().flatten().map_or(default, |v| v as f32)
+                    };
+                    let turn = n(6, 360.0);
+                    Ok(MountMove {
+                        walk: n(0, d.walk).max(0.1),
+                        run: n(1, d.run).max(0.1),
+                        radius: n(2, d.radius).max(0.1),
+                        height: n(3, d.height).max(0.1),
+                        jump_height: n(4, d.jump_height).max(0.0),
+                        gravity: n(5, d.gravity).max(1.0),
+                        turn: if turn > 0.0 { turn.to_radians() } else { d.turn },
+                    })
+                },
+            )
+            .unwrap_or(d);
+        l.mount_moves.insert(model_id, out);
+        out
     }
 
     /// `npcs.scale` of an NPC template (1 when unknown).
