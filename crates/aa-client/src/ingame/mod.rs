@@ -58,6 +58,7 @@ mod swim;
 pub(crate) mod teleport;
 mod trace;
 pub(crate) mod units;
+pub(crate) mod virtual_input;
 pub(crate) mod warm;
 pub(crate) mod weapons;
 
@@ -125,6 +126,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(flow::plugin)
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)
+            .add_plugins(virtual_input::plugin)
             .add_plugins(doodad_visual::plugin)
             .add_plugins(attachments::plugin)
             .add_plugins(bench::plugin)

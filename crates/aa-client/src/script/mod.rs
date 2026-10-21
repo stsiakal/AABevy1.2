@@ -270,6 +270,7 @@ struct Ctx<'w, 's> {
     offscreen: Option<Res<'w, aa_dev::OffscreenTarget>>,
     exit: MessageWriter<'w, AppExit>,
     catalog: Res<'w, crate::ingame::placement::Catalog>,
+    virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
     terrain: Option<Res<'w, aa_world::TerrainQuery>>,
     collision: Option<Res<'w, aa_world::WorldCollision>>,
     water: Option<Res<'w, aa_world::WaterQuery>>,
@@ -785,7 +786,23 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Wait { until: now + 0.5 })
         }
         Cmd::Key(k) => {
+            c.virtual_input.queue_key_name(k);
             c.keys.push_now(k, false);
+            Some(Active::Wait { until: now + 0.3 })
+        }
+        Cmd::Cursor(x, y) => {
+            c.virtual_input.set_cursor(*x, *y);
+            say(r, &format!("virtual cursor {x} {y}"));
+            Some(Active::Wait { until: now + 0.2 })
+        }
+        Cmd::VirtualClick(right) => {
+            c.virtual_input.queue_click(if *right { MouseButton::Right } else { MouseButton::Left });
+            say(r, &format!("virtual {} click", if *right { "right" } else { "left" }));
+            Some(Active::Wait { until: now + 0.4 })
+        }
+        Cmd::Wheel { steps, shift, alt, ctrl } => {
+            c.virtual_input.queue_wheel(*steps, *shift, *alt, *ctrl);
+            say(r, &format!("virtual wheel {steps} (shift {shift}, alt {alt}, ctrl {ctrl})"));
             Some(Active::Wait { until: now + 0.3 })
         }
         Cmd::Type(t) => {

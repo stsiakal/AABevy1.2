@@ -263,8 +263,11 @@ fn leave(mut commands: Commands, mut aiming: ResMut<Aiming>, reticles: Query<Ent
 }
 
 /// The cursor, in the window's logical pixels: the scripted one, else the mouse.
-fn cursor_of(window: Option<&Window>, script: &Script) -> Option<Vec2> {
-    script.cursor.or_else(|| window.and_then(|w| w.cursor_position()))
+fn cursor_of(window: Option<&Window>, script: &Script, virtual_input: Option<&crate::ingame::virtual_input::VirtualInput>) -> Option<Vec2> {
+    script
+        .cursor
+        .or_else(|| virtual_input.and_then(|v| v.cursor_position(window)))
+        .or_else(|| window.and_then(|w| w.cursor_position()))
 }
 
 /// The first spot of the ground (or of an object) under the view ray through `cursor`, in game coordinates.
@@ -395,6 +398,7 @@ fn route(
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     collision: Option<Res<WorldCollision>>,
     terrain: Option<Res<TerrainQuery>>,
+    virtual_input: Option<Res<crate::ingame::virtual_input::VirtualInput>>,
     target: Res<Target>,
     units: Res<Units>,
     mut player: Query<&mut Mover, With<LocalPlayer>>,
@@ -426,7 +430,7 @@ fn route(
             info!("ground: skill {} is centred on the caster: cast at ({:.1}, {:.1}, {:.1})", press.skill, me.x, me.y, me.z);
             continue;
         }
-        let cursor = cursor_of(windows.single().ok(), &script);
+        let cursor = cursor_of(windows.single().ok(), &script, virtual_input.as_deref());
         let spot_at_cursor = || {
             let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
             spot_under(camera, transform, cursor?, collision.as_deref(), terrain.as_deref())
@@ -456,6 +460,7 @@ fn route(
 }
 
 /// Keeps the spot under the cursor and whether it is in range.
+#[allow(clippy::too_many_arguments)]
 fn track_cursor(
     mut aiming: ResMut<Aiming>,
     over_ui: Res<HudPointerOverUi>,
@@ -464,6 +469,7 @@ fn track_cursor(
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     collision: Option<Res<WorldCollision>>,
     terrain: Option<Res<TerrainQuery>>,
+    virtual_input: Option<Res<crate::ingame::virtual_input::VirtualInput>>,
     player: Query<&Mover, With<LocalPlayer>>,
     mut last: Local<Option<Vec3>>,
 ) {
@@ -472,7 +478,7 @@ fn track_cursor(
         return;
     };
     let (Ok(mover), Some((camera, transform))) = (player.single(), cameras.iter().find(|(c, _)| c.is_active)) else { return };
-    let cursor = if over_ui.0 && script.cursor.is_none() { None } else { cursor_of(windows.single().ok(), &script) };
+    let cursor = if over_ui.0 && script.cursor.is_none() { None } else { cursor_of(windows.single().ok(), &script, virtual_input.as_deref()) };
     aim.spot = cursor
         .and_then(|c| spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref()))
         .map(|spot| (spot, in_range(&aim.skill, mover.pos, spot, 0.0)));
@@ -505,6 +511,7 @@ fn aim_input(
     mut script: ResMut<Script>,
     mut aiming: ResMut<Aiming>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    virtual_input: Option<Res<crate::ingame::virtual_input::VirtualInput>>,
     mut player: Query<&mut Mover, With<LocalPlayer>>,
     mut net: MessageWriter<NetCommand>,
     mut pressed_at: Local<[Option<Vec2>; 2]>,
@@ -514,7 +521,7 @@ fn aim_input(
         *pressed_at = [None; 2];
         return;
     };
-    let cursor = cursor_of(windows.single().ok(), &script);
+    let cursor = cursor_of(windows.single().ok(), &script, virtual_input.as_deref());
     let mut cast = clicked;
     let mut cancel = cancelled;
     if keys.just_pressed(KeyCode::Escape) {

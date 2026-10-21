@@ -50,6 +50,7 @@ use super::camera::OrbitCamera;
 use super::data::Db;
 use super::ground_target::spot_under;
 use super::player::{LocalPlayer, Mover};
+use super::virtual_input::VirtualInput;
 use crate::Screen;
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
 
@@ -414,6 +415,7 @@ fn start(
     mut placement: ResMut<Placement>,
     player: Query<&Mover, With<LocalPlayer>>,
     camera: Query<&OrbitCamera>,
+    mut virtual_input: ResMut<VirtualInput>,
 ) {
     for press in pressed.read() {
         let Some(plant) = catalog.plantable(press.item_template).cloned() else {
@@ -421,6 +423,7 @@ fn start(
             continue;
         };
         end_session(&mut commands, &mut placement);
+        virtual_input.clear_edges();
         // the retail client's first yaw is the camera heading (two captures: 4.2020082 and 3.166932 rad)
         let yaw = camera.single().map(|c| c.yaw).or_else(|_| player.single().map(|m| m.facing)).unwrap_or(0.0);
         info!(
@@ -447,12 +450,13 @@ fn track(
     terrain: Option<Res<TerrainQuery>>,
     water: Option<Res<WaterQuery>>,
     mut visuals: ResMut<Visuals>,
+    virtual_input: Res<VirtualInput>,
 ) {
     ensure_visuals(&mut cry.images, &mut cry.meshes, &mut cry.materials, &mut visuals);
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
     let Some(mover) = player.single().ok() else { return };
-    let cursor = if over_ui.0 { None } else { windows.single().ok().and_then(|w| w.cursor_position()) };
+    let cursor = if over_ui.0 { None } else { virtual_input.cursor_position(windows.single().ok()) };
     let hit = cursor.and_then(|c| {
         let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
         spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref())
@@ -598,7 +602,7 @@ fn ring_quads(
         let side = Vec2::new(-dir.y, dir.x);
         let radius_jitter = (((i * 53) % 97) as f32 / 97.0 - 0.5) * 0.10;
         let centre = Vec2::new(spot.x, spot.y) + dir * (radius + radius_jitter);
-        let z = floor(centre) + 0.045;
+        let z = floor(centre) + 0.09;
         let game = Vec3::new(centre.x, centre.y, z);
         let p = [
             game - (side * half_w + dir * half_len).extend(0.0),
@@ -759,11 +763,11 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
             unlit: true,
             alpha_mode: AlphaMode::Blend,
             cull_mode: None,
-            depth_bias: 10.0,
+            depth_bias: 20.0,
             ..default()
         };
-        visuals.yellow = Some(materials.add(leaf_material(Color::srgba(0.72, 0.55, 0.12, 0.95))));
-        visuals.red = Some(materials.add(leaf_material(Color::srgba(0.62, 0.06, 0.04, 0.95))));
+        visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.72, 0.12, 1.0))));
+        visuals.red = Some(materials.add(leaf_material(Color::srgba(0.95, 0.10, 0.06, 1.0))));
 
         let arrow = dds_image("textures/decal/roadsign/arrow.dds")?;
         visuals.arrow_image = Some(images.add(arrow));
@@ -809,10 +813,12 @@ fn dds_image(path: &str) -> Option<Image> {
 
 /// Hides the OS cursor while placing and draws the client's placement cursor at the pointer (the white crosshair
 /// `housing_position` / red cross `housing_invalid` of the 1.2 client).
+#[allow(clippy::too_many_arguments)]
 fn cursor_icon(
     mut commands: Commands,
     placement: Res<Placement>,
     mut visuals: ResMut<Visuals>,
+    virtual_input: Res<VirtualInput>,
     mut windows: Query<(Entity, &mut Window, &mut bevy::window::CursorOptions), With<bevy::window::PrimaryWindow>>,
     cameras: Query<(Entity, &Camera, &Projection), With<Camera3d>>,
     ui_cameras: Query<Entity, With<aa_ui::render::UiCamera>>,
@@ -894,7 +900,7 @@ fn cursor_icon(
             }
         }
     }
-    let Some(cursor) = window.cursor_position() else {
+    let Some(cursor) = virtual_input.cursor_position(Some(&window)) else {
         if let Ok((_, mut v, _)) = icon.single_mut() {
             *v = Visibility::Hidden;
         }
@@ -950,6 +956,7 @@ fn input(
     over_ui: Res<HudPointerOverUi>,
     focus: Res<HudKeyboardFocus>,
     mut placement: ResMut<Placement>,
+    mut virtual_input: ResMut<VirtualInput>,
     skills: Res<Skills>,
     rt: Option<NonSend<aa_ui::UiRuntime>>,
     mut net: MessageWriter<NetCommand>,
@@ -964,7 +971,10 @@ fn input(
         end_session(&mut commands, &mut placement);
         return;
     }
-    let mut cancel = keys.just_pressed(KeyCode::Escape);
+    let virtual_click = virtual_input.take_click();
+    let virtual_keys = virtual_input.take_keys();
+    let virtual_wheels = virtual_input.take_wheels();
+    let mut cancel = keys.just_pressed(KeyCode::Escape) || virtual_keys.contains(&KeyCode::Escape);
     if cancel {
         keys.clear_just_pressed(KeyCode::Escape);
     }
@@ -973,19 +983,27 @@ fn input(
         keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
         keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
     );
-    let mut turn = 0.0;
+    let mut real_wheel = 0.0;
     for ev in wheel.read() {
-        turn += wheel_turn(shift, alt, ctrl, ev.y);
+        real_wheel += wheel_turn(shift, alt, ctrl, ev.y);
+    }
+    let mut turn = real_wheel;
+    if !virtual_wheels.is_empty() {
+        turn = 0.0;
+        for w in &virtual_wheels {
+            turn += wheel_turn(w.shift, w.alt, w.ctrl, w.steps);
+        }
     }
     if turn != 0.0 {
         session.yaw = wrap_angle(session.yaw + turn);
     }
-    if mouse.just_pressed(MouseButton::Right) {
+    let right_click = mouse.just_pressed(MouseButton::Right) || virtual_click == Some(MouseButton::Right);
+    if right_click {
         mouse.clear_just_pressed(MouseButton::Right);
         cancel = true;
     }
-    let left_down = mouse.pressed(MouseButton::Left);
-    let left_just = mouse.just_pressed(MouseButton::Left);
+    let left_down = mouse.pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
+    let left_just = mouse.just_pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
     if left_just && !over_ui.0 {
         mouse.clear_just_pressed(MouseButton::Left);
     }
@@ -1370,7 +1388,7 @@ mod tests {
         assert!(red.is_empty());
         for q in &yellow {
             for v in q.p {
-                assert!((v.y - 10.045).abs() < 1e-3, "Bevy Y is the ground height: {v:?}");
+                assert!((v.y - 10.09).abs() < 1e-3, "Bevy Y is the ground height: {v:?}");
                 assert!((v.x - 100.0).abs() < 2.0 && (v.z + 200.0).abs() < 2.0, "game y -> Bevy -z: {v:?}");
             }
         }
@@ -1430,6 +1448,7 @@ mod tests {
             .init_resource::<crate::hud::HudPointerOverUi>()
             .init_resource::<crate::hud::HudKeyboardFocus>()
             .init_resource::<crate::hud::HudBuilt>()
+            .init_resource::<crate::ingame::virtual_input::VirtualInput>()
             .insert_non_send(crate::hud::api::HudBridge(std::rc::Rc::new(std::cell::RefCell::new(
                 crate::hud::api::HudData::default(),
             ))));
@@ -1495,5 +1514,47 @@ mod tests {
             });
         app.update();
         assert!(app.world().resource::<Parts>().0 > 0, "the template model has meshes to show as a ghost");
+    }
+
+    /// The virtual script input (`cursor`, `click`, `wheel`) drives the real `input` system without any OS mouse.
+    #[test]
+    fn virtual_input_confirms_a_valid_spot_and_refuses_an_invalid_one() {
+        #[derive(Resource, Default)]
+        struct Sent(Vec<Command>);
+        fn collect(mut events: MessageReader<NetCommand>, mut sent: ResMut<Sent>) {
+            sent.0.extend(events.read().map(|command| command.0.clone()));
+        }
+        let mut app = App::new();
+        app.add_message::<NetCommand>()
+            .add_message::<bevy::input::mouse::MouseWheel>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Sent>()
+            .init_resource::<Skills>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .insert_resource(ButtonInput::<MouseButton>::default())
+            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(Update, (input, collect).chain());
+        let mut session = Session::new(77, plant(), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session) });
+        app.update(); // arm the left button after the seed click
+        app.world_mut().resource_mut::<VirtualInput>().queue_click(MouseButton::Left);
+        app.update();
+        let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
+        assert!(matches!(sent.as_slice(), [Command::CreateDoodad(request)] if request.id == 2246), "{sent:?}");
+        assert!(app.world().resource::<Placement>().session.is_none(), "a valid confirm ends the mode");
+
+        let mut session = Session::new(77, plant(), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = Some(Invalid::Footprint);
+        app.insert_resource(Placement { session: Some(session) });
+        app.update(); // arm again
+        app.world_mut().resource_mut::<VirtualInput>().queue_click(MouseButton::Left);
+        app.update();
+        assert!(app.world().resource::<Sent>().0.is_empty(), "an invalid click sends no packet");
+        assert_eq!(error_message(Invalid::Footprint), Some("Too close to other objects."));
+        assert!(app.world().resource::<Placement>().session.is_some(), "the mode stays for another spot");
     }
 }

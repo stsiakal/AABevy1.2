@@ -2296,8 +2296,9 @@ error text.
   `game/materials/special/housing_build_normal.mtl` and `housing_build_invalid.mtl`. The ring radius follows
   `doodad_almighties.sim_radius` (`0.12 + footprint`, clamped 0.50..2.6 m): a 0.5 m rice footprint gives a small,
   sparse ring and a 2 m spruce a proportionate one, with petal size growing slowly (`0.04 + 0.045 * radius` half
-  length) and 14..36 petals. Petals are a dark gold (`0.72, 0.55, 0.12`) when valid and dark red
-  (`0.62, 0.06, 0.04`) when blocked; a petal turns red when it touches another character- or house-placed doodad, so
+  length) and 14..36 petals. Petals are gold (`1.0, 0.72, 0.12`) when valid and red (`0.95, 0.10, 0.06`) when
+  blocked, lifted 9 cm and depth-biased (20) so grass and terrain do not hide them; a petal turns red when it touches
+  another character- or house-placed doodad, so
   the mixed ring is the retail "too close" warning. The whole ring is red for out-of-range / underwater / bad surface.
   Vertices are converted to Bevy coordinates (`cry_to_bevy`) and the decal is rebuilt from each frame's state, but
   the mesh is uploaded only when the geometry signature changes (no empty meshes are created; the original only
@@ -2336,7 +2337,10 @@ error text.
   fake farm tables stay (`FALLBACK`).
 * **Script**: `plant ITEM DX DY [YAW]` (see `aa-client-script.md`) uses the same catalogue, ground and validity code
   without a cursor, finds the item instance in the bag and sends the same command. It waits for `DoodadsCreated`;
-  aa-net exposes that packet as `Event::DoodadsSpawned`, so the script event matcher accepts both names.
+  aa-net exposes that packet as `Event::DoodadsSpawned`, so the script event matcher accepts both names. Placement
+  reads a `VirtualInput` resource (`ingame/virtual_input.rs`): `cursor X Y`, `click left|right` and `wheel` drive the
+  real placement code without moving or clicking the OS mouse, and the virtual cursor works in `--offscreen-shot`
+  where the window has no pointer; real input is used when no virtual cursor is set.
 
 Tests: `cargo test -p aa-client placement`, `farm`, `script::parse` (item lookup and the template model against the
 real database when `AA_DB` is set, the ghost model loading with mesh parts, ground / auto-z maths, range / water /
