@@ -33,6 +33,7 @@
 //! `HudKeyboardFocus.0` is true.
 
 mod achievement;
+mod auction;
 mod alerts;
 mod battlefield;
 mod breath;
@@ -444,6 +445,7 @@ impl Plugin for HudPlugin {
         family::plugin(app);
         expedition::plugin(app);
         achievement::plugin(app);
+        auction::plugin(app);
         chat::config::plugin(app);
         crime::plugin(app);
         duel::plugin(app);

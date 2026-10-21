@@ -250,6 +250,7 @@ pub struct GameData {
     /// Ability trees, passive buffs and the skill points the player may spend.
     pub book: super::skillbook::Book,
     pub stores: super::store::Tables,
+    pub(super) auction: super::auction::Tables,
     pub mail: super::mail::Tables,
     /// What each doodad phase can be used for, doodad names (`doodad.rs`).
     pub(super) doodad: super::doodad::Tables,
@@ -611,6 +612,7 @@ impl GameData {
         data.rules = super::usable::Rules::load(&conn)?;
         data.book = super::skillbook::Book::load(&conn)?;
         data.stores = super::store::Tables::load(&conn)?;
+        data.auction = super::auction::Tables::load(&conn)?;
         data.mail = super::mail::Tables::load(&conn)?;
         data.doodad = super::doodad::Tables::load(&conn)?;
         data.expansions = super::expansion::load(&conn)?;

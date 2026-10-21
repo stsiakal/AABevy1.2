@@ -62,6 +62,7 @@ Scripted input for unattended runs (seconds counted from the moment the HUD is u
 | tooltips: bag items, action bar and use-skill, buffs, equipped items | `tips.rs`: `HUD.item_tip` / `HUD.skill_tip` / `HUD.buff_text` fill the client's tooltip tables (`name`, `grade` / `gradeColor` from `item_grades`, `category`, `item_impl`, `soul_bound` / `soul_bind`, `skillType`, `description`, price, `tipType = "skill"` with ability, rank, mana, cast, range, radius, cooldown) from the DB; `slot.tooltip`, `X2Bag:GetBagItemInfo`, `X2Skill:GetSkillTooltip`, `X2Unit:UnitBuff` (`tipType = "buff"`) return them. The numbers in descriptions (`#{avg_damage}`, `#{buff_duration}`, `#{ua_*}` ...) are worked out in `tipcalc.rs`, the weapon and armor sections (attack, defence, speed, stat bonuses, durability, set bonuses) in `tipitem.rs` (see "Tooltip numbers" below) |
 | unit frame tooltip (hover the player / target frame) | the original script formats the text with the `UFT_*` codes `|p1;` .. `|p11;` (name, hp, max hp, hp %, mp, max mp, mp %, labor, max labor, pvp honor, hostile faction kills); `SetTooltipData(unit)` binds the unit token to the tooltip widget and aa-ui substitutes the codes from `AAUI_TooltipUnitValues(unit)` (`ingame.lua`: `X2Unit` hp / mana, `floor(100 * cur / max)`, labor for the player, `Unit::pvp_honor` / `pvp_kills`), again every frame while the tooltip is shown. The pvp values come from the unit state and `SCUnitPvPPointsChanged` (0x204; kind 0 honor gained in combat, kind 1 hostile faction kills, per the server's C# port) |
 | bag window | `aa_net::Inventory`: items, counts, icons, grade frames, tooltips, "n/50"; the tabs filter by item group (below) |
+| auction house (auctioneer NPC) | the original `x2ui/auction` windows: search (keyword, level, grade, category, exact match, paging, sort), result rows, bid/buyout, put-up (attached item, start/buyout, 6/12/24/48 h, deposit) and cancel over `aa_net::Auction`; see "Auction house" |
 | max HP / MP of the player and of the target | the DB's unit formulas (below); the server sends none |
 | quest marks over NPCs | `aa_net::Quests` + the DB's quest tables (below) |
 | character info window | the numbers (`X2Unit:UnitInfo` / `UnitModifierInfo` / `UnitAttr` of the player) are worked out from the game database, not from `PlayerStats` (the server sends none): `tipcalc/charstats.rs` over level, worn items (`Inventory`) and the buffs (`Buffs`), see "Character stats" below; equipment slots from `Inventory` (see below) |
@@ -2260,3 +2261,46 @@ script is replaced). Wire side in `docs/aa-net.md` ("Titles").
 Tests: `cargo test -p aa-client appellation` (5). Live (AAEmu Rust server, headless script and windowed): owned titles
 list in the window, changing and removing the title updates the own plate and the server's answer.
 
+
+## Auction house (2026-10-22)
+
+`hud/auction.rs` runs the original `x2ui/auction` windows (bid / put-up / bid history) unchanged and
+answers their `X2Auction` calls from the last received page (`aa_net::Auction`, `docs/aa-net.md`
+"Auction protocol and escrow state"). The auctioneer NPC is the service skill `12083`
+(`SkillsEnum.USE_AUCTIONEER`): `dialog.rs` now admits `npcs.auctioneer` templates to the service
+talk, the `SCNpcInteractionSkillList` opens the original window through
+`NPC_INTERACTION_START("auction", "", npc)`, and the context closes when the talk ends, the NPC
+leaves or the player walks out of the server's 5 m service range.
+
+* Search: `SearchAuctionArticle` (page/level/grade/category/exact/keyword; the wrapper subtracts the
+  Lua page and the raw grade one, `common.alb`/`bid.alb`), `SearchAuctionArticleByPage`,
+  `SearchMyAuctionArticles` (`client_id` = the character), `SearchMyBidList` (`MyBids`) and
+  `SearchedListSort` (the `columnSortKind` headers re-issue the current query with the toggled
+  order). `GetSearchedItemInfo` returns the normal item tip plus `idx`, `articleId` (decimal string),
+  `stackCount`, seller/bidder names and worlds, `leftTime`, `bidPriceStr` (start price while there is
+  no bid), `directPriceStr`, `depositStr` (`aa_net::auction::listing_fee`) and `extra`;
+  `GetSearchedItemTotalCount` is the native page bound 50. `GetSearchedItemPrice` returns the two
+  decimal strings the bid dialog increments.
+* Bids and buys: `BidAuctionArticle` and `DirectPurchaseAuctionArticle` echo the complete cached lot
+  and build the bid from the character (`Command::AuctionForCharacter`); `CancelAuctionArticle` only
+  queues the seller's own lot. Requests follow the original `AUCTION_ITEM_SEARCH` /
+  `AUCTION_ITEM_SEARCHED` / `AUCTION_BIDDED` / `AUCTION_CANCELED` / `AUCTION_LOWEST_PRICE` /
+  `AUCTION_ITEM_PUT_UP` events and server refusals show through `SYSMSG`.
+* Put-up: `AttachItemFromBag`/`AttachItemFromPick` lock the physical bag slot, keep the exact
+  received item (whole stack) and raise `AUCTION_ITEM_ATTACHMENT_STATE_CHANGED(true)`; `DetachItem`
+  unlocks it. `GetAttachedItemInfo` is the item tip with `stack`/`stackCount`, `CalcDeposit` is the
+  lane's `min(buyout*.01*(duration+1), 1000000)` and `SetDuration` converts the Lua 1..4 to wire
+  0..3. `AskAuctionArticle` rechecks that the attached stack is still the received item before
+  `Post`; the wire prices are the whole-stack totals the UI computes (the direct price edit is per
+  item and the script multiplies it by the stack). `GetLowestPrice` requests the cached lane quote
+  and `GetCurrencyForBid`/`GetCurrencyForFee` are copper (`CURRENCY_GOLD`), which the original
+  tooltip builder needs.
+* No item, money or escrow state is changed locally; possession still waits for the authoritative
+  inventory/mail tasks.
+
+Tests: `cargo test -p aa-client auction` (3) cover query mapping, command fields, attachment/posting
+identity and the received-event routing. The ignored `original_auction_search_bid_and_putup_controls`
+loads the real world stage and drives the original search button, list selection, attach and put-up
+button (`cargo test -p aa-client --bin aa-client original_auction_search_bid_and_putup_controls --
+--ignored`). Remaining: live transactions and mail settlement against the lane (the parity row keeps
+the live checks open).

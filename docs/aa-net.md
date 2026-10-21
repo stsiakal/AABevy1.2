@@ -1410,6 +1410,11 @@ post-buyout search, saved balances/item identity and graceful final logout are *
 verified**. The complete ignored fixture retains those assertions for a later functional
 lane; no success is fabricated here.
 
+The client HUD consumes this module through the original `x2ui/auction` windows
+(`hud/auction.rs`, `docs/aa-client-hud.md` "Auction house"): `Command::AuctionForCharacter` for all
+six requests, the received page/quote cache for the script queries, and the original chat notices
+for ACKs and refusals.
+
 Read-only diagnosis: every claim starts ItemTxn::begin and takes economy System.ops, a
 lane-wide mutex (inventory.rs:67, economy/mod.rs:129), so a stuck operation can affect all
 economy work. SaveManager.capture_financial_snapshot takes auction/housing/economy locks,
