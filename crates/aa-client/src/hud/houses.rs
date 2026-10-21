@@ -461,6 +461,43 @@ mod tests {
     }
 
     #[test]
+    fn the_original_builder_end_hides_the_build_window() {
+        let Ok((rt, bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        {
+            let mut d = bridge.borrow_mut();
+            d.house.quote = Some(ConstructHouseTax {
+                design_id: 267,
+                heavy_tax_house_count: 1,
+                normal_tax_house_count: 0,
+                is_heavy_tax_house: true,
+                base_tax_money_amount: 50000,
+                deposit_tax_money_amount: 100000,
+                total_tax_money_amount: 150000,
+            });
+            d.house.design = 267;
+        }
+        rt.lua
+            .load("ShowBuildWindow(267, 50000, 150000, 1, 0, true, 100000, 31891)")
+            .exec()
+            .expect("the original build window opens");
+        assert!(
+            rt.lua.load("return housing.buildWindow ~= nil and housing.buildWindow:IsVisible()").eval::<bool>().unwrap(),
+            "the Start Construction window is open before the server answer"
+        );
+        rt.fire_event("BUILDER_END", ());
+        assert!(
+            rt.lua
+                .load("return housing.buildWindow == nil or not housing.buildWindow:IsVisible()")
+                .eval::<bool>()
+                .unwrap(),
+            "BUILDER_END hides the original Start Construction window"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn the_original_x2house_calls_are_answered() {
         let lua = Lua::new();
         let x2 = lua.create_table().unwrap();

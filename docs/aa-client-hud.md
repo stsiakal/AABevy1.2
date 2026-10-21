@@ -2389,7 +2389,9 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   `skill_effects` material and `skills.consume_lp`), `CountTaxItemForTax` (10,000 copper per item `31891`),
   `CountTaxItemInBag`, and `GetHouse*Progress` from the received snapshot. Build calls
   `NextStepFromBuildCheck` -> `CSCreateHouse` (quote total, design item instance, yaw); Cancel / Escape calls
-  `PrevStepFromBuildCheck` -> the window closes and the placement continues.
+  `PrevStepFromBuildCheck` -> the window closes and the placement continues. When the server accepts the build it
+  sends `SCMyHouse`; `ingame/houses.rs::close_created_build` raises the original client's `BUILDER_END`, which
+  `housing_manager.alb` answers with `ShowBuildWindow()` and so hides the Start Construction window.
 * **Construction**: the server spawns the house as a `UnitKind::Housing` with the first build step's model.
   `ingame/houses.rs::sync_house_models` follows each `SCHouseBuildProgress.model_id` by updating the received unit and
   letting `units::sync_views` rebuild its entity. Right-clicking an unfinished house casts the current

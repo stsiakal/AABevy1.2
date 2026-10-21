@@ -12,10 +12,13 @@
 
 use std::collections::HashMap;
 
+use aa_net::housing::HousingEvent;
 use aa_net::model::UnitKind;
 use aa_net::state::{Houses, Units};
+use aa_net::{Event, NetEvent};
 use bevy::prelude::*;
 
+use super::placement::Placement;
 use super::units::Views;
 
 /// One housing polygon (`housing_area.xml`'s `Area value1`).
@@ -152,7 +155,41 @@ pub fn parse_housing_areas(text: &str, origin: (f32, f32), out: &mut Vec<Housing
 pub fn plugin(app: &mut App) {
     app.init_resource::<HousingAreas>()
         .add_systems(Startup, load_areas)
-        .add_systems(Update, sync_house_models.before(super::units::sync_views).run_if(super::world_screens));
+        .add_systems(
+            Update,
+            (close_created_build, sync_house_models.before(super::units::sync_views)).run_if(super::world_screens),
+        );
+}
+
+/// `CSCreateHouse` accepted: the server sends `SCMyHouse` and then spawns the house. The original build window
+/// stays open after a scripted `house_build` (only its Build button hides it itself), so raise the client's
+/// `BUILDER_END` UI event that `housing_manager.alb` handles with `ShowBuildWindow()` (which hides it).
+pub fn close_created_build(
+    mut events: MessageReader<NetEvent>,
+    mut placement: ResMut<Placement>,
+    rt: Option<NonSend<aa_ui::UiRuntime>>,
+) {
+    for NetEvent(event) in events.read() {
+        let Event::Housing(HousingEvent::MyHouse(house)) = event else { continue };
+        let design = house.template_id;
+        let answered_session = placement.session.as_ref().is_some_and(|s| s.is_house() && s.done && s.house_design() == Some(design));
+        let answered_pending = placement.session.is_none() && placement.pending_house == Some(design);
+        if !answered_session && !answered_pending {
+            continue;
+        }
+        info!(
+            "housing: server created house tl {} (design {design}); closing the Start Construction window",
+            house.tl_id
+        );
+        placement.pending_house = None;
+        if let Some(session) = placement.session.as_mut() {
+            session.created = true;
+            session.done = true;
+        }
+        if let Some(rt) = rt.as_ref() {
+            rt.fire_event("BUILDER_END", ());
+        }
+    }
 }
 
 fn load_areas(mut areas: ResMut<HousingAreas>) {
@@ -309,6 +346,19 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Units>().by_id[&50].model_id, 987, "the received model follows SCHouseBuildProgress");
         assert_eq!(app.world().resource::<Views>().unit_entities(), 0);
+    }
+
+    #[test]
+    fn the_house_created_answer_clears_the_pending_build() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_message::<NetEvent>()
+            .insert_resource(Placement { session: None, pending_house: Some(267) })
+            .add_systems(Update, close_created_build);
+        let answer = Event::Housing(HousingEvent::MyHouse(house(7, 989).snapshot));
+        app.world_mut().write_message(NetEvent(answer));
+        app.update();
+        assert_eq!(app.world().resource::<Placement>().pending_house, None);
     }
 
     #[test]

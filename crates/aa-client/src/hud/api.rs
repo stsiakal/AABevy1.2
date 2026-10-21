@@ -922,13 +922,17 @@ pub fn handle_requests(
             Request::HouseCancel => {
                 let Some(placement) = placement.as_deref_mut() else { continue };
                 let Some(session) = placement.session.as_mut() else { continue };
+                if session.done || session.created {
+                    // The window was closed by BUILDER_END after the server created the house; the placement
+                    // finish system still has to clear the ghost.
+                    continue;
+                }
                 if session.window_open {
                     info!("housing: build window cancelled; the placement stays");
                 }
                 session.window_open = false;
                 session.quote_requested = false;
                 session.quote = None;
-                session.done = false;
             }
             Request::ItemEffect { character_id, request } => {
                 // The typed request was captured by the original enchant API.
@@ -1277,7 +1281,7 @@ mod tests {
             .init_resource::<aa_net::state::Target>()
             .init_resource::<aa_net::state::Skills>()
             .init_resource::<aa_net::state::Buffs>()
-            .insert_resource(Placement { session: Some(session) })
+            .insert_resource(Placement { session: Some(session), ..Default::default() })
             .add_message::<NetCommand>()
             .add_message::<super::super::alerts::UseFailed>()
             .add_message::<crate::ingame::ground_target::SkillPressed>()

@@ -182,6 +182,17 @@ impl Runner {
         }
     }
 
+    /// Start waiting for an event that no `await` line names (the commands' own internal waits, e.g.
+    /// `plant` -> `DoodadsCreated`, `house_build` -> `Housing.MyHouse`). The name must be in `wanted` or the
+    /// event collector never queues it; `Active::Await` compares lower case names.
+    fn await_event(&mut self, event: &str, deadline: f32, must: bool) -> Option<Active> {
+        let event = event.to_ascii_lowercase();
+        if !self.wanted.contains(&event) {
+            self.wanted.push(event.clone());
+        }
+        Some(Active::Await { event, deadline, must })
+    }
+
     fn fail(&mut self, message: String) {
         println!("SCRIPT FAIL line {}: {message}", self.current_no());
         self.problems.push(format!("line {}: {message}", self.current_no()));
@@ -658,7 +669,7 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                         ),
                     );
                     c.net.write(NetCommand(Command::CreateDoodad(request)));
-                    Some(Active::Await { event: "DoodadsCreated".into(), deadline: now + 10.0, must: false })
+                    r.await_event("DoodadsCreated", now + 10.0, false)
                 }
                 Err(why) => {
                     r.fail(format!("plant {item}: {why}"));
@@ -726,7 +737,7 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                     say(r, "confirming the Start Construction window");
                     session.done = true;
                     c.net.write(NetCommand(Command::House(request)));
-                    Some(Active::Await { event: "SCMyHouse".into(), deadline: now + 10.0, must: false })
+                    r.await_event("Housing.MyHouse", now + 10.0, false)
                 }
                 None => {
                     r.fail(format!(
@@ -1251,5 +1262,25 @@ mod tests {
         assert!(!name_matches("SnowX", "snow"));
         assert!(name_matches("UnitDeath", "unitdeath"));
         assert_eq!(event_name(&Event::LoginSucceeded(Default::default())), "LoginSucceeded.AccountInfo");
+        let housing = Event::Housing(aa_net::housing::HousingEvent::BuildProgress {
+            tl_id: 7,
+            model_id: 989,
+            all_actions: 1,
+            current_actions: 0,
+        });
+        assert_eq!(event_name(&housing), "Housing.BuildProgress");
+        assert!(name_matches(&event_name(&housing), "housing.buildprogress"));
+    }
+
+    #[test]
+    fn internal_awaits_register_the_lowercase_event_name() {
+        let mut runner = Runner::new("test".into(), Vec::new(), Vec::new(), 1.0, 1.0);
+        let active = runner.await_event("Housing.MyHouse", 10.0, false).expect("active");
+        assert!(runner.wanted.contains(&"housing.myhouse".to_string()));
+        match active {
+            Active::Await { event, .. } => assert_eq!(event, "housing.myhouse"),
+            _ => panic!("not an await"),
+        }
+        assert!(name_matches("Housing.MyHouse.HouseSnapshot", "housing.myhouse"));
     }
 }

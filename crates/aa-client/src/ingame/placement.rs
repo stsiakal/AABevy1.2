@@ -349,6 +349,9 @@ pub struct Session {
     pub window_open: bool,
     /// House only: the create was sent (the ghost goes when the frame is done).
     pub done: bool,
+    /// House only: the server's `SCMyHouse` for this build arrived (kept so `finish` does not leave a
+    /// stale pending design when the answer beat it to the frame).
+    pub created: bool,
     /// A spot set by a script (`house_place`): the cursor may not move it off-screen in a headless run.
     pub scripted: bool,
 }
@@ -369,6 +372,7 @@ impl Session {
             quote: None,
             window_open: false,
             done: false,
+            created: false,
             scripted: false,
         }
     }
@@ -456,6 +460,9 @@ impl Session {
 #[derive(Resource, Default)]
 pub struct Placement {
     pub session: Option<Session>,
+    /// Design of a house create that was sent and is waiting for the server's `SCMyHouse`; the ghost is
+    /// already gone, so this keeps enough identity to close the original build window on the answer.
+    pub pending_house: Option<u32>,
 }
 
 #[derive(Component)]
@@ -517,6 +524,12 @@ pub fn plugin(app: &mut App) {
 /// A house create was sent: put the ghost, ring, stones and arrow away in this frame.
 fn finish(mut commands: Commands, mut placement: ResMut<Placement>, visuals: Res<Visuals>) {
     if placement.session.as_ref().is_some_and(|s| s.done) {
+        if let Some(session) = placement.session.as_ref()
+            && !session.created
+            && let Some(design) = session.house_design()
+        {
+            placement.pending_house = Some(design);
+        }
         end_session(&mut commands, &mut placement, &visuals);
     }
 }
@@ -683,6 +696,7 @@ fn start(
         if let Some(session) = session_for(press.item_id, press.item_template, "planting") {
             end_session(&mut commands, &mut placement, &visuals);
             virtual_input.clear_edges();
+            placement.pending_house = None;
             placement.session = Some(session);
         }
     }
@@ -690,6 +704,7 @@ fn start(
         if let Some(session) = session_for(press.item_id, press.item_template, "housing") {
             end_session(&mut commands, &mut placement, &visuals);
             virtual_input.clear_edges();
+            placement.pending_house = None;
             placement.session = Some(session);
         }
     }
@@ -2186,7 +2201,7 @@ mod tests {
                 crate::hud::api::HudData::default(),
             ))));
         let plant = plant();
-        app.insert_resource(Placement { session: Some(Session::new(1, plant, 0.0)) });
+        app.insert_resource(Placement { session: Some(Session::new(1, plant, 0.0)), ..Default::default() });
         app.world_mut().resource_mut::<NextState<crate::Screen>>().set(crate::Screen::InGame);
         for _ in 0..4 {
             app.update();
@@ -2272,7 +2287,7 @@ mod tests {
         let mut session = Session::new(77, plant(), 0.0);
         session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
         session.invalid = None;
-        app.insert_resource(Placement { session: Some(session) });
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
         app.update(); // arm the left button after the seed click
         app.world_mut().resource_mut::<VirtualInput>().queue_click(MouseButton::Left);
         app.update();
@@ -2283,7 +2298,7 @@ mod tests {
         let mut session = Session::new(77, plant(), 0.0);
         session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
         session.invalid = Some(Invalid::Footprint);
-        app.insert_resource(Placement { session: Some(session) });
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
         app.update(); // arm again
         app.world_mut().resource_mut::<VirtualInput>().queue_click(MouseButton::Left);
         app.update();
