@@ -151,6 +151,24 @@ impl Player {
             }
             Event::UnitPvpPointsChanged(change) => return self.spawn.as_mut().is_some_and(|spawn| spawn.unit.apply_pvp_points(change)),
             Event::UnitGmModeChanged(change) => return self.spawn.as_mut().is_some_and(|spawn| spawn.unit.apply_gm_mode(change)),
+            // The local player is not in `Units` (the server's own `SCUnitState` is dropped), so
+            // its seat has to be kept on the spawn unit: the HUD and the rider view read it there.
+            Event::UnitAttached { obj_id, mount, point, .. } => {
+                return self.spawn.as_mut().is_some_and(|spawn| {
+                    if spawn.obj_id != *obj_id { return false; }
+                    let next = Some(Attachment { obj_id: *mount, point: *point });
+                    if spawn.unit.attached_to == next { return false; }
+                    spawn.unit.attached_to = next;
+                    true
+                });
+            }
+            Event::UnitDetached { obj_id, .. } => {
+                return self.spawn.as_mut().is_some_and(|spawn| {
+                    if spawn.obj_id != *obj_id || spawn.unit.attached_to.is_none() { return false; }
+                    spawn.unit.attached_to = None;
+                    true
+                });
+            }
             Event::LeftWorld { .. } | Event::Disconnected { .. } => {
                 if self.spawn.take().is_none() {
                     return false;
@@ -765,6 +783,24 @@ pub(crate) mod tests {
         (cart.move_type, cart.vehicle_yaw) = (2, Some(1.5));
         units.apply(&Event::UnitMoved { obj_id: 5, movement: cart });
         assert!((units.get(5).unwrap().yaw() - 1.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn local_player_keeps_its_own_seat_outside_units() {
+        use crate::model::Attachment;
+        let mut player = Player::default();
+        player.apply(&Event::PlayerSpawn(Box::new(PlayerSpawn {
+            obj_id: 5,
+            state: Default::default(),
+            unit: unit(5),
+        })));
+        assert!(player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 1, reason: 1 }));
+        assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, Some(Attachment { obj_id: 9, point: 1 }));
+        assert!(!player.apply(&Event::UnitAttached { obj_id: 6, mount: 9, point: 1, reason: 1 }));
+        assert!(!player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 1, reason: 1 }));
+        assert!(player.apply(&Event::UnitDetached { obj_id: 5, reason: 9 }));
+        assert!(player.spawn.as_ref().unwrap().unit.attached_to.is_none());
+        assert!(!player.apply(&Event::UnitDetached { obj_id: 5, reason: 9 }));
     }
 
     #[test]

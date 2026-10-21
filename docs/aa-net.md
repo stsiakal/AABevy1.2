@@ -689,7 +689,9 @@ whatever the speed): the speed has to be measured from the positions. Players se
 pressed direction in `delta_movement` and, in the air, no `STANDING_ON_SOLID` (a jump: `JUMPING` and flags `Moving | Stopping`).
 Mounts move like any unit; the rider gets no movement of its own (the server puts its local position at 0, 0, 0 under the mount).
 An announced player is not announced again to itself: a later `SCUnitState` with our own object id is dropped (it would draw a
-second figure on top of the player).
+second figure on top of the player). Because the local player is not in `Units`, `Player::apply` keeps its own
+`SCUnitAttached` / `SCUnitDetached` on `PlayerSpawn.unit.attached_to` (and only its own object id); the HUD's mount state and
+the local rider view read that field.
 
 ## Moving items
 

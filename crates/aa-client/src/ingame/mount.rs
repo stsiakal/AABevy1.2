@@ -16,7 +16,7 @@ use bevy::prelude::*;
 
 use super::anim::{Locomotion, Motion, bind_clip};
 use super::data::Db;
-use super::player::placement;
+use super::player::{LocalPlayer, Mover, placement};
 use super::units::{RemoteUnit, Views};
 
 /// The clip prefix of a rider on a mount of this kind (`models.mount_pose_id`).
@@ -24,6 +24,7 @@ fn rider_prefix(pose: u32) -> Option<&'static str> {
     match pose {
         1 => Some("horse"),
         2 => Some("lion"),
+        3 => Some("bear"),
         4 => Some("wildboar"),
         10 => Some("pangolin"),
         _ => None,
@@ -42,6 +43,31 @@ enum Gait {
     Run,
 }
 
+/// The clips of a rider: the seat idle and the walk/run gaits of the mount's kind, then the
+/// authored get-on / get-off one-shots (`global_player.cal`).
+struct RidingClips {
+    idle: BoundClip,
+    walk: Option<BoundClip>,
+    run: Option<BoundClip>,
+    geton: Option<BoundClip>,
+    getoff: Option<BoundClip>,
+}
+
+fn riding_clips(character: &Character, mount_model: u32, db: &Db, animator: &Animator, clips: &ClipLibrary) -> Option<RidingClips> {
+    let prefix = rider_prefix(db.mount_pose(mount_model))?;
+    let cal = Cal::shared(&character.assets.cal).ok()?;
+    let bind = |name: String| bind_clip(&animator.rig, &cal, clips, &name);
+    let idle = bind(format!("{prefix}_ba_relaxed_idle")).or_else(|| bind("fist_ba_relaxed_idle".into()))?;
+    let run = bind(format!("{prefix}_mo_normal_run_f"));
+    let walk = bind(format!("{prefix}_mo_normal_walk_f")).or_else(|| run.clone());
+    // The authored set only has horse / lion / bear one-shots; other mount poses use the horse pair.
+    let one = |side: &str| {
+        bind(format!("fist_ac_{prefix}_{side}"))
+            .or_else(|| bind(format!("fist_ac_horse_{side}")))
+    };
+    Some(RidingClips { idle, walk, run, geton: one("l_geton"), getoff: one("l_getoff") })
+}
+
 /// A unit sitting on a mount.
 #[derive(Component)]
 pub struct Rider {
@@ -51,7 +77,29 @@ pub struct Rider {
     walk: Option<BoundClip>,
     run: Option<BoundClip>,
     gait: Option<Gait>,
+    /// Seconds of the get-on one-shot still to play before the gait clips take over.
+    boarding: Option<f32>,
     /// The locomotion the unit had on foot, given back when it gets off.
+    on_foot: Option<Locomotion>,
+}
+
+/// The local player sitting on its own or somebody else's mount.
+#[derive(Component)]
+pub struct LocalRider {
+    mount: u32,
+    point: u8,
+    idle: BoundClip,
+    walk: Option<BoundClip>,
+    run: Option<BoundClip>,
+    gait: Option<Gait>,
+    boarding: Option<f32>,
+    on_foot: Option<Locomotion>,
+}
+
+/// A get-off clip playing before the on-foot locomotion starts again.
+#[derive(Component)]
+pub struct Dismounting {
+    remaining: f32,
     on_foot: Option<Locomotion>,
 }
 
@@ -70,23 +118,37 @@ pub fn start_stop_riding(
             (Some(a), None) => {
                 // wait for the animator (a unit far away has none) and the mount's data
                 let (Some(db), Some(character), Some(animator), Some(mount)) = (db.as_deref(), character, animator, net.by_id.get(&a.obj_id)) else { continue };
-                let Some(prefix) = rider_prefix(db.mount_pose(mount.model_id)) else { continue };
-                let Ok(cal) = Cal::shared(&character.assets.cal) else { continue };
-                let bind = |name: String| bind_clip(&animator.rig, &cal, &clips, &name);
-                let Some(idle) = bind(format!("{prefix}_ba_relaxed_idle")).or_else(|| bind("fist_ba_relaxed_idle".into())) else { continue };
-                let run = bind(format!("{prefix}_mo_normal_run_f"));
-                let walk = bind(format!("{prefix}_mo_normal_walk_f")).or_else(|| run.clone());
+                let Some(clis) = riding_clips(character, mount.model_id, db, animator, &clips) else { continue };
                 let (mount_id, point) = (a.obj_id, a.point);
-                debug!("unit {} rides {} (model {}) at point {point}: {prefix} clips", unit.obj_id, mount_id, mount.model_id);
+                let RidingClips { idle, walk, run, geton, .. } = clis;
+                let boarding = geton.as_ref().map(|c| c.clip.duration);
+                debug!("unit {} rides {} (model {}) at point {point}", unit.obj_id, mount_id, mount.model_id);
                 commands.queue(move |world: &mut World| {
+                    if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
+                        animator.play_once_then(on, idle.clone(), 0.15);
+                    }
                     let on_foot = world.entity_mut(entity).take::<Locomotion>();
-                    world.entity_mut(entity).insert(Rider { mount: mount_id, point, idle, walk, run, gait: None, on_foot });
+                    world.entity_mut(entity).insert(Rider { mount: mount_id, point, idle, walk, run, gait: None, boarding, on_foot });
                 });
             }
             (None, Some(_)) => {
+                let getoff = (|| {
+                    let character = character?;
+                    let db = db.as_deref()?;
+                    let animator = animator?;
+                    let mount = net.by_id.get(&rider?.mount)?;
+                    Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
+                })()
+                .flatten();
+                let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
                 commands.queue(move |world: &mut World| {
+                    if let (Some(off), Some(mut animator)) = (getoff, world.entity_mut(entity).get_mut::<Animator>()) {
+                        animator.play(off, false, 0.15);
+                    }
                     let Some(rider) = world.entity_mut(entity).take::<Rider>() else { return };
-                    if let Some(mut on_foot) = rider.on_foot {
+                    if remaining > 0.0 {
+                        world.entity_mut(entity).insert(Dismounting { remaining, on_foot: rider.on_foot });
+                    } else if let Some(mut on_foot) = rider.on_foot {
                         on_foot.invalidate();
                         world.entity_mut(entity).insert(on_foot);
                     }
@@ -108,6 +170,7 @@ pub fn start_stop_riding(
 /// Puts the riders on their mounts' seats and plays the rider clips for the gait of the mount.
 #[allow(clippy::too_many_arguments)]
 pub fn pose_riders(
+    time: Res<Time>,
     net: Res<Units>,
     views: Res<Views>,
     mut riders: Query<(&mut RemoteUnit, &mut Transform, &mut Rider, &mut Animator)>,
@@ -134,6 +197,14 @@ pub fn pose_riders(
         unit.pos = pos;
         unit.facing = facing;
         *transform = placement(pos, facing, unit.scale());
+        if let Some(boarding) = &mut rider.boarding {
+            *boarding -= time.delta_secs();
+            if *boarding > 0.0 {
+                animator.speed = 1.0;
+                continue;
+            }
+            rider.boarding = None;
+        }
         let gait = if speed < 0.3 {
             Gait::Idle
         } else if speed < 3.0 || rider.run.is_none() {
@@ -154,6 +225,146 @@ pub fn pose_riders(
             rider.gait = Some(gait);
         }
         animator.speed = if gait == Gait::Idle { 1.0 } else { tempo };
+    }
+}
+
+/// Seats the local player when the server attached its own object (`SCUnitAttached`), and starts the
+/// authored get-off clip on the detach that follows an unmount or dismiss.
+#[allow(clippy::type_complexity)]
+pub fn start_stop_local_riding(
+    mut commands: Commands,
+    player: Res<Player>,
+    net: Res<Units>,
+    db: Option<Res<Db>>,
+    clips: Res<ClipLibrary>,
+    locals: Query<(Entity, &LocalPlayer, Option<&LocalRider>, Option<&Character>, Option<&Animator>)>,
+) {
+    let Some(spawn) = player.spawn.as_ref() else { return };
+    let attached = spawn.unit.attached_to;
+    for (entity, _local, rider, character, animator) in &locals {
+        match (attached, rider) {
+            (Some(a), None) => {
+                let (Some(db), Some(character), Some(animator), Some(mount)) =
+                    (db.as_deref(), character, animator, net.by_id.get(&a.obj_id))
+                else {
+                    continue;
+                };
+                let Some(clis) = riding_clips(character, mount.model_id, db, animator, &clips) else { continue };
+                let RidingClips { idle, walk, run, geton, .. } = clis;
+                let boarding = geton.as_ref().map(|c| c.clip.duration);
+                let (mount_id, point) = (a.obj_id, a.point);
+                debug!("local player rides {mount_id} at point {point}");
+                commands.queue(move |world: &mut World| {
+                    if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
+                        animator.play_once_then(on, idle.clone(), 0.15);
+                    }
+                    let on_foot = world.entity_mut(entity).take::<Locomotion>();
+                    world.entity_mut(entity).insert(LocalRider { mount: mount_id, point, idle, walk, run, gait: None, boarding, on_foot });
+                });
+            }
+            (None, Some(rider)) => {
+                let getoff = (|| {
+                    let character = character?;
+                    let db = db.as_deref()?;
+                    let animator = animator?;
+                    let mount = net.by_id.get(&rider.mount)?;
+                    Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
+                })()
+                .flatten();
+                let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
+                commands.queue(move |world: &mut World| {
+                    if let (Some(off), Some(mut animator)) = (getoff, world.entity_mut(entity).get_mut::<Animator>()) {
+                        animator.play(off, false, 0.15);
+                    }
+                    let Some(rider) = world.entity_mut(entity).take::<LocalRider>() else { return };
+                    if remaining > 0.0 {
+                        world.entity_mut(entity).insert(Dismounting { remaining, on_foot: rider.on_foot });
+                    } else if let Some(mut on_foot) = rider.on_foot {
+                        on_foot.invalidate();
+                        world.entity_mut(entity).insert(on_foot);
+                    }
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Keeps the local player on its mount's seat and plays the rider clips for the mount's gait.
+#[allow(clippy::type_complexity)]
+pub fn pose_local_riders(
+    time: Res<Time>,
+    net: Res<Units>,
+    views: Res<Views>,
+    mut locals: Query<(&mut Mover, &mut Transform, &mut LocalRider, &mut Animator), Without<RemoteUnit>>,
+    mounts: Query<(&RemoteUnit, &Animator, &Motion), (Without<Rider>, Without<LocalRider>)>,
+    globals: Query<&GlobalTransform>,
+) {
+    for (mut mover, mut transform, mut rider, mut animator) in &mut locals {
+        let mount_entity = views.unit_entity(rider.mount);
+        let mounted = mount_entity.and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
+        let (pos, facing, speed, tempo) = match mounted {
+            Some((e, (mount, mount_animator, motion))) => {
+                let bone = mount_animator.rig.skeleton.bones.iter().position(|b| b.name == seat_bone(rider.point)).and_then(|i| mount_animator.bones.get(i));
+                let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
+                let world = seat.map_or_else(|| aa_world::cry_to_bevy(mount.pos), |g| g.translation());
+                (bevy_to_cry(world), mount.facing, motion.speed, mount_animator.speed)
+            }
+            None => {
+                let Some(m) = net.by_id.get(&rider.mount) else { continue };
+                (Vec3::new(m.pos.x, m.pos.y, m.pos.z), m.yaw(), 0.0, 1.0)
+            }
+        };
+        mover.pos = pos;
+        mover.facing = facing;
+        mover.velocity = Vec3::ZERO;
+        mover.vz = 0.0;
+        mover.grounded = true;
+        mover.swim = None;
+        *transform = placement(pos, facing, 1.0);
+        if let Some(boarding) = &mut rider.boarding {
+            *boarding -= time.delta_secs();
+            if *boarding > 0.0 {
+                animator.speed = 1.0;
+                continue;
+            }
+            rider.boarding = None;
+        }
+        let gait = if speed < 0.3 {
+            Gait::Idle
+        } else if speed < 3.0 || rider.run.is_none() {
+            Gait::Walk
+        } else {
+            Gait::Run
+        };
+        if rider.gait != Some(gait) {
+            let clip = match gait {
+                Gait::Idle => Some(rider.idle.clone()),
+                Gait::Walk => rider.walk.clone().or_else(|| rider.run.clone()),
+                Gait::Run => rider.run.clone(),
+            };
+            if let Some(clip) = clip {
+                animator.play(clip, true, 0.2);
+                animator.random_idle = None;
+            }
+            rider.gait = Some(gait);
+        }
+        animator.speed = if gait == Gait::Idle { 1.0 } else { tempo };
+    }
+}
+
+/// Restores the on-foot locomotion once the get-off one-shot finished.
+pub fn finish_dismount(time: Res<Time>, mut commands: Commands, mut dismounting: Query<(Entity, &mut Dismounting)>) {
+    for (entity, mut state) in &mut dismounting {
+        state.remaining -= time.delta_secs();
+        if state.remaining > 0.0 {
+            continue;
+        }
+        if let Some(mut on_foot) = state.on_foot.take() {
+            on_foot.invalidate();
+            commands.entity(entity).insert(on_foot);
+        }
+        commands.entity(entity).remove::<Dismounting>();
     }
 }
 

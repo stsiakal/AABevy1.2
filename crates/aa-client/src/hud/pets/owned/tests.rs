@@ -109,6 +109,179 @@ fn local_modes_use_attackable_and_active_command_duplicate_guards() {
 }
 
 #[test]
+fn mount_reason_follows_native_approach_and_seat_rules() {
+    let mut data = HudData::default();
+    data.pos = Vec3::ZERO;
+    data.yaw = 0.0; // faces +y
+    let at = |x: f32, y: f32| Vec3::new(x, y, 0.0);
+    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, false), 4, "in front");
+    assert_eq!(mount_reason(&data, at(0.0, 1.0), true, false), 1, "front + occupied driver seat");
+    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, true), 4, "front ignores the passenger seat");
+    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, false), 3, "behind");
+    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, true), 1, "behind + occupied passenger seat");
+    assert_eq!(mount_reason(&data, at(0.0, -1.0), true, false), 3, "behind ignores the driver seat");
+    assert_eq!(mount_reason(&data, at(1.0, 0.0), false, false), 2, "right side");
+    assert_eq!(mount_reason(&data, at(-1.0, 0.0), false, false), 1, "left side");
+    assert_eq!(mount_reason(&data, at(1.0, 0.0), true, false), 1, "driver seat wins on the side");
+    assert_eq!(mount_reason(&data, Vec3::ZERO, false, false), 2, "under the seat is the side split");
+}
+
+#[test]
+fn mount_skill_slot_uses_mate_self_and_player_hostile_targets() -> Result<(), Box<dyn std::error::Error>> {
+    let (_rt, bridge, path, _player, _units, _mates) = super::super::active_fixture::runtime(1280., 720.)?;
+    let mut data = bridge.borrow_mut();
+    {
+        let pet = data.pets.owned.current.as_mut().expect("fixture pet");
+        pet.level = 30;
+        pet.spawn.skills[0] = 5; // mount_skills 5: combat 11028, target_type 0 (self)
+    }
+    let command = use_pet_action(&data, 1, 0).expect("self skill");
+    assert!(matches!(
+        command,
+        aa_net::Command::UseMateSkill { skill_id: 11028, mate_obj_id: 201, mount_skill_id: 5, target_obj_id: 201 }
+    ));
+    data.pets.owned.current.as_mut().expect("fixture pet").spawn.skills[0] = 2; // mount_skills 2: combat 11017, target_type 4
+    assert!(use_pet_action(&data, 1, 0).is_none(), "a hostile mount skill needs a target");
+    let command = use_pet_action(&data, 1, 987).expect("hostile skill");
+    assert!(matches!(
+        command,
+        aa_net::Command::UseMateSkill { skill_id: 11017, mate_obj_id: 201, mount_skill_id: 2, target_obj_id: 987 }
+    ));
+    data.pets.owned.current.as_mut().expect("fixture pet").spawn.skills[0] = 12; // target_type 6 (position)
+    assert!(use_pet_action(&data, 1, 987).is_none(), "position skills are not sent as unit targets");
+    {
+        let pet = data.pets.owned.current.as_mut().expect("fixture pet");
+        pet.level = 1; // skill 5 needs ability level 20
+        pet.spawn.skills[0] = 5;
+    }
+    assert!(use_pet_action(&data, 1, 0).is_none(), "unlearned mount skills do not start");
+    drop(data);
+    drop(bridge);
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn original_pet_mount_dismiss_and_action_bar_controls() -> Result<(), Box<dyn std::error::Error>> {
+    use aa_net::model::Attachment;
+    let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .insert_non_send(rt)
+        .insert_non_send(HudBridge(bridge.clone()))
+        .insert_resource(player)
+        .insert_resource(units)
+        .insert_resource(mates)
+        .add_message::<NetEvent>()
+        .add_message::<NetCommand>()
+        .add_systems(Update, super::super::update);
+    let drain = |app: &mut App| app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+    app.update();
+    assert!(drain(&mut app).is_empty());
+    // The speed getter is the last received movement speed (3,4 m/s -> 5 m/s).
+    app.world_mut()
+        .resource_mut::<Units>()
+        .by_id
+        .get_mut(&201)
+        .expect("fixture pet")
+        .movement = Some({
+            let mut m = aa_net::model::Movement::unit(aa_net::Pos::default(), 0.0, 1);
+            m.velocity = [3 * 1024, 4 * 1024, 0];
+            m
+        });
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+    }
+    {
+        let runtime = app.world().non_send::<UiRuntime>();
+        runtime
+            .lua
+            .load("assert(X2Mate:CanMount()==true and X2Mate:CanDismiss()==true); assert(type(X2Mate:GetSpeedInfo())=='number' and X2Mate:GetSpeedInfo()==5)")
+            .exec()?;
+    }
+    app.world_mut().resource_mut::<Units>().by_id.get_mut(&201).unwrap().movement = None;
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+    }
+    let runtime = app.world().non_send::<UiRuntime>();
+    super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_MOUNT]")?;
+    app.update();
+    assert!(matches!(
+        drain(&mut app).as_slice(),
+        [Command::Mate(MateCommand::Mount { tl_id: 12, point: 1, .. })]
+    ));
+    // The server's receipt seats the local player on the pet's driver point.
+    app.world_mut()
+        .resource_mut::<Units>()
+        .by_id
+        .get_mut(&100)
+        .expect("own unit")
+        .attached_to = Some(Attachment { obj_id: 201, point: 1 });
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+        let now = data.start.elapsed().as_millis() as u64; data.pets.owned.last_action_ms = Some(now.saturating_sub(3_000));
+    }
+    app.update();
+    assert!(drain(&mut app).is_empty());
+    let runtime = app.world().non_send::<UiRuntime>();
+    runtime.lua.load("assert(X2Mate:IsPlayerMounting()==true and X2Mate:CanMount()==false and X2Mate:CanDismiss()==true)").exec()?;
+    super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_MOUNT]")?;
+    app.update();
+    assert!(matches!(
+        drain(&mut app).as_slice(),
+        [Command::Mate(MateCommand::Unmount { tl_id: 12, point: 1, reason: 9 })]
+    ));
+    // Once the native two-second cooldown has passed, the CYA button first unmounts (reason 10),
+    // then its model-action continuation removes the mate after the server's detach.
+    {
+        let mut data = bridge.borrow_mut();
+        let now = data.start.elapsed().as_millis() as u64; data.pets.owned.last_action_ms = Some(now.saturating_sub(3_000));
+    }
+    app.update();
+    let runtime = app.world().non_send::<UiRuntime>();
+    super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_CYA]")?;
+    app.update();
+    assert!(matches!(
+        drain(&mut app).as_slice(),
+        [Command::Mate(MateCommand::Unmount { tl_id: 12, point: 1, reason: 10 })]
+    ));
+    app.world_mut()
+        .resource_mut::<Units>()
+        .by_id
+        .get_mut(&100)
+        .expect("own unit")
+        .attached_to = None;
+    app.world_mut().write_message(NetEvent(Event::UnitDetached { obj_id: 100, reason: 10 }));
+    app.update();
+    assert!(matches!(
+        drain(&mut app).as_slice(),
+        [Command::Mate(MateCommand::Dismiss { tl_id: 12 })]
+    ));
+    // The original pet bar's action slots feed `ISLOT_PET_ACTION` into the app's UseSlot hook.
+    app.world()
+        .non_send::<UiRuntime>()
+        .lua
+        .load("AAUI.UseSlot(ISLOT_PET_ACTION,2,'LeftButton')")
+        .exec()?;
+    assert!(matches!(
+        bridge.borrow().requests.as_slice(),
+        [super::super::super::api::Request::UsePetAction { slot: 2 }]
+    ));
+    assert!(app.world().non_send::<UiRuntime>().errors.is_empty());
+    drop(app);
+    drop(bridge);
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[test]
 #[ignore = "isolated original pet frame/bar, native getter types and physical controls"]
 fn original_pet_frame_passive_rename_and_stale_request_identity() -> Result<(), Box<dyn std::error::Error>> {
     let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
