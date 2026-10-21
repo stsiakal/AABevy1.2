@@ -2308,9 +2308,10 @@ error text.
   `game/ui/cursor/housing_invalid.dds` (red house + x), with `housing_rotation.dds` / `housing_elevation.dds` /
   `housing_zoom.dds` for the other housing modes. They are drawn as a camera-attached quad and the OS cursor is hidden
   while placing. The placement arrow is a screen-space Bevy UI `ImageNode` at 62% of the window width and 90.5% of
-  its height (the retail position), 190 x 64 logical pixels, with a darker copy behind it as the outline, using
-  `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn natively; no matching asset was found in
-  the pak, so this is the closest original texture, a placeholder). It is visible for the whole placement mode.
+  its height (the retail position), 5% of the window width with a stretched aspect, with a 5%/10% larger darker copy
+  behind it as the visible outline, using `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn
+  natively; no matching asset was found in the pak, so this is the closest original texture, a placeholder). It is
+  visible for the whole placement mode.
 * **Rotation**: the mouse wheel turns the ghost; Alt makes it fine (1 degree), Shift gives 15 degrees per step;
   Ctrl leaves the wheel to the camera zoom. The initial yaw is the camera heading (`OrbitCamera::yaw`), matching the
   capture's two placements (4.2020082 and 3.166932 rad), with the player's facing as fallback. Arrow keys / `,` / `.`
@@ -2324,10 +2325,16 @@ error text.
   centre: "Can't be installed here." (bad surface), "Too close to other objects." (footprint) or
   "Can't place this for N second(s)." (the use skill's cooldown, from `SCCooldowns` / the database). Those three texts
   are hard-coded from the capture: no `locale` key for them was found in the UI scripts (`hud/build_guide.alb` is the
-  tutorial window with `locale.common.buildGuide1-4`, not the errors). Escape / right click cancels; picking an item up
-  onto the cursor also ends the mode. The left button is armed only after the release of the click that used the seed,
-  and a press that starts over the HUD never confirms, so the bag click cannot place a doodad by itself. Nothing is
-  consumed locally: the doodad and the item update come from the server.
+  tutorial window with `locale.common.buildGuide1-4`, not the errors; the two live texts are `ui_texts` 277 and 278,
+  and the cooldown is `ui_texts` 4598). The message path is the original `SYSMSG` handler and its
+  `systemAlertWindow` (`centermessage/alert_message.alb`, anchored `TOP` + 180 px, `FONT_SIZE.XLARGE`, red), not the
+  chat. `ui_texts` 277..281 and the UI locale files have no placement range message, so an out-of-range click is
+  deliberately silent (matching the retail capture). Escape / right click cancels; picking an item up onto the cursor
+  also ends the mode. Escape is consumed by placement (also from scripts) so it does not open the Menu, and cancelling
+  hides the ghost, both ring meshes, the arrow and the cursor icon in the same frame. The left button is armed only
+  after the release of the click that used the seed, and a press that starts over the HUD never confirms, so the bag
+  click cannot place a doodad by itself. Nothing is consumed locally: the doodad and the item update come from the
+  server.
 * **Public farms**: `hud/farm.rs` answers the original `X2.GetCommonFarmInfo`, `GetFarmGorupInfo` (the bytecode's order
   is type, max count, name), `GetFarmGroupDoodadList`, `GetFarmGroups`, `GetRuntimeCommonFarmDoodadsInfo`,
   `GetRuntimeCommonFarmDoodadCount` and `RequestRuntimeCommonFarmDoodadInfo` from `aa_net::Farms` and the

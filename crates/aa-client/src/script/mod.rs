@@ -270,6 +270,7 @@ struct Ctx<'w, 's> {
     offscreen: Option<Res<'w, aa_dev::OffscreenTarget>>,
     exit: MessageWriter<'w, AppExit>,
     catalog: Res<'w, crate::ingame::placement::Catalog>,
+    placement: Res<'w, crate::ingame::placement::Placement>,
     virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
     terrain: Option<Res<'w, aa_world::TerrainQuery>>,
     collision: Option<Res<'w, aa_world::WorldCollision>>,
@@ -787,7 +788,10 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
         }
         Cmd::Key(k) => {
             c.virtual_input.queue_key_name(k);
-            c.keys.push_now(k, false);
+            // while placing, Escape belongs to the placement (retail opens no Menu); do not hand it to the UI
+            if !(c.placement.session.is_some() && matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc")) {
+                c.keys.push_now(k, false);
+            }
             Some(Active::Wait { until: now + 0.3 })
         }
         Cmd::Cursor(x, y) => {

@@ -399,15 +399,20 @@ pub fn check(
 }
 
 /// Ends the placement: the ghost goes with it.
-fn end_session(commands: &mut Commands, placement: &mut Placement) {
+fn end_session(commands: &mut Commands, placement: &mut Placement, visuals: &Visuals) {
     if let Some(session) = placement.session.take()
         && let Some(root) = session.root
     {
         commands.entity(root).despawn();
     }
+    hide_ring(commands, visuals);
+    if let Some(arrow) = visuals.arrow {
+        commands.entity(arrow).insert(Visibility::Hidden);
+    }
 }
 
 /// Starts a placement when the HUD reports a seed use.
+#[allow(clippy::too_many_arguments)]
 fn start(
     mut commands: Commands,
     mut pressed: MessageReader<PlantPressed>,
@@ -415,6 +420,7 @@ fn start(
     mut placement: ResMut<Placement>,
     player: Query<&Mover, With<LocalPlayer>>,
     camera: Query<&OrbitCamera>,
+    visuals: Res<Visuals>,
     mut virtual_input: ResMut<VirtualInput>,
 ) {
     for press in pressed.read() {
@@ -422,7 +428,7 @@ fn start(
             warn!("planting: item {} (template {}) is not in item_spawn_doodads", press.item_id, press.item_template);
             continue;
         };
-        end_session(&mut commands, &mut placement);
+        end_session(&mut commands, &mut placement, &visuals);
         virtual_input.clear_edges();
         // the retail client's first yaw is the camera heading (two captures: 4.2020082 and 3.166932 rad)
         let yaw = camera.single().map(|c| c.yaw).or_else(|_| player.single().map(|m| m.facing)).unwrap_or(0.0);
@@ -856,14 +862,14 @@ fn cursor_icon(
                         PlacementArrow,
                         Node {
                             position_type: PositionType::Absolute,
-                            left: Val::Percent(62.0),
-                            bottom: Val::Percent(9.5),
-                            width: Val::Px(190.0),
-                            height: Val::Px(64.0),
+                            left: Val::Vw(62.0),
+                            bottom: Val::Vh(9.5),
+                            width: Val::Vw(5.0),
+                            height: Val::Vh(4.5),
                             overflow: Overflow::visible(),
                             ..default()
                         },
-                        UiTransform::from_translation(Val2::new(Val::Px(-95.0), Val::Px(0.0))),
+                        UiTransform::from_translation(Val2::new(Val::Vw(-2.5), Val::Vh(0.0))),
                         UiTargetCamera(target),
                         Visibility::Inherited,
                         GlobalZIndex(100),
@@ -873,13 +879,19 @@ fn cursor_icon(
                 commands.spawn((
                     Node {
                         position_type: PositionType::Absolute,
-                        left: Val::Px(-4.0),
-                        top: Val::Px(-4.0),
-                        width: Val::Px(198.0),
-                        height: Val::Px(72.0),
+                        left: Val::Percent(-2.5),
+                        top: Val::Percent(-5.0),
+                        width: Val::Percent(105.0),
+                        height: Val::Percent(110.0),
                         ..default()
                     },
-                    ImageNode { image: image.clone(), color: Color::srgba(0.06, 0.01, 0.01, 0.95), flip_x: true, ..default() },
+                    ImageNode {
+                        image: image.clone(),
+                        color: Color::srgba(0.05, 0.005, 0.005, 1.0),
+                        flip_x: true,
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
                     ChildOf(arrow),
                     GlobalZIndex(100),
                 ));
@@ -888,11 +900,17 @@ fn cursor_icon(
                         position_type: PositionType::Absolute,
                         left: Val::Px(0.0),
                         top: Val::Px(0.0),
-                        width: Val::Px(190.0),
-                        height: Val::Px(64.0),
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
                         ..default()
                     },
-                    ImageNode { image, color: Color::srgba(0.72, 0.06, 0.03, 0.95), flip_x: true, ..default() },
+                    ImageNode {
+                        image,
+                        color: Color::srgba(0.55, 0.015, 0.01, 0.98),
+                        flip_x: true,
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
                     ChildOf(arrow),
                     GlobalZIndex(101),
                 ));
@@ -956,6 +974,7 @@ fn input(
     over_ui: Res<HudPointerOverUi>,
     focus: Res<HudKeyboardFocus>,
     mut placement: ResMut<Placement>,
+    visuals: Res<Visuals>,
     mut virtual_input: ResMut<VirtualInput>,
     skills: Res<Skills>,
     rt: Option<NonSend<aa_ui::UiRuntime>>,
@@ -968,7 +987,7 @@ fn input(
     // picking an item up onto the cursor ends the placement mode (the retail client does the same)
     if rt.as_ref().is_some_and(|rt| aa_ui::lua::drag::holding(&rt.lua)) {
         info!("planting: an item is on the cursor, placement ends");
-        end_session(&mut commands, &mut placement);
+        end_session(&mut commands, &mut placement, &visuals);
         return;
     }
     let virtual_click = virtual_input.take_click();
@@ -1031,7 +1050,7 @@ fn input(
     }
     if cancel {
         info!("planting: cancelled");
-        end_session(&mut commands, &mut placement);
+        end_session(&mut commands, &mut placement, &visuals);
     }
 }
 
@@ -1074,8 +1093,9 @@ fn notify(rt: Option<&aa_ui::UiRuntime>, text: String) {
     }
 }
 
-/// The retail client's placement errors (the 1.2 capture; no `locale` key was found in the UI scripts, so the
-/// English of the capture is the fallback).
+/// The retail client's placement errors (`ui_texts` 277 "Can't be installed here.", 278 "Too close to other
+/// objects."; the cooldown uses 4598). `ui_texts` 277..281 / the UI locale files have no placement range message, so
+/// an out-of-range click stays silent, as in the retail capture.
 fn error_message(reason: Invalid) -> Option<&'static str> {
     match reason {
         Invalid::Footprint => Some("Too close to other objects."),
@@ -1528,6 +1548,7 @@ mod tests {
         app.add_message::<NetCommand>()
             .add_message::<bevy::input::mouse::MouseWheel>()
             .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
             .init_resource::<Sent>()
             .init_resource::<Skills>()
             .insert_resource(HudPointerOverUi::default())
