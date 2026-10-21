@@ -2294,21 +2294,26 @@ error text.
 * **Ring**: petals use the original leaf atlas `game/textures/p_effects/leaf_03.dds`, the texture of
   `game/materials/effects/leaf_shape.mtl`; the native ring's white / red materials are
   `game/materials/special/housing_build_normal.mtl` and `housing_build_invalid.mtl`. The ring radius follows
-  `doodad_almighties.sim_radius` (rice 0.5 m, spruce 2 m), so a tree gets a large ring. A petal turns red when it
-  touches another character- or house-placed doodad; the mixed ring is the retail "too close" warning. The ring
-  vertices are converted to Bevy coordinates (`cry_to_bevy`) and the decal is rebuilt on every frame's state but the
-  mesh is uploaded only when the geometry signature changes (no empty meshes are created; the original only updated on
-  mouse events, deliberately not copied).
+  `doodad_almighties.sim_radius` (`0.12 + footprint`, clamped 0.50..2.6 m): a 0.5 m rice footprint gives a small,
+  sparse ring and a 2 m spruce a proportionate one, with petal size growing slowly (`0.04 + 0.045 * radius` half
+  length) and 14..36 petals. Petals are a dark gold (`0.72, 0.55, 0.12`) when valid and dark red
+  (`0.62, 0.06, 0.04`) when blocked; a petal turns red when it touches another character- or house-placed doodad, so
+  the mixed ring is the retail "too close" warning. The whole ring is red for out-of-range / underwater / bad surface.
+  Vertices are converted to Bevy coordinates (`cry_to_bevy`) and the decal is rebuilt from each frame's state, but
+  the mesh is uploaded only when the geometry signature changes (no empty meshes are created; the original only
+  updated on mouse events, deliberately not copied). When the cursor ray hits no ground (sky, UI, off terrain) the
+  ghost and ring are hidden and the cursor icon turns red; they come back with the next ground hit.
 * **Cursor**: the original icons were found: `game/ui/cursor/housing_position.dds` (white house + crosshair) and
   `game/ui/cursor/housing_invalid.dds` (red house + x), with `housing_rotation.dds` / `housing_elevation.dds` /
   `housing_zoom.dds` for the other housing modes. They are drawn as a camera-attached quad and the OS cursor is hidden
-  while placing. The bottom-centre red arrow is a screen-space Bevy UI `ImageNode` (targeted at the HUD camera)
-  using `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn natively; no matching asset was
-  found in the pak, so this is the closest original texture, a placeholder).
+  while placing. The placement arrow is a screen-space Bevy UI `ImageNode` at 62% of the window width and 90.5% of
+  its height (the retail position), 190 x 64 logical pixels, with a darker copy behind it as the outline, using
+  `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn natively; no matching asset was found in
+  the pak, so this is the closest original texture, a placeholder). It is visible for the whole placement mode.
 * **Rotation**: the mouse wheel turns the ghost; Alt makes it fine (1 degree), Shift gives 15 degrees per step;
   Ctrl leaves the wheel to the camera zoom. The initial yaw is the camera heading (`OrbitCamera::yaw`), matching the
   capture's two placements (4.2020082 and 3.166932 rad), with the player's facing as fallback. Arrow keys / `,` / `.`
-  remain as keyboard extras.
+  remain as keyboard extras; `plant ITEM DX DY [YAW]` takes the yaw for automated checks.
 * **Validity** (the server stays authoritative): the spot must be within the item's use skill range (`skills.max_range`,
   2 m for the planting skills), on ground or on water when a phase of the template has a `DoodadFuncWaterVolume`, not
   on a road / stone / metal surface (`WorldCollision::surface_below`), and clear of another character-placed or
@@ -2319,7 +2324,9 @@ error text.
   "Can't place this for N second(s)." (the use skill's cooldown, from `SCCooldowns` / the database). Those three texts
   are hard-coded from the capture: no `locale` key for them was found in the UI scripts (`hud/build_guide.alb` is the
   tutorial window with `locale.common.buildGuide1-4`, not the errors). Escape / right click cancels; picking an item up
-  onto the cursor also ends the mode. Nothing is consumed locally: the doodad and the item update come from the server.
+  onto the cursor also ends the mode. The left button is armed only after the release of the click that used the seed,
+  and a press that starts over the HUD never confirms, so the bag click cannot place a doodad by itself. Nothing is
+  consumed locally: the doodad and the item update come from the server.
 * **Public farms**: `hud/farm.rs` answers the original `X2.GetCommonFarmInfo`, `GetFarmGorupInfo` (the bytecode's order
   is type, max count, name), `GetFarmGroupDoodadList`, `GetFarmGroups`, `GetRuntimeCommonFarmDoodadsInfo`,
   `GetRuntimeCommonFarmDoodadCount` and `RequestRuntimeCommonFarmDoodadInfo` from `aa_net::Farms` and the
@@ -2333,9 +2340,10 @@ error text.
 
 Tests: `cargo test -p aa-client placement`, `farm`, `script::parse` (item lookup and the template model against the
 real database when `AA_DB` is set, the ghost model loading with mesh parts, ground / auto-z maths, range / water /
-surface / footprint rules, the mixed ring with non-empty Bevy-space geometry, the retail error texts, golden
-`CSCreateDoodad` bytes, command parser, and a minimal-App smoke test that adds the real placement and farm plugins,
-runs four updates and validates every system parameter).
+surface / footprint rules, the ring size per footprint and its non-empty Bevy-space geometry, the mixed ring, the
+stale-bag-click guard, the wheel mapping, the retail error/cooldown texts, golden `CSCreateDoodad` bytes, command
+parser, and a minimal-App smoke test that adds the real placement and farm plugins, runs updates, validates every
+system parameter and checks the off-ground hiding).
 
 Not done: house placement and construction (the `housings` auto-z fields are not read yet), decoration placement,
 garden plots (`DoodadFuncHouseFarm` is a server no-op), the snap grid (10.x only; default off), harvesting changes and

@@ -227,6 +227,9 @@ pub struct Session {
     model_failed: bool,
     /// The state changed since the last log (the spot or its validity).
     changed: bool,
+    /// The left button was released after the session started: only then may a click confirm (the bag click that
+    /// used the seed must not carry into the placement).
+    left_armed: bool,
 }
 
 impl Session {
@@ -241,6 +244,7 @@ impl Session {
             root: None,
             model_failed: false,
             changed: true,
+            left_armed: false,
         }
     }
 
@@ -535,7 +539,7 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
 
 /// The petals of a ring that touch a placed doodad (the mixed red / yellow ring), when any does.
 fn ring_blocked(plant: &Plantable, spot: Vec3, doodads: &Doodads, catalog: &Catalog) -> Option<usize> {
-    let (radius, count) = ring_shape(plant);
+    let (radius, count, _) = ring_shape(plant);
     let mut n = 0;
     for i in 0..count {
         let ang = i as f32 / count as f32 * std::f32::consts::TAU;
@@ -547,10 +551,14 @@ fn ring_blocked(plant: &Plantable, spot: Vec3, doodads: &Doodads, catalog: &Cata
     (n > 0).then_some(n)
 }
 
-fn ring_shape(plant: &Plantable) -> (f32, usize) {
-    let radius = (plant.footprint.max(0.3) + 0.35).clamp(0.7, 4.0);
-    let count = (14.0 + radius * 6.0).clamp(14.0, 40.0) as usize;
-    (radius, count)
+/// Ring radius, petal count and petal half-length for a template's footprint. Retail keeps the ring close to the
+/// doodad (rice 0.5 m -> a small sparse ring, spruce 2 m -> a proportionate one) and the petals much smaller than
+/// the old whole-leaf quads.
+fn ring_shape(plant: &Plantable) -> (f32, usize, f32) {
+    let radius = (0.12 + plant.footprint).clamp(0.50, 2.6);
+    let count = (14.0 + radius * 9.0).clamp(14.0, 36.0) as usize;
+    let half_len = 0.04 + radius * 0.045;
+    (radius, count, half_len)
 }
 
 fn petal_blocked(plant: &Plantable, p: Vec2, doodads: &Doodads, catalog: &Catalog) -> bool {
@@ -579,9 +587,8 @@ fn ring_quads(
     floor: impl Fn(Vec2) -> f32,
     all_red: bool,
 ) -> (Vec<Quad>, Vec<Quad>) {
-    let (radius, count) = ring_shape(plant);
-    let half_len = 0.10 + radius * 0.10;
-    let half_w = half_len * 0.52;
+    let (radius, count, half_len) = ring_shape(plant);
+    let half_w = half_len * 0.45;
     let mut yellow = Vec::with_capacity(count);
     let mut red = Vec::with_capacity(count);
     for i in 0..count {
@@ -589,7 +596,8 @@ fn ring_quads(
         let ang = i as f32 / count as f32 * std::f32::consts::TAU + jitter;
         let dir = Vec2::new(ang.cos(), ang.sin());
         let side = Vec2::new(-dir.y, dir.x);
-        let centre = Vec2::new(spot.x, spot.y) + dir * radius;
+        let radius_jitter = (((i * 53) % 97) as f32 / 97.0 - 0.5) * 0.10;
+        let centre = Vec2::new(spot.x, spot.y) + dir * (radius + radius_jitter);
         let z = floor(centre) + 0.045;
         let game = Vec3::new(centre.x, centre.y, z);
         let p = [
@@ -754,8 +762,8 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
             depth_bias: 10.0,
             ..default()
         };
-        visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.82, 0.18, 0.95))));
-        visuals.red = Some(materials.add(leaf_material(Color::srgba(0.82, 0.09, 0.05, 0.95))));
+        visuals.yellow = Some(materials.add(leaf_material(Color::srgba(0.72, 0.55, 0.12, 0.95))));
+        visuals.red = Some(materials.add(leaf_material(Color::srgba(0.62, 0.06, 0.04, 0.95))));
 
         let arrow = dds_image("textures/decal/roadsign/arrow.dds")?;
         visuals.arrow_image = Some(images.add(arrow));
@@ -842,19 +850,46 @@ fn cursor_icon(
                         PlacementArrow,
                         Node {
                             position_type: PositionType::Absolute,
-                            left: Val::Percent(50.0),
-                            bottom: Val::Px(112.0),
-                            width: Val::Px(150.0),
-                            height: Val::Px(60.0),
+                            left: Val::Percent(62.0),
+                            bottom: Val::Percent(9.5),
+                            width: Val::Px(190.0),
+                            height: Val::Px(64.0),
+                            overflow: Overflow::visible(),
                             ..default()
                         },
-                        UiTransform::from_translation(Val2::new(Val::Px(-75.0), Val::Px(0.0))),
-                        ImageNode { image, color: Color::srgba(0.78, 0.07, 0.04, 0.9), flip_x: true, ..default() },
+                        UiTransform::from_translation(Val2::new(Val::Px(-95.0), Val::Px(0.0))),
                         UiTargetCamera(target),
                         Visibility::Inherited,
                         GlobalZIndex(100),
                     ))
                     .id();
+                // the retail arrow has a dark outline; the road texture has none, so a darker copy sits behind it
+                commands.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(-4.0),
+                        top: Val::Px(-4.0),
+                        width: Val::Px(198.0),
+                        height: Val::Px(72.0),
+                        ..default()
+                    },
+                    ImageNode { image: image.clone(), color: Color::srgba(0.06, 0.01, 0.01, 0.95), flip_x: true, ..default() },
+                    ChildOf(arrow),
+                    GlobalZIndex(100),
+                ));
+                commands.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        width: Val::Px(190.0),
+                        height: Val::Px(64.0),
+                        ..default()
+                    },
+                    ImageNode { image, color: Color::srgba(0.72, 0.06, 0.03, 0.95), flip_x: true, ..default() },
+                    ChildOf(arrow),
+                    GlobalZIndex(101),
+                ));
                 visuals.arrow = Some(arrow);
             }
         }
@@ -938,57 +973,79 @@ fn input(
         keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
         keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
     );
-    if !ctrl {
-        let step = if shift {
-            ROT_STEP
-        } else if alt {
-            1f32.to_radians()
-        } else {
-            ROT_STEP * 2.0 / 3.0
-        };
-        let mut turn = 0.0;
-        for ev in wheel.read() {
-            if ev.y != 0.0 {
-                turn += step * ev.y.signum();
-            }
-        }
-        if turn != 0.0 {
-            session.yaw = wrap_angle(session.yaw + turn);
-        }
+    let mut turn = 0.0;
+    for ev in wheel.read() {
+        turn += wheel_turn(shift, alt, ctrl, ev.y);
+    }
+    if turn != 0.0 {
+        session.yaw = wrap_angle(session.yaw + turn);
     }
     if mouse.just_pressed(MouseButton::Right) {
         mouse.clear_just_pressed(MouseButton::Right);
         cancel = true;
     }
-    if mouse.just_pressed(MouseButton::Left) {
+    let left_down = mouse.pressed(MouseButton::Left);
+    let left_just = mouse.just_pressed(MouseButton::Left);
+    if left_just && !over_ui.0 {
         mouse.clear_just_pressed(MouseButton::Left);
-        if !over_ui.0 {
-            let cooldown = skills
-                .cooldown_left(session.plant.use_skill, session.plant.cooldown_tag, session.plant.cooldown_ms)
-                .filter(|left| !left.is_zero())
-                .map(|left| left.as_secs().max(1));
-            if let Some(seconds) = cooldown {
-                notify(rt.as_deref(), format!("Can't place this for {seconds} second(s)."));
-            } else if let Some(reason) = session.invalid {
-                match error_message(reason) {
-                    Some(text) => notify(rt.as_deref(), text.into()),
-                    None => info!("planting: not confirmed: {}", reason.text()),
-                }
-            } else if let Some(request) = session.request() {
-                let spot = request.pos;
-                info!(
-                    "planting: confirm doodad {} (item {}) at ({:.2}, {:.2}, {:.2}), yaw {:.2}, scale {:.2}",
-                    request.id, request.item_id, spot.x, spot.y, spot.z, request.z_rot, request.scale
-                );
-                net.write(NetCommand(Command::CreateDoodad(request)));
-                cancel = true;
+    }
+    if left_confirm(&mut session.left_armed, left_down, left_just, over_ui.0) {
+        let cooldown = skills
+            .cooldown_left(session.plant.use_skill, session.plant.cooldown_tag, session.plant.cooldown_ms)
+            .filter(|left| !left.is_zero())
+            .map(|left| left.as_secs().max(1));
+        if let Some(seconds) = cooldown {
+            notify(rt.as_deref(), cooldown_message(seconds));
+        } else if let Some(reason) = session.invalid {
+            match error_message(reason) {
+                Some(text) => notify(rt.as_deref(), text.into()),
+                None => info!("planting: not confirmed: {}", reason.text()),
             }
+        } else if let Some(request) = session.request() {
+            let spot = request.pos;
+            info!(
+                "planting: confirm doodad {} (item {}) at ({:.2}, {:.2}, {:.2}), yaw {:.2}, scale {:.2}",
+                request.id, request.item_id, spot.x, spot.y, spot.z, request.z_rot, request.scale
+            );
+            net.write(NetCommand(Command::CreateDoodad(request)));
+            cancel = true;
         }
     }
     if cancel {
         info!("planting: cancelled");
         end_session(&mut commands, &mut placement);
     }
+}
+
+/// Arms the left button only after the button that used the seed has been released; a press while the pointer is
+/// over the HUD never confirms.
+fn left_confirm(armed: &mut bool, pressed: bool, just_pressed: bool, over_ui: bool) -> bool {
+    if !*armed {
+        if !pressed && !just_pressed {
+            *armed = true;
+        }
+        return false;
+    }
+    just_pressed && !over_ui
+}
+
+/// The mouse wheel's turn for one notch/test: none with Ctrl (camera zoom), 15 degrees with Shift, 1 with Alt.
+fn wheel_turn(shift: bool, alt: bool, ctrl: bool, delta: f32) -> f32 {
+    if ctrl || delta == 0.0 {
+        return 0.0;
+    }
+    let step = if shift {
+        ROT_STEP
+    } else if alt {
+        1f32.to_radians()
+    } else {
+        ROT_STEP * 2.0 / 3.0
+    };
+    step * delta.signum()
+}
+
+fn cooldown_message(seconds: u64) -> String {
+    format!("Can't place this for {seconds} second(s).")
 }
 
 /// The red error text at the top centre, as `SYSMSG` (the original `centermessage` script).
@@ -1226,7 +1283,9 @@ mod tests {
         let mut tree = plant();
         tree.footprint = 2.0;
         let tree = ring_shape(&tree);
-        assert!(tree.0 > rice.0 && tree.1 > rice.1, "a tree ring is larger: {rice:?} vs {tree:?}");
+        assert!((0.55..=0.75).contains(&rice.0), "the retail rice ring is small: {rice:?}");
+        assert!(tree.0 > rice.0 && tree.0 <= 2.6, "a tree ring is larger: {rice:?} vs {tree:?}");
+        assert!(tree.1 > rice.1 && tree.2 > rice.2, "more and longer petals for a tree: {rice:?} vs {tree:?}");
         let c = catalog();
         let mut doodads = Doodads::default();
         let mut other = aa_net::model::Doodad {
@@ -1267,6 +1326,37 @@ mod tests {
         assert!((wrap_angle(0.0) - 0.0).abs() < 1e-6);
         assert!((wrap_angle(std::f32::consts::TAU + 1.0) - 1.0).abs() < 1e-5);
         assert!((wrap_angle(-std::f32::consts::TAU - 1.0) + 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_bag_click_cannot_confirm_a_new_session() {
+        let mut armed = false;
+        // the left button was already down when the seed was used (and/or the press started the bag use)
+        assert!(!left_confirm(&mut armed, true, true, false));
+        assert!(!left_confirm(&mut armed, true, false, false));
+        // release, then the first deliberate press confirms
+        assert!(!left_confirm(&mut armed, false, false, false));
+        assert!(left_confirm(&mut armed, true, true, false));
+        // a press over the HUD never confirms
+        assert!(!left_confirm(&mut armed, true, true, true));
+        assert!(left_confirm(&mut armed, true, true, false));
+    }
+
+    #[test]
+    fn the_wheel_mapping_keeps_ctrl_for_the_camera() {
+        let normal = ROT_STEP * 2.0 / 3.0;
+        assert!((wheel_turn(false, false, false, 1.0) - normal).abs() < 1e-6);
+        assert!((wheel_turn(false, false, false, -3.0) + normal).abs() < 1e-6);
+        assert!((wheel_turn(true, false, false, 1.0) - ROT_STEP).abs() < 1e-6);
+        assert!((wheel_turn(false, true, false, 1.0) - 1f32.to_radians()).abs() < 1e-6);
+        assert_eq!(wheel_turn(false, false, true, 1.0), 0.0);
+        assert_eq!(wheel_turn(true, true, false, 0.0), 0.0);
+    }
+
+    #[test]
+    fn the_cooldown_error_uses_the_retail_text() {
+        assert_eq!(cooldown_message(23), "Can't place this for 23 second(s).");
+        assert_eq!(cooldown_message(1), "Can't place this for 1 second(s).");
     }
 
     #[test]
@@ -1364,6 +1454,21 @@ mod tests {
                 q.iter(world).filter(|v| **v != Visibility::Hidden).count()
             };
             assert!(visible_parts > 0, "the ghost model's meshes inherit the visible root");
+            // no window/camera ray: the next tick has no ground and must hide the ghost and the ring
+            app.world_mut().spawn((
+                LocalPlayer { obj_id: 1 },
+                Mover {
+                    pos: Vec3::new(10480.0, 15400.0, 210.0),
+                    facing: 0.0,
+                    vz: 0.0,
+                    grounded: true,
+                    velocity: Vec3::ZERO,
+                    swim: None,
+                    wading: 0.0,
+                },
+            ));
+            app.update();
+            assert_eq!(app.world().get::<Visibility>(roots[0]), Some(&Visibility::Hidden), "off-ground hides the ghost");
         }
     }
 
