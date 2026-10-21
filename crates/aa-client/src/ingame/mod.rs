@@ -153,6 +153,15 @@ impl Plugin for InGamePlugin {
                 )
                     .run_if(world_screens),
             )
+            // received equipment changes: rebuild the local look now, mark remote characters for
+            // the same worker preparation path their spawn uses
+            .add_systems(
+                Update,
+                appearance::watch_equipment_changes
+                    .run_if(world_screens)
+                    .after(player::spawn_player)
+                    .before(units::sync_views),
+            )
             .add_systems(Update, (camera::show_world, leave_after).run_if(in_state(Screen::InGame)));
     }
 }

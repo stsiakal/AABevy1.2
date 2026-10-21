@@ -210,11 +210,14 @@ pub fn spawn_player(
     let swim_clips = SwimClips::load(&assets.skeleton, &assets.cal, &clips);
     let actor = ActorParams::load(spawn.unit.model_id).unwrap_or_default();
     debug!("actor params: {actor:?}, swim clips: {}", swim_clips.is_some());
+    let look_carried = carried.clone();
     let Some(root) = spawn_with_locomotion(&mut commands, &mut cry, &clips, assets, placement(pos, facing, 1.0), carried) else { return };
     commands.entity(root).insert((
         Name::new(format!("player {}", spawn.name())),
         LocalPlayer { obj_id: spawn.obj_id },
         Mover { pos, facing, vz: 0.0, grounded: true, velocity: Vec3::ZERO, swim: None, wading: 0.0 },
+        appearance::LookSource::new(equipment, params),
+        weapons::LookCarried(look_carried),
         actor,
     ));
     if spawn.unit.hp <= 0 {

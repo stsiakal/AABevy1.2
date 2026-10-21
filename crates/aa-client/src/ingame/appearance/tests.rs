@@ -125,6 +125,45 @@ fn a_hair_style_without_textures_in_this_client_falls_back_to_the_preset_style()
 }
 
 #[test]
+fn an_equipment_change_rebuilds_only_when_the_resolved_parts_change() -> Result<(), Box<dyn std::error::Error>> {
+    let db = GameDb::open()?;
+    // starter set + cap, then the butler / maid costume into worn slot 27 as the server reports it
+    let mut equipment = equipment(Some(6252));
+    for (s, id) in [(slot::CHEST, 23387), (slot::LEGS, 23388), (slot::FEET, 23390)] {
+        equipment.slots[s] = Some(item(id));
+    }
+    let mut source = LookSource::new(&equipment, &ModelParams::default());
+    let look = |source: &LookSource| {
+        let desc = describe(&db, Race::Nuian, Gender::Female, &source.equipment, &source.params).unwrap();
+        resolve(&db, &desc, &source.equipment).unwrap()
+    };
+    let before = look(&source);
+    let event = Event::EquipmentChanged {
+        obj_id: 7,
+        items: vec![(u8::try_from(slot::COSPLAY).unwrap(), Some(item(28439)))],
+    };
+    let Event::EquipmentChanged { items, .. } = &event else { unreachable!() };
+    assert!(source.apply(items), "the received worn slot changed the look source");
+    let after = look(&source);
+    assert!(parts_changed(&before, &after), "the costume changes the drawn parts");
+    let costume: Vec<_> = after.parts.iter().filter(|part| part.kind == PartKind::Costume && part.equip_slot == Some(27)).collect();
+    assert_eq!(costume.len(), 1, "{costume:?}");
+    assert_eq!(costume[0].slot, "cosplay");
+    // the same received slots again are not a change, and the resolved look is identical
+    assert!(!source.apply(items));
+    assert!(!parts_changed(&after, &look(&source)));
+    // taking it off puts the armour back: a rebuild again
+    let Event::EquipmentChanged { items, .. } =
+        (Event::EquipmentChanged { obj_id: 7, items: vec![(u8::try_from(slot::COSPLAY).unwrap(), None)] })
+    else {
+        unreachable!()
+    };
+    assert!(source.apply(&items));
+    assert!(parts_changed(&after, &look(&source)));
+    Ok(())
+}
+
+#[test]
 fn a_received_costume_replaces_the_body_and_the_armour_it_covers() -> Result<(), Box<dyn std::error::Error>> {
     let db = GameDb::open()?;
     // the starter set + cap under the butler / maid costume (wire slot 27, tagged like any item)

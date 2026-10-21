@@ -24,9 +24,12 @@ is refused instead of choosing an arbitrary descriptor.
 
 The native512 selector goldens do not establish every appearance producer.
 This adapter follows the existing rendered costume; it adds no new helmet
-visibility policy, beard geometry or rebuild after later equipment/appearance
-changes. Those remain separate integration gaps. Full scene/material/occlusion
-parity and clothing clipping are not inferred from selecting the correct hair.
+visibility policy or beard geometry. Received equipment changes now re-run the
+same describe/resolve adapter and swap the character's parts in place (local
+player and drawn remote characters) when the resolved part list changes, so a
+received head/cosplay change reaches the rendered hair variant too. Full
+scene/material/occlusion parity and clothing clipping are not inferred from
+selecting the correct hair.
 
 The headgear aa-dev example feeds explicit received-style equipment through
 the same describe/resolve functions and actual client player spawn: original

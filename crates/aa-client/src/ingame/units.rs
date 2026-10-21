@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
-use aa_anim::{Animator, ClipLibrary, spawn_character};
+use aa_anim::{Animator, Character, ClipLibrary, spawn_character};
 use aa_cry::scene::{CryAssets, ModelOptions, spawn_loaded};
 use aa_cry::workers::Workers;
 use aa_net::model::{Movement, Unit, actor_flags, alertness, move_flags, stance};
@@ -26,6 +26,7 @@ use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
 use super::anim::{Locomotion, Motion};
+use super::appearance;
 use super::creature;
 use super::data::Db;
 use super::idle::IdleClips;
@@ -137,7 +138,8 @@ impl Default for Views {
 
 /// What a worker delivers.
 enum Built {
-    Unit(u32, UnitBuild),
+    /// A spawn (`None`), or a rebuild of a drawn character from this look snapshot.
+    Unit(u32, Box<UnitBuild>, Option<Box<appearance::LookSource>>),
     Doodad(u32, DoodadBuild),
 }
 
@@ -219,6 +221,9 @@ pub fn sync_views(
     mut last_spawn: Local<f32>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
     timers: Option<Res<aa_world::profile::Timers>>,
+    mut looks: Query<&mut appearance::LookSource>,
+    characters: Query<&Character>,
+    look_carried: Query<&weapons::LookCarried>,
 ) {
     let (Some(db), Ok(me)) = (db, player.single()) else { return };
     let _t = timers.as_deref().map(|t| t.time("units.sync"));
@@ -280,6 +285,43 @@ pub fn sync_views(
     }
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
     let loader = cry.loader();
+
+    // drawn characters whose received equipment changed: prepare the replacement exactly like a spawn
+    let mut rebuilds: Vec<(f32, u32)> = Vec::new();
+    for (id, unit) in &units.by_id {
+        let Some(view) = views.units.get(id) else { continue };
+        let Some(entity) = view.entity else { continue };
+        if view.preparing {
+            continue;
+        }
+        let Ok(source) = looks.get(entity) else { continue };
+        if !source.dirty {
+            continue;
+        }
+        rebuilds.push((flat_distance(Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z), me), *id));
+    }
+    rebuilds.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for (priority, id) in rebuilds {
+        if views.jobs >= MAX_JOBS {
+            break;
+        }
+        let Some(unit) = units.by_id.get(&id) else { continue };
+        let Some(entity) = views.units.get(&id).and_then(|view| view.entity) else { continue };
+        let Ok(source) = looks.get(entity) else { continue };
+        let snapshot = source.clone();
+        views.units.entry(id).or_default().preparing = true;
+        views.jobs += 1;
+        let mut job = unit.clone();
+        job.equipment = snapshot.equipment.clone();
+        job.model_params = snapshot.params.clone();
+        let (db, loader, clips, tx) = (db.clone(), loader.clone(), clips.clone(), views.tx.clone());
+        Workers::global().spawn(priority, move || {
+            let build = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare_unit(&db, &loader, &clips, &job)))
+                .unwrap_or_else(|_| UnitBuild::None("the preparation panicked".into()));
+            let _ = tx.send(Built::Unit(id, Box::new(build), Some(Box::new(snapshot))));
+        });
+    }
+
     let mut waiting = wanted.len();
     for (priority, id) in wanted {
         if views.jobs >= MAX_JOBS {
@@ -294,7 +336,7 @@ pub fn sync_views(
             // a panic must not leave the unit "preparing" for ever
             let build = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare_unit(&db, &loader, &clips, &unit)))
                 .unwrap_or_else(|_| UnitBuild::None("the preparation panicked".into()));
-            let _ = tx.send(Built::Unit(unit.obj_id, build));
+            let _ = tx.send(Built::Unit(unit.obj_id, Box::new(build), None));
         });
     }
 
@@ -336,7 +378,7 @@ pub fn sync_views(
     // spawn what is ready, nearest first, while the frame can take it
     let mut ready = std::mem::take(&mut views.ready);
     let distance = |b: &Built| match b {
-        Built::Unit(id, _) => units.by_id.get(id).map_or(f32::MAX, |u| flat_distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z), me)),
+        Built::Unit(id, _, _) => units.by_id.get(id).map_or(f32::MAX, |u| flat_distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z), me)),
         Built::Doodad(id, _) => doodads.by_id.get(id).map_or(f32::MAX, |d| flat_distance(Vec3::new(d.pos.x, d.pos.y, d.pos.z), me)),
     };
     ready.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
@@ -347,10 +389,51 @@ pub fn sync_views(
             continue;
         }
         match built {
-            Built::Unit(id, build) => {
+            Built::Unit(id, build, rebuild) => {
+                let build = *build;
                 let view = views.units.entry(id).or_default();
                 view.preparing = false;
                 let Some(unit) = units.by_id.get(&id) else { continue };
+                if let Some(expected) = rebuild {
+                    // a rebuild keeps the root (transform, controller, animation state): only the
+                    // visual parts and the carried weapons are replaced
+                    let Some(entity) = view.entity else { continue };
+                    let Ok(source) = looks.get(entity) else { continue };
+                    if !source.same_inputs(&expected) {
+                        // a newer equipment change arrived while this one was prepared
+                        continue;
+                    }
+                    let UnitBuild::Character { assets, models, carried, .. } = build else {
+                        if let Ok(mut source) = looks.get_mut(entity) {
+                            source.dirty = false;
+                        }
+                        continue;
+                    };
+                    let same_parts = characters.get(entity).is_ok_and(|character| !appearance::parts_changed(&character.assets, &assets));
+                    let same_weapons = look_carried.get(entity).is_ok_and(|look| look.0 == carried);
+                    if same_parts && same_weapons {
+                        if let Ok(mut source) = looks.get_mut(entity) {
+                            source.dirty = false;
+                        }
+                        continue;
+                    }
+                    *last_spawn = 0.0;
+                    let t0 = Instant::now();
+                    for m in models {
+                        cry.finish_model(m);
+                    }
+                    let t_rebuild = timers.as_deref().map(|t| t.time("units.rebuild_unit"));
+                    let rebuilt = appearance::rebuild::rebuild(&mut commands, &mut cry, &clips, entity, *assets, carried, false);
+                    drop(t_rebuild);
+                    if let Ok(mut source) = looks.get_mut(entity) {
+                        source.dirty = !rebuilt;
+                    }
+                    let ms = t0.elapsed().as_secs_f32() * 1000.0;
+                    if ms > 30.0 {
+                        debug!("rebuilding unit {} ({:?}) took {ms:.0} ms", unit.obj_id, unit.kind);
+                    }
+                    continue;
+                }
                 if view.entity.is_some() || flat_distance(Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z), me) > UNIT_RADIUS * 1.25 {
                     continue;
                 }
@@ -435,7 +518,11 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
                 Err(e) => return Err(format!("cannot spawn the character: {e}")),
             };
             let mut entity = commands.entity(root);
-            entity.insert(Motion::default());
+            entity.insert((
+                Motion::default(),
+                appearance::LookSource::new(&unit.equipment, &unit.model_params),
+                weapons::LookCarried(carried.clone()),
+            ));
             if !carried.is_empty() {
                 entity.insert(weapons::Carried(carried));
             }
@@ -705,6 +792,16 @@ pub struct Asleep(Animator);
 
 impl Asleep {
     pub(super) fn animator(&self) -> &Animator { &self.0 }
+
+    /// The visual parts were rebuilt on the same rig: drive the replacement bones.
+    pub(crate) fn rebind(&mut self, rig: std::sync::Arc<aa_anim::pose::Rig>, bones: Vec<Entity>) {
+        self.0.rig = rig;
+        self.0.bones = bones;
+    }
+
+    /// The facial setup needs an awake `Animator`; the parked one is lent out and wrapped again.
+    pub(crate) fn into_animator(self) -> Animator { self.0 }
+    pub(crate) fn from_animator(animator: Animator) -> Asleep { Asleep(animator) }
 }
 
 /// Hides the units outside the view or far away and stops animating the ones nobody looks at.
