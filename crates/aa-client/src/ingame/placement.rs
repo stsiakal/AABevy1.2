@@ -479,7 +479,6 @@ struct PlacementCursorIcon;
 #[derive(Resource, Default)]
 struct Visuals {
     ready: bool,
-    failed: bool,
     yellow: Option<Handle<StandardMaterial>>,
     red: Option<Handle<StandardMaterial>>,
     dot_valid: Option<Handle<StandardMaterial>>,
@@ -1062,11 +1061,6 @@ fn update_ring(
         let dots = plot_dot_quads(&session.plant, spot, session.yaw, floor);
         let neighbours = neighbour_dot_quads(houses, catalog, spot, floor);
         let posts = areas.map_or_else(Vec::new, |areas| post_quads(areas, spot, floor));
-        let (Some(dot_mat), Some(neighbour_mat), Some(post_mat)) =
-            (visuals.dot_valid.clone(), visuals.dot_neighbour.clone(), visuals.post.clone())
-        else {
-            return;
-        };
         let empty: [Quad; 0] = [];
         if let Some(mat) = visuals.yellow.clone() {
             show_ring_part(commands, meshes, &mut visuals.ring.yellow, &mat, "planting ring (valid)", &empty);
@@ -1074,9 +1068,15 @@ fn update_ring(
         if let Some(mat) = visuals.red.clone() {
             show_ring_part(commands, meshes, &mut visuals.ring.red, &mat, "planting ring (blocked)", &empty);
         }
-        show_ring_part(commands, meshes, &mut visuals.ring.dots, &dot_mat, "housing plot dots", &dots);
-        show_ring_part(commands, meshes, &mut visuals.ring.neighbours, &neighbour_mat, "housing neighbour dots", &neighbours);
-        show_ring_part(commands, meshes, &mut visuals.ring.posts, &post_mat, "housing area posts", &posts);
+        if let Some(mat) = visuals.dot_valid.clone() {
+            show_ring_part(commands, meshes, &mut visuals.ring.dots, &mat, "housing plot dots", &dots);
+        }
+        if let Some(mat) = visuals.dot_neighbour.clone() {
+            show_ring_part(commands, meshes, &mut visuals.ring.neighbours, &mat, "housing neighbour dots", &neighbours);
+        }
+        if let Some(mat) = visuals.post.clone() {
+            show_ring_part(commands, meshes, &mut visuals.ring.posts, &mat, "housing area posts", &posts);
+        }
         return;
     }
     let all_red = matches!(session.invalid, Some(i) if i != Invalid::Footprint);
@@ -1096,14 +1096,14 @@ fn update_ring(
 }
 
 /// The glowing dots along the plot square (half extent = the housing's garden_radius), turned with the
-/// ghost. The 1.2 pak's lare_08.dds is the flare texture of its housing line/twinkle effects; the retail
+/// ghost. The 1.2 pak's flare_08.dds is the flare texture of its housing line/twinkle effects; the retail
 /// 3.5 capture shows the same dotted orange boundary for the active plot.
 fn plot_dot_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
     let half = plant.footprint.max(0.5);
     let (sin, cos) = yaw.sin_cos();
     let to_world = |u: f32, v: f32| Vec2::new(spot.x + u * cos - v * sin, spot.y + u * sin + v * cos);
     let corners = [to_world(-half, -half), to_world(half, -half), to_world(half, half), to_world(-half, half)].map(|p| (p.x, p.y));
-    edge_dot_quads(corners, 0.55, 0.16, floor)
+    edge_dot_quads(corners, 0.62, 0.34, floor)
 }
 
 /// Existing plots around the placement are marked by white/grey dots (the retail 3.5 capture).
@@ -1125,7 +1125,7 @@ fn neighbour_dot_quads(houses: &Houses, catalog: &Catalog, spot: Vec3, floor: im
         out.extend(edge_dot_quads(
             [(p.x - radius, p.y - radius), (p.x + radius, p.y - radius), (p.x + radius, p.y + radius), (p.x - radius, p.y + radius)],
             0.7,
-            0.13,
+            0.26,
             &floor,
         ));
     }
@@ -1144,18 +1144,26 @@ fn edge_dot_quads(corners: [(f32, f32); 4], spacing: f32, size: f32, floor: impl
         for k in 0..n {
             let t = (k as f32 + 0.5) / n as f32;
             let g = Vec2::new(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
-            let z = floor(g) + 0.05;
-            let h = size * 0.5;
-            let p = [
-                cry_to_bevy(Vec3::new(g.x - h, g.y - h, z)),
-                cry_to_bevy(Vec3::new(g.x + h, g.y - h, z)),
-                cry_to_bevy(Vec3::new(g.x + h, g.y + h, z)),
-                cry_to_bevy(Vec3::new(g.x - h, g.y + h, z)),
-            ];
-            out.push(Quad { p, uv: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]] });
+            out.extend(dot_quads(g, floor(g), size));
         }
     }
     out
+}
+
+/// One glowing dot as a ground quad plus two crossed vertical quads. A flat ground quad alone is only a few
+/// foreshortened pixels from the normal camera; the crossed quads keep the retail round glow visible at that angle
+/// (and the ground quad still shows it from straight above).
+fn dot_quads(g: Vec2, ground: f32, size: f32) -> [Quad; 3] {
+    let h = size * 0.5;
+    let base = ground + 0.02;
+    let top = base + size;
+    let uv = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let at = |x: f32, y: f32, z: f32| cry_to_bevy(Vec3::new(x, y, z));
+    [
+        Quad { p: [at(g.x - h, g.y - h, base), at(g.x + h, g.y - h, base), at(g.x + h, g.y + h, base), at(g.x - h, g.y + h, base)], uv },
+        Quad { p: [at(g.x - h, g.y, base), at(g.x + h, g.y, base), at(g.x + h, g.y, top), at(g.x - h, g.y, top)], uv },
+        Quad { p: [at(g.x, g.y - h, base), at(g.x, g.y + h, base), at(g.x, g.y + h, top), at(g.x, g.y - h, top)], uv },
+    ]
 }
 
 /// The small yellow posts along the housing area polygon that contains the spot (the retail boundary markers).
@@ -1223,11 +1231,11 @@ struct Quad {
 
 /// Loads the original placement textures (`leaf_03.dds`, the road arrow, the housing cursors) once.
 fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, visuals: &mut Visuals) {
-    if visuals.ready || visuals.failed {
+    if visuals.ready {
         return;
     }
-    let mut build = || -> Option<()> {
-        let leaf = dds_image("textures/p_effects/leaf_03.dds")?;
+    // Each texture is independent: a missing flare must not also remove the petals, posts, arrow or cursor.
+    if let Some(leaf) = dds_image("textures/p_effects/leaf_03.dds") {
         let leaf = images.add(leaf);
         let leaf_material = |color: Color| StandardMaterial {
             base_color: color,
@@ -1240,9 +1248,12 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         };
         visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.72, 0.12, 1.0))));
         visuals.red = Some(materials.add(leaf_material(Color::srgba(0.95, 0.10, 0.06, 1.0))));
-        // the retail dotted plot boundary: the 1.2 pak's `flare_08.dds` (the texture of its housing
-        // line/twinkle effects), orange for the active plot and white/grey for the neighbours
-        let flare = dds_image("textures/p_effects/flare_08.dds")?;
+    } else {
+        warn!("planting: cannot read textures/p_effects/leaf_03.dds (petal ring disabled)");
+    }
+    // the retail dotted plot boundary: the 1.2 pak's `flare_08.dds` (the texture of its housing
+    // line/twinkle effects), orange for the active plot and white/grey for the neighbours
+    if let Some(flare) = dds_image("textures/p_effects/flare_08.dds") {
         let flare = images.add(flare);
         let dot_material = |color: Color| StandardMaterial {
             base_color: color,
@@ -1253,22 +1264,25 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
             depth_bias: 20.0,
             ..default()
         };
-        visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 0.62, 0.06, 1.0))));
-        visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(0.82, 0.82, 0.78, 0.8))));
-        visuals.post = Some(materials.add(StandardMaterial {
-            base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
-            unlit: true,
-            cull_mode: None,
-            alpha_mode: AlphaMode::Blend,
-            depth_bias: 20.0,
-            ..default()
-        }));
-
-        let arrow = dds_image("textures/decal/roadsign/arrow.dds")?;
+        visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 0.62, 0.20, 1.0))));
+        visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(0.92, 0.92, 0.88, 0.9))));
+    } else {
+        warn!("planting: cannot read textures/p_effects/flare_08.dds (plot dots disabled)");
+    }
+    visuals.post = Some(materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
+        unlit: true,
+        cull_mode: None,
+        alpha_mode: AlphaMode::Blend,
+        depth_bias: 20.0,
+        ..default()
+    }));
+    if let Some(arrow) = dds_image("textures/decal/roadsign/arrow.dds") {
         visuals.arrow_image = Some(images.add(arrow));
-
-        let good = dds_image("ui/cursor/housing_position.dds")?;
-        let bad = dds_image("ui/cursor/housing_invalid.dds")?;
+    } else {
+        warn!("planting: cannot read textures/decal/roadsign/arrow.dds (ground arrow disabled)");
+    }
+    if let (Some(good), Some(bad)) = (dds_image("ui/cursor/housing_position.dds"), dds_image("ui/cursor/housing_invalid.dds")) {
         let good = images.add(good);
         let bad = images.add(bad);
         let cursor_material = |image: &Handle<Image>| StandardMaterial {
@@ -1282,12 +1296,8 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         visuals.cursor_good = Some(materials.add(cursor_material(&good)));
         visuals.cursor_bad = Some(materials.add(cursor_material(&bad)));
         visuals.cursor_mesh = Some(meshes.add(Mesh::from(Rectangle::new(1.0, 1.0))));
-        Some(())
-    };
-    if build().is_none() {
-        visuals.failed = true;
-        warn!("planting: cannot read the placement textures (leaf_03 / arrow / housing cursors)");
-        return;
+    } else {
+        warn!("planting: cannot read the housing cursor textures");
     }
     visuals.ready = true;
 }
@@ -2030,13 +2040,16 @@ mod tests {
         let spot = Vec3::new(100.0, 200.0, 10.0);
         let dots = plot_dot_quads(&p, spot, 0.0, |_| 10.0);
         assert!(!dots.is_empty());
+        let mut tallest = 10.0f32;
         for q in &dots {
             for v in q.p {
-                assert!((v.y - 10.05).abs() < 1e-3, "the dots float just over the ground: {v:?}");
+                assert!(v.y >= 10.01 && v.y <= 10.37, "the dots sit on the ground: {v:?}");
+                tallest = tallest.max(v.y);
                 assert!(v.x >= 100.0 - 4.2 && v.x <= 100.0 + 4.2, "inside the plot: {v:?}");
                 assert!(v.z >= -200.0 - 4.2 && v.z <= -200.0 + 4.2, "inside the plot: {v:?}");
             }
         }
+        assert!(tallest > 10.31, "the crossed quads stand up from the ground: {tallest}");
         let turned = plot_dot_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
         assert_ne!(quads_signature(&dots), quads_signature(&turned), "rotating the ghost rotates the square");
     }
@@ -2078,11 +2091,14 @@ mod tests {
         );
         let dots = neighbour_dot_quads(&houses, &house_catalog(), Vec3::new(10.0, 10.0, 10.0), |_| 10.0);
         assert!(!dots.is_empty());
+        let mut tallest = 10.0f32;
         for q in &dots {
             for v in q.p {
-                assert!((v.y - 10.05).abs() < 1e-3, "neighbour dots float over the ground: {v:?}");
+                assert!(v.y >= 10.01 && v.y <= 10.29, "neighbour dots stand on the ground: {v:?}");
+                tallest = tallest.max(v.y);
             }
         }
+        assert!(tallest > 10.24, "neighbour dots also stand up: {tallest}");
     }
 
     #[test]
