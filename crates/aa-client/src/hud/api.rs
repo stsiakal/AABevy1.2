@@ -132,6 +132,8 @@ pub struct HudData {
     pub store: super::store::View,
     /// The NPC function menu and the priest blessing requests (`services.rs`).
     pub(super) services: super::services::View,
+    /// The original item-look converter (`look.rs`).
+    pub(super) look: super::look::View,
     pub(super) specialty: super::specialty::View,
 }
 
@@ -199,6 +201,7 @@ impl Default for HudData {
             character_id: 0,
             store: Default::default(),
             services: Default::default(),
+            look: Default::default(),
             specialty: Default::default(),
         }
     }
@@ -318,6 +321,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
+    super::look::install(lua, bridge)?;
     super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;
     super::ranking::install(lua, bridge)?;

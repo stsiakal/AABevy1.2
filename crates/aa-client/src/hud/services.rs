@@ -63,6 +63,7 @@ pub(super) enum Service {
     Ability,
     Priest,
     Stabler,
+    LookConverter,
 }
 
 impl Service {
@@ -74,6 +75,7 @@ impl Service {
             12082 => Self::Ability,
             12084 => Self::Priest,
             12195 => Self::Stabler,
+            23478 => Self::LookConverter,
             _ => return None,
         })
     }
@@ -86,6 +88,7 @@ impl Service {
             Self::Ability => 12082,
             Self::Priest => 12084,
             Self::Stabler => 12195,
+            Self::LookConverter => 23478,
         }
     }
 
@@ -101,6 +104,7 @@ impl Service {
             Self::Ability => "ability_change",
             Self::Priest => "priest",
             Self::Stabler => "stabler",
+            Self::LookConverter => "look_converter",
         }
     }
 }
@@ -175,7 +179,7 @@ fn open(data: &mut HudData, service: Service) -> Option<&'static str> {
             let npc = npc?;
             super::pets::open_service(data, npc);
         }
-        Service::Repair | Service::Ability | Service::Priest => {}
+        Service::Repair | Service::Ability | Service::Priest | Service::LookConverter => {}
     }
     Some(service.key())
 }
@@ -551,6 +555,7 @@ mod tests {
             (12082, "ability_change"),
             (12084, "priest"),
             (12195, "stabler"),
+            (23478, "look_converter"),
         ] {
             let service = Service::from_skill(skill).unwrap();
             assert_eq!(service.key(), key);
@@ -741,19 +746,3 @@ mod tests {
     Ok(())
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

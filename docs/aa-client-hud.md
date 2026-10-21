@@ -724,6 +724,38 @@ repair, the chosen shop row, and a real blessing OK producing one `CSBuyPriestBu
 at 101/179/146/360 FPS over the run (stage construction was still finishing in the first sample). No live multi-service NPC, teleporter,
 auction or specialty service was claimed.
 
+## Doodad coin shops and item-look conversion (2026-10-21)
+
+`hud/doodad.rs` now loads `doodad_func_purchases` joined to the current phase's
+`doodad_funcs`. A `DoodadFuncPurchase` is no longer cast as its `func_skill_id`: a right click
+on a phase with one purchase opens the original `DLG_TASK_PURCHASE_COIN` decorator
+(`dialoghandler/dialog_handler.alb` F11, lines 207-228) with the item, count, coin name and coin
+count. OK sends `CSBuyCoinItem` (`Interact::BuyCoinItem`: BC doodad, u32 `doodad_funcs.id`);
+the server (`systems/economy/store.rs`) finds that func and runs
+`DoodadFuncPurchase::Use`, which consumes `coin_item_id`/`coin_count` and grants the item. Phases
+with several entries keep the original interaction list and mark the purchase row separately.
+Rows without a coin item/coin count are not offered. The server resolves `CSBuyCoinItem` only
+against a doodad (`WorldInstance::doodad`), so an NPC-hosted coin shop has no server path here;
+the normal NPC catalog still uses `CSBuyItems` and its currency byte.
+
+`hud/look.rs` binds `X2ItemLookConverter` and the `X2Item` convert-mode queries used by
+`changeitemlook.alb` (F1, lines 27-286) and `sort_bag.alb`'s `AttachItemToItemConverter`.
+Skill 23478 (`ITEM_FUSION`, the server's primary option for blacksmiths) routes
+`NPC_INTERACTION_START("look_converter", ...)` to the authored `changeItemLookWindow`; bag
+clicks select the base and appearance item, `GetItemLookConvertInfo` shows
+`item_look_convert_required_items` availability, and confirmation sends
+`CSConvertItemLook` (two item UIDs). The server consumes the required powder and applies the
+image template; item task reason 111 raises the original `ITEM_LOOK_CONVERTED` and leaves
+convert mode. The server's `interaction_option` does not advertise `npcs.look_converter`, so a
+look-converter flag alone produces no service; only the advertised blacksmith 23478 is routed.
+
+Validation: 422 client tests pass / 42 ignored. The isolated stage probes
+`hud::doodad::tests::original_coin_dialog_confirms_a_purchase_func` and
+`hud::look::tests::original_look_converter_window_and_packet` passed: the original coin dialog
+over a real purchase row produced one `CSBuyCoinItem`, and the original look-converter window
+selected two bag items and produced one `CSConvertItemLook`. `cargo test -p aa-net --lib` passed
+629 tests. No live coin purchase or appearance change was issued.
+
 ## Raid controls and authoritative map pings (2026-10-17)
 
 The original raid manager's conversion, role buttons and drag handlers now send `PartyCommand`
@@ -2291,4 +2323,3 @@ script is replaced). Wire side in `docs/aa-net.md` ("Titles").
 
 Tests: `cargo test -p aa-client appellation` (5). Live (AAEmu Rust server, headless script and windowed): owned titles
 list in the window, changing and removing the title updates the own plate and the server's answer.
-

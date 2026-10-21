@@ -66,6 +66,7 @@ mod item_effects;
 mod items;
 mod loot;
 mod loot_roll;
+mod look;
 mod mail;
 mod marks;
 mod markers;
@@ -439,6 +440,7 @@ impl Plugin for HudPlugin {
         expansion::plugin(app);
         repair::plugin(app);
         crafting::plugin(app);
+        look::plugin(app);
         services::plugin(app);
         pets::plugin(app);
         loot::plugin(app);

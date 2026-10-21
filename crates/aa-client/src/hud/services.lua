@@ -21,7 +21,7 @@ end
 -- The 1.2 menu texts for the functions `npc_interaction_view.alb` lists
 -- (`locale.npcInteraction.interactions`): 1 Learn Skills, 2 Change Skillsets, 3 Occupation,
 -- 4 Shop, 5 Auction, 6 Receive Divine Blessings, 7 Area Movement, 8 Basic Enchant.
-local MENU_TEXT = { store = 4, ability_change = 2, priest = 6 }
+local MENU_TEXT = { store = 4, ability_change = 2, priest = 6, look_converter = 8 }
 
 local function quest_buttons(n)
   for _, group in ipairs({ "start", "progress", "complete", "talk" }) do

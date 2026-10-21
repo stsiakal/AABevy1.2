@@ -943,6 +943,22 @@ fields and auto-AA expansion are parsed but ignored. Expansion deducts its confi
 price without emitting the corresponding MoneyChange task (an explicit C# carry-over in
 `inventory::expand_slot`); the capacity is confirmed but wire balance stays stale until refreshed.
 
+`Interact::BuyCoinItem { doodad_obj_id, func_id }` writes `CSBuyCoinItem` 0x0af (BC doodad,
+u32 `doodad_funcs.id`). The lane resolves the object only as a doodad, finds the current phase's
+function by that id and runs `DoodadFuncPurchase::Use`: it consumes `coin_item_id` /
+`coin_count` through `DOODAD_INTERACTION` and grants `item_id` / `count`. A missing doodad or
+function is logged and changes nothing. There is no NPC lookup in this handler, so the client
+routes only doodad-hosted purchase functions; normal NPC stores still use `CSBuyItems` and its
+money/honor/vocation currency byte.
+
+`Interact::ConvertItemLook { base_id, look_id }` writes `CSConvertItemLook` 0x049 as two u64
+item UIDs. The lane requires both in the inventory, an equipment base template with an
+`ItemLookConvert` entry, and consumes `item_look_convert_required_items` before setting the
+base item's image template; the image item is removed and the receipt is item task reason 111
+(`CONVERT_ITEM_LOOK`). It has no NPC/doodad context check, so the client only opens the original
+converter for an advertised service (the blacksmith `ITEM_FUSION` 23478). `CSChangeItemLook`
+0xfff remains unregistered/logged in the lane and is not used.
+
 `SCItemTaskSuccess` now consumes its trailing `u32 type(id)` and refuses a partial transaction
 with unknown item tasks. `SCCharacterInvenContents` reads exactly `numChunks * 10` slots;
 reading to end-of-frame previously consumed the next packet inside `DD04`. Boundary tests
@@ -1934,8 +1950,9 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   that is not decoded ends that batch.
 * Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
   shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions,
-  priest blessing (`CSBuyPriestBuff`). Coin/doodad shops (`CSBuyCoinItem`) and the other NPC functions
-  still need their own requests.
+  priest blessing (`CSBuyPriestBuff`), doodad coin purchases (`CSBuyCoinItem`) and item-look
+  conversion (`CSConvertItemLook`). NPC-hosted coin shops and the other NPC functions still
+  need a server path.
 * No maximum HP / MP on the wire: `PlayerStats::max_hp` is the highest value seen (a character that
   spawns dead or hurt shows too small a maximum until it has been at full health once) unless the
   application sets the formula value with `PlayerStats::set_max` (the HUD does).
@@ -7657,4 +7674,3 @@ character's own shown (active) title. The layouts are the server's (`packets/wor
 * `Appellations` has a revision that the HUD compares to raise its events.
 
 Tests: `cargo test -p aa-net appellation` (6).
-

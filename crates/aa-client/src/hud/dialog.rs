@@ -559,7 +559,8 @@ fn begin_talk(d: &mut HudData, facts: &PlayerFacts, npc: (u32, u32), target: Opt
         None
     };
     info!("hud: talk to npc {obj_id} (template {template}): start {:?}, complete {:?}, talk {:?}", d.dialog.start, d.dialog.complete, d.dialog.talk);
-    // The original sends CSStartInteraction for every selected NPC. Its answer
+    // Native input dispatch390f37b3 constructs CS068 for every selected unit, so the original
+    // sends CSStartInteraction for every NPC, quest-only or silent too. Its answer
     // (SCNpcInteractionSkillList) is what `services.rs` turns into the function menu or the
     // lone service window; only then does it open the quest action or end a silent talk.
     net.write(NetCommand(Command::Interact(Interact::Start {
