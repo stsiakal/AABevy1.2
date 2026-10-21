@@ -673,8 +673,8 @@ requests. Bag/bank clicks, right-click transfer and partial-stack dragging share
 planning and real item identity. Bank filter tabs are independent of bag tabs and are saved in the
 same account-local settings file. Bank capacity/items are pushed separately; original BANK_UPDATE
 and PLAYER_BANK_MONEY events refresh their widgets. NPC context ends on target, range, logout or
-window close. Remaining: sorting, expansion dialog/certificate flow, full lock/new-item behavior,
-merchant service choice for NPCs that also offer quests, and unsupported AA-cash services.
+window close. Remaining: sorting, expansion dialog/certificate flow, full lock/new-item behavior
+and unsupported AA-cash services.
 
 Original PLAYER_MONEY receives `(numeric_delta, decimal_delta_string)`; the balance is read via
 GetMyMoneyString. A real sell/buyback exposed the former balance-string argument error; the new
@@ -704,6 +704,71 @@ its NPC context. A later `--enter-world` cold run opened the bank with the saved
 zero script/handler errors and 79?84 FPS (`cold-bank.png`). Full-flow and direct world entry both
 work with actual spawned data. The earlier empty-data `run_stage(World)` unit probe hang was not
 reproduced by this actual cold path; it is not counted as a client-flow failure.
+
+## NPC function menu, repair, ability and priest services (2026-10-21)
+
+Every NPC talk now sends `CSStartInteraction` as well as `CSInteractNPC`, like the original's
+selected-unit path. `hud/services.rs` receives `SCNpcInteractionSkillList` and owns the function
+choice: a lone store/bank/repair/ability/priest/stabler/auction skill opens its window at once, while two
+functions or a quest plus a function show the original `npcInteraction` greeting window
+(`npc_interaction_view.alb`: `locale.npcInteraction.baseText`, `interactionButtons`, and the
+`start`/`complete`/`talk` groups). Shop, auction and ability labels use the authored
+`locale.npcInteraction.interactions` entries where one exists; bank/repair/stabler use the received
+skill's name. Choosing a row fires the original `NPC_INTERACTION_START` service key or
+`("quest", "talk"|"complete"|"start", npcId)`, hides the menu and opens the authored window. Closing
+the menu ends the talk; target/range/logout/`NPC_INTERACTION_END` invalidates it. A received list
+with neither a supported function nor a quest ends the talk without inventing a service.
+
+`12086` (repair) routes to the original `"blacksmith"` branch: the 1.2 script's `"repairman"`
+branch references an undefined `REPAIRMAN_NPC`, and the server repairs at both blacksmiths and
+repairmen. The existing repair window supplies the native quote, single/all and money checks.
+`12082` opens `abilityChangeFrame` (its original ShowProc still requires three active abilities),
+`12084` opens the divine-blessing message box, and `12195` reuses the stablehand context.
+`X2Priest` now reads `priest_buffs` (row 1 sells buff 239, Nui's blessing: one in-place revival at 10% HP/MP within 30 minutes) and `CSBuyPriestBuff` travels through
+`ShopCommand::PriestBuff`; the server remains authoritative for the buff, cost and interaction
+identity. `X2Priest:RecoverExp`/`GetCostForRecoverExp` stay unreachable because the lane's priest
+interaction advertises only blessing (12084); no recovery skill is invented here.
+
+Validation: 419 client tests pass / 40 ignored. The isolated original-stage probe
+`hud::services::tests::original_windows_open_from_a_multi_service_interaction_list` passed in 2.6 s:
+real banker, repair, ability and blessing windows, the greeting menu over a quest plus shop +
+repair, the chosen shop row, and a real blessing OK producing one `CSBuyPriestBuff` for priest buff
+1. `shots/hud/npc-services-choice.png` shows the original greeting window with Start / Shop / Repair
+at 101/179/146/360 FPS over the run (stage construction was still finishing in the first sample). No live multi-service NPC, teleporter or
+specialty service was claimed; the auctioneer's `12083` is one of the routed services (see
+"Auction house").
+
+## Doodad coin shops and item-look conversion (2026-10-21)
+
+`hud/doodad.rs` now loads `doodad_func_purchases` joined to the current phase's
+`doodad_funcs`. A `DoodadFuncPurchase` is no longer cast as its `func_skill_id`: a right click
+on a phase with one purchase opens the original `DLG_TASK_PURCHASE_COIN` decorator
+(`dialoghandler/dialog_handler.alb` F11, lines 207-228) with the item, count, coin name and coin
+count. OK sends `CSBuyCoinItem` (`Interact::BuyCoinItem`: BC doodad, u32 `doodad_funcs.id`);
+the server (`systems/economy/store.rs`) finds that func and runs
+`DoodadFuncPurchase::Use`, which consumes `coin_item_id`/`coin_count` and grants the item. Phases
+with several entries keep the original interaction list and mark the purchase row separately.
+Rows without a coin item/coin count are not offered. The server resolves `CSBuyCoinItem` only
+against a doodad (`WorldInstance::doodad`), so an NPC-hosted coin shop has no server path here;
+the normal NPC catalog still uses `CSBuyItems` and its currency byte.
+
+`hud/look.rs` binds `X2ItemLookConverter` and the `X2Item` convert-mode queries used by
+`changeitemlook.alb` (F1, lines 27-286) and `sort_bag.alb`'s `AttachItemToItemConverter`.
+Skill 23478 (`ITEM_FUSION`, the server's primary option for blacksmiths) routes
+`NPC_INTERACTION_START("look_converter", ...)` to the authored `changeItemLookWindow`; bag
+clicks select the base and appearance item, `GetItemLookConvertInfo` shows
+`item_look_convert_required_items` availability, and confirmation sends
+`CSConvertItemLook` (two item UIDs). The server consumes the required powder and applies the
+image template; item task reason 111 raises the original `ITEM_LOOK_CONVERTED` and leaves
+convert mode. The server's `interaction_option` does not advertise `npcs.look_converter`, so a
+look-converter flag alone produces no service; only the advertised blacksmith 23478 is routed.
+
+Validation: 422 client tests pass / 42 ignored. The isolated stage probes
+`hud::doodad::tests::original_coin_dialog_confirms_a_purchase_func` and
+`hud::look::tests::original_look_converter_window_and_packet` passed: the original coin dialog
+over a real purchase row produced one `CSBuyCoinItem`, and the original look-converter window
+selected two bag items and produced one `CSConvertItemLook`. `cargo test -p aa-net --lib` passed
+629 tests. No live coin purchase or appearance change was issued.
 
 ## Raid controls and authoritative map pings (2026-10-17)
 

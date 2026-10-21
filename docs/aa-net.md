@@ -886,10 +886,10 @@ roster refresh alone loses the original localized notices and specific offline/u
 ## NPC shops and banks (2026-10-17)
 
 `Command::Shop(ShopCommand)` exposes `ListSold { npc_obj_id }`,
-`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`, and
+`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`,
 `Buy { npc_obj_id, doodad_obj_id, buy: Vec<BuyEntry { item_id, grade, count, currency }>,
-buy_back: Vec<i32>, use_aa_point }`. A sale moves the entire stack; split beforehand for a
-partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
+buy_back: Vec<i32>, use_aa_point }`, and `PriestBuff { npc_obj_id, priest_buff_id }`. A sale moves
+the entire stack; split beforehand for a partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
 are bytes (at most 255); non-positive purchase counts, invalid buyback slots, duplicate
 sale/buyback entries and invalid containers are rejected locally before sending.
 `Event::Shop(ShopEvent::RequestRejected(message))` reports that local failure.
@@ -929,6 +929,14 @@ already arrive at login in `Inventory.bank_slots` / `bank`; read them with `bank
 `SplitItem` commands with container3. Balances are `PlayerStats.money` / `bank_money`, updated
 by the money tasks; expansion is acknowledged by `InventoryExpanded` and preserves slot items.
 
+`ShopCommand::PriestBuff { npc_obj_id, priest_buff_id }` is `CSBuyPriestBuff` 0x0b2:
+u32 `priest_buffs.id`, then BC NPC object (the server's `read_body`, matching
+`systems/economy/store.rs`). Both zero IDs are refused locally; the server checks the active
+interaction object, dead state, the blessing's copper cost and its buff before the buff/item
+tasks. `ShopCommand::Buy` carries the catalog currency byte unchanged for money(0), honor(1)
+and vocation badges(2), the three values the lane checkout accepts; siege(3) remains a wire
+value only. Tests cover the exact blessing bytes and money/honor/vocation carts.
+
 Opening services uses `Interact::Npc`, then `Interact::Start`: its `SkillList` contains 12087
 for a merchant or 13238 for a banker. Original `ShowInteraction` categories are STORE_NPC=3,
 BANKER_NPC=10. `SelectNpcInteraction(category,0)` is a native no-op (method `3947da30` only
@@ -938,6 +946,22 @@ merchant. The lane bank handlers currently do not enforce an interaction object.
 fields and auto-AA expansion are parsed but ignored. Expansion deducts its configured money
 price without emitting the corresponding MoneyChange task (an explicit C# carry-over in
 `inventory::expand_slot`); the capacity is confirmed but wire balance stays stale until refreshed.
+
+`Interact::BuyCoinItem { doodad_obj_id, func_id }` writes `CSBuyCoinItem` 0x0af (BC doodad,
+u32 `doodad_funcs.id`). The lane resolves the object only as a doodad, finds the current phase's
+function by that id and runs `DoodadFuncPurchase::Use`: it consumes `coin_item_id` /
+`coin_count` through `DOODAD_INTERACTION` and grants `item_id` / `count`. A missing doodad or
+function is logged and changes nothing. There is no NPC lookup in this handler, so the client
+routes only doodad-hosted purchase functions; normal NPC stores still use `CSBuyItems` and its
+money/honor/vocation currency byte.
+
+`Interact::ConvertItemLook { base_id, look_id }` writes `CSConvertItemLook` 0x049 as two u64
+item UIDs. The lane requires both in the inventory, an equipment base template with an
+`ItemLookConvert` entry, and consumes `item_look_convert_required_items` before setting the
+base item's image template; the image item is removed and the receipt is item task reason 111
+(`CONVERT_ITEM_LOOK`). It has no NPC/doodad context check, so the client only opens the original
+converter for an advertised service (the blacksmith `ITEM_FUSION` 23478). `CSChangeItemLook`
+0xfff remains unregistered/logged in the lane and is not used.
 
 `SCItemTaskSuccess` now consumes its trailing `u32 type(id)` and refuses a partial transaction
 with unknown item tasks. `SCCharacterInvenContents` reads exactly `numChunks * 10` slots;
@@ -1933,8 +1957,10 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   variant to `game::ServerMsg` + `Event` for each as the UI needs it. A packet in a `DD04` batch
   that is not decoded ends that batch.
 * Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
-  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions.
-  Coin/doodad shops, priest buffs and the other NPC functions still need their own requests.
+  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions,
+  priest blessing (`CSBuyPriestBuff`), doodad coin purchases (`CSBuyCoinItem`) and item-look
+  conversion (`CSConvertItemLook`). NPC-hosted coin shops and the other NPC functions still
+  need a server path.
 * No maximum HP / MP on the wire: `PlayerStats::max_hp` is the highest value seen (a character that
   spawns dead or hurt shows too small a maximum until it has been at full health once) unless the
   application sets the formula value with `PlayerStats::set_max` (the HUD does).
@@ -7677,4 +7703,3 @@ character's own shown (active) title. The layouts are the server's (`packets/wor
 * `Appellations` has a revision that the HUD compares to raise its events.
 
 Tests: `cargo test -p aa-net appellation` (6).
-

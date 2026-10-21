@@ -72,6 +72,7 @@ mod item_effects;
 mod items;
 mod loot;
 mod loot_roll;
+mod look;
 mod mail;
 mod marks;
 mod markers;
@@ -87,6 +88,7 @@ mod pvp;
 mod radar;
 mod ranking;
 mod repair;
+mod services;
 mod quests;
 mod ring;
 pub(crate) mod script_api;
@@ -191,6 +193,11 @@ pub(crate) fn crafting_fixture() {
 #[allow(dead_code)]
 pub(crate) fn stablehand_fixture() {
     pets::fixture::run();
+}
+
+#[allow(dead_code)]
+pub(crate) fn npc_services_fixture() {
+    services::run();
 }
 
 #[allow(dead_code)]
@@ -444,6 +451,8 @@ impl Plugin for HudPlugin {
         expansion::plugin(app);
         repair::plugin(app);
         crafting::plugin(app);
+        look::plugin(app);
+        services::plugin(app);
         pets::plugin(app);
         loot::plugin(app);
         dialog::plugin(app);

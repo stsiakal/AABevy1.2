@@ -45,7 +45,10 @@ doodad names (`localized_texts` of `doodad_almighties`).
 * **Right click** on a doodad (view ray against a sphere at the doodad, 1.3 m * scale, within 40 m; an NPC in front of it wins):
   one use at once; several (a Portable Sign: Teleport, Open Worldgate) open the original interaction list (`x2ui/interaction.lua`,
   `INTERACTION_START`; `X2Interaction:GetInteractionSkillCount/Id/Name`, `SelectInteraction(id)`, `CancelInteraction`, chained with
-  the crafting module's). Out of reach: logged, nothing sent.
+  the crafting module's). A phase with a `DoodadFuncPurchase` row offers its item instead of
+  casting the purchase skill: one row opens the authored `DLG_TASK_PURCHASE_COIN` dialog and OK
+  sends `CSBuyCoinItem` (BC doodad, u32 func id), which the server uses to spend `coin_item_id`.
+  Out of reach: logged, nothing sent.
 * **Hover**: the doodad under the pointer shows its name (`DRAW_DOODAD_TOOLTIP({name})`, hidden with `DRAW_DOODAD_SIGN_TAG()`).
 * **The cast**: the server's `SCSkillStarted` drives the existing cast bar ("Setting recall point...", 3 s), the cast clip
   (`start_anim` 126) and the cast effect (fx group 310) like any skill; the player turns to the doodad.
@@ -130,6 +133,9 @@ here, about x 790-1130, y 920-940 there).
 * **Navi doodads not tried live**: 1034 "Portable Sign" and 1219 "Guide Gate" exist only when a player places one (items 5054,
   8122); 3347 "White Dress Portrait" (skill 15193, a worldgate `Return`) is at (21966, 13075) in Haranya. The packets have unit
   tests only. The interaction list labels of the navi uses ("Teleport", "Open Worldgate") are ours, not the client's texts.
+* **Coin shops**: only doodad-hosted `DoodadFuncPurchase` rows are routed. The lane's
+  `CSBuyCoinItem` handler resolves the object only through `WorldInstance::doodad`, so an
+  NPC-hosted coin shop has no server path; normal NPC stores still use `CSBuyItems`.
 * No highlight / silhouette on the doodad in reach (`doodad_almighties.use_target_highlight`, `use_target_decal`), no walking to a
   doodad that is right clicked out of reach, no gathering / farming UI (labor, tools, the gauge of a harvest are whatever the
   server and the existing cast bar show).

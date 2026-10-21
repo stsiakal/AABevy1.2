@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use mlua::{Lua, Table};
 use rusqlite::Connection;
 
-use super::api::{HudBridge, Shared};
+use super::api::{HudBridge, HudData, Shared};
 use super::data::{GameData, any_flag, any_int};
 use super::tips::{self, Instance};
 use crate::Screen;
@@ -71,6 +71,7 @@ impl Tables {
         Ok(out)
     }
 
+    #[allow(dead_code)] // the fixture keeps the static catalog check; routing uses the received list
     pub fn has_service(&self, npc: u32) -> bool {
         self.merchants.contains_key(&npc) || self.bankers.contains(&npc)
     }
@@ -88,6 +89,15 @@ impl Tables {
     pub(super) fn refund_multiplier(&self, raw_grade: u8) -> Option<i32> {
         self.refund_multipliers.get(&raw_grade).and_then(|value| i32::try_from(*value).ok())
     }
+}
+
+/// Opens the original shop or bank window for `npc` (the NPC function router chose it).
+pub(super) fn open_service(data: &mut HudData, npc: (u32, u32), bank: bool) {
+    data.store = View {
+        npc: Some(npc),
+        bank,
+        ..default()
+    };
 }
 
 pub fn ui_grade(raw: u8) -> u8 {
@@ -118,12 +128,21 @@ pub struct View {
     refresh_pending: bool,
 }
 
+impl View {
+    /// Whether the open window is the original bank (`bank.lua`) instead of the shop.
+    #[cfg(test)]
+    pub(super) fn is_bank(&self) -> bool {
+        self.bank
+    }
+}
+
 pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
         update
             .after(super::sync_hud)
             .after(super::dialog::handle_dialog)
+            .after(super::services::update)
             .run_if(super::hud_up)
             .run_if(in_state(Screen::InGame)),
     );
@@ -408,28 +427,27 @@ fn update(
         {
             let service = {
                 let mut d = bridge.0.borrow_mut();
-                let npc = d.dialog.npc.filter(|n| n.0 == *npc_obj_id);
-                if !interactable {
+                // `services::update` owns the received function list: it opens this window
+                // only after its single-service or multi-service choice.
+                if d.services.claimed(*npc_obj_id) {
                     None
-                } else if skills.contains(&12087) {
-                    if let Some(npc) = npc {
-                        d.store = View {
-                            npc: Some(npc),
-                            ..default()
-                        };
-                    }
-                    npc.map(|_| "store")
-                } else if skills.contains(&13238) {
-                    if let Some(npc) = npc {
-                        d.store = View {
-                            npc: Some(npc),
-                            bank: true,
-                            ..default()
-                        };
-                    }
-                    npc.map(|_| "bank")
                 } else {
-                    None
+                    let npc = d.dialog.npc.filter(|n| n.0 == *npc_obj_id);
+                    if !interactable {
+                        None
+                    } else if skills.contains(&12087) {
+                        if let Some(npc) = npc {
+                            open_service(&mut d, npc, false);
+                        }
+                        npc.map(|_| "store")
+                    } else if skills.contains(&13238) {
+                        if let Some(npc) = npc {
+                            open_service(&mut d, npc, true);
+                        }
+                        npc.map(|_| "bank")
+                    } else {
+                        None
+                    }
                 }
             };
             if let Some(service) = service {
@@ -646,6 +664,18 @@ mod tests {
                 currency: 0
             }]
         );
+        // Honor and vocation prices travel in the same CSBuyItems currency byte as money.
+        for currency in [1, 2] {
+            let mut paid = fixture();
+            paid.stores.merchants.get_mut(&10).unwrap()[0].currency = currency;
+            let Some(ShopCommand::Buy { buy, .. }) =
+                build_command(Req::Buy(vec![(1, 1, currency)]), (500, 10), &paid, &inv, &[])
+            else {
+                panic!("currency {currency}")
+            };
+            assert_eq!(buy[0].currency, currency);
+            assert!(build_command(Req::Buy(vec![(1, 1, 3)]), (500, 10), &paid, &inv, &[]).is_none());
+        }
         let Some(ShopCommand::Sell { items, .. }) =
             build_command(Req::Sell(vec![(1, 999)]), (500, 10), &game, &inv, &[])
         else {

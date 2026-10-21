@@ -59,6 +59,8 @@ const PICK_DISTANCE: f32 = 40.0;
 const CLICK_SLOP: f32 = 6.0;
 /// The ids of the navi uses in the interaction list (skill ids are below this).
 const NAVI_ID: i64 = 1 << 32;
+/// Interaction-list ids of `DoodadFuncPurchase` rows: `COIN_ID + doodad_funcs.id`.
+const COIN_ID: i64 = 1 << 33;
 
 /// A use without a skill.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,12 +84,27 @@ pub(super) struct Uses {
     /// The skills of its funcs, in func order, without repeats.
     pub skills: Vec<u32>,
     pub navi: Vec<Navi>,
+    /// `DoodadFuncPurchase` ids (`doodad_funcs.id`), in func order.
+    pub purchases: Vec<u32>,
+}
+
+/// One `DoodadFuncPurchase`: the item it sells and the coin item it spends.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Purchase {
+    pub func_id: u32,
+    pub item_id: u32,
+    pub count: i32,
+    pub coin_item_id: u32,
+    pub coin_count: i32,
+    pub currency_id: u32,
 }
 
 #[derive(Default)]
 pub(super) struct Tables {
     /// `doodad_func_groups.id` -> its uses.
     uses: HashMap<u32, Uses>,
+    /// `doodad_funcs.id` -> its purchase details.
+    purchases: HashMap<u32, Purchase>,
     /// `doodad_almighties.id` -> English name.
     names: HashMap<u32, String>,
 }
@@ -95,13 +112,32 @@ pub(super) struct Tables {
 impl Tables {
     pub(super) fn load(conn: &Connection) -> rusqlite::Result<Self> {
         let mut t = Tables::default();
-        let mut q = conn.prepare("SELECT doodad_func_group_id, func_skill_id, actual_func_type FROM doodad_funcs ORDER BY doodad_func_group_id, id")?;
+        let mut q = conn.prepare("SELECT id, doodad_func_group_id, func_skill_id, actual_func_type FROM doodad_funcs ORDER BY doodad_func_group_id, id")?;
         let mut rows = q.query([])?;
         while let Some(r) = rows.next()? {
-            let group = super::data::any_int(r, 0)? as u32;
-            let skill = super::data::any_int(r, 1)? as u32;
-            let kind: Option<String> = r.get(2)?;
-            t.add(group, skill, kind.as_deref().unwrap_or(""));
+            let id = super::data::any_int(r, 0)? as u32;
+            let group = super::data::any_int(r, 1)? as u32;
+            let skill = super::data::any_int(r, 2)? as u32;
+            let kind: Option<String> = r.get(3)?;
+            t.add(id, group, skill, kind.as_deref().unwrap_or(""));
+        }
+        let mut q = conn.prepare(
+            "SELECT f.id,f.doodad_func_group_id,p.item_id,p.count,p.coin_item_id,p.coin_count,p.currency_id \
+             FROM doodad_funcs f JOIN doodad_func_purchases p ON p.id = f.actual_func_id \
+             WHERE f.actual_func_type = 'DoodadFuncPurchase' ORDER BY f.doodad_func_group_id,f.id",
+        )?;
+        let mut rows = q.query([])?;
+        while let Some(r) = rows.next()? {
+            let purchase = Purchase {
+                func_id: super::data::any_int(r, 0)? as u32,
+                item_id: super::data::any_int(r, 2)? as u32,
+                count: super::data::any_int(r, 3)? as i32,
+                coin_item_id: super::data::any_int(r, 4)? as u32,
+                coin_count: super::data::any_int(r, 5)? as i32,
+                currency_id: super::data::any_int(r, 6)? as u32,
+            };
+            t.purchases.insert(purchase.func_id, purchase.clone());
+            t.uses.entry(super::data::any_int(r, 1)? as u32).or_default().purchases.push(purchase.func_id);
         }
         let mut q = conn.prepare("SELECT idx, en_us FROM localized_texts WHERE tbl_name = 'doodad_almighties' AND tbl_column_name = 'name' AND en_us <> ''")?;
         let mut rows = q.query([])?;
@@ -111,7 +147,11 @@ impl Tables {
         Ok(t)
     }
 
-    fn add(&mut self, group: u32, skill: u32, kind: &str) {
+    fn add(&mut self, _func_id: u32, group: u32, skill: u32, kind: &str) {
+        // A purchase has its own coin-shop dialog and must not be cast as a skill.
+        if kind == "DoodadFuncPurchase" {
+            return;
+        }
         let navi = match kind {
             "DoodadFuncNaviTeleport" => Some(Navi::Teleport),
             "DoodadFuncNaviOpenPortal" => Some(Navi::OpenPortal),
@@ -134,7 +174,13 @@ impl Tables {
 
     /// What the phase `group` can be used for (`None`: nothing).
     pub(super) fn uses(&self, group: u32) -> Option<&Uses> {
-        self.uses.get(&group).filter(|u| !u.skills.is_empty() || !u.navi.is_empty())
+        self.uses
+            .get(&group)
+            .filter(|u| !u.skills.is_empty() || !u.navi.is_empty() || !u.purchases.is_empty())
+    }
+
+    pub(super) fn purchase(&self, func_id: u32) -> Option<&Purchase> {
+        self.purchases.get(&func_id)
     }
 
     pub(super) fn name(&self, template_id: u32) -> Option<&str> {
@@ -166,6 +212,13 @@ struct Entry {
     name: String,
 }
 
+/// The coin shop the original `DLG_TASK_PURCHASE_COIN` dialog is confirming.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct CoinShop {
+    pub doodad_obj_id: u32,
+    pub purchase: Purchase,
+}
+
 #[derive(Default)]
 pub(super) struct View {
     focus: Option<Focus>,
@@ -183,6 +236,11 @@ pub(super) struct View {
     hover: Option<Pick>,
     /// The doodad last right clicked: the bar is about it while it is in reach.
     preferred: Option<u32>,
+    /// The open coin purchase and its original dialog request.
+    pub(super) coin: Option<CoinShop>,
+    coin_open: bool,
+    /// Confirmed purchases: `(doodad, doodad_funcs.id)`.
+    coin_buys: Vec<(u32, u32)>,
 }
 
 impl View {
@@ -241,6 +299,56 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
 }
 
 pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
+    let hud: Table = lua.globals().get("HUD")?;
+    let state = bridge.clone();
+    hud.set(
+        "coin_shop",
+        lua.create_function(move |lua, ()| {
+            let d = state.borrow();
+            let Some(shop) = d.doodad.coin.as_ref() else { return Ok(None) };
+            let Some(game) = d.game.get() else { return Ok(None) };
+            let Some(info) = super::tips::item_tip(
+                lua,
+                game,
+                &d.tips,
+                shop.purchase.item_id,
+                None,
+                Some(i64::from(shop.purchase.count)),
+                Default::default(),
+            )? else {
+                return Ok(None);
+            };
+            let out = lua.create_table()?;
+            out.set("itemInfo", info)?;
+            out.set("itemCount", shop.purchase.count)?;
+            out.set("coinName", game.items.get(&shop.purchase.coin_item_id).map(|i| i.named.name.clone()).unwrap_or_default())?;
+            out.set("coinCount", shop.purchase.coin_count)?;
+            out.set("objId", shop.doodad_obj_id)?;
+            out.set("funcId", shop.purchase.func_id)?;
+            Ok(Some(out))
+        })?,
+    )?;
+    let state = bridge.clone();
+    hud.set(
+        "coin_buy",
+        lua.create_function(move |_, ()| {
+            let mut d = state.borrow_mut();
+            if let Some(shop) = d.doodad.coin.take() {
+                d.doodad.coin_buys.push((shop.doodad_obj_id, shop.purchase.func_id));
+            }
+            Ok(())
+        })?,
+    )?;
+    let state = bridge.clone();
+    hud.set(
+        "coin_close",
+        lua.create_function(move |_, ()| {
+            state.borrow_mut().doodad.coin = None;
+            Ok(())
+        })?,
+    )?;
+    lua.load(include_str!("doodad_coin.lua")).set_name("@doodad_coin.lua").exec()?;
+
     let x2: Table = lua.globals().get("X2")?;
     let state = bridge.clone();
     x2.set("GetDynamicActionCount", lua.create_function(move |_, _: Value| Ok(state.borrow().doodad.focus.as_ref().map_or(0, |f| f.skills.len())))?)?;
@@ -522,6 +630,7 @@ fn track(
     let hover_changed = hover != d.doodad.hover;
     d.doodad.hover = hover;
     let menu = clicked.is_some_and(|obj_id| right_click(&mut d, &doodads, obj_id));
+    let coin = std::mem::take(&mut d.doodad.coin_open);
     let hover_name = match hover {
         Some(Pick::Doodad(id)) => doodads.by_id.get(&id).and_then(|o| d.game.get().and_then(|g| g.doodad.name(o.template_id)).map(str::to_string)),
         _ => None,
@@ -531,6 +640,9 @@ fn track(
         _ => None,
     };
     drop(d);
+    if coin && let Err(error) = rt.exec("@doodad_coin", "OpenCoinShop()") {
+        warn!("doodad: coin shop dialog: {error}");
+    }
     if menu {
         rt.fire_event("INTERACTION_START", ());
     }
@@ -607,9 +719,26 @@ fn right_click(d: &mut HudData, doodads: &Doodads, obj_id: u32) -> bool {
         .map(|s| Entry { id: i64::from(*s), name: game.skills.get(s).map(|i| i.named.name.clone()).unwrap_or_else(|| format!("skill {s}")) })
         .collect();
     entries.extend(uses.navi.iter().map(|n| Entry { id: NAVI_ID + *n as i64, name: n.label().into() }));
+    for func in &uses.purchases {
+        let Some(purchase) = game.doodad.purchase(*func) else { continue };
+        if purchase.coin_item_id == 0 || purchase.coin_count <= 0 { continue; }
+        let name = game.items.get(&purchase.item_id).map(|i| i.named.name.clone()).unwrap_or_else(|| format!("item {}", purchase.item_id));
+        entries.push(Entry { id: COIN_ID + i64::from(*func), name });
+    }
+    if entries.is_empty() {
+        return false;
+    }
     if entries.len() == 1 {
+        let entry = entries[0].clone();
+        if entry.id >= COIN_ID {
+            if let Some(purchase) = game.doodad.purchase((entry.id - COIN_ID) as u32).cloned() {
+                d.doodad.coin = Some(CoinShop { doodad_obj_id: obj_id, purchase });
+                d.doodad.coin_open = true;
+            }
+            return false;
+        }
         d.doodad.menu = Some((obj_id, entries.clone()));
-        d.doodad.chosen.push(entries[0].id);
+        d.doodad.chosen.push(entry.id);
         return false;
     }
     info!("doodad: {name} ({obj_id}) offers {:?}", entries.iter().map(|e| &e.name).collect::<Vec<_>>());
@@ -627,9 +756,11 @@ fn execute(
     let mut d = bridge.0.borrow_mut();
     let execute = std::mem::take(&mut d.doodad.execute);
     let chosen = std::mem::take(&mut d.doodad.chosen);
+    let buys = std::mem::take(&mut d.doodad.coin_buys);
     let focus = d.doodad.focus.clone();
     let mut commands = Vec::new();
     let mut opened: Option<(u32, HouseState)> = None;
+    let mut open_coin = false;
     for i in execute {
         let Some(f) = focus.as_ref() else { continue };
         if let Some(state) = &f.house {
@@ -652,6 +783,14 @@ fn execute(
         && let Some((obj_id, _)) = d.doodad.menu.take()
     {
         for id in chosen {
+            if id >= COIN_ID {
+                let func = (id - COIN_ID) as u32;
+                if let Some(purchase) = d.game.get().and_then(|g| g.doodad.purchase(func)).cloned() {
+                    d.doodad.coin = Some(CoinShop { doodad_obj_id: obj_id, purchase });
+                    open_coin = true;
+                }
+                continue;
+            }
             let command = match id - NAVI_ID {
                 x if x == Navi::Teleport as i64 => Command::Interact(Interact::NaviTeleport { doodad_obj_id: obj_id }),
                 x if x == Navi::OpenPortal as i64 => Command::Interact(Interact::NaviOpenPortal { doodad_obj_id: obj_id }),
@@ -678,10 +817,20 @@ fn execute(
         out.write(NetCommand(command));
     }
     drop(d);
-    if opened.is_some()
-        && let Some(rt) = rt
+    for (doodad_obj_id, func_id) in buys {
+        info!("doodad: buy coin item {func_id} from {doodad_obj_id}");
+        out.write(NetCommand(Command::Interact(Interact::BuyCoinItem { doodad_obj_id, func_id })));
+    }
+    if open_coin
+        && let Some(rt) = rt.as_deref()
+        && let Err(error) = rt.exec("@doodad_coin", "OpenCoinShop()")
     {
-        super::houses::open_material_window(&rt);
+        warn!("doodad: coin shop dialog: {error}");
+    }
+    if opened.is_some()
+        && let Some(rt) = rt.as_deref()
+    {
+        super::houses::open_material_window(rt);
     }
 }
 
@@ -835,19 +984,145 @@ mod tests {
     #[test]
     fn phases_list_their_skills_and_navi_uses() {
         let mut t = Tables::default();
-        t.add(13066, 14602, "DoodadFuncBinding");
-        t.add(13066, 14602, "DoodadFuncBinding");
-        t.add(13067, 0, "DoodadFuncTimer");
-        t.add(1351, 0, "DoodadFuncNaviTeleport");
-        t.add(1351, 0, "DoodadFuncNaviOpenPortal");
-        t.add(1351, 0, "DoodadFuncNaviNaming");
-        t.add(7851, 15193, "DoodadFuncNaviTeleport");
-        t.add(9, 10994, "DoodadFuncUse");
-        assert_eq!(t.uses(13066), Some(&Uses { skills: vec![14602], navi: vec![] }));
+        t.add(1, 13066, 14602, "DoodadFuncBinding");
+        t.add(1, 13066, 14602, "DoodadFuncBinding");
+        t.add(2, 13067, 0, "DoodadFuncTimer");
+        t.add(3, 1351, 0, "DoodadFuncNaviTeleport");
+        t.add(4, 1351, 0, "DoodadFuncNaviOpenPortal");
+        t.add(5, 1351, 0, "DoodadFuncNaviNaming");
+        t.add(6, 7851, 15193, "DoodadFuncNaviTeleport");
+        t.add(7, 9, 10994, "DoodadFuncUse");
+        assert_eq!(t.uses(13066), Some(&Uses { skills: vec![14602], navi: vec![], purchases: vec![] }));
         assert_eq!(t.uses(13067), None);
-        assert_eq!(t.uses(1351), Some(&Uses { skills: vec![], navi: vec![Navi::Teleport, Navi::OpenPortal] }));
-        assert_eq!(t.uses(7851), Some(&Uses { skills: vec![15193], navi: vec![] }));
+        assert_eq!(t.uses(1351), Some(&Uses { skills: vec![], navi: vec![Navi::Teleport, Navi::OpenPortal], purchases: vec![] }));
+        assert_eq!(t.uses(7851), Some(&Uses { skills: vec![15193], navi: vec![], purchases: vec![] }));
         assert_eq!(t.uses(9), None, "the bar hides skill 10994");
+    }
+
+    #[test]
+    fn purchase_funcs_load_as_coin_shop_rows() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE doodad_funcs(id INT, doodad_func_group_id INT, actual_func_id INT, actual_func_type TEXT, func_skill_id INT);
+             CREATE TABLE doodad_func_purchases(id INT, item_id INT, count INT, coin_item_id INT, coin_count INT, currency_id INT);
+             CREATE TABLE doodad_almighties(id INT, name TEXT);
+             CREATE TABLE localized_texts(tbl_name TEXT, tbl_column_name TEXT, idx INT, en_us TEXT);
+             INSERT INTO doodad_funcs VALUES(10117,11355,41,'DoodadFuncPurchase',17537);
+             INSERT INTO doodad_func_purchases VALUES(41,23614,1,23633,15,0);
+             INSERT INTO doodad_funcs VALUES(10118,11355,42,'DoodadFuncUse',0);",
+        )
+        .unwrap();
+        let t = Tables::load(&db).unwrap();
+        let uses = t.uses(11355).expect("purchase phase is usable");
+        assert_eq!(uses.purchases, vec![10117]);
+        assert!(uses.skills.is_empty(), "the purchase skill must not be cast directly");
+        assert_eq!(
+            t.purchase(10117),
+            Some(&Purchase { func_id: 10117, item_id: 23614, count: 1, coin_item_id: 23633, coin_count: 15, currency_id: 0 })
+        );
+    }
+
+    #[test]
+    fn a_single_purchase_right_click_opens_the_coin_dialog_state() {
+        let mut game = super::super::data::GameData::default();
+        game.doodad.uses.insert(5, Uses { skills: vec![], navi: vec![], purchases: vec![9] });
+        game.doodad.purchases.insert(
+            9,
+            Purchase { func_id: 9, item_id: 100, count: 1, coin_item_id: 200, coin_count: 7, currency_id: 0 },
+        );
+        game.items.insert(
+            100,
+            super::super::data::ItemInfo {
+                named: super::super::data::Named { name: "Hat".into(), icon: String::new() },
+                ..default()
+            },
+        );
+        let mut data = HudData::default();
+        assert!(data.game.0.set(game).is_ok());
+        let mut doodads = Doodads::default();
+        doodads.by_id.insert(
+            1,
+            aa_net::model::Doodad {
+                obj_id: 1,
+                template_id: 1,
+                owner_obj_id: 0,
+                parent_obj_id: 0,
+                attach_point: 0xff,
+                pos: default(),
+                rotation: [0.0; 4],
+                scale: 1.0,
+                has_loot_item: false,
+                func_group_id: 5,
+                owner_id: 0,
+                ucc_id: 0,
+                item_template_id: 0,
+                type2: 0,
+                time_left: 0,
+                plant_time: 0,
+                quest_glow: 0,
+                family: 0,
+                puzzle_group: 0,
+                owner_type: 0,
+                owner_db_id: 0,
+                data: 0,
+            },
+        );
+        assert!(!right_click(&mut data, &doodads, 1));
+        let shop = data.doodad.coin.expect("coin shop state");
+        assert_eq!((shop.doodad_obj_id, shop.purchase.func_id), (1, 9));
+        assert!(data.doodad.coin_open);
+    }
+
+    #[test]
+    #[ignore = "loads original world-stage assets; run in an isolated fixture process"]
+    fn original_coin_dialog_confirms_a_purchase_func() -> Result<(), Box<dyn std::error::Error>> {
+        let (rt, bridge, path, _inventory, _units, _npc) = super::super::pets::fixture::runtime(1920.0, 1080.0)?;
+        let (func_id, item_id, purchase) = {
+            let d = bridge.borrow();
+            let game = d.game.get().ok_or("fixture game data missing")?;
+            game.doodad
+                .purchases
+                .values()
+                .find(|p| p.coin_item_id != 0 && p.coin_count > 0 && game.items.contains_key(&p.item_id))
+                .map(|p| (p.func_id, p.item_id, p.clone()))
+                .ok_or("no coin purchase fixture")?
+        };
+        bridge.borrow_mut().doodad.coin = Some(CoinShop { doodad_obj_id: 200, purchase });
+        rt.lua
+            .load(format!(
+                r#"
+                local original=X2DialogManager.RequestTaskDialog
+                X2DialogManager.RequestTaskDialog=function(self,task,info,owner)
+                  local w=original(self,task,info,owner)
+                  if task==DLG_TASK_PURCHASE_COIN then COIN_DIALOG=w; COIN_INFO=info end
+                  return w
+                end
+                OpenCoinShop()
+                assert(COIN_DIALOG and COIN_DIALOG:IsVisible())
+                assert(COIN_INFO.itemInfo.name and COIN_INFO.itemInfo.name~="")
+                assert(COIN_INFO.coinName~="" and COIN_INFO.coinCount>0)
+                assert(COIN_INFO.itemInfo.itemType=={item_id})
+                "#
+            ))
+            .exec()?;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_non_send(rt)
+            .insert_non_send(HudBridge(bridge.clone()))
+            .insert_resource(Doodads::default())
+            .add_message::<NetCommand>()
+            .add_systems(Update, execute);
+        super::super::expansion::fixture::click(app.world().non_send::<UiRuntime>(), "COIN_DIALOG.btnOk")?;
+        app.update();
+        let commands = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::Interact(Interact::BuyCoinItem { doodad_obj_id: 200, func_id: f })] if *f == func_id
+        ), "{commands:?}");
+        drop(app);
+        drop(bridge);
+        std::fs::remove_file(path)?;
+        Ok(())
     }
 
     #[test]

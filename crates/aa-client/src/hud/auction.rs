@@ -888,8 +888,17 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     Ok(())
 }
 
+/// The NPC service router opened the auction house for `npc` (its `NPC_INTERACTION_START("auction",
+/// ...)`, the branch of the original `npc_interaction.alb`). The window itself is driven by that
+/// event; this only sets the service context the `X2Auction` calls use.
+pub(super) fn open_service(rt: &UiRuntime, npc: (u32, u32)) {
+    if let Some(state) = rt.lua.app_data_ref::<State>().map(|s| s.clone()) {
+        state.0.borrow_mut().auctioneer = Some(npc);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn update(
+pub(super) fn update(
     mut events: MessageReader<NetEvent>,
     rt: Option<NonSend<UiRuntime>>,
     bridge: NonSend<HudBridge>,
@@ -953,6 +962,12 @@ fn update(
                 interactable,
                 ..
             }) if *interactable && skills.contains(&USE_AUCTIONEER) => {
+                // The NPC service router owns the interaction list and opens the auction house
+                // through `open_service` (lone auctioneer or the chosen menu row); opening it
+                // here too would pop the window over the greeting menu.
+                if bridge.0.borrow().services.claimed(*npc_obj_id) {
+                    continue;
+                }
                 let npc = bridge.0.borrow().dialog.npc.filter(|n| n.0 == *npc_obj_id);
                 let Some(npc) = npc else { continue };
                 let valid = units
