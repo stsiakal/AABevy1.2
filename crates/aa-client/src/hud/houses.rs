@@ -14,6 +14,7 @@ use aa_net::housing::{ConstructHouseTax, HouseSnapshot};
 use aa_net::model::UnitKind;
 use aa_net::state::{Player, Target, Units};
 use aa_ui::UiRuntime;
+use bevy::camera::primitives::Aabb;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use mlua::{Lua, Table, Value};
@@ -21,6 +22,7 @@ use mlua::{Lua, Table, Value};
 use super::api::{HudBridge, HudData, Request, Shared};
 use super::{HudPointerOverUi, panels::SlotSnap};
 use crate::ingame::placement::Placement;
+use crate::ingame::units::Views;
 
 /// The 1.2 tax certificate item (`Component::TaxCertificate` / `manager.rs TAX_CERTIFICATE`).
 pub const TAX_ITEM: u32 = 31891;
@@ -328,6 +330,9 @@ pub fn right_click_build(
     units: Res<Units>,
     player: Res<Player>,
     houses: Option<Res<aa_net::Houses>>,
+    views: Res<Views>,
+    bounds: Query<(&Aabb, &GlobalTransform)>,
+    children: Query<&Children>,
     bridge: NonSend<HudBridge>,
     rt: Option<NonSend<UiRuntime>>,
     mut net: MessageWriter<aa_net::NetCommand>,
@@ -350,40 +355,134 @@ pub fn right_click_build(
     let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
     let mut best: Option<(f32, u32)> = None;
     for u in units.iter().filter(|u| u.obj_id != own && matches!(u.kind, UnitKind::Housing { .. })) {
+        // the unit's real mesh bounds (a farm is a wide plot, so its centre-only sphere is not enough)
+        let mesh_hit = views
+            .unit_entity(u.obj_id)
+            .and_then(|root| world_bounds(root, &children, &bounds))
+            .and_then(|(min, max)| ray_aabb(&ray, min, max));
         let centre = aa_world::cry_to_bevy(Vec3::new(u.pos.x, u.pos.y, u.pos.z + 0.9 * u.scale.max(0.5)));
         let along = (centre - ray.origin).dot(*ray.direction);
-        if along <= 0.0 {
-            continue;
-        }
-        let miss = (ray.origin + *ray.direction * along).distance(centre);
-        if miss <= PICK_RADIUS * u.scale.max(0.7) && best.is_none_or(|(a, _)| along < a) {
+        let sphere_hit = (along > 0.0 && (ray.origin + *ray.direction * along).distance(centre) <= PICK_RADIUS * u.scale.max(0.7))
+            .then_some(along);
+        if let Some(along) = mesh_hit.or(sphere_hit)
+            && best.is_none_or(|(a, _)| along < a)
+        {
             best = Some((along, u.obj_id));
         }
     }
-    let Some((_, obj_id)) = best else { return };
-    let Some(unit) = units.by_id.get(&obj_id) else { return };
-    let UnitKind::Housing { tl_id, template_id, .. } = unit.kind else { return };
-    let Some(house) = houses.as_deref().and_then(|h| h.by_tl_id.get(&tl_id)) else { return };
-    if !(house.snapshot.current_actions < house.snapshot.all_actions) {
+    let Some((_, obj_id)) = best else {
+        debug!("housing: right click picked no house unit");
         return;
+    };
+    let Some(unit) = units.by_id.get(&obj_id) else { return };
+    let UnitKind::Housing { tl_id, .. } = unit.kind else { return };
+    let Some(house) = houses.as_deref().and_then(|h| h.by_tl_id.get(&tl_id)) else {
+        info!("housing: right click on unit {obj_id} (tl {tl_id}) refused: no received house state");
+        return;
+    };
+    let mut commands = Vec::new();
+    match start_construction(unit, house, &bridge.0, rt.as_deref(), &mut commands) {
+        Ok(skill) => {
+            info!("housing: right click on unit {obj_id} (tl {tl_id}) opened the material window and cast build skill {skill}");
+            for command in commands {
+                net.write(aa_net::NetCommand(command));
+            }
+        }
+        Err(reason) => info!("housing: right click on unit {obj_id} (tl {tl_id}) refused: {reason}"),
+    }
+}
+
+/// The client-side action of the original house interaction: select the house, ask for its material window and
+/// cast the current construction step's skill. Returns the skill on success or the reason it was refused.
+fn start_construction(
+    unit: &aa_net::Unit,
+    house: &aa_net::housing::House,
+    bridge: &Shared,
+    rt: Option<&UiRuntime>,
+    out: &mut Vec<aa_net::Command>,
+) -> Result<u32, &'static str> {
+    let UnitKind::Housing { template_id, .. } = unit.kind else {
+        return Err("the picked unit is not a house");
+    };
+    if !(house.snapshot.current_actions < house.snapshot.all_actions) {
+        return Err("the house is already finished");
     }
     let state = HouseState::of(&house.snapshot);
     let skill = {
-        let d = bridge.0.borrow();
-        let Some(game) = d.game.get() else { return };
-        step_skill(game, template_id, state.current_actions)
+        let d = bridge.borrow();
+        let game = d.game.get().ok_or("the game data is not loaded")?;
+        step_skill(game, template_id, state.current_actions).ok_or("no build step skill for the current action count")?
     };
-    let Some(skill) = skill else { return };
     {
-        let mut d = bridge.0.borrow_mut();
+        let mut d = bridge.borrow_mut();
         d.house.selected = Some(state);
     }
-    info!("housing: right click on unit {obj_id} (tl {tl_id}): build step skill {skill}");
-    net.write(aa_net::NetCommand(aa_net::Command::Target { obj_id }));
-    net.write(aa_net::NetCommand(aa_net::Command::UseSkill { skill_id: skill, target_obj_id: obj_id }));
+    out.push(aa_net::Command::Target { obj_id: unit.obj_id });
+    out.push(aa_net::Command::UseSkill { skill_id: skill, target_obj_id: unit.obj_id });
     if let Some(rt) = rt {
         rt.fire_event("HOUSE_INTERACTION_START", "housing");
+        // `ShowMaterialWindow(true)` creates the original window but leaves it hidden in the 1.2 script;
+        // the retail interaction shows it, so raise the already populated window.
+        if let Err(e) = rt.exec("@house_interaction", "if housing.materialWindow then housing.materialWindow:Show(true) end") {
+            warn!("housing: cannot show the material window: {e}");
+        }
     }
+    Ok(skill)
+}
+
+/// World-space bounds of a unit's meshes (the root's descendants with an `Aabb`).
+fn world_bounds(
+    root: Entity,
+    children: &Query<&Children>,
+    bounds: &Query<(&Aabb, &GlobalTransform)>,
+) -> Option<(Vec3, Vec3)> {
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    let mut found = false;
+    let mut stack = vec![root];
+    while let Some(entity) = stack.pop() {
+        if let Ok((aabb, global)) = bounds.get(entity) {
+            found = true;
+            let c = Vec3::from(aabb.center);
+            let h = Vec3::from(aabb.half_extents);
+            for sx in [-1.0, 1.0] {
+                for sy in [-1.0, 1.0] {
+                    for sz in [-1.0, 1.0] {
+                        let p = global.transform_point(c + h * Vec3::new(sx, sy, sz));
+                        min = min.min(p);
+                        max = max.max(p);
+                    }
+                }
+            }
+        }
+        if let Ok(kids) = children.get(entity) {
+            stack.extend(kids.iter());
+        }
+    }
+    found.then_some((min, max))
+}
+
+/// The distance along `ray` to the first world-axis-aligned box hit (`None` behind the camera or on a miss).
+fn ray_aabb(ray: &Ray3d, min: Vec3, max: Vec3) -> Option<f32> {
+    let d = *ray.direction;
+    let (mut tmin, mut tmax) = (0.0f32, f32::INFINITY);
+    for i in 0..3 {
+        let o = ray.origin[i];
+        if d[i].abs() < 1e-6 {
+            if o < min[i] || o > max[i] {
+                return None;
+            }
+            continue;
+        }
+        let t1 = (min[i] - o) / d[i];
+        let t2 = (max[i] - o) / d[i];
+        tmin = tmin.max(t1.min(t2));
+        tmax = tmax.min(t1.max(t2));
+        if tmax < tmin {
+            return None;
+        }
+    }
+    (tmax > 0.0).then_some(tmin.max(0.0))
 }
 
 /// The `housing_build_steps.skill_id` of the step that owns `current_actions`.
@@ -409,6 +508,78 @@ mod tests {
         let mut data = HudData::default();
         data.house.selected = Some(state);
         Rc::new(RefCell::new(data))
+    }
+
+    fn house() -> aa_net::housing::House {
+        aa_net::housing::House {
+            snapshot: HouseSnapshot {
+                tl_id: 13,
+                db_id: 1,
+                obj_id: 16211,
+                template_id: 267,
+                model_id: 989,
+                co_owner_id: 0,
+                owner_id: 7,
+                owner_name: "Farmax".into(),
+                account_id: 1,
+                permission: 0,
+                all_actions: 1,
+                current_actions: 0,
+                tax: 0,
+                x: aa_net::wire::coord_to_long(10508.29),
+                y: aa_net::wire::coord_to_long(15517.18),
+                z: 224.92,
+                name: "Scarecrow Garden".into(),
+                allow_recover: true,
+                sell_price: 0,
+                sell_to_player_id: 0,
+                sell_to_name: String::new(),
+            },
+            demolished: false,
+            build_pay: None,
+            tax: None,
+            sale: None,
+        }
+    }
+
+    fn unit() -> aa_net::Unit {
+        aa_net::Unit {
+            obj_id: 16211,
+            name: "Scarecrow Garden".into(),
+            kind: UnitKind::Housing { tl_id: 13, template_id: 267, build_step: 0 },
+            owner_name: "Farmax".into(),
+            pos: aa_net::Pos::new(10508.29, 15517.18, 224.92),
+            rotation: [0.0; 3],
+            scale: 1.0,
+            level: 1,
+            model_id: 989,
+            equipment: default(),
+            model_params: default(),
+            hp: 200,
+            mp: 0,
+            max_hp: 200,
+            max_mp: 0,
+            dead: false,
+            race_gender: 0,
+            movement: None,
+            faction_id: 0,
+            expedition_id: 0,
+            appellation: 0,
+            flags: 0,
+            gm_modes: [0; 4],
+            bounty_money: None,
+            pvp_honor: 0,
+            pvp_kills: 0,
+            skills: vec![],
+            passive_buffs: vec![],
+            ability_exp: vec![],
+            active_abilities: vec![],
+            buffs: vec![],
+            anim_action: 0,
+            attached_to: None,
+            house_posture: None,
+            state_attachments: None,
+        }
     }
 
     #[test]
@@ -458,6 +629,35 @@ mod tests {
     fn the_shared_house_view_holds_the_selected_snapshot() {
         let house = with_house(HouseState { tl_id: 7, name: "Scarecrow Garden".into(), ..Default::default() });
         assert_eq!(house.borrow().house.selected.as_ref().map(|h| h.name.as_str()), Some("Scarecrow Garden"));
+    }
+
+    #[test]
+    fn a_right_click_on_an_unfinished_house_opens_the_material_window_and_casts_the_build_skill() {
+        let Ok((rt, bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        let (unit, house) = (unit(), house());
+        let mut commands = Vec::new();
+        let skill = start_construction(&unit, &house, &bridge, Some(&rt), &mut commands).expect("construction starts");
+        assert_eq!(skill, 18553);
+        assert!(matches!(
+            commands.as_slice(),
+            [aa_net::Command::Target { obj_id: 16211 }, aa_net::Command::UseSkill { skill_id: 18553, target_obj_id: 16211 }]
+        ), "{commands:?}");
+        assert!(rt.lua.load("return housing.materialWindow ~= nil and housing.materialWindow:IsVisible()").eval::<bool>().unwrap());
+        assert_eq!(
+            bridge.borrow().house.selected.as_ref().map(|h| (h.tl_id, h.current_actions, h.all_actions)),
+            Some((13, 0, 1))
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_ray_hits_a_wide_house_box_not_only_its_centre() {
+        let ray = Ray3d::new(Vec3::new(0.0, 2.0, 10.0), Dir3::NEG_Z);
+        let along = ray_aabb(&ray, Vec3::new(-4.0, 0.0, -5.0), Vec3::new(4.0, 3.0, 5.0)).expect("the wall is hit");
+        assert!((along - 5.0).abs() < 1e-4, "{along}");
+        assert!(ray_aabb(&Ray3d::new(Vec3::new(5.0, 2.0, 10.0), Dir3::NEG_Z), Vec3::new(-4.0, 0.0, -5.0), Vec3::new(4.0, 3.0, 5.0)).is_none());
     }
 
     #[test]
