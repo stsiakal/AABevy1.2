@@ -23,6 +23,7 @@ use aa_cry::scene::CryAssets;
 use aa_net::model::stance;
 use aa_net::state::Player;
 use aa_net::{Command, Event, MoveCommand, MoveState, NetCommand, NetEvent, Pos};
+use aa_world::collide::Mask;
 use aa_world::{TerrainQuery, WaterQuery, WorldCollision, cry_to_bevy};
 use bevy::prelude::*;
 
@@ -293,6 +294,59 @@ pub(super) fn floor_at(terrain: &TerrainQuery, collision: &WorldCollision, pos: 
     )
 }
 
+/// The candidate of a horizontal move: the walls slide the capsule ([`WorldCollision::slide`]), the terrain's climb limit
+/// keeps it off steep ground, and a brush or vegetation hull closing over the body keeps it out. `pos` is the feet and
+/// `step` the move of this frame; the result keeps `pos.z`. The map's edge keeps the feet where they are.
+fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
+    if step == Vec2::ZERO {
+        return pos;
+    }
+    let candidate = collision.slide(pos, step, RADIUS, HEIGHT, STEP_UP).pos;
+    if terrain.height_at(candidate.x, candidate.y).is_none() {
+        return pos;
+    }
+    // terrain steeper than the climb angle is not walked up: looked at over half a metre ahead, the facets of the mesh
+    // are rougher than that (a brush under the feet, stairs, is not terrain)
+    let ahead = Vec2::new(candidate.x, candidate.y) + step.normalize_or_zero() * CLIMB_LOOK;
+    let rise = terrain.ground_at(ahead.x, ahead.y).map_or(0.0, |ground| ground.height - pos.z);
+    let climbing = !swimming && grounded && rise > CLIMB_LOOK * MAX_CLIMB_TAN;
+    let on_brush = climbing && support(terrain, collision, candidate.x, candidate.y, pos.z, STEP_UP).is_some_and(|s| s.brush);
+    if (!climbing || on_brush) && !buried(terrain, collision, candidate, pos.z) {
+        Vec3::new(candidate.x, candidate.y, pos.z)
+    } else {
+        pos
+    }
+}
+
+/// Whether a candidate feet position is buried in a brush or vegetation hull: the first surface under the head there is
+/// more than [`DROP`] above the floor. A cliff rock's steep skin is not walkable ground, so [`floor_at`] falls through
+/// it to the terrain below; walking into it must not (the capsule would end up inside the closed hull).
+fn buried(terrain: &TerrainQuery, collision: &WorldCollision, candidate: Vec3, feet_z: f32) -> bool {
+    let floor = floor_at(terrain, collision, Vec3::new(candidate.x, candidate.y, feet_z), STEP_UP);
+    if !floor.is_finite() {
+        return false;
+    }
+    let head = Vec3::new(candidate.x, candidate.y, feet_z + HEIGHT);
+    collision
+        .raycast_mask(head, Vec3::NEG_Z, HEIGHT + 0.05, Mask::STRUCTURES | Mask::PROPS | Mask::VEGETATION)
+        .is_some_and(|hit| hit.point.z > floor + DROP)
+}
+
+/// How far over the feet a surface closing over them counts as a hull the character is inside (m).
+const HULL_REACH: f32 = 5.0;
+
+/// The top of the closed brush hull the feet are wedged in, if any: the capsule overlaps a wall (`push_out` is blocked)
+/// and the highest walkable surface within [`HULL_REACH`] is above the feet and more than [`DROP`] over the terrain (a
+/// cliff rock's inside, not just standing under a bridge: that pushes nothing). `None` when the feet are free.
+fn hull_top(terrain: &TerrainQuery, collision: &WorldCollision, feet: Vec3) -> Option<f32> {
+    if !collision.push_out(feet, RADIUS, HEIGHT, STEP_UP).blocked {
+        return None;
+    }
+    let top = collision.ground_below(feet.x, feet.y, feet.z, HULL_REACH)?;
+    let terrain = terrain.ground_at(feet.x, feet.y).map_or(f32::NEG_INFINITY, |ground| ground.height);
+    (top.height > feet.z + STEP_UP && top.height > terrain + DROP).then_some(top.height)
+}
+
 /// Keyboard movement, jumping, standing on the ground, swimming and the movement packets.
 #[allow(clippy::too_many_arguments)]
 pub fn control_player(
@@ -414,25 +468,19 @@ pub fn control_player(
         terrain.prefetch(pos.x, pos.y, PREFETCH_RADIUS);
     }
     // walls: slide along them; stay on the map
-    if step != Vec2::ZERO {
-        let candidate = collision.slide(pos, step * dt, RADIUS, HEIGHT, STEP_UP).pos;
-        if terrain.height_at(candidate.x, candidate.y).is_some() {
-            // terrain steeper than the climb angle is not walked up: looked at over half a metre ahead, the facets of the
-            // mesh are rougher than that (a brush under the feet, stairs, is not terrain)
-            let ahead = Vec2::new(candidate.x, candidate.y) + step.normalize_or_zero() * CLIMB_LOOK;
-            let rise = terrain.ground_at(ahead.x, ahead.y).map_or(0.0, |ground| ground.height - pos.z);
-            let climbing = !swimming && mover.grounded && rise > CLIMB_LOOK * MAX_CLIMB_TAN;
-            let on_brush = climbing && support(&terrain, &collision, candidate.x, candidate.y, pos.z, STEP_UP).is_some_and(|s| s.brush);
-            if !climbing || on_brush {
-                pos.x = candidate.x;
-                pos.y = candidate.y;
-            }
-        }
-    }
+    pos = move_candidate(&terrain, &collision, old, step * dt, mover.grounded, swimming);
 
     // what is under the feet and the water around
     let step_up = if mover.grounded || swimming { STEP_UP } else { 0.05 };
-    let ground = floor_at(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z), step_up);
+    let mut ground = floor_at(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z), step_up);
+    // a character saved (or landed) inside a closed rock hull is lifted onto its top once, so it is not wedged
+    if !swimming && mover.grounded && let Some(top) = hull_top(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z)) {
+        info!("lifted out of a closed brush hull at ({:.1}, {:.1}): feet {:.2} -> {:.2}", pos.x, pos.y, old.z, top);
+        pos.z = top;
+        ground = top;
+        mover.grounded = true;
+        mover.vz = 0.0;
+    }
     let wet = water.water_at(pos).map(|(surface, kind)| Wet { surface, kind, depth: (surface - ground).max(0.0) });
     mover.wading = if swimming { 0.0 } else { wet.map_or(0.0, |w| w.depth) };
     let rising = !mover.grounded && mover.vz > 0.0 && !swimming;
@@ -826,6 +874,62 @@ mod lifecycle_tests {
         let ground = support(&terrain, &collision, cave.x, cave.y, cave.z + 5.0, STEP_UP).unwrap();
         assert!(ground.brush && (ground.height - 464.76614).abs() < 0.001);
         assert!((floor_at(&terrain, &collision, cave, STEP_UP) - 464.76614).abs() < 0.001);
+    }
+
+    #[test]
+    #[ignore = "walks 20 s over the main_world collision; needs the game pak"]
+    fn walking_at_the_cliff_rock_never_puts_the_feet_inside_it() {
+        if !aa_world::pak_available() {
+            return;
+        }
+        let terrain = TerrainQuery::new("main_world");
+        let collision = WorldCollision::new("main_world", terrain.clone());
+        for (cx, cy) in [(14, 14), (15, 14)] {
+            collision.build_blocking(cx, cy).expect("cell");
+        }
+        // the run that went onto `cliff_rock_a_big` (group 1507, 15487.45, 14836.45) and dropped through its steep skin
+        let start = Vec2::new(15530.0, 14818.0);
+        let goal = Vec2::new(15290.0, 14892.0);
+        let dt = 1.0 / 30.0;
+        let mut pos = Vec3::new(start.x, start.y, terrain.height_at(start.x, start.y).unwrap());
+        for k in 0..(20.0 / dt) as usize {
+            let dir = (goal - Vec2::new(pos.x, pos.y)).normalize_or_zero();
+            let moved = move_candidate(&terrain, &collision, pos, dir * RUN_SPEED * dt, true, false);
+            let ground = floor_at(&terrain, &collision, Vec3::new(moved.x, moved.y, pos.z), STEP_UP);
+            assert!(ground.is_finite(), "t={:.1} s: off the map at ({:.1}, {:.1})", k as f32 * dt, moved.x, moved.y);
+            pos = Vec3::new(moved.x, moved.y, ground);
+            if let Some(hit) = collision.raycast_mask(Vec3::new(pos.x, pos.y, pos.z + 20.0), Vec3::NEG_Z, 40.0, Mask::VEGETATION) {
+                assert!(
+                    hit.point.z - pos.z < HEIGHT,
+                    "t={:.1} s at ({:.1}, {:.1}, {:.2}): the rock skin is {:.2} m over the feet",
+                    k as f32 * dt,
+                    pos.x,
+                    pos.y,
+                    pos.z,
+                    hit.point.z - pos.z
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "loads the main_world collision; needs the game pak"]
+    fn a_character_saved_inside_the_cliff_rock_is_lifted_onto_it() {
+        if !aa_world::pak_available() {
+            return;
+        }
+        let terrain = TerrainQuery::new("main_world");
+        let collision = WorldCollision::new("main_world", terrain.clone());
+        for (cx, cy) in [(14, 14), (15, 14)] {
+            collision.build_blocking(cx, cy).expect("cell");
+        }
+        let wedged = Vec3::new(15497.8, 14832.0, 143.41);
+        assert!(collision.push_out(wedged, RADIUS, HEIGHT, STEP_UP).blocked, "the saved position is inside the hull");
+        let top = hull_top(&terrain, &collision, wedged).expect("the rock has a walkable top over the feet");
+        assert!(top > wedged.z + STEP_UP, "lifted above the feet: {top}");
+        let freed = Vec3::new(wedged.x, wedged.y, top);
+        assert!(!collision.push_out(freed, RADIUS, HEIGHT, STEP_UP).blocked, "the top is free");
+        assert!((floor_at(&terrain, &collision, freed, STEP_UP) - top).abs() < 1e-3, "the top is standing ground");
     }
 
     #[test]
