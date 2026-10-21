@@ -192,8 +192,12 @@ X2Quest.GetQuestContextRewardSelectiveItemCount = function(self, qtype, i)
   return it and it.count or 1
 end
 
--- No quest guide decals (the path on the ground) yet.
-X2Decal.CanMakeGuidedDecal = function(self, qtype) return false end
+-- The notifier's decal states and map numbers (questcontext/quest_context_notifier.lua): every known quest can
+-- take one of the ten decal slots (0 is the table's spare entry, 1..9 carry the numbers). The guided decal on the
+-- ground (materials/decals/guided) is not drawn yet, but the map's numbered area icons come from this path.
+X2Decal.GetMaxDecalCount = function(self) return 10 end
+X2Decal.CanMakeGuidedDecal = function(self, qtype) return byType(qtype) ~= nil end
+X2Decal.SetQuestGuidDecalByIndex = function(self, decalIndex, qtype, show) end
 
 -- The tracker lists every active quest when it starts (no saved list), then each one accepted.
 local notifierValues = { listOpen = true }

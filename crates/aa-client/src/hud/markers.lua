@@ -1,8 +1,11 @@
 -- The icons of the roadmap and of the big map (hud/markers.rs). HUD.map_icons is the list in game coordinates
--- ({ x, y, kind, tip, city }); this file keeps the "Show Icons" window's filters, places the icons on the zone or
--- city map the roadmap or the big map shows and hands them to the toolkit: AAUI.RoadMap().markers (the place on the
--- map image) and AAUI.WorldMap().markers (the place on the map `level`, `id`). Loaded after ingame.lua, whose
--- hooks it wraps.
+-- ({ x, y, kind, tip, zone, city }); HUD.map_quest_areas are the active quests' objective circles
+-- ({ qtype, x, y, radius, zone, city }, the `area` records of the client's quest_sign_sphere.g). This file keeps
+-- the "Show Icons" window's filters, the quest notifier's decal indices and colour/number tables (the natives of
+-- map/common.lua and questcontext/quest_context_notifier.lua), places the icons and circles on the zone or city map
+-- the roadmap or the big map shows and hands them to the toolkit: AAUI.RoadMap().markers (the place on the map
+-- image) and AAUI.WorldMap().markers (the place on the map `level`, `id`). Loaded after ingame.lua, whose hooks it
+-- wraps.
 
 -- The filters ------------------------------------------------------------------------------------------------
 -- map/filter.lua tells the game what to show: X2Map:SetNpcFilter(iconType, on) for each icon type, and
@@ -78,6 +81,76 @@ local function shown(kind)
   return checked[kind] ~= false
 end
 
+-- The quest notifier's map decals ----------------------------------------------------------------------------------
+-- questcontext/quest_context_notifier.lua's AddMapQuestSign(qType) asks the map for a decal index and hands it over:
+-- `X2Map:AddNotifyQuestInfo(decalIndex, qType, show)` (line 23 of AddMapQuestSign; Update line 38, Remove line 27).
+-- The tables it draws with were given by map/common.lua: `X2Map:SetNotifyCoords` (the tracker's coloured 1..9
+-- badges, lines 1873-1876), `SetNotifyAreaCoords` (the map's grey 1..9 numbers, lines 1939-1944) and
+-- `SetNotifyAreaColors` (the matching area colours, alpha AREA_COLOR_ALPHA, lines 2009-2014).
+local notifyCoords, areaCoords, areaColors = {}, {}, {}
+local decals = {} -- qType -> decal index (1..9), as the notifier set it
+-- The natives take the count first (`X2Map:SetNotifyCoords(count, coords)`, common.lua lines 1873-1876).
+X2Map.SetNotifyCoords = function(self, count, coords) notifyCoords = type(coords) == "table" and coords or {} end
+X2Map.SetNotifyAreaCoords = function(self, count, coords) areaCoords = type(coords) == "table" and coords or {} end
+X2Map.SetNotifyAreaColors = function(self, count, colors) areaColors = type(colors) == "table" and colors or {} end
+local function setDecal(index, qtype, show)
+  index, qtype = tonumber(index), tonumber(qtype)
+  if index == nil or qtype == nil then return end
+  if show == false or index == 0 then decals[qtype] = nil else decals[qtype] = index end
+end
+X2Map.AddNotifyQuestInfo = function(self, index, qtype, show) setDecal(index, qtype, show) end
+X2Map.UpdateNotifyQuestInfo = function(self, index, qtype, show) setDecal(index, qtype, show) end
+X2Map.RemoveNotifyQuestInfo = function(self, qtype) decals[tonumber(qtype)] = nil end
+X2Map.RemoveAllNotifyQuestInfo = function(self) decals = {} end
+
+-- The client tables are passed 1-based (common.lua), while the native decal index runs 1..9 over the entries
+-- 2..10 (the first entry belongs to decal 0). The notifier's own `dingbetCoords` spells the same 0..9 indexing.
+local function decalEntry(list, index) return list and list[index + 1] end
+
+-- The fallback copies of common.lua's tables (their setter runs while the world stage loads).
+local DEFAULT_AREA_COORDS = {
+  { 480, 72, 24, 24 },
+  { 240, 0, 16, 16 }, { 256, 0, 16, 16 }, { 272, 0, 16, 16 },
+  { 240, 16, 16, 16 }, { 256, 16, 16, 16 }, { 272, 16, 16, 16 },
+  { 240, 32, 16, 16 }, { 256, 32, 16, 16 }, { 272, 32, 16, 16 },
+}
+local DEFAULT_AREA_COLORS = {
+  { 40, 148, 63, 0.5 }, { 194, 96, 107, 0.5 }, { 211, 163, 60, 0.5 }, { 138, 166, 40, 0.5 },
+  { 210, 106, 29, 0.5 }, { 40, 148, 63, 0.5 }, { 55, 95, 223, 0.5 }, { 73, 167, 211, 0.5 },
+  { 225, 150, 219, 0.5 }, { 142, 76, 203, 0.5 },
+}
+
+-- The decal index of a quest: what the notifier recorded (or its own GetDecalState), else (a quest list restored
+-- before the notifier ran) its place in the tracker.
+local function decalOf(qtype)
+  local index = decals[qtype]
+  if index ~= nil then return index end
+  if type(GetDecalState) == "function" then
+    local ok, value = pcall(GetDecalState, qtype)
+    if ok and value ~= nil then return value end
+  end
+  if X2Quest ~= nil and X2Quest.GetActiveQuestListCount ~= nil then
+    local count = X2Quest:GetActiveQuestListCount()
+    for i = 1, math.min(count, 9) do
+      if X2Quest:GetActiveQuestType(i) == qtype then return i end
+    end
+  end
+  return nil
+end
+
+local function decalKey()
+  local parts = { HUD.map_quest_areas_version or -1 }
+  if X2Quest ~= nil and X2Quest.GetActiveQuestListCount ~= nil then
+    local count = X2Quest:GetActiveQuestListCount()
+    for i = 1, count do
+      local qtype = X2Quest:GetActiveQuestType(i)
+      parts[#parts + 1] = qtype or 0
+      parts[#parts + 1] = decalOf(qtype) or 0
+    end
+  end
+  return table.concat(parts, ":")
+end
+
 -- The roadmap's "NPC" check: the dots of the units in view are only worth computing while it is on.
 -- (The scripts keep the option in X2:SetRoadmapOptionUiData; the real client saves it, this one keeps it for the stage.)
 local roadmapOption
@@ -120,43 +193,117 @@ end
 local road = { key = nil, list = {}, version = 0 }
 local world = { key = nil, list = {}, version = 0 }
 
+-- The objective circles: a translucent ring in the notifier's colour (`SetNotifyAreaColors`) and, at its centre,
+-- the grey number cell of `SetNotifyAreaCoords`. `w`/`h` are fractions of the map drawable so they scale with the
+-- roadmap size and the big map's expansion; the circle is on the background layer so the icons stay above it.
+local AREA_ICON = "ui/map/territory_circle.dds"
+local ICON_SHEET = "ui/map/icon/npc_icon.dds"
+
+local function areaColor(index)
+  local c = decalEntry(areaColors, index) or DEFAULT_AREA_COLORS[index + 1]
+  return { (c[1] or 0) / 255, (c[2] or 0) / 255, (c[3] or 0) / 255, c[4] or 0.5 }
+end
+
+local function addArea(out, level, id, a, rect, u, v, index)
+  out[#out + 1] = {
+    level = level, id = id, u = u, v = v, icon = AREA_ICON,
+    w = 2 * a.radius / rect[3], h = 2 * a.radius / rect[4],
+    color = areaColor(index), layer = "background",
+  }
+  local cell = decalEntry(areaCoords, index) or DEFAULT_AREA_COORDS[index + 1]
+  if cell ~= nil then
+    out[#out + 1] = { level = level, id = id, u = u, v = v, icon = ICON_SHEET, coords = cell }
+  end
+end
+
+-- The big map: the circle on its zone map and, when it is in a city, on the city map.
+local function worldAreas(out)
+  local zones, cities = HUD.map_zone_rects or {}, HUD.map_city_rects or {}
+  for _, a in ipairs(HUD.map_quest_areas or {}) do
+    local index = decalOf(a.qtype)
+    if index ~= nil and index >= 1 and index <= 9 then
+      local zr = zones[a.zone]
+      if zr ~= nil and zr[3] > 0 then
+        local u, v = (a.x - zr[1]) / zr[3], 1 - (a.y - zr[2]) / zr[4]
+        if inside(u, v) then addArea(out, 2, a.zone, a, zr, u, v, index) end
+      end
+      local cr = a.city and cities[a.city]
+      if cr ~= nil and cr[3] > 0 then
+        local u, v = (a.x - cr[1]) / cr[3], 1 - (a.y - cr[2]) / cr[4]
+        if inside(u, v) then addArea(out, 3, a.city, a, cr, u, v, index) end
+      end
+    end
+  end
+end
+
+-- The roadmap: only the map it shows.
+local function roadAreas(out, r)
+  local s = HUD.state
+  local zones, cities = HUD.map_zone_rects or {}, HUD.map_city_rects or {}
+  for _, a in ipairs(HUD.map_quest_areas or {}) do
+    local index = decalOf(a.qtype)
+    if index ~= nil and index >= 1 and index <= 9 then
+      if r.level == 3 then
+        local cr = a.city and a.city == r.zone and cities[a.city]
+        if cr ~= nil and cr[3] > 0 then
+          local u, v = onRoadImage(3, r.zone, "", (a.x - cr[1]) / cr[3], 1 - (a.y - cr[2]) / cr[4])
+          if inside(u, v) then addArea(out, 3, a.city, a, cr, u, v, index) end
+        end
+      elseif a.zone == r.zone then
+        local zr = zones[a.zone]
+        if zr ~= nil and zr[3] > 0 then
+          local key = string.upper(s.zone_key_name) .. "_100"
+          local u, v = onRoadImage(2, r.zone, key, (a.x - zr[1]) / zr[3], 1 - (a.y - zr[2]) / zr[4])
+          if inside(u, v) then addArea(out, 2, a.zone, a, zr, u, v, index) end
+        end
+      end
+    end
+  end
+end
+
 local function roadMarkers(r)
   local s = HUD.state
-  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, r.level, r.zone, s.zone_group }, ":")
+  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, r.level, r.zone, s.zone_group, decalKey() }, ":")
   if road.key == key then return road.list, road.version end
   road.key, road.version, road.list = key, road.version + 1, {}
-  local zr, cr = s.zone_rect, s.sub_map_rect
+  local zones, cities = HUD.map_zone_rects or {}, HUD.map_city_rects or {}
   for _, ic in ipairs(HUD.map_icons or {}) do
     if shown(ic.kind) then
       local u, v
       if r.level == 3 then
-        if ic.city == r.zone and cr[3] > 0 then
+        local cr = ic.city and ic.city == r.zone and cities[ic.city]
+        if cr ~= nil and cr[3] > 0 then
           u, v = onRoadImage(3, r.zone, "", (ic.x - cr[1]) / cr[3], 1 - (ic.y - cr[2]) / cr[4])
         end
-      elseif zr[3] > 0 then
-        u, v = onRoadImage(2, r.zone, string.upper(s.zone_key_name) .. "_100", (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4])
+      elseif ic.zone == r.zone then
+        local zr = zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect)
+        if zr ~= nil and zr[3] > 0 then
+          u, v = onRoadImage(2, r.zone, string.upper(s.zone_key_name) .. "_100", (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4])
+        end
       end
       if u ~= nil and inside(u, v) then
         road.list[#road.list + 1] = { u = u, v = v, kind = ic.kind, tooltip = tipOf(ic) }
       end
     end
   end
+  roadAreas(road.list, r)
   return road.list, road.version
 end
 
 local function worldMarkers()
   local s = HUD.state
-  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, s.zone_group }, ":")
+  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, s.zone_group, decalKey() }, ":")
   if world.key == key then return world.list, world.version end
   world.key, world.version, world.list = key, world.version + 1, {}
-  local zr, cities = s.zone_rect, HUD.map_city_rects or {}
+  local zones, cities = HUD.map_zone_rects or {}, HUD.map_city_rects or {}
   for _, ic in ipairs(HUD.map_icons or {}) do
     if shown(ic.kind) then
       -- the whole map image covers the map rectangle: the place is the plain fraction of it
-      if zr[3] > 0 then
+      local zr = zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect)
+      if zr ~= nil and zr[3] > 0 then
         local u, v = (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4]
         if inside(u, v) then
-          world.list[#world.list + 1] = { level = 2, id = s.zone_group, u = u, v = v, kind = ic.kind, tooltip = tipOf(ic) }
+          world.list[#world.list + 1] = { level = 2, id = ic.zone, u = u, v = v, kind = ic.kind, tooltip = tipOf(ic) }
         end
       end
       local c = ic.city and cities[ic.city]
@@ -168,6 +315,7 @@ local function worldMarkers()
       end
     end
   end
+  worldAreas(world.list)
   return world.list, world.version
 end
 

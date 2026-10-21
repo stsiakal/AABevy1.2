@@ -364,21 +364,30 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
         return;
     }
     let quests = &facts.quests;
+    let active = quests.active.clone();
+    let mut started: Vec<u32> = Vec::new();
     let mut fire: Vec<Fire> = Vec::new();
+    let mut condition = None;
     {
         let mut d = bridge.0.borrow_mut();
         let d = &mut *d;
         let Some(game) = d.game.get() else { return };
-        let old = std::mem::take(&mut d.dialog.quests);
+        let old = d.dialog.quests.clone();
         let texts = Texts { game, player: d.snapshot.name.as_str(), race: d.snapshot.race };
         let name = |id: u32| game.quests.def(id).map(|q| texts.expand(&q.name)).unwrap_or_default();
-        let mut condition = None;
-        if !fresh {
-            for q in &quests.active {
+        if fresh {
+            // The tracker (questcontext/quest_context_notifier.lua) adds every active quest to its notify
+            // list and asks the map for a decal index (`X2Map:AddNotifyQuestInfo`); a restored list gets the
+            // same `started` notices as one accepted in game.
+            for q in &active {
+                started.push(q.template_id);
+            }
+        } else {
+            for q in &active {
                 match old.iter().find(|o| o.template_id == q.template_id) {
                     None => {
                         condition = Some(format!("Quest accepted: [{}]", name(q.template_id)));
-                        fire.push(Fire::Updated(q.template_id, "started"));
+                        started.push(q.template_id);
                         fire.push(Fire::Condition("started"));
                     }
                     Some(o) if o != q => {
@@ -400,7 +409,7 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
                 }
             }
             for o in &old {
-                if quests.active.iter().any(|q| q.template_id == o.template_id) {
+                if active.iter().any(|q| q.template_id == o.template_id) {
                     continue;
                 }
                 if quests.is_completed(o.template_id) {
@@ -412,17 +421,19 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
                 }
             }
         }
-        if let Some(c) = condition {
-            d.dialog.condition = c;
-        }
-        d.dialog.quests = quests.active.clone();
-        d.dialog.version += 1;
-        d.dialog.seen = true;
-        if let Some(f) = facts.get() {
-            refresh_npc(d, &f);
-        }
     }
-    let Some(rt) = rt else { return };
+    let Some(rt) = rt else {
+        apply_quest_state(&bridge, &facts, active, condition);
+        return;
+    };
+    // The native client raises a started quest before the quest appears in the journal: the notifier's
+    // AddQuestToNotifyList ignores a quest that `IsExistQuestTypeInJournal` already reports
+    // (quest_context_notifier.lua lines 430-431), and must see the old list to add it.
+    for qtype in started {
+        info!("hud: quest {qtype} started");
+        rt.fire_event("QUEST_CONTEXT_UPDATED", (qtype, "started"));
+    }
+    apply_quest_state(&bridge, &facts, active, condition);
     for f in fire {
         match f {
             Fire::Updated(qtype, condition) => {
@@ -432,6 +443,22 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
             Fire::Objective(text) => rt.fire_event("QUEST_CONTEXT_OBJECTIVE_EVENT", text),
             Fire::Condition(condition) => rt.fire_event("QUEST_CONTEXT_CONDITION_EVENT", ("", condition)),
         }
+    }
+}
+
+/// Publish the new active quest list after the `started` notices: the scripts' `HUD.quest_list` and
+/// version, the condition message and what the open NPC now offers.
+fn apply_quest_state(bridge: &HudBridge, facts: &Facts, active: Vec<Quest>, condition: Option<String>) {
+    let mut d = bridge.0.borrow_mut();
+    let d = &mut *d;
+    if let Some(c) = condition {
+        d.dialog.condition = c;
+    }
+    d.dialog.quests = active;
+    d.dialog.version += 1;
+    d.dialog.seen = true;
+    if let Some(f) = facts.get() {
+        refresh_npc(d, &f);
     }
 }
 

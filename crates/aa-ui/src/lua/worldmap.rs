@@ -781,7 +781,10 @@ fn place_markers(lua: &Lua, wm: Id, d: &WorldMapData) {
             let Some((path, c)) = marker_cell(u, m) else { continue };
             let dr = pool[next];
             next += 1;
-            let (w, h) = (c[2].abs(), c[3].abs());
+            let (w, h) = match (m.w, m.h) {
+                (Some(fw), Some(fh)) => (fw * ww, fh * wh),
+                _ => (c[2].abs(), c[3].abs()),
+            };
             let o = u.tree.get_mut(dr);
             o.width = w;
             o.height = h;
@@ -796,6 +799,12 @@ fn place_markers(lua: &Lua, wm: Id, d: &WorldMapData) {
             if let Some(dd) = o.drawable_mut() {
                 dd.texture = Some(path);
                 dd.coords = Some(c);
+                dd.color = m.color.unwrap_or([1.0; 4]);
+                dd.layer = match m.layer.as_deref() {
+                    Some("background") => DrawLayer::Background,
+                    Some("overlay") => DrawLayer::Overlay,
+                    _ => DrawLayer::Artwork,
+                };
             }
             kept.push(i);
         }
