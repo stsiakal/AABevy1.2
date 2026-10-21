@@ -114,6 +114,20 @@ pub struct NpcInfo {
     pub show_name_tag: bool,
 }
 
+/// A quest objective area (`worlds/*/level_design/zone/*/client/quest_sign_sphere.g`): a circle
+/// the quest's component asks the player to stand in (`area` qtype/ctype/pos/radius).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct QuestArea {
+    /// `quest_contexts.id` (the scripts' `qType`).
+    pub quest: u32,
+    /// `quest_components.id` (the scripts' `cType`).
+    pub component: u32,
+    /// Game metres.
+    pub x: f32,
+    pub y: f32,
+    pub radius: f32,
+}
+
 /// A zone group (what the HUD calls a zone: "Solzreed Peninsula") and where it is on the map.
 #[derive(Clone, Debug, Default)]
 pub struct ZoneGroup {
@@ -202,6 +216,51 @@ fn parse_sub_zone_areas(text: &str, origin: (f32, f32), out: &mut Vec<SubZoneSha
     }
 }
 
+/// The `area` records of a `quest_sign_sphere.g`: `qtype` (quest), `ctype` (component), the
+/// position relative to the zone's origin cell and the radius, in game metres.
+fn parse_quest_areas(text: &str, origin: (f32, f32), out: &mut Vec<QuestArea>) {
+    for block in text.split("area").skip(1) {
+        let mut quest = 0u32;
+        let mut component = 0u32;
+        let mut radius = 0.0f32;
+        let mut pos = None;
+        for line in block.lines() {
+            let line = line.trim();
+            let mut words = line.split_whitespace();
+            match words.next() {
+                Some("qtype") => quest = words.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                Some("ctype") => component = words.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                Some("radius") => radius = words.next().and_then(|v| v.parse().ok()).unwrap_or(0.0),
+                Some("pos") => {
+                    let mut x = None;
+                    let mut y = None;
+                    for part in line.trim_start_matches("pos").trim().trim_matches(|c: char| c == '(' || c == ')').split(',') {
+                        let mut it = part.split_whitespace();
+                        match (it.next(), it.next()) {
+                            (Some("x"), Some(v)) => x = v.parse::<f32>().ok(),
+                            (Some("y"), Some(v)) => y = v.parse::<f32>().ok(),
+                            _ => {}
+                        }
+                    }
+                    pos = x.zip(y);
+                }
+                _ => {}
+            }
+        }
+        let Some((x, y)) = pos else { continue };
+        if quest == 0 || component == 0 || radius <= 0.0 {
+            continue;
+        }
+        out.push(QuestArea {
+            quest,
+            component,
+            x: origin.0 * 1024.0 + x,
+            y: origin.1 * 1024.0 + y,
+            radius,
+        });
+    }
+}
+
 /// The static game data the HUD queries.
 #[derive(Default)]
 pub struct GameData {
@@ -241,6 +300,8 @@ pub struct GameData {
     pub sub_zone_rects: HashMap<u32, [f32; 4]>,
     /// The sub zone polygons of the world (the database rectangles are mostly empty).
     pub sub_zone_shapes: Vec<SubZoneShape>,
+    /// `zone_groups.id` -> the quest objective circles in the zones of the group.
+    pub quest_areas: HashMap<u32, Vec<QuestArea>>,
     /// `zones.group_id` -> the faction protecting the group's zones (0 = none).
     pub group_faction: HashMap<u32, u32>,
     /// The formulas behind maximum HP / MP.
@@ -706,6 +767,7 @@ impl GameData {
         data.speech = super::speech::Tables::load(&conn).unwrap_or_default();
         data.housing = housing::Tables::load(&conn)?;
         data.load_sub_zone_shapes();
+        data.load_quest_areas();
         Ok(data)
     }
 
@@ -731,6 +793,49 @@ impl GameData {
             let Some(origin) = zone.and_then(|z| origins.get(&z)).copied() else { continue };
             if let Ok(text) = pak.read_string(&file) {
                 parse_sub_zone_areas(&text, origin, &mut self.sub_zone_shapes);
+            }
+        }
+    }
+
+    /// The zone group a world.xml zone name belongs to: `w_solzreed_1` -> `w_solzreed` (the
+    /// longest matching `zone_groups.name`).
+    fn group_of_zone_name(&self, name: &str) -> Option<u32> {
+        self.zone_groups
+            .iter()
+            .filter(|(_, g)| name == g.key || name.strip_prefix(&g.key).is_some_and(|rest| rest.starts_with('_')))
+            .max_by_key(|(_, g)| g.key.len())
+            .map(|(id, _)| *id)
+    }
+
+    /// Reads the quest objective circles of every world (`.../zone/<id>/client/quest_sign_sphere.g`).
+    /// Their `pos` is relative to the zone's origin cell in `world.xml` (1024 m cells).
+    fn load_quest_areas(&mut self) {
+        let pak = aa_pak::Pak::global();
+        let worlds: Vec<String> = pak.list("worlds/").filter(|p| p.ends_with("/world.xml")).map(str::to_string).collect();
+        for world_xml in worlds {
+            let world = world_xml.trim_end_matches("/world.xml");
+            let Ok(xml) = pak.read_string(&world_xml) else { continue };
+            let mut zones: HashMap<u32, (String, (f32, f32))> = HashMap::new();
+            for tag in xml.split("<Zone ").skip(1) {
+                let tag = format!(" {}", tag.split('>').next().unwrap_or(""));
+                let (Some(id), Some(name), Some(x), Some(y)) =
+                    (attr(&tag, "id"), attr(&tag, "name"), attr(&tag, "originX"), attr(&tag, "originY"))
+                else {
+                    continue;
+                };
+                if let (Ok(id), Ok(x), Ok(y)) = (id.parse(), x.parse(), y.parse()) {
+                    zones.insert(id, (name.to_string(), (x, y)));
+                }
+            }
+            let prefix = format!("{world}/level_design/zone/");
+            let files: Vec<String> = pak.list(&prefix).filter(|p| p.ends_with("/client/quest_sign_sphere.g")).map(str::to_string).collect();
+            for file in files {
+                let zone: Option<u32> = file.split("level_design/zone/").nth(1).and_then(|r| r.split('/').next()).and_then(|z| z.parse().ok());
+                let Some((name, origin)) = zone.and_then(|z| zones.get(&z)) else { continue };
+                let Some(group) = self.group_of_zone_name(name) else { continue };
+                if let Ok(text) = pak.read_string(&file) {
+                    parse_quest_areas(&text, *origin, self.quest_areas.entry(group).or_default());
+                }
             }
         }
     }
@@ -917,5 +1022,29 @@ mod tests {
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap();
         assert_eq!(table.totals().as_slice(), rows.as_slice());
+    }
+
+    #[test]
+    fn quest_spheres_carry_the_quest_and_component() {
+        // the shape of map/quest_sign_sphere.g (zone 142, w_solzreed_1)
+        let text = "area\n    qtype 2577\n    ctype 11179\n    pos ( x 1441.05, y 1458.22, z 124.584 )\n    radius 120\n\
+                    area\n    qtype 2608\n    ctype 21272\n    pos ( x 1388.41, y 1229.94, z 108.049 )\n    radius 50\n";
+        let mut areas = Vec::new();
+        parse_quest_areas(text, (12.0, 13.0), &mut areas);
+        assert_eq!(areas.len(), 2);
+        assert_eq!(areas[0], QuestArea { quest: 2577, component: 11179, x: 12.0 * 1024.0 + 1441.05, y: 13.0 * 1024.0 + 1458.22, radius: 120.0 });
+        assert_eq!((areas[1].quest, areas[1].component, areas[1].radius), (2608, 21272, 50.0));
+    }
+
+    #[test]
+    fn zone_names_find_their_group() {
+        let mut data = GameData::default();
+        data.zone_groups.insert(5, ZoneGroup { key: "w_solzreed".into(), ..default() });
+        data.zone_groups.insert(2, ZoneGroup { key: "w_marianople".into(), ..default() });
+        assert_eq!(data.group_of_zone_name("w_solzreed_1"), Some(5));
+        assert_eq!(data.group_of_zone_name("w_marianople_2"), Some(2));
+        assert_eq!(data.group_of_zone_name("e_rainbow_field_1"), None);
+        // not a zone of the group: the suffix must be `_<zone>`
+        assert_eq!(data.group_of_zone_name("w_solzreedish"), None);
     }
 }

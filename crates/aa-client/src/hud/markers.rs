@@ -15,14 +15,23 @@
 //! something changes: the zone, the player's quests, the dots twice a second), and `markers.lua` does
 //! the rest: it keeps the filters of the world map window (`X2Map:SetNpcFilter` ...), places the icons
 //! on the zone or city map as the roadmap and the big map show them and gives them to
-//! `AAUI.RoadMap().markers` and `AAUI.WorldMap().markers` (aa-ui draws them).
+//! `AAUI.RoadMap().markers` and `AAUI.WorldMap().markers` (aa-ui draws them). The static NPC/doodad
+//! icons of every zone group are loaded, so a map the player is not in shows them too (`maps now
+//! display icons in zones that your character is not located in`, the 1.2 patch notes).
+//!
+//! Quest objective areas are the `area` circles of the client's
+//! `worlds/*/level_design/zone/<zone>/client/quest_sign_sphere.g` ([`super::data::QuestArea`]): the
+//! quest notifier (`questcontext/quest_context_notifier.alb`) gives the map the decal index of a
+//! tracked quest with `X2Map:AddNotifyQuestInfo(decalIndex, qType, show)` (line 23 of its
+//! `AddMapQuestSign`), and `markers.lua` draws that quest's circles in the index's colour and its grey
+//! number cell from `SetNotifyAreaCoords` / `SetNotifyAreaColors` (`map/common.alb` lines 411-440).
 //!
 //! Checked against `reference/ingame/worldmap_zone` (the bank, the mailbox and the stables of Desireen,
 //! the pumpkin farm zone sign west of it): the weapon, armor and general merchants and the priestess
 //! have no icon there, so they get none here. The memory tomes do (the blue book, mostly hidden behind
 //! the bank chest).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -35,7 +44,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::api::HudBridge;
 use super::data::{GameData, any_flag, any_int};
-use super::quests::{Mark, PlayerFacts};
+use super::quests::{Mark, PlayerFacts, kind};
 use crate::Screen;
 
 /// Frames between two looks at what the icons are (the quests and the units in view change slowly).
@@ -56,7 +65,22 @@ struct Icon {
     kind: &'static str,
     /// What the tooltip says; empty: the symbol's own text.
     tip: String,
+    /// The zone group whose map the icon is on.
+    zone: u32,
     /// The city (sub zone with a map of its own) the icon is in, 0 for none.
+    city: u32,
+}
+
+/// An objective circle of an active quest (`HUD.map_quest_areas`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AreaIcon {
+    quest: u32,
+    x: f32,
+    y: f32,
+    radius: f32,
+    /// The zone group whose map the area is on.
+    zone: u32,
+    /// The city map the area is also on, 0 for none.
     city: u32,
 }
 
@@ -186,26 +210,11 @@ impl MapTables {
     }
 }
 
-/// The map files of the zone group the player is in.
+/// The map files of one zone group.
 #[derive(Default)]
 struct ZoneSpots {
-    key: String,
     npcs: Vec<Spot>,
     doodads: Vec<Spot>,
-}
-
-impl ZoneSpots {
-    fn load(key: &str, game: &GameData) -> ZoneSpots {
-        let pak = aa_pak::Pak::global();
-        let read = |dir: &str| {
-            let mut spots = pak.read(&format!("worlds/main_world/map_data/{dir}/{key}.dat")).map(|b| parse_spots(&b)).unwrap_or_default();
-            for s in &mut spots {
-                s.city = city_at(game, s.x, s.y);
-            }
-            spots
-        };
-        ZoneSpots { key: key.to_string(), npcs: read("npc_map"), doodads: read("doodad_map") }
-    }
 }
 
 /// The city (a sub zone with a map of its own: the road map of a city, a cave) around a place, 0 for none.
@@ -213,11 +222,72 @@ fn city_at(game: &GameData, x: f32, y: f32) -> u32 {
     game.sub_zone_root_at(x, y).filter(|id| game.sub_zone_rects.contains_key(id)).unwrap_or(0)
 }
 
+/// Every zone group's `npc_map` / `doodad_map` file (about 250 small files in all), so the map of a
+/// zone the player is not in has its icons too.
+fn load_all_zones(game: &GameData) -> BTreeMap<u32, ZoneSpots> {
+    let pak = aa_pak::Pak::global();
+    let mut out: BTreeMap<u32, ZoneSpots> = BTreeMap::new();
+    for (dir, npcs) in [("npc_map", true), ("doodad_map", false)] {
+        for file in pak.list(&format!("worlds/main_world/map_data/{dir}/")) {
+            let Some(key) = file.rsplit('/').next().and_then(|f| f.strip_suffix(".dat")) else { continue };
+            let Some((group, _)) = game.zone_groups.iter().find(|(_, g)| g.key == key) else { continue };
+            let Ok(bytes) = pak.read(file) else { continue };
+            let mut spots = parse_spots(&bytes);
+            for s in &mut spots {
+                s.city = city_at(game, s.x, s.y);
+            }
+            let z = out.entry(*group).or_default();
+            if npcs { z.npcs = spots } else { z.doodads = spots }
+        }
+    }
+    out
+}
+
+/// The objective circles of the active quests' progress components, from the client's
+/// `quest_sign_sphere.g` tables.
+fn build_areas(game: &GameData, quests: &Quests) -> Vec<AreaIcon> {
+    let mut out = Vec::new();
+    for q in &quests.active {
+        if game.quests.def(q.template_id).is_none() {
+            continue;
+        }
+        let mut components: Vec<u32> = game.quests.parts_of(q.template_id, kind::PROGRESS).map(|c| c.id).collect();
+        if components.is_empty() && q.component_id != 0 {
+            components.push(q.component_id);
+        }
+        if components.is_empty() {
+            continue;
+        }
+        for (zone, areas) in &game.quest_areas {
+            for a in areas {
+                if a.quest == q.template_id && components.contains(&a.component) {
+                    out.push(AreaIcon {
+                        quest: a.quest,
+                        x: a.x,
+                        y: a.y,
+                        radius: a.radius,
+                        zone: *zone,
+                        city: city_at(game, a.x, a.y),
+                    });
+                }
+            }
+        }
+    }
+    // A stable order: HashMap iteration must not make the list differ every 30 frames.
+    out.sort_by(|a, b| {
+        a.quest.cmp(&b.quest).then(a.zone.cmp(&b.zone)).then(a.x.total_cmp(&b.x)).then(a.y.total_cmp(&b.y))
+    });
+    out.dedup();
+    out
+}
+
 #[derive(Resource, Default)]
 pub struct MapIcons {
     tables: Arc<OnceLock<MapTables>>,
     loading: bool,
-    zone: ZoneSpots,
+    /// Every zone group's static icons (loaded once, when the database tables are ready).
+    zones: BTreeMap<u32, ZoneSpots>,
+    zones_loaded: bool,
     /// Where the player died while exp can still be won back (the gravesite), and whether they were dead a frame ago.
     corpse: Option<Vec2>,
     was_dead: bool,
@@ -225,6 +295,9 @@ pub struct MapIcons {
     icons: Vec<Icon>,
     /// Bumped with every new list: what the Lua state has seen last.
     version: u32,
+    areas: Vec<AreaIcon>,
+    /// Bumped with every new objective area list.
+    areas_version: u32,
 }
 
 /// `HUD.map_dots(on)`: the "NPC" check of the roadmap options (a result of the scripts' option data).
@@ -241,7 +314,8 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<MapIcons>()
         .add_systems(OnExit(Screen::InGame), |mut icons: ResMut<MapIcons>| {
             let tables = icons.tables.clone();
-            *icons = MapIcons { tables, loading: icons.loading, ..default() };
+            let zones = std::mem::take(&mut icons.zones);
+            *icons = MapIcons { tables, loading: icons.loading, zones, zones_loaded: icons.zones_loaded, ..default() };
         })
         .add_systems(Update, update_icons.after(super::sync_hud).run_if(super::hud_up).run_if(in_state(Screen::InGame)));
 }
@@ -283,43 +357,46 @@ fn quest_icon(game: &GameData, facts: &PlayerFacts, quests: &Quests, npc: u32, m
 #[allow(clippy::too_many_arguments)]
 fn build_icons(
     tables: &MapTables,
-    zone: &ZoneSpots,
+    zones: &BTreeMap<u32, ZoneSpots>,
     game: &GameData,
     facts: &PlayerFacts,
     quests: &Quests,
     units: &Units,
     me: Vec3,
     own_faction: u32,
+    zone_group: u32,
     corpse: Option<Vec2>,
 ) -> Vec<Icon> {
     let mut out = Vec::new();
     let npc_name = |id: u32| game.npcs.get(&id).map(|n| n.name.clone()).unwrap_or_default();
-    // the doodads, then the NPCs on top, then the quests
-    for s in &zone.doodads {
-        if let Some((kind, name)) = tables.doodads.get(&s.id) {
-            out.push(Icon { x: s.x, y: s.y, kind, tip: name.clone(), city: s.city });
-        }
-    }
     // The quest marks belong to the units the client has (as the 3D marks do): the real big map shows no "!" at
     // Desireen, 170 m from where the capture stands, while it shows its bank, mailbox and stables.
     let mut quest_icons = Vec::new();
-    let mut quest_givers: Vec<(u32, f32, f32)> = Vec::new();
+    let mut quest_givers: Vec<(u32, u32, f32, f32)> = Vec::new();
     let mut by_template: HashMap<u32, Option<&'static str>> = HashMap::new();
     for u in units.iter() {
         let UnitKind::Npc { template_id, .. } = u.kind else { continue };
         let quest = *by_template.entry(template_id).or_insert_with(|| game.quests.mark(template_id, facts).map(|m| quest_icon(game, facts, quests, template_id, m)));
         let Some(kind) = quest else { continue };
         let tip = Some(npc_name(template_id)).filter(|n| !n.is_empty()).unwrap_or_else(|| u.name.clone());
-        quest_icons.push(Icon { x: u.pos.x, y: u.pos.y, kind, tip, city: city_at(game, u.pos.x, u.pos.y) });
-        quest_givers.push((template_id, u.pos.x, u.pos.y));
+        quest_givers.push((zone_group, template_id, u.pos.x, u.pos.y));
+        quest_icons.push(Icon { x: u.pos.x, y: u.pos.y, kind, tip, zone: zone_group, city: city_at(game, u.pos.x, u.pos.y) });
     }
-    // the NPCs of the map file: their service icon, unless the NPC is in view with a quest icon over it
-    for s in &zone.npcs {
-        let Some(kind) = tables.npcs.get(&s.id) else { continue };
-        if quest_givers.iter().any(|(id, x, y)| *id == s.id && (x - s.x).hypot(y - s.y) < SAME_SPOT) {
-            continue;
+    // every zone group's doodads and NPCs, on their own maps
+    for (group, zone) in zones {
+        for s in &zone.doodads {
+            if let Some((kind, name)) = tables.doodads.get(&s.id) {
+                out.push(Icon { x: s.x, y: s.y, kind, tip: name.clone(), zone: *group, city: s.city });
+            }
         }
-        out.push(Icon { x: s.x, y: s.y, kind, tip: npc_name(s.id), city: s.city });
+        // the NPCs of the map file: their service icon, unless the NPC is in view with a quest icon over it
+        for s in &zone.npcs {
+            let Some(kind) = tables.npcs.get(&s.id) else { continue };
+            if quest_givers.iter().any(|(g, id, x, y)| *g == *group && *id == s.id && (x - s.x).hypot(y - s.y) < SAME_SPOT) {
+                continue;
+            }
+            out.push(Icon { x: s.x, y: s.y, kind, tip: npc_name(s.id), zone: *group, city: s.city });
+        }
     }
     if DOTS.load(Ordering::Relaxed) {
         for u in units.iter() {
@@ -333,39 +410,68 @@ fn build_icons(
                 "friendly" => "friendly",
                 _ => continue,
             };
-            out.push(Icon { x: here.x, y: here.y, kind, tip: u.name.clone(), city: city_at(game, here.x, here.y) });
+            out.push(Icon { x: here.x, y: here.y, kind, tip: u.name.clone(), zone: zone_group, city: city_at(game, here.x, here.y) });
         }
     }
     out.append(&mut quest_icons);
     if let Some(c) = corpse {
-        out.push(Icon { x: c.x, y: c.y, kind: "corpse_pos", tip: String::new(), city: city_at(game, c.x, c.y) });
+        out.push(Icon { x: c.x, y: c.y, kind: "corpse_pos", tip: String::new(), zone: zone_group, city: city_at(game, c.x, c.y) });
     }
     out
 }
 
-/// The list as the Lua state reads it: `HUD.map_icons` (`x`, `y`, `kind`, `tip`, `city`), the rectangles of
-/// the cities in it (`HUD.map_city_rects[id] = { west, south, width, height }`) and `HUD.map_icons_version`.
-fn push(lua: &Lua, game: &GameData, icons: &[Icon], version: u32) -> mlua::Result<()> {
+/// The list as the Lua state reads it: `HUD.map_icons` (`x`, `y`, `kind`, `tip`, `zone`, `city`), the
+/// rectangles of every zone group and city (`HUD.map_zone_rects` / `HUD.map_city_rects`), the active
+/// quest objective circles (`HUD.map_quest_areas`) and their versions.
+fn push(
+    lua: &Lua,
+    game: &GameData,
+    icons: &[Icon],
+    areas: &[AreaIcon],
+    version: u32,
+    areas_version: u32,
+) -> mlua::Result<()> {
     let hud: Table = lua.globals().raw_get("HUD")?;
     let list = lua.create_table_with_capacity(icons.len(), 0)?;
-    let cities = lua.create_table()?;
     for (i, ic) in icons.iter().enumerate() {
-        let t = lua.create_table_with_capacity(0, 5)?;
+        let t = lua.create_table_with_capacity(0, 6)?;
         t.raw_set("x", f64::from(ic.x))?;
         t.raw_set("y", f64::from(ic.y))?;
         t.raw_set("kind", ic.kind)?;
         t.raw_set("tip", ic.tip.as_str())?;
+        t.raw_set("zone", ic.zone)?;
         if ic.city != 0 {
             t.raw_set("city", ic.city)?;
-            if let Some(r) = game.sub_zone_rects.get(&ic.city) {
-                cities.raw_set(ic.city, lua.create_sequence_from(r.iter().map(|v| f64::from(*v)))?)?;
-            }
         }
         list.raw_set(i + 1, t)?;
     }
+    let zones = lua.create_table()?;
+    for (id, z) in &game.zone_groups {
+        zones.raw_set(*id, lua.create_sequence_from(z.rect.iter().map(|v| f64::from(*v)))?)?;
+    }
+    let cities = lua.create_table()?;
+    for (id, r) in &game.sub_zone_rects {
+        cities.raw_set(*id, lua.create_sequence_from(r.iter().map(|v| f64::from(*v)))?)?;
+    }
+    let area_list = lua.create_table_with_capacity(areas.len(), 0)?;
+    for (i, a) in areas.iter().enumerate() {
+        let t = lua.create_table_with_capacity(0, 6)?;
+        t.raw_set("qtype", a.quest)?;
+        t.raw_set("x", f64::from(a.x))?;
+        t.raw_set("y", f64::from(a.y))?;
+        t.raw_set("radius", f64::from(a.radius))?;
+        t.raw_set("zone", a.zone)?;
+        if a.city != 0 {
+            t.raw_set("city", a.city)?;
+        }
+        area_list.raw_set(i + 1, t)?;
+    }
     hud.raw_set("map_icons", list)?;
+    hud.raw_set("map_zone_rects", zones)?;
     hud.raw_set("map_city_rects", cities)?;
-    hud.raw_set("map_icons_version", version)
+    hud.raw_set("map_icons_version", version)?;
+    hud.raw_set("map_quest_areas", area_list)?;
+    hud.raw_set("map_quest_areas_version", areas_version)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -414,21 +520,36 @@ fn update_icons(
         state.refresh_in = 0;
     }
     state.was_dead = dead;
-    let zone_key = data.snapshot.zone_key_name.as_str();
-    if zone_key != state.zone.key {
-        state.zone = ZoneSpots::load(zone_key, game);
+    if !state.zones_loaded {
+        state.zones = load_all_zones(game);
+        state.zones_loaded = true;
+        let (npcs, doodads) = state.zones.values().fold((0, 0), |(n, d), z| (n + z.npcs.len(), d + z.doodads.len()));
+        debug!("hud: map icons of {} zones: {npcs} npcs, {doodads} doodads", state.zones.len());
         state.refresh_in = 0;
-        debug!("hud: map {zone_key}: {} npcs, {} doodads", state.zone.npcs.len(), state.zone.doodads.len());
     }
     // what the stage's Lua state has seen (a stage built anew starts without any list)
-    let seen = rt.lua.globals().raw_get::<Table>("HUD").and_then(|h| h.raw_get::<Option<u32>>("map_icons_version")).ok().flatten();
+    let hud = rt.lua.globals().raw_get::<Table>("HUD").ok();
+    let seen = hud.as_ref().and_then(|h| h.raw_get::<Option<u32>>("map_icons_version").ok().flatten());
+    let seen_areas = hud.as_ref().and_then(|h| h.raw_get::<Option<u32>>("map_quest_areas_version").ok().flatten());
     if state.refresh_in > 0 && seen.is_some() {
         state.refresh_in -= 1;
         return;
     }
     state.refresh_in = REFRESH_FRAMES;
     let facts = PlayerFacts::of(spawn, &stats, &inventory, &skills, &buffs, &quests);
-    let mut icons = build_icons(tables, &state.zone, game, &facts, &quests, &units, data.pos, spawn.character().faction_id, state.corpse);
+    let zone_group = data.snapshot.zone_group;
+    let mut icons = build_icons(
+        tables,
+        &state.zones,
+        game,
+        &facts,
+        &quests,
+        &units,
+        data.pos,
+        spawn.character().faction_id,
+        zone_group,
+        state.corpse,
+    );
     let own_instance = spawn.state.instance_id;
     for m in &data.party.members {
         if m.id == spawn.character().id || m.instance_id != own_instance { continue; }
@@ -437,15 +558,24 @@ fn update_icons(
         if m.has_status && game.zones.get(&m.zone_id).map(|z| z.0) != Some(data.snapshot.zone_group) { continue; }
         let kind = if !m.online { "offline_party" } else if m.id == data.party.owner_id && !data.party.is_party { "raidteam_owner" }
             else if data.party.is_party { "party" } else { "raidteam" };
-        icons.push(Icon { x: m.pos.x, y: m.pos.y, kind, tip: m.name.clone(), city: city_at(game, m.pos.x, m.pos.y) });
+        icons.push(Icon { x: m.pos.x, y: m.pos.y, kind, tip: m.name.clone(), zone: zone_group, city: city_at(game, m.pos.x, m.pos.y) });
     }
+    let areas = build_areas(game, &quests);
+    let mut changed = false;
     if icons != state.icons {
         state.version += 1;
         state.icons = icons;
-    } else if seen == Some(state.version) {
+        changed = true;
+    }
+    if areas != state.areas {
+        state.areas_version += 1;
+        state.areas = areas;
+        changed = true;
+    }
+    if !changed && seen == Some(state.version) && seen_areas == Some(state.areas_version) {
         return;
     }
-    if let Err(e) = push(&rt.lua, game, &state.icons, state.version) {
+    if let Err(e) = push(&rt.lua, game, &state.icons, &state.areas, state.version, state.areas_version) {
         warn!("hud: map icons: {e}");
     }
 }
@@ -480,6 +610,74 @@ mod tests {
         assert_eq!(doodad_icon(63), Some("house_pumpkin_house"));
         assert_eq!(doodad_icon(53), Some("doodad_inn"), "the memory tome");
         assert_eq!(doodad_icon(34), None, "a test doodad");
+    }
+
+    /// The real `markers.lua`: the notifier's count-first tables, the decal index and the circle size.
+    #[test]
+    fn quest_area_markers_use_the_notifier_colour_and_number() {
+        let lua = Lua::new();
+        lua.load(
+            r#"
+            HUD = {
+              state = { zone_group = 5, zone_rect = { 11925, 13266, 4810.2446, 2882 }, zone_key_name = "w_solzreed" },
+              map_icons = {}, map_icons_version = 1,
+              map_quest_areas = { { qtype = 269, x = 14449.12, y = 14451.57, radius = 30, zone = 5 } },
+              map_quest_areas_version = 1,
+              map_zone_rects = { [5] = { 11925, 13266, 4810.2446, 2882 } }, map_city_rects = {},
+              map_dots = function() end,
+            }
+            X2Map = {}
+            X2 = {}
+            X2Quest = {
+              GetActiveQuestListCount = function() return 1 end,
+              GetActiveQuestType = function(_, i) return i == 1 and 269 or nil end,
+            }
+            HUD_ROAD_FRAMES = {}
+            locale = { map = { getSymbolText = function() return nil end } }
+            AAUI = { WorldMap = function() return { level = 2, zone = 5 } end }
+            "#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(include_str!("markers.lua")).set_name("@markers.lua").exec().unwrap();
+        let markers: Table = lua.load("return AAUI.WorldMap().markers").eval().unwrap();
+        assert_eq!(markers.raw_len(), 2, "the ring and its grey number");
+        let ring: Table = markers.raw_get(1).unwrap();
+        assert_eq!(ring.raw_get::<String>("icon").unwrap(), "ui/map/territory_circle.dds");
+        assert_eq!(ring.raw_get::<String>("layer").unwrap(), "background");
+        assert!((ring.raw_get::<f32>("w").unwrap() - 60.0 / 4810.2446).abs() < 1e-6);
+        let color: Table = ring.raw_get("color").unwrap();
+        assert!((color.raw_get::<f32>(2).unwrap() - 96.0 / 255.0).abs() < 1e-6, "decal 1 is the red area colour");
+        let number: Table = markers.raw_get(2).unwrap();
+        let coords: Table = number.raw_get("coords").unwrap();
+        assert_eq!((coords.raw_get::<f32>(1).unwrap(), coords.raw_get::<f32>(2).unwrap()), (240.0, 0.0), "the grey 1 cell");
+    }
+
+    /// Only the active quest's progress components get their circles: not its report step, not another quest.
+    #[test]
+    fn areas_follow_the_active_progress_components() {
+        use aa_net::quest::Quest;
+        use super::super::data::QuestArea;
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        let Ok(conn) = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY) else { return };
+        let Ok(quests) = super::super::quests::QuestTables::load(&conn) else { return };
+        let mut game = GameData::default();
+        game.quests = quests;
+        game.quest_areas.insert(
+            5,
+            vec![
+                QuestArea { quest: 299, component: 1191, x: 15500.0, y: 15000.0, radius: 50.0 },
+                QuestArea { quest: 299, component: 915, x: 15600.0, y: 15000.0, radius: 50.0 },
+                QuestArea { quest: 270, component: 914, x: 15400.0, y: 15000.0, radius: 50.0 },
+            ],
+        );
+        let active = Quests {
+            active: vec![Quest { template_id: 299, component_id: 1191, ..default() }],
+            ..default()
+        };
+        let areas = build_areas(&game, &active);
+        assert_eq!(areas.len(), 1);
+        assert_eq!((areas[0].quest, areas[0].zone, areas[0].radius), (299, 5, 50.0));
     }
 
     /// The real tables and the real map file of Solzreed Peninsula, when the game database is there.

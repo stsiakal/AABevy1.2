@@ -470,28 +470,50 @@ data); the icons are drawn natively from `ui/map/icon/npc_icon.dds` (24 px cells
 `map/common.lua`) and the player is `player_cursor.dds`, turned by the heading.
 
 * **Where things are.** The client's own `worlds/main_world/map_data/npc_map/<zone>.dat` and `doodad_map/<zone>.dat`
-  (16 byte records: template id, x, y, z, game metres) list every NPC and map-worthy doodad of a zone group. The
-  database says what they are: NPC service flags -> bank, auction house, stabler, expedition, trade, ability
-  changer; the doodad's `group_id` -> mailbox, workbenches, portals, memory tomes (the blue book, `doodad_inn`,
-  mostly hidden behind the bank chest), housing province signs (`doodad_icon`). Weapon / armor / general
-  merchants and priests get no icon: `reference/ingame/worldmap_zone` shows none (only the bank, mailbox,
-  memory tome and stables of Desireen, the farm sign west of it).
+  (16 byte records: template id, x, y, z, game metres) list every NPC and map-worthy doodad of a zone group. All
+  zone groups' files are loaded, so a map the player is not in shows its icons too (the 1.2 patch notes: "Maps
+  now display icons in zones that your character is not located in"). The database says what they are: NPC service
+  flags -> bank, auction house, stabler, expedition, trade, ability changer; the doodad's `group_id` -> mailbox,
+  workbenches, portals, memory tomes (the blue book, `doodad_inn`, mostly hidden behind the bank chest), housing
+  province signs (`doodad_icon`). Weapon / armor / general merchants and priests get no icon:
+  `reference/ingame/worldmap_zone` shows none (only the bank, mailbox, memory tome and stables of Desireen, the
+  farm sign west of it).
 * **Quests** come from the units the client has, like the 3D marks (`game.quests.mark`: "!" yellow, "?" for ready,
   grey "?" in progress, the main / livelihood / repeat variants of the sheet). The capture's big map shows no "!" at
   Desireen, 170 m from where it stands, and its roadmap the two givers within 120 m (Maude and an NPC south west).
+* **Objective areas.** The client's `<world>/level_design/zone/<zone>/client/quest_sign_sphere.g` has the `area`
+  records (`qtype` quest, `ctype` component, `pos`, `radius`; the position is relative to the zone's origin cell in
+  `world.xml`). `data.rs` reads them for every world into `zone_groups.id -> QuestArea`; `markers.rs` keeps the
+  circles of the active quests' Progress components (`HUD.map_quest_areas`, with `qtype`, `x`, `y`, `radius`,
+  `zone`, `city`). The notifier (`questcontext/quest_context_notifier.lua`) hands the map the numbered decal of a
+  tracked quest through `X2Map:AddNotifyQuestInfo(decalIndex, qType, show)` (line 23 of `AddMapQuestSign`); the
+  natives are in `markers.lua`, as are the tables `map/common.lua` passes (`SetNotifyCoords`, `SetNotifyAreaCoords`
+  and `SetNotifyAreaColors`, which take a count first). `markers.lua` draws each circle as a translucent
+  `ui/map/territory_circle.dds` ring in the decal's colour (`AREA_COLOR_ALPHA` 0.5) and the grey 1..9 number of the
+  matching `SetNotifyAreaCoords` cell at its centre, on the zone map and the city map; the circle size is a fraction
+  of the map drawable, so it follows the roadmap size and the big map's expansion. The marker bridge carries the
+  optional `w`/`h` fractions, `color` and `layer`, so the discs stay below the icons. A quest restored at login
+  gets the same `QUEST_CONTEXT_UPDATED(..., "started")` notice as one accepted in game, before the scripts' active
+  list has it, which is the order the notifier's `AddQuestToNotifyList` needs to give it a decal.
+  `quest_sign_sphere.g` is checked against the server's `quest_contexts` / `quest_components`: an area is drawn only
+  for the quest's Progress components, so the report/accept steps' spheres do not leak onto the map.
 * **Gravesite** (`corpse_pos`) while the exp lost can still be won back; **dots** (`hostile` / `friendly`) of the
   units in view within 250 m when the roadmap's "NPC" check is on.
 * **Filters.** The "Show Icons" window of the big map works: `markers.lua` keeps each check (`SetNpcFilter`) and the
   three folders (Merchants, Infrastructure, Housing Province) and leaves the filtered icons out of both maps; the
   roadmap's NPC check hides every npc-like icon until it is on, as the toolkit's `roadmap` widget does.
-* **Placement.** Rust hands `HUD.map_icons` (game x, y, symbol, name, city) to Lua; `markers.lua` turns them into
-  the fraction of the zone rectangle (the big map's zone level, the whole image) or of the road map image (the
+* **Placement.** Rust hands `HUD.map_icons` (game x, y, symbol, name, zone group, city) and
+  `HUD.map_quest_areas` to Lua; `markers.lua` turns them into the fraction of each zone rectangle
+  (`HUD.map_zone_rects`, the big map's level 2 by the icon's own `zone`) or of the road map image (the
   roadmap, through `HUD_ROAD_FRAMES` / the form frames) and of the city's rectangle (level 3) and hands them over as
   `AAUI.RoadMap().markers` / `AAUI.WorldMap().markers` with a `markers_version` (an unchanged version costs no
   re-read). aa-ui draws them (`Marker` in `roadmap.rs`, `place_markers` in `worldmap.rs`) and shows the tooltip of
   the icon under the mouse through `SHOW_WORLDMAP_TOOLTIP`.
 * The list is rebuilt every 30 frames and only pushed to Lua when it changed; the database tables are read once on a
-  background thread (own connection).
+  background thread (own connection). `cargo test -p aa-client --bin aa-client` covers the `quest_sign_sphere.g`
+  parser, the zone-name -> group lookup and the Progress-component filter. A real client run with quest 269
+  (`/quest add 269`, GM test account, access reverted afterwards) showed its three Solzreed areas at Desiree Peak
+  with the grey `1` badge: `shots/hud/map-quest-areas.png`.
 
 ### Bag tabs
 
@@ -651,9 +673,9 @@ about 20-50 ms instead of 1.5-2 s because the stage is built during Loading (`hu
   is unit tested in aa-net, but no other character was in view on the lane server to see it.
 * Dark slots: buff restrictions, equipment and `or_unit_reqs` rules are covered by unit tests (`usable.rs`), the lane run only
   met range, mana, casting, target and combat. The unit requirement kinds that need quests, doodads, zones or factions count as met.
-* Map icons: quest objective areas and the numbered notifier icons
-  (`X2Map:AddNotifyQuestInfo`), icons for other zones than the one the player is in, the real client's `npc_station`,
-  `npc_graveyard`, public farm and live housing icons (no data source), ship markers.
+* Map icons: the real client's `npc_station`, `npc_graveyard`, public farm and live housing icons (no data
+  source), ship markers. Quest objective areas, numbered notifier icons and the static icons of every zone group
+  are done (see "Map icons").
 * The white beams of the quest effect over an NPC (a particle effect of the NPC, aa-fx).
 * Bag/equipment/action-bar drag requests are now routed through `drag.lua` / `drag.rs`;
   their live visual coverage is still being completed.
