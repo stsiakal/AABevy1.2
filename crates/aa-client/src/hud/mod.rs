@@ -35,6 +35,7 @@
 #[path = "../addons/mod.rs"]
 pub(crate) mod addons;
 mod achievement;
+mod auction;
 mod alerts;
 mod battlefield;
 mod breath;
@@ -455,6 +456,7 @@ impl Plugin for HudPlugin {
         farm::plugin(app);
         expedition::plugin(app);
         achievement::plugin(app);
+        auction::plugin(app);
         chat::config::plugin(app);
         crime::plugin(app);
         duel::plugin(app);
