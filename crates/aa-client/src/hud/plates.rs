@@ -177,10 +177,16 @@ fn colors(relation: &str) -> ((u8, u8, u8), (u8, u8, u8)) {
     }
 }
 
-/// The faction a unit counts as: an NPC's is its template's, the packet's is the nation it was spawned for.
+/// The NPC template behind a unit, only for real NPCs: a house's design id (or a slave / mate / shipyard
+/// template) lives in another table and can collide with an NPC row (design 267 is NPC 267 "Seagull").
+pub(super) fn npc_of<'a>(game: Option<&'a super::data::GameData>, u: &aa_net::Unit) -> Option<&'a super::data::NpcInfo> {
+    let UnitKind::Npc { template_id, .. } = u.kind else { return None };
+    game.and_then(|g| g.npcs.get(&template_id)).filter(|_| template_id != 0)
+}
+
+/// The faction a unit counts as: an NPC's is its template's, every other unit uses the faction the server sent.
 fn unit_faction(game: Option<&super::data::GameData>, u: &aa_net::Unit) -> u32 {
-    let template = u.kind.template_id();
-    match game.and_then(|g| g.npcs.get(&template)).filter(|_| template != 0) {
+    match npc_of(game, u) {
         Some(n) if n.faction_id != 0 => n.faction_id as u32,
         _ => u.faction_id,
     }
@@ -353,8 +359,7 @@ pub fn update_plates(
             (spawn.name().to_string(), (snap.hp as f32 / snap.max_hp.max(1) as f32).clamp(0.0, 1.0), true, "friendly", 1.0, None)
         } else {
             let u = w.unit.unwrap();
-            let template = u.kind.template_id();
-            let npc = game.and_then(|g| g.npcs.get(&template)).filter(|_| template != 0);
+            let npc = npc_of(game, u);
             if npc.is_some_and(|n| !n.show_name_tag) {
                 continue;
             }
@@ -653,7 +658,61 @@ pub fn plugin(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_plate_line, plate_line};
+    use super::{is_plate_line, npc_of, plate_line, unit_faction};
+    use aa_net::model::UnitKind;
+    use crate::hud::data::{GameData, NpcInfo};
+
+    fn unit(kind: UnitKind, faction_id: u32) -> aa_net::Unit {
+        aa_net::Unit {
+            obj_id: 1,
+            name: String::new(),
+            kind,
+            owner_name: String::new(),
+            pos: aa_net::Pos::new(0.0, 0.0, 0.0),
+            rotation: [0.0; 3],
+            scale: 1.0,
+            level: 1,
+            model_id: 0,
+            equipment: Default::default(),
+            model_params: Default::default(),
+            hp: 100,
+            mp: 0,
+            max_hp: 100,
+            max_mp: 0,
+            dead: false,
+            race_gender: 0,
+            movement: None,
+            faction_id,
+            expedition_id: 0,
+            appellation: 0,
+            flags: 0,
+            gm_modes: [0; 4],
+            bounty_money: None,
+            pvp_honor: 0,
+            pvp_kills: 0,
+            skills: vec![],
+            passive_buffs: vec![],
+            ability_exp: vec![],
+            active_abilities: vec![],
+            buffs: vec![],
+            anim_action: 0,
+            attached_to: None,
+            house_posture: None,
+            state_attachments: None,
+        }
+    }
+
+    #[test]
+    fn a_house_design_id_never_reads_the_npc_table() {
+        let mut game = GameData::default();
+        game.npcs.insert(267, NpcInfo { name: "Seagull".into(), faction_id: 115, ..Default::default() });
+        let house = unit(UnitKind::Housing { tl_id: 13, template_id: 267, build_step: 0 }, 109);
+        assert!(npc_of(Some(&game), &house).is_none());
+        assert_eq!(unit_faction(Some(&game), &house), 109, "the received faction, not NPC 267's 115");
+        let npc = unit(UnitKind::Npc { template_id: 267, owner_id: 0 }, 0);
+        assert_eq!(npc_of(Some(&game), &npc).map(|n| n.name.as_str()), Some("Seagull"));
+        assert_eq!(unit_faction(Some(&game), &npc), 115);
+    }
 
     #[test]
     fn title_is_a_prefix_on_the_name_line() {

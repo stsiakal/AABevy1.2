@@ -157,8 +157,20 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, load_areas)
         .add_systems(
             Update,
-            (close_created_build, sync_house_models.before(super::units::sync_views)).run_if(super::world_screens),
+            (close_created_build, log_house_factions, sync_house_models.before(super::units::sync_views))
+                .run_if(super::world_screens),
         );
+}
+
+/// The server's faction for a house is logged once per spawned unit: design ids collide with NPC template ids,
+/// so the HUD must not read the NPC table for a house and we need to see whether the server sends 0.
+fn log_house_factions(units: Res<Units>, mut seen: Local<std::collections::HashSet<u32>>) {
+    for unit in units.by_id.values() {
+        let UnitKind::Housing { tl_id, .. } = unit.kind else { continue };
+        if seen.insert(unit.obj_id) {
+            info!("housing: unit {} (tl {tl_id}) received faction_id {}", unit.obj_id, unit.faction_id);
+        }
+    }
 }
 
 /// `CSCreateHouse` accepted: the server sends `SCMyHouse` and then spawns the house. The original build window
