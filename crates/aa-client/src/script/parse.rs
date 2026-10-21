@@ -114,6 +114,9 @@ pub enum Cmd {
     WalkForward(f32),
     /// Walk next to a unit.
     WalkToUnit(Spec),
+    /// Plant an item (`item_spawn_doodads`) `dx`/`dy` metres from the player, at its use range and ground rules;
+    /// the optional yaw is in radians (default: the player's facing).
+    Plant { item: u32, dx: f32, dy: f32, yaw: Option<f32> },
     /// Turn the character and camera to a heading (degrees, counter-clockwise from north).
     Face(f32),
     /// Turn the character and camera to a unit.
@@ -268,6 +271,12 @@ pub fn parse_line(line: &str) -> Result<Option<Cmd>, String> {
             None => return Err("face needs degrees or a unit".into()),
         },
         "tp" => Cmd::Tp(num(a.first(), "x")?, num(a.get(1), "y")?, num(a.get(2), "z")?),
+        "plant" => Cmd::Plant {
+            item: int(a.first(), "item template")?,
+            dx: num(a.get(1), "dx")?,
+            dy: num(a.get(2), "dy")?,
+            yaw: a.get(3).map(|s| s.parse::<f32>().map_err(|_| format!("bad yaw '{s}'"))).transpose()?,
+        },
         "gm" | "gmq" => Cmd::Gm(rest(text, 1)),
         "chat" | "say" => Cmd::Chat(rest(text, 1)),
         "target" => Cmd::Target(spec(a, 0, Spec::Nearest)?),
@@ -355,6 +364,15 @@ mod tests {
         assert_eq!(lines[6].cmd, Cmd::WaitFor(Cond { negate: false, kind: CondKind::Quest(7) }, 5.0));
         assert_eq!(lines[7].cmd, Cmd::Await { event: "QuestStarted".into(), secs: 12.0, must: true });
         assert_eq!(lines[8].cmd, Cmd::Interact(Spec::Template(24)));
+    }
+
+    #[test]
+    fn parses_the_plant_command() {
+        let lines = parse("plant 15646 0.5 0\nplant 15646 -1 2 1.25\n", "t").unwrap();
+        assert_eq!(lines[0].cmd, Cmd::Plant { item: 15646, dx: 0.5, dy: 0.0, yaw: None });
+        assert_eq!(lines[1].cmd, Cmd::Plant { item: 15646, dx: -1.0, dy: 2.0, yaw: Some(1.25) });
+        assert!(parse("plant 15646 0.5", "s").is_err());
+        assert!(parse("plant seed 0 0", "s").is_err());
     }
 
     #[test]

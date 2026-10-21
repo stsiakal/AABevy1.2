@@ -253,6 +253,10 @@ struct Ctx<'w, 's> {
     commands: Commands<'w, 's>,
     offscreen: Option<Res<'w, aa_dev::OffscreenTarget>>,
     exit: MessageWriter<'w, AppExit>,
+    catalog: Res<'w, crate::ingame::placement::Catalog>,
+    terrain: Option<Res<'w, aa_world::TerrainQuery>>,
+    collision: Option<Res<'w, aa_world::WorldCollision>>,
+    water: Option<Res<'w, aa_world::WaterQuery>>,
 }
 
 /// A unit or doodad a spec named.
@@ -598,6 +602,44 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
         Cmd::Tp(x, y, z) => {
             c.net.write(NetCommand(Command::Chat { chat_type: aa_net::model::chat_type::SAY, target: String::new(), message: format!("/move {x} {y} {z}") }));
             Some(Active::Wait { until: now + 3.0 })
+        }
+        Cmd::Plant { item, dx, dy, yaw } => {
+            let Some(me) = c.me() else {
+                r.fail("no player".into());
+                return None;
+            };
+            let facing = c.movers.single().map_or(0.0, |m| m.facing);
+            match crate::ingame::placement::plant_now(
+                &c.catalog,
+                &c.doodads,
+                &c.inventory,
+                c.collision.as_deref(),
+                c.terrain.as_deref(),
+                c.water.as_deref(),
+                me,
+                facing,
+                *item,
+                *dx,
+                *dy,
+                *yaw,
+            ) {
+                Ok(request) => {
+                    let pos = request.pos;
+                    say(
+                        r,
+                        &format!(
+                            "planting item {item} as doodad {} at ({:.2}, {:.2}, {:.2}), yaw {:.2}",
+                            request.id, pos.x, pos.y, pos.z, request.z_rot
+                        ),
+                    );
+                    c.net.write(NetCommand(Command::CreateDoodad(request)));
+                    Some(Active::Await { event: "DoodadsSpawned".into(), deadline: now + 10.0, must: false })
+                }
+                Err(why) => {
+                    r.fail(format!("plant {item}: {why}"));
+                    None
+                }
+            }
         }
         Cmd::Gm(text) => {
             c.net.write(NetCommand(Command::Chat { chat_type: aa_net::model::chat_type::SAY, target: String::new(), message: format!("/{}", text.trim_start_matches('/')) }));

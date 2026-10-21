@@ -2272,3 +2272,65 @@ script is replaced). Wire side in `docs/aa-net.md` ("Titles").
 Tests: `cargo test -p aa-client appellation` (5). Live (AAEmu Rust server, headless script and windowed): owned titles
 list in the window, changing and removing the title updates the own plate and the server's answer.
 
+
+## Planting (2026-10-21)
+
+`crates/aa-client/src/ingame/placement.rs` turns a seed / sapling / livestock item's use into a placement session:
+the HUD (`hud/panels.rs`) sees `item_spawn_doodads` in `GameData` and sends `PlantPressed` instead of the item's
+skill. The look follows the original 1.2 capture of 2026-10-21 (rice seed `15646` and a spruce sapling, Gweonid
+Forest): the doodad's plain model under the cursor, a ring of leaf petals (yellow valid, red invalid, mixed when part
+of the footprint touches something), the client's white / red placement cursor, a red ground arrow and the top-centre
+error text.
+
+* **Item -> doodad**: `item_spawn_doodads` is the client database's seed link (`item 15646` rice -> doodad `2246`,
+  `14899` spruce sapling -> `367`, `13725` fig sapling -> `380`). The planting skills (10953 / 25536) are shared by a
+  class of seeds and only name a work item, so they cannot tell the doodad. The start phase is the first
+  `doodad_func_groups` row with `doodad_func_group_kind_id = 1` (else the first normal one), exactly the server's
+  `GetFuncGroupId`.
+* **Ghost model**: the capture shows a *full-grown spruce* for the sapling, so the ghost is the doodad template's own
+  model (`doodad_almighties.model`), not the start-phase model: rice `common_plants_rice01.cgf`, spruce
+  `sub_tree_bigfir02.cgf` (the start phase would be `sub_tree_bigfir01_grow03.cgf`). The model is drawn plain: no
+  tint, no transparency, no grid.
+* **Ring**: petals use the original leaf atlas `game/textures/p_effects/leaf_03.dds`, the texture of
+  `game/materials/effects/leaf_shape.mtl`; the native ring's white / red materials are
+  `game/materials/special/housing_build_normal.mtl` and `housing_build_invalid.mtl`. The ring radius follows
+  `doodad_almighties.sim_radius` (rice 0.5 m, spruce 2 m), so a tree gets a large ring. A petal turns red when it
+  touches another character- or house-placed doodad; the mixed ring is the retail "too close" warning. The decal is
+  rebuilt every frame (the capture is one frame; the original only updated on mouse events, deliberately not copied).
+* **Cursor**: the original icons were found: `game/ui/cursor/housing_position.dds` (white house + crosshair) and
+  `game/ui/cursor/housing_invalid.dds` (red house + x), with `housing_rotation.dds` / `housing_elevation.dds` /
+  `housing_zoom.dds` for the other housing modes. They are drawn as a camera-attached quad and the OS cursor is hidden
+  while placing. The red ground arrow uses `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn
+  natively; no matching model was found in the pak, so this is the closest original asset, a placeholder).
+* **Rotation**: the mouse wheel turns the ghost; Alt makes it fine (1 degree), Shift gives 15 degrees per step;
+  Ctrl leaves the wheel to the camera zoom. The initial yaw is the camera heading (`OrbitCamera::yaw`), matching the
+  capture's two placements (4.2020082 and 3.166932 rad), with the player's facing as fallback. Arrow keys / `,` / `.`
+  remain as keyboard extras.
+* **Validity** (the server stays authoritative): the spot must be within the item's use skill range (`skills.max_range`,
+  2 m for the planting skills), on ground or on water when a phase of the template has a `DoodadFuncWaterVolume`, not
+  on a road / stone / metal surface (`WorldCollision::surface_below`), and clear of another character-placed or
+  house-placed doodad's footprint (`doodad_almighties.sim_radius`, mm). System world doodads do not block.
+* **Confirm / cancel**: left click on a valid spot sends `Command::CreateDoodad` (doodad id, x/y long-encoded, z, yaw,
+  scale 1, item instance id) and ends the mode. An invalid click sends nothing and prints the retail text at the top
+  centre: "Can't be installed here." (bad surface), "Too close to other objects." (footprint) or
+  "Can't place this for N second(s)." (the use skill's cooldown, from `SCCooldowns` / the database). Those three texts
+  are hard-coded from the capture: no `locale` key for them was found in the UI scripts (`hud/build_guide.alb` is the
+  tutorial window with `locale.common.buildGuide1-4`, not the errors). Escape / right click cancels; picking an item up
+  onto the cursor also ends the mode. Nothing is consumed locally: the doodad and the item update come from the server.
+* **Public farms**: `hud/farm.rs` answers the original `X2.GetCommonFarmInfo`, `GetFarmGorupInfo` (the bytecode's order
+  is type, max count, name), `GetFarmGroupDoodadList`, `GetFarmGroups`, `GetRuntimeCommonFarmDoodadsInfo`,
+  `GetRuntimeCommonFarmDoodadCount` and `RequestRuntimeCommonFarmDoodadInfo` from `aa_net::Farms` and the
+  `farm_groups` / `farm_group_doodads` / `common_farms` tables. `SCShowCommonFarm` raises `OPEN_COMMON_FARM_INFO`
+  (with the farm type) and asks for `CSRequestCommonFarmList`; the list raises `COMMON_FARM_UPDATED`. Growth and
+  protection times are seconds; `growUp` is `time_left == 0`. Before the database is loaded the reference capture's
+  fake farm tables stay (`FALLBACK`).
+* **Script**: `plant ITEM DX DY [YAW]` (see `aa-client-script.md`) uses the same catalogue, ground and validity code
+  without a cursor, finds the item instance in the bag and sends the same command.
+
+Tests: `cargo test -p aa-client placement`, `farm`, `script::parse` (item lookup and the template model against the
+real database when `AA_DB` is set, ground / auto-z maths, range / water / surface / footprint rules, the mixed ring,
+the retail error texts, golden `CSCreateDoodad` bytes, command parser).
+
+Not done: house placement and construction (the `housings` auto-z fields are not read yet), decoration placement,
+garden plots (`DoodadFuncHouseFarm` is a server no-op), the snap grid (10.x only; default off), harvesting changes and
+the exact retail ground-arrow model (the road arrow is the placeholder).

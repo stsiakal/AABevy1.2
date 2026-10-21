@@ -63,6 +63,7 @@ Distance is from the player; `hostile` / `friendly` use the nameplate relation.
 | `cast SKILL [SPEC]` | `CSStartSkill` on the spec (default: current target, else self); waits for `SkillStarted`, fails when refused; `cast slot N` presses action bar slot N |
 | `interact [SPEC]` | the right click on an NPC (default `friendly`): the scripted pick goes through `hud::dialog::talk_input` (reach 6 m, hostile or dead NPCs are refused as for the mouse); waits until the talk began |
 | `interact doodad SPEC SKILL` | `CSStartSkill` with a doodad target (the client has no doodad click yet) |
+| `plant ITEM DX DY [YAW]` | plant an `item_spawn_doodads` item `DX`/`DY` metres from the player (same use range, ground and footprint checks as the ghost; `YAW` in radians, default the player's facing), then `CSCreateDoodad` and waits for `DoodadsSpawned` |
 | `accept [QUEST]` / `complete [QUEST [REWARD]]` | the dialog's Accept / Complete buttons (default: the first offered / hand-in quest); waits for the server |
 | `endtalk` | close the NPC talk |
 | `loot [SPEC]` | waits until a corpse with loot is in reach, presses F (loot all), waits for the server's answer |

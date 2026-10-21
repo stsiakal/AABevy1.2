@@ -61,6 +61,7 @@ mod sorting;
 mod specialty;
 mod formula;
 mod family;
+mod farm;
 mod expedition;
 mod friends;
 mod input;
@@ -445,6 +446,7 @@ impl Plugin for HudPlugin {
         party::plugin(app);
         friends::plugin(app);
         family::plugin(app);
+        farm::plugin(app);
         expedition::plugin(app);
         achievement::plugin(app);
         chat::config::plugin(app);
@@ -474,6 +476,7 @@ impl Plugin for HudPlugin {
             .insert_resource(chat::ScriptedKeys::from_args())
             .insert_resource(alerts::ScriptedFails::from_args())
             .add_message::<alerts::UseFailed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::combat::DamageLanded>()
             .insert_resource(session::ScriptedSession::from_args())
             .insert_resource(cameras::DevFov::from_args())

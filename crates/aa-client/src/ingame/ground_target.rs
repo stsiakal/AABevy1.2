@@ -268,7 +268,7 @@ fn cursor_of(window: Option<&Window>, script: &Script) -> Option<Vec2> {
 }
 
 /// The first spot of the ground (or of an object) under the view ray through `cursor`, in game coordinates.
-fn spot_under(camera: &Camera, transform: &GlobalTransform, cursor: Vec2, collision: Option<&WorldCollision>, terrain: Option<&TerrainQuery>) -> Option<Vec3> {
+pub(crate) fn spot_under(camera: &Camera, transform: &GlobalTransform, cursor: Vec2, collision: Option<&WorldCollision>, terrain: Option<&TerrainQuery>) -> Option<Vec3> {
     let ray = camera.viewport_to_world(transform, cursor).ok()?;
     let origin = bevy_to_cry(ray.origin);
     let dir = bevy_to_cry(*ray.direction);
