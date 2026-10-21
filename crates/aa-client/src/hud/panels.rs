@@ -23,6 +23,7 @@ use super::api::HudBridge;
 use super::data::{GameData, Snapshot};
 use super::usable::Env;
 use crate::ingame::ground_target::SkillPressed;
+use crate::ingame::placement::PlantPressed;
 
 /// One action bar slot (or bag slot).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -510,7 +511,8 @@ pub struct Changed {
 
 /// Use what is in action bar slot `slot` (0 based): cast the skill, use the item. What the client already knows is
 /// refused (no target, too far, no mana ...) is not sent: the alert says why instead ([`UseFailed`]).
-pub fn use_slot(slot: usize, env: &Env, bar: &ActionBar, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
+#[allow(clippy::too_many_arguments)]
+pub fn use_slot(slot: usize, env: &Env, bar: &ActionBar, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, failed: &mut MessageWriter<UseFailed>) {
     let Some(action) = bar.get(slot) else { return };
     let target_obj_id = target.obj_id.unwrap_or(0);
     match action.kind {
@@ -532,22 +534,27 @@ pub fn use_slot(slot: usize, env: &Env, bar: &ActionBar, inventory: &Inventory, 
                 failed.write(UseFailed { skill: 0, result: super::usable::code::NEED_REAGENT, value: action.item_template_id().unwrap_or(0), server: false });
                 return;
             };
-            use_item(item, env, target_obj_id, net, failed);
+            use_item(item, env, target_obj_id, net, plant, failed);
         }
         _ => {}
     }
 }
 
 /// Use a bag item (a right click in the bag window): its skill, on the target.
-pub fn use_bag_slot(slot: usize, env: &Env, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
+pub fn use_bag_slot(slot: usize, env: &Env, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, failed: &mut MessageWriter<UseFailed>) {
     if let Some(Some(item)) = inventory.bag.get(slot) {
-        use_item(item, env, target.obj_id.unwrap_or(0), net, failed);
+        use_item(item, env, target.obj_id.unwrap_or(0), net, plant, failed);
     }
 }
 
-fn use_item(item: &aa_net::model::Item, env: &Env, target_obj_id: u32, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
+fn use_item(item: &aa_net::model::Item, env: &Env, target_obj_id: u32, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, failed: &mut MessageWriter<UseFailed>) {
     if let Some((skill, f)) = env.precheck_item(item.template_id) {
         failed.write(UseFailed { skill, result: f.result, value: f.value, server: false });
+        return;
+    }
+    // a seed / sapling / livestock item opens the placement ghost instead of casting its use skill
+    if env.game.and_then(|g| g.doodad_for_item(item.template_id)).is_some() {
+        plant.write(PlantPressed { item_id: item.id, item_template: item.template_id });
         return;
     }
     let skill_id = env.game.and_then(|g| g.items.get(&item.template_id)).map_or(0, |i| i.use_skill);
@@ -567,12 +574,13 @@ pub fn action_keys(
     buffs: Res<Buffs>,
     mut script: ResMut<super::chat::ScriptedKeys>,
     mut net: MessageWriter<SkillPressed>,
+    mut plant: MessageWriter<PlantPressed>,
     mut failed: MessageWriter<UseFailed>,
 ) {
     if let Some(slot) = script.take_slot() {
         let data = bridge.0.borrow();
         let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-        use_slot(slot, &env, &bar, &inventory, &target, &mut net, &mut failed);
+        use_slot(slot, &env, &bar, &inventory, &target, &mut net, &mut plant, &mut failed);
     }
     if focus.0 {
         return;
@@ -581,7 +589,7 @@ pub fn action_keys(
         if !button && action == "action_bar_button" && (1..=58).contains(&slot) {
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-            use_slot(slot as usize - 1, &env, &bar, &inventory, &target, &mut net, &mut failed);
+            use_slot(slot as usize - 1, &env, &bar, &inventory, &target, &mut net, &mut plant, &mut failed);
         }
     }
 }

@@ -114,6 +114,9 @@ pub enum Cmd {
     WalkForward(f32),
     /// Walk next to a unit.
     WalkToUnit(Spec),
+    /// Plant an item (`item_spawn_doodads`) `dx`/`dy` metres from the player, at its use range and ground rules;
+    /// the optional yaw is in radians (default: the player's facing).
+    Plant { item: u32, dx: f32, dy: f32, yaw: Option<f32> },
     /// Turn the character and camera to a heading (degrees, counter-clockwise from north).
     Face(f32),
     /// Turn the character and camera to a unit.
@@ -122,8 +125,15 @@ pub enum Cmd {
     Gm(String),
     Chat(String),
     Target(Spec),
-    /// Left click on a unit (the click path of the mouse: the pick, not the ray).
+    /// Left click on a unit (the click path of the mouse: the pick, not the ray); `click left|right` is the
+    /// script's virtual mouse.
     Click(Spec),
+    /// The virtual cursor in window pixels, or a fraction when both values are 0..=1.
+    Cursor(f32, f32),
+    /// A virtual mouse click (`left` / `right`), consumed by placement/pointer code.
+    VirtualClick(bool),
+    /// A virtual mouse-wheel notch and its modifiers.
+    Wheel { steps: f32, shift: bool, alt: bool, ctrl: bool },
     Cast(u32, Option<Spec>),
     CastSlot(usize),
     /// Keep casting (a skill id, or `slot N`) at a unit every 1.5 s until it is dead, at most this many seconds.
@@ -268,10 +278,28 @@ pub fn parse_line(line: &str) -> Result<Option<Cmd>, String> {
             None => return Err("face needs degrees or a unit".into()),
         },
         "tp" => Cmd::Tp(num(a.first(), "x")?, num(a.get(1), "y")?, num(a.get(2), "z")?),
+        "plant" => Cmd::Plant {
+            item: int(a.first(), "item template")?,
+            dx: num(a.get(1), "dx")?,
+            dy: num(a.get(2), "dy")?,
+            yaw: a.get(3).map(|s| s.parse::<f32>().map_err(|_| format!("bad yaw '{s}'"))).transpose()?,
+        },
         "gm" | "gmq" => Cmd::Gm(rest(text, 1)),
         "chat" | "say" => Cmd::Chat(rest(text, 1)),
         "target" => Cmd::Target(spec(a, 0, Spec::Nearest)?),
+        "click" | "pick" if matches!(first.as_deref(), Some("left" | "right")) => Cmd::VirtualClick(first.as_deref() == Some("right")),
         "click" | "pick" => Cmd::Click(spec(a, 0, Spec::Nearest)?),
+        "cursor" => Cmd::Cursor(num(a.first(), "x")?, num(a.get(1), "y")?),
+        "wheel" => {
+            let steps = num(a.first(), "steps")?;
+            let modifiers = &a[1..];
+            Cmd::Wheel {
+                steps,
+                shift: modifiers.iter().any(|m| m.eq_ignore_ascii_case("shift")),
+                alt: modifiers.iter().any(|m| m.eq_ignore_ascii_case("alt")),
+                ctrl: modifiers.iter().any(|m| m.eq_ignore_ascii_case("ctrl")),
+            }
+        }
         "cast" => match first.as_deref() {
             Some("slot") => Cmd::CastSlot(int(a.get(1), "slot")? as usize),
             _ => Cmd::Cast(int(a.first(), "skill id")?, a.get(1).map(|s| Spec::parse(s)).transpose()?),
@@ -355,6 +383,29 @@ mod tests {
         assert_eq!(lines[6].cmd, Cmd::WaitFor(Cond { negate: false, kind: CondKind::Quest(7) }, 5.0));
         assert_eq!(lines[7].cmd, Cmd::Await { event: "QuestStarted".into(), secs: 12.0, must: true });
         assert_eq!(lines[8].cmd, Cmd::Interact(Spec::Template(24)));
+    }
+
+    #[test]
+    fn parses_the_plant_command() {
+        let lines = parse("plant 15646 0.5 0\nplant 15646 -1 2 1.25\n", "t").unwrap();
+        assert_eq!(lines[0].cmd, Cmd::Plant { item: 15646, dx: 0.5, dy: 0.0, yaw: None });
+        assert_eq!(lines[1].cmd, Cmd::Plant { item: 15646, dx: -1.0, dy: 2.0, yaw: Some(1.25) });
+        assert!(parse("plant 15646 0.5", "s").is_err());
+        assert!(parse("plant seed 0 0", "s").is_err());
+    }
+
+    #[test]
+    fn parses_the_virtual_pointer_commands() {
+        let lines = parse("cursor 0.5 0.6\ncursor 1250 1000\nclick left\nclick right\nwheel 1\nwheel -2 shift\nwheel 1 alt ctrl\n", "t").unwrap();
+        assert_eq!(lines[0].cmd, Cmd::Cursor(0.5, 0.6));
+        assert_eq!(lines[1].cmd, Cmd::Cursor(1250.0, 1000.0));
+        assert_eq!(lines[2].cmd, Cmd::VirtualClick(false));
+        assert_eq!(lines[3].cmd, Cmd::VirtualClick(true));
+        assert_eq!(lines[4].cmd, Cmd::Wheel { steps: 1.0, shift: false, alt: false, ctrl: false });
+        assert_eq!(lines[5].cmd, Cmd::Wheel { steps: -2.0, shift: true, alt: false, ctrl: false });
+        assert_eq!(lines[6].cmd, Cmd::Wheel { steps: 1.0, shift: false, alt: true, ctrl: true });
+        assert!(parse("cursor 0.5", "s").is_err());
+        assert!(parse("wheel", "s").is_err());
     }
 
     #[test]

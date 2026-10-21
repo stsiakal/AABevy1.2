@@ -272,6 +272,13 @@ pub struct GameData {
     pub(super) housing: housing::Tables,
 }
 
+impl GameData {
+    /// The doodad template an item plants (`item_spawn_doodads`, the seed / sapling link).
+    pub fn doodad_for_item(&self, item: u32) -> Option<u32> {
+        self.housing.doodad_by_item.get(&item).copied()
+    }
+}
+
 /// The server's experience table (`levels.total_exp`, levels 1..=55), which replaces the client's
 /// hardcoded 1.2 curve in aa-net (51-55 are the 3.0 retail values on a patched server).
 pub(crate) fn load_exp_table(path: &str) -> Result<aa_net::model::exp::ExpTable, String> {

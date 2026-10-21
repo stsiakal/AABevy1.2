@@ -225,7 +225,23 @@ fn event_name(e: &Event) -> String {
 
 fn name_matches(name: &str, pattern: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n == pattern || (n.starts_with(pattern) && n.as_bytes().get(pattern.len()) == Some(&b'.'))
+    // aa-net exposes SCDoodadCreated as `Event::DoodadsSpawned`; scripts and the server log call the packet
+    // `DoodadsCreated`, so the two names are interchangeable here.
+    let alias = matches!((n.as_str(), pattern), ("doodadsspawned", "doodadscreated") | ("doodadscreated", "doodadsspawned"));
+    alias || n == pattern || (n.starts_with(pattern) && n.as_bytes().get(pattern.len()) == Some(&b'.'))
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::name_matches;
+
+    #[test]
+    fn the_doodad_created_names_are_aliases() {
+        assert!(name_matches("DoodadsSpawned", "doodadscreated"));
+        assert!(name_matches("DoodadsCreated", "doodadsspawned"));
+        assert!(name_matches("Interaction.SkillList", "interaction"));
+        assert!(!name_matches("UnitSpawned", "doodadscreated"));
+    }
 }
 
 #[derive(SystemParam)]
@@ -253,6 +269,12 @@ struct Ctx<'w, 's> {
     commands: Commands<'w, 's>,
     offscreen: Option<Res<'w, aa_dev::OffscreenTarget>>,
     exit: MessageWriter<'w, AppExit>,
+    catalog: Res<'w, crate::ingame::placement::Catalog>,
+    placement: Res<'w, crate::ingame::placement::Placement>,
+    virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
+    terrain: Option<Res<'w, aa_world::TerrainQuery>>,
+    collision: Option<Res<'w, aa_world::WorldCollision>>,
+    water: Option<Res<'w, aa_world::WaterQuery>>,
 }
 
 /// A unit or doodad a spec named.
@@ -599,6 +621,44 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             c.net.write(NetCommand(Command::Chat { chat_type: aa_net::model::chat_type::SAY, target: String::new(), message: format!("/move {x} {y} {z}") }));
             Some(Active::Wait { until: now + 3.0 })
         }
+        Cmd::Plant { item, dx, dy, yaw } => {
+            let Some(me) = c.me() else {
+                r.fail("no player".into());
+                return None;
+            };
+            let facing = c.movers.single().map_or(0.0, |m| m.facing);
+            match crate::ingame::placement::plant_now(
+                &c.catalog,
+                &c.doodads,
+                &c.inventory,
+                c.collision.as_deref(),
+                c.terrain.as_deref(),
+                c.water.as_deref(),
+                me,
+                facing,
+                *item,
+                *dx,
+                *dy,
+                *yaw,
+            ) {
+                Ok(request) => {
+                    let pos = request.pos;
+                    say(
+                        r,
+                        &format!(
+                            "planting item {item} as doodad {} at ({:.2}, {:.2}, {:.2}), yaw {:.2}",
+                            request.id, pos.x, pos.y, pos.z, request.z_rot
+                        ),
+                    );
+                    c.net.write(NetCommand(Command::CreateDoodad(request)));
+                    Some(Active::Await { event: "DoodadsCreated".into(), deadline: now + 10.0, must: false })
+                }
+                Err(why) => {
+                    r.fail(format!("plant {item}: {why}"));
+                    None
+                }
+            }
+        }
         Cmd::Gm(text) => {
             c.net.write(NetCommand(Command::Chat { chat_type: aa_net::model::chat_type::SAY, target: String::new(), message: format!("/{}", text.trim_start_matches('/')) }));
             Some(Active::Wait { until: now + 0.6 })
@@ -727,7 +787,26 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Wait { until: now + 0.5 })
         }
         Cmd::Key(k) => {
-            c.keys.push_now(k, false);
+            c.virtual_input.queue_key_name(k);
+            // while placing, Escape belongs to the placement (retail opens no Menu); do not hand it to the UI
+            if !(c.placement.session.is_some() && matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc")) {
+                c.keys.push_now(k, false);
+            }
+            Some(Active::Wait { until: now + 0.3 })
+        }
+        Cmd::Cursor(x, y) => {
+            c.virtual_input.set_cursor(*x, *y);
+            say(r, &format!("virtual cursor {x} {y}"));
+            Some(Active::Wait { until: now + 0.2 })
+        }
+        Cmd::VirtualClick(right) => {
+            c.virtual_input.queue_click(if *right { MouseButton::Right } else { MouseButton::Left });
+            say(r, &format!("virtual {} click", if *right { "right" } else { "left" }));
+            Some(Active::Wait { until: now + 0.4 })
+        }
+        Cmd::Wheel { steps, shift, alt, ctrl } => {
+            c.virtual_input.queue_wheel(*steps, *shift, *alt, *ctrl);
+            say(r, &format!("virtual wheel {steps} (shift {shift}, alt {alt}, ctrl {ctrl})"));
             Some(Active::Wait { until: now + 0.3 })
         }
         Cmd::Type(t) => {

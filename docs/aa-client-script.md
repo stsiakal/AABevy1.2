@@ -63,12 +63,16 @@ Distance is from the player; `hostile` / `friendly` use the nameplate relation.
 | `cast SKILL [SPEC]` | `CSStartSkill` on the spec (default: current target, else self); waits for `SkillStarted`, fails when refused; `cast slot N` presses action bar slot N |
 | `interact [SPEC]` | the right click on an NPC (default `friendly`): the scripted pick goes through `hud::dialog::talk_input` (reach 6 m, hostile or dead NPCs are refused as for the mouse); waits until the talk began |
 | `interact doodad SPEC SKILL` | `CSStartSkill` with a doodad target (the client has no doodad click yet) |
+| `plant ITEM DX DY [YAW]` | plant an `item_spawn_doodads` item `DX`/`DY` metres from the player (same use range, ground and footprint checks as the ghost; `YAW` in radians, default the player's facing), then `CSCreateDoodad` and waits for `DoodadsCreated` (alias of aa-net `DoodadsSpawned`) |
 | `accept [QUEST]` / `complete [QUEST [REWARD]]` | the dialog's Accept / Complete buttons (default: the first offered / hand-in quest); waits for the server |
 | `endtalk` | close the NPC talk |
 | `loot [SPEC]` | waits until a corpse with loot is in reach, presses F (loot all), waits for the server's answer |
 | `chat TEXT`, `gm CMD`, `tp X Y Z` | say-chat; a GM command (`/CMD`); `/move X Y Z` |
 | `open ACTION` | a key binding action (`toggle_bag`, `toggle_character`, ...) |
-| `key NAME`, `close`, `type TEXT` | a scripted key (`enter`, `escape`, `tab`, `slotN`, `f`, `g`, ...), Escape, typed text |
+| `key NAME`, `close`, `type TEXT` | a scripted key (`enter`, `escape`, `tab`, `slotN`, `f`, `g`, ...), Escape, typed text; `key`/`close` also queue the key for placement |
+| `cursor X Y` | the virtual pointer at window pixels, or a fraction of the window when both values are 0..=1 (`cursor 0.5 0.6`); placement uses it instead of the OS cursor, including `--offscreen-shot` |
+| `click left` / `click right` | a virtual mouse click for placement (confirm / cancel); the OS mouse is untouched |
+| `wheel STEPS [alt\|shift\|ctrl]` | a virtual wheel notch for placement rotation (same mapping as the real wheel; `ctrl` leaves it to the camera) |
 | `uiclick X Y`, `uirclick X Y`, `uihover X Y` | `--hud-click` at a physical pixel |
 | `lua CODE` | run Lua in the UI state (an error fails) |
 | `await EVENT [S]`, `tryawait EVENT [S]` | wait for a client event (default 60 s / 10 s); `await` fails on timeout. EVENT is the `aa_net::Event` variant name; nested ones as `Interaction.SkillList`; matched by prefix, case-insensitive. Events that arrive before the `await` stay queued |

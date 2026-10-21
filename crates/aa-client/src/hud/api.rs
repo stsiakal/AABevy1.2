@@ -49,6 +49,8 @@ pub enum Request {
     Friend(aa_net::friend::FriendCommand),
     Target { obj_id: u32 },
     ItemEffect { character_id: u32, request: aa_net::item_effect::ItemEffectRequest },
+    /// `HUD.request("farm_list")` / `X2.RequestRuntimeCommonFarmDoodadInfo`: ask for `SCResponseCommonFarmList`.
+    FarmList,
 }
 
 /// Edge-to-edge distance on the ground plane, the server's `distance_to(..., include_z = false)`:
@@ -124,6 +126,8 @@ pub struct HudData {
     pub party: aa_net::Party,
     pub friends: aa_net::Friends,
     pub(super) family: super::family::View,
+    /// The public farm groups and the player's planted crops (`farm.rs`).
+    pub(super) farm: super::farm::View,
     pub(super) expedition: super::expedition::View,
     pub(super) achievement: super::achievement::View,
     pub(super) chat_config: super::chat::config::View,
@@ -195,6 +199,7 @@ impl Default for HudData {
             party: Default::default(),
             friends: Default::default(),
             family: Default::default(),
+            farm: Default::default(),
             expedition: Default::default(),
             achievement: Default::default(),
             chat_config: Default::default(),
@@ -321,6 +326,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::crafting::install(lua, bridge)?;
     super::pets::install(lua, bridge)?;
     super::family::install(lua, bridge)?;
+    super::farm::install(lua, bridge)?;
     super::expedition::install(lua, bridge)?;
     super::achievement::install(lua, bridge)?;
     crate::settings::install_hud(lua)?;
@@ -864,6 +870,7 @@ pub fn handle_requests(
     buffs: Res<aa_net::state::Buffs>,
     mut failed: MessageWriter<super::alerts::UseFailed>,
     mut pressed: MessageWriter<crate::ingame::ground_target::SkillPressed>,
+    mut plant: MessageWriter<crate::ingame::placement::PlantPressed>,
     emotes: Option<Res<crate::ingame::emote::Emotes>>,
 ) {
     let requests = std::mem::take(&mut bridge.0.borrow_mut().requests);
@@ -873,6 +880,7 @@ pub fn handle_requests(
             Request::Party(command) => { net.write(NetCommand(Command::Party(command))); }
             Request::Friend(command) => { net.write(NetCommand(Command::Friend(command))); }
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
+            Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
             Request::ItemEffect { character_id, request } => {
                 // The typed request was captured by the original enchant API.
                 // A replacement operation may retire a queued command before
@@ -914,12 +922,12 @@ pub fn handle_requests(
             Request::UseAction { slot } => {
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-                panels::use_slot(slot - 1, &env, &bar, &inventory, &target, &mut pressed, &mut failed);
+                panels::use_slot(slot - 1, &env, &bar, &inventory, &target, &mut pressed, &mut plant, &mut failed);
             }
             Request::UseBag { slot } => {
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-                panels::use_bag_slot(slot - 1, &env, &inventory, &target, &mut pressed, &mut failed);
+                panels::use_bag_slot(slot - 1, &env, &inventory, &target, &mut pressed, &mut plant, &mut failed);
             }
             Request::Resurrect { in_place } => {
                 net.write(NetCommand(Command::Resurrect { in_place }));
@@ -1133,7 +1141,7 @@ mod tests {
             .init_resource::<aa_net::state::ActionBar>().init_resource::<aa_net::state::Inventory>()
             .init_resource::<aa_net::state::Target>().init_resource::<aa_net::state::Skills>().init_resource::<aa_net::state::Buffs>()
             .add_message::<NetCommand>().add_message::<super::super::alerts::UseFailed>()
-            .add_message::<crate::ingame::ground_target::SkillPressed>().add_systems(Update, handle_requests);
+            .add_message::<crate::ingame::ground_target::SkillPressed>().add_message::<crate::ingame::placement::PlantPressed>().add_systems(Update, handle_requests);
         app.update();
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
         assert!(matches!(&commands[..], [NetCommand(Command::Chat { chat_type:-3,target,message })]

@@ -46,6 +46,7 @@ mod flow;
 pub(crate) mod ground_target;
 mod idle;
 mod mount;
+pub(crate) mod placement;
 pub(crate) mod player;
 mod prepare;
 mod prewarm;
@@ -57,6 +58,7 @@ mod swim;
 pub(crate) mod teleport;
 mod trace;
 pub(crate) mod units;
+pub(crate) mod virtual_input;
 pub(crate) mod warm;
 pub(crate) mod weapons;
 
@@ -117,12 +119,14 @@ impl Plugin for InGamePlugin {
             .add_plugins(emote::plugin)
             .add_plugins(combat::plugin)
             .add_plugins(ground_target::plugin)
+            .add_plugins(placement::plugin)
             .add_plugins(skill_motion::plugin)
             .add_plugins(sounds::plugin)
             .add_plugins(stealth::plugin)
             .add_plugins(flow::plugin)
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)
+            .add_plugins(virtual_input::plugin)
             .add_plugins(doodad_visual::plugin)
             .add_plugins(attachments::plugin)
             .add_plugins(bench::plugin)
