@@ -55,14 +55,49 @@ A unit with `Unit::attached_to` set (`SCUnitAttached`) becomes a `Rider`:
 
 * the mount is another unit, drawn like any creature (model, gait clips by its own speed);
 * the rider sits on the mount's `bone_spine_driver` (attach point 1) or `bone_spine_passenger`, faces the mount's facing, and
-  plays the rider clips of the mount's kind: `models.mount_pose_id` 1 horse, 2 lion, 4 wildboar, 10 pangolin give
+  plays the rider clips of the mount's kind: `models.mount_pose_id` 1 horse, 2 lion, 3 bear, 4 wildboar, 10 pangolin give
   `horse_ba_relaxed_idle`, `horse_mo_normal_walk_f`, `horse_mo_normal_run_f` (and the other prefixes), with the gait picked from
-  the mount's speed (idle below 0.3 m/s, walk below 3 m/s, run above) and the tempo copied from the mount's animator;
-* the rider's on-foot `Locomotion` is stashed and given back on `SCUnitDetached`.
+  the mount's speed (idle below 0.3 m/s, walk below 3 m/s, run above) and the tempo copied from the mount's animator. The bear
+  set has no mounted walk/run, so it keeps its idle;
+* `global_player.cal`'s authored `fist_ac_<kind>_l_geton` plays once when the seat appears and `fist_ac_<kind>_l_getoff` plays
+  once on `SCUnitDetached`; the on-foot `Locomotion` is held in a `Dismounting` component until that clip ends (or restored at
+  once when there is no clip/model). The local player uses the same clips through `LocalRider` (`mount.rs`), seated at the same
+  bones;
+* the local player's seat comes from `aa_net::state::Player::apply` keeping the server's `UnitAttached`/`UnitDetached` for its
+  own object on `PlayerSpawn.unit.attached_to` (the local player is not in `Units`). `control_player` freezes the on-foot
+  controller while attached and during the get-off clip.
 
 The server has no command that summons a mount, so the riders are checked with `AA_FAKE_MOUNT=1`: a horse (model 139) and a
 rider that looks like the local player appear next to the player and run a circle at 5 m/s.
-The offset between the seat bone and the rider's origin is a first guess, not checked against the real client.
+The offset between the seat bone and the rider's origin is still a first guess, not checked against the real client. A capture
+that would settle it: the original 1.2 client mounted on a known horse from a fixed side and rear camera, with the mount and
+rider world transforms, so the rider root's offset from `bone_spine_driver` can be read off the same frame.
+
+Mounted locomotion (`mount::drive_mount`): while the local player is the driver (attach point 1) the on-foot controller is
+frozen and the same keys drive the mate. `CSMoveUnit` names the mate object id (`aa_net::Command::MoveUnit`; the server's
+`apply_unit_move` accepts an owned mate and runs `on_mate_unit_move`), at 0.1 s intervals, with the ordinary unit body
+(position, yaw, velocity, `delta_movement`, ground/jump/fall and `stance::SWIM`). Walk/run come from the mate model's first
+`game_stances` row (`ai_move_speed_walk` / `ai_move_speed_run`), the body radius/height, jump height, gravity and turn rate
+from `actor_models` (`Db::mount_move`); `.`/Shift walk, NumLock auto-run, A/D turn the camera and the mount, both mouse
+buttons run, Space jumps, terrain/brush collision slides and falls use the same `aa-world` queries as the player. Deep water
+floats the mount at the surface at 45 % of its run speed. The camera follows the seated rider, which `pose_local_riders` keeps
+on the seat; `Motion` drives the mount's own walk/run/jump clips and the rider's gait. A dismount removes `DrivenMount`, reseeds
+the mount's received track and hands control back to the character at the seat position. Mounts do not dive; there is no
+native seat-bone offset oracle yet (see the capture note below). Tests: `mount::tests` check the horse walk/run/swim
+speeds, a forward input packet naming the mate object id with the expected velocity, and the driver-seat gate that restores
+on-foot control after dismount; `aa-net` covers the `MoveUnit` body. Full client suite 418 passed / 39 ignored, `aa-net`
+library 632 passed (including the mate-cast position target).
+
+The owned mount/dismiss flow is in `hud/pets/owned.rs`: `X2Mate:CanMount`/`CanDismiss` follow the original controller gates
+(25 m, shared two-second cooldown, casting/channel and pending action), `MountMate`/`UnMountMate`/`DismissPet` send the proven
+`CSMountMate`/`CSUnMountMate`/`CSRemoveMate`, and a mounted dismiss first unmounts with reason 10 then removes after the
+server's detach (native `39362070`). The mount reason byte follows the decompiled native `FUN_3909ae90`: the mount→player
+direction projected on the player's forward gives back 3 / front 4, the sides 1 or 2 by the cross sign, with the occupied
+seat override. `ISLOT_PET_ACTION` clicks reach `use_pet_action`, which sends a mate-cast `CSStartSkill` with the mate as the
+self target and the player's selection for unit-target skills; position-targeted mount skills send the mate-caster position
+target (`UseMateSkillAt`) at the selected target's spot, or the mate's own spot for a source-position row. `X2Mate:GetSpeedInfo`
+returns the last received movement report's horizontal speed in m/s, or
+no values without a pet.
 
 ## What is drawn (the census)
 
@@ -90,7 +125,9 @@ second figure.
 
 * `SCBuffUpdated` is decoded (`crates/aa-net/src/game.rs`, layout in `docs/aa-net.md`), but the AAEmu server never sends it, so live stack/charge updates do not arrive; a buff refresh comes as `SCBuffCreated` with the same index.
 * Combat idle is for creatures only; humanoid NPCs fight with the combat agent's clips.
-* Mount and rider placement is unverified against the real client; there are no mount skills, no mount dismount animation.
+* Mount and rider placement (the seat-bone offset) is unverified against the real client; the exact native seat/get-on
+  reason for every mount kind and underwater mount motion remain open. Mounted locomotion, mount skills and the get-off clip
+  now exist (see Mounts).
 * `SCUnitMovements` entries are all read as unit movements (the real client takes the type from the object).
 * Units beyond 140 m are not drawn.
 

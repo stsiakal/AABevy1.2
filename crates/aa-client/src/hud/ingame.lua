@@ -660,6 +660,10 @@ end
 AAUI.UseSlot = function(slotType, slotIdx, button)
   if slotType == ISLOT_ACTION then
     HUD.request("use_action", slotIdx)
+  elseif slotType == ISLOT_PET_ACTION then
+    -- `hud/pet_action_bar/pet.alb:531-545` establishes these slots; its `ShowActionBar`
+    -- (`:577-602`) bounds them by `X2Mate:GetNumMountSkills`.
+    HUD.request("use_pet_action", slotIdx)
   elseif slotType == ISLOT_BAG and button == "RightButton" then
     HUD.request("use_bag", slotIdx)
   end

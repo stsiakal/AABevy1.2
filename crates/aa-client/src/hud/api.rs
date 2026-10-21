@@ -39,6 +39,9 @@ pub enum Request {
     UseAction { slot: usize },
     /// `HUD.request("use_bag", slot)`: a right click on the bag item in real slot `slot` (1 based).
     UseBag { slot: usize },
+    /// `HUD.request("use_pet_action", index)`: the original pet bar's `ISLOT_PET_ACTION` slot (`1`
+    /// based in the displayed mount-skill order).
+    UsePetAction { slot: usize },
     /// `HUD.request("resurrect", inPlace)`: the death window's buttons (`X2Player:Resurrect(inPlace)`).
     Resurrect { in_place: bool },
     LearnSkill { id: u32 },
@@ -424,6 +427,7 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                 "leave_cancel" => Request::CancelLeave,
                 "use_action" => Request::UseAction { slot: num(1).max(1) as usize },
                 "use_bag" => Request::UseBag { slot: num(1).max(1) as usize },
+                "use_pet_action" => Request::UsePetAction { slot: num(1).max(1) as usize },
                 "resurrect" => Request::Resurrect { in_place: num(1) != 0 },
                 "learn_skill" => Request::LearnSkill { id: num(1).max(0) as u32 },
                 "learn_buff" => Request::LearnBuff { id: num(1).max(0) as u32 },
@@ -990,6 +994,12 @@ pub fn handle_requests(
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
                 panels::use_bag_slot(slot - 1, &env, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
+            }
+            Request::UsePetAction { slot } => {
+                let data = bridge.0.borrow();
+                if let Some(command) = super::pets::use_pet_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
+                    net.write(NetCommand(command));
+                }
             }
             Request::Resurrect { in_place } => {
                 net.write(NetCommand(Command::Resurrect { in_place }));

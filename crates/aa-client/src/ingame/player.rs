@@ -291,15 +291,25 @@ pub(super) fn floor_at(terrain: &TerrainQuery, collision: &WorldCollision, pos: 
     )
 }
 
+/// The on-foot controller owns the character only while the server has not seated it. A rider is
+/// driven by `mount::drive_mount` instead (and the seat position by `mount::pose_local_riders`).
+pub(super) fn on_foot_control(player: &aa_net::state::Player) -> bool {
+    on_foot_attached(player.spawn.as_ref().and_then(|spawn| spawn.unit.attached_to))
+}
+
+pub(super) fn on_foot_attached(attached: Option<aa_net::model::Attachment>) -> bool {
+    attached.is_none()
+}
+
 /// Keyboard movement, jumping, standing on the ground, swimming and the movement packets.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn control_player(
     time: Res<Time>,
     (keys, actions): (Res<ButtonInput<KeyCode>>, Res<crate::settings::Actions>),
     mouse: Res<ButtonInput<MouseButton>>,
     mut cameras: Query<&mut OrbitCamera>,
-    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>)>,
-    stats: Option<Res<aa_net::state::PlayerStats>>,
+    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>)>,
+    (net_player, stats): (Res<aa_net::state::Player>, Option<Res<aa_net::state::PlayerStats>>),
     terrain: Res<TerrainQuery>,
     collision: Res<WorldCollision>,
     water: Res<WaterQuery>,
@@ -311,7 +321,19 @@ pub fn control_player(
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     mut trace: Local<(f32, Option<bool>)>,
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting)) = player.single_mut() else { return };
+    // A rider sits where the mount's seat is (`mount::pose_local_riders`) and the server ignores its
+    // own movement while attached; the get-off one-shot holds the on-foot controls until it ends.
+    if !on_foot_control(&net_player) || dismounting {
+        *motion = Motion::default();
+        *input_state = PlayerInput::default();
+        mover.velocity = Vec3::ZERO;
+        mover.vz = 0.0;
+        mover.swim = None;
+        state.autorun = false;
+        state.was_active = false;
+        return;
+    }
     // a skill moves the character (a charge, a back step, a knockback): `skill_motion::drive_local` plays it and sends the packets
     if skill_moving && !dead {
         *input_state = PlayerInput::default();

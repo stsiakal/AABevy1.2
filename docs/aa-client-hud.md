@@ -1560,6 +1560,27 @@ does not consult that cap. Current HP/MP/level/name are received; maximum pools 
 existing observed lower-bound fallback until native Mate5 formula/item/buff integration lands.
 Full pet-stat tooltips currently retain player-attribute limitations and are not a fidelity claim.
 
+The original command bar's mount/dismiss buttons now work through their own Lua: `CanMount` tries
+the selected mount (passenger seat) before the current pet, `CanDismiss` and both wrappers share the
+native two-second vehicle cooldown and casting/pending-action gate, and `MountMate` sends the
+decompiled `FUN_3909ae90` reason byte (mount→player direction: rear3, front4, sides1/2, with the
+occupied-seat override). `DismissPet` mounted on the same pet first sends the reason10 unmount and
+sends `CSRemoveMate` after the server's `SCUnitDetached`, as the native model-action continuation.
+`GetSpeedInfo` returns one f32 from the last received movement report (m/s); position-targeted
+mount skills send a mate-caster position target at the selected unit's spot. The pet bar's
+`ISLOT_PET_ACTION` slots now reach the app through
+`AAUI.UseSlot`; a click sends a mate-cast `CSStartSkill` with the mate as the self target and the
+player's selection for unit-target skills. Summon stays the original item use: the summon item's
+`use_skill_id` goes through the existing item-caster `CSStartSkill`, so its cast bar and the
+server's `SCErrorMsg` texts are the same paths as any other item, not a new mate request.
+
+Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
+target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
+a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`
+for the pet action bar, and the movement speed getter. Mounted locomotion checks cover the mate-cast
+forward packet's object id/velocity and the driver-seat gate that hands control back on dismount. The
+full client suite passes418 tests /39 ignored.
+
 Validation:160 client tests /27 ignored (5.31s), plus the exact original pet probe passes in1.89s.
 It requires both original widgets and completed250x105 bar sizing, exercises physical rename
 Cancel/OK and passive mode, checks native getter types/XP thresholds, and rejects a queued rename
@@ -1794,8 +1815,10 @@ two owner5 expression cases and ten modifier cases. Static DB/AST lookups are
 reconstructed; external CRT pow/floor use explicitly mocked libm/integral-double
 results. These goldens are embedded in client tests, without depending on ignored
 artifact files. All72 gear values, ten returned modifier values and two expression
-stages match. Native engine-component `GetSpeedInfo` remains open: the original Lua
-nil-to0 speed presentation is retained, with no invented maximum-speed formula.
+stages match. `GetSpeedInfo` now returns one f32 from the current mate's last received
+movement report (horizontal m/s) and no values without a pet. This is the wire's
+runtime motion, not the native controller component's maximum-speed formula (the
+controller+1f0 producer remains unmapped); the original Lua nil-to0 fallback is kept.
 Pet equipment item display/cursor/confirmation/transactions remain separate work.
 
 Full client suite:195 passed/33 ignored in14.01s. The exact original panel probe

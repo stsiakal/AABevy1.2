@@ -133,6 +133,11 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
 
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) { owned::push(rt, bridge); }
 
+/// `ISLOT_PET_ACTION` click: the displayed mount skill of the current pet.
+pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<Command> {
+    owned::use_pet_action(data, index, target_obj_id, target_pos)
+}
+
 fn valid_stable(data: &HudData, units: &Units, npc: (u32, u32)) -> bool {
     units
         .get(npc.0)
