@@ -44,6 +44,7 @@ pub(crate) mod emote;
 pub(crate) mod enter;
 mod flow;
 pub(crate) mod ground_target;
+pub(crate) mod houses;
 mod idle;
 mod mount;
 pub(crate) mod placement;
@@ -122,6 +123,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(combat::plugin)
             .add_plugins(ground_target::plugin)
             .add_plugins(placement::plugin)
+            .add_plugins(houses::plugin)
             .add_plugins(skill_motion::plugin)
             .add_plugins(sounds::plugin)
             .add_plugins(stealth::plugin)

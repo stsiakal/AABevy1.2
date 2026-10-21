@@ -64,6 +64,8 @@ Distance is from the player; `hostile` / `friendly` use the nameplate relation.
 | `interact [SPEC]` | the right click on an NPC (default `friendly`): the scripted pick goes through `hud::dialog::talk_input` (reach 6 m, hostile or dead NPCs are refused as for the mouse); waits until the talk began |
 | `interact doodad SPEC SKILL` | `CSStartSkill` with a doodad target (the client has no doodad click yet) |
 | `plant ITEM DX DY [YAW]` | plant an `item_spawn_doodads` item `DX`/`DY` metres from the player (same use range, ground and footprint checks as the ghost; `YAW` in radians, default the player's facing), then `CSCreateDoodad` and waits for `DoodadsCreated` (alias of aa-net `DoodadsSpawned`) |
+| `house_place ITEM DX DY [YAW]` | aim an `item_housings` design item's placement `DX`/`DY` metres from the player (same housing-area / overlap checks as the ghost); the ghost and boundary stay, `click left` asks for the tax quote and opens the original "Start Construction" window |
+| `house_build` | confirm the open original build window (the same path as its Build button): `CSCreateHouse` with the quote's total, then waits for `Housing.MyHouse` (`SCMyHouse`) |
 | `accept [QUEST]` / `complete [QUEST [REWARD]]` | the dialog's Accept / Complete buttons (default: the first offered / hand-in quest); waits for the server |
 | `endtalk` | close the NPC talk |
 | `loot [SPEC]` | waits until a corpse with loot is in reach, presses F (loot all), waits for the server's answer |

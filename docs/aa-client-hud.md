@@ -2356,6 +2356,58 @@ stale-bag-click guard, the wheel mapping, the retail error/cooldown texts, golde
 parser, and a minimal-App smoke test that adds the real placement and farm plugins, runs updates, validates every
 system parameter and checks the off-ground hiding).
 
-Not done: house placement and construction (the `housings` auto-z fields are not read yet), decoration placement,
-garden plots (`DoodadFuncHouseFarm` is a server no-op), the snap grid (10.x only; default off), harvesting changes and
-the exact retail ground-arrow model (the road arrow is the placeholder).
+Not done: decoration placement, garden plots (`DoodadFuncHouseFarm` is a server no-op), the snap grid (10.x only;
+default off), harvesting changes and the exact retail ground-arrow model (the road arrow is the placeholder).
+
+## Houses and farms (2026-10-21)
+
+Phase 4 of the farming/housing plan: a design item (`item_housings`) opens the same `PlacementSession` as planting,
+the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the received house follows
+`SCHouseBuildProgress`; the build-step skill is used on the house to finish it.
+
+* **Design item -> housing**: `crates/aa-client/src/hud/panels.rs` checks `GameData::housing_design_for_item` before
+  the seed link and sends `HousePressed`; `placement.rs` loads `item_housings` + `housings` into the same `Catalog`
+  (item `15596` -> design `267` "Scarecrow Garden", radii 4 and 8 for `15566` -> `89`). The ghost is the housing's
+  `main_model_id` through `Db::actor_model_file` (the prefab's first object, e.g. `scarecrow_farm1`); the plot square
+  half extent is `housings.garden_radius`, and the 1.2 `auto_z` offset fields are applied (`Grounding`).
+* **Preview**: the plain, untinted house model follows the cursor; a square of flat grey stones runs along the plot
+  edge (turned with the ghost) and small yellow posts mark the housing-area polygon (the
+  `housing_area.xml` shape that contains the spot, `ingame/houses.rs`). The white / pink crosshair is the same
+  `housing_position.dds` / `housing_invalid.dds`; when the cursor is over the UI or no ground the house ghost stays
+  at its last valid spot (the retail capture shows this; plants hide instead). The ghost stops following the pointer
+  as soon as the placement is confirmed for the tax window, so the spot and yaw are locked while the window is open;
+  Cancel returns to free placement. A pointer over the HUD neither moves nor re-validates the preview. Wheel / Alt /
+  Shift / Ctrl rotate as for plants (before the lock).
+* **Validity** (`check_house`): inside a `housing_area.xml` polygon whose `value1` is a `housing_areas` row, not
+  overlapping another received house as an axis-aligned square of half extent `garden_radius` + the other's
+  `garden_radius` (the server's `validate_house`), on land, and not on the player. The server remains authoritative.
+* **Tax quote**: a valid left click sends `CSConstructHouseTax` (`Session::tax_request`); the answer
+  `SCConstructHouseTax` opens the original `x2ui/housing/build_window.alb` through its `HOUSE_BUILD_INFO` event
+  (`HOUSE_BUILD_INFO(hType, bTax, hTax, heavyCnt, normalCnt, isHeavy, depositString, taxItemType)`), exactly the
+  eight arguments `housing_manager.alb` forwards to `ShowBuildWindow`. `X2House` (`hud/houses.rs`) answers
+  `GetHousingModelName`, `GetHousingModelConstructionInfo` (one row per `housing_build_steps` row, with the skill's
+  `skill_effects` material and `skills.consume_lp`), `CountTaxItemForTax` (10,000 copper per item `31891`),
+  `CountTaxItemInBag`, and `GetHouse*Progress` from the received snapshot. Build calls
+  `NextStepFromBuildCheck` -> `CSCreateHouse` (quote total, design item instance, yaw); Cancel / Escape calls
+  `PrevStepFromBuildCheck` -> the window closes and the placement continues. When the server accepts the build it
+  sends `SCMyHouse`; `ingame/houses.rs::close_created_build` raises the original client's `BUILDER_END`, which
+  `housing_manager.alb` answers with `ShowBuildWindow()` and so hides the Start Construction window.
+* **Construction**: the server spawns the house as a `UnitKind::Housing` with the first build step's model.
+  `ingame/houses.rs::sync_house_models` follows each `SCHouseBuildProgress.model_id` by updating the received unit and
+  letting `units::sync_views` rebuild its entity. Right-clicking an unfinished house casts the current
+  `housing_build_steps.skill_id` at it (the server's `CraftEffect` checks it; the skill is `need_learn=false`) and
+  raises `HOUSE_INTERACTION_START`, which shows the original material/progress window. When the last action
+  completes, the server's finished model (and bound doodads) arrive; the house is a normal selectable unit target
+  (health/buff come from the server).
+* **Script**: `house_place ITEM DX DY [YAW]` aims the real session without a cursor (for headless captures), then
+  `click left` asks for the quote (or use the real mouse). `house_build` confirms the open window; `key escape` is
+  the original Cancel. See `docs/aa-client-script.md`.
+* **Original UI vs new code**: the "Start Construction" window and the material/progress window are the client's
+  original Lua scripts; only their `X2House` data and the `HOUSE_BUILD_INFO` / `HOUSE_INTERACTION_START` events are
+  new. The placement ghost, stones, posts, cursors and validity are new (no 1.2 Lua window exists for them).
+
+Tests: the placement catalogue's design lookup, the stone square / rotated square, the posts along a polygon, the
+housing-area and overlap rules, the `CSConstructHouseTax` / `CSCreateHouse` fields, the quote -> window arguments,
+the tax certificate count, the build-progress model update, the script parser and the headless placement smoke test.
+Not done: the maintenance/tax/sale/decoration windows (phase 5), garden plots, and a live comparison capture of the
+completed farm (the live server check follows this work).
