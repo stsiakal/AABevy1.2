@@ -436,9 +436,8 @@ fn track(
     terrain: Option<Res<TerrainQuery>>,
     water: Option<Res<WaterQuery>>,
     mut visuals: ResMut<Visuals>,
-    mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    ensure_visuals(&mut commands, &mut cry.images, &mut meshes, &mut cry.materials, &mut visuals);
+    ensure_visuals(&mut commands, &mut cry.images, &mut cry.meshes, &mut cry.materials, &mut visuals);
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
     let Some(mover) = player.single().ok() else { return };
@@ -491,7 +490,7 @@ fn track(
             session.invalid.map_or("is valid", Invalid::text)
         );
     }
-    update_ring(&mut commands, &mut meshes, &visuals, session, mover.pos, &doodads, &catalog, collision.as_deref(), terrain.as_deref());
+    update_ring(&mut commands, &mut cry.meshes, &visuals, session, mover.pos, &doodads, &catalog, collision.as_deref(), terrain.as_deref());
 }
 
 /// The ghost entity of the session, loaded once; `None` when the doodad has no model.
