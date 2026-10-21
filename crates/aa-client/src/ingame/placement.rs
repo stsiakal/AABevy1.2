@@ -449,7 +449,7 @@ fn track(
     catalog: Res<Catalog>,
     player: Query<&Mover, With<LocalPlayer>>,
     doodads: Res<Doodads>,
-    over_ui: Res<HudPointerOverUi>,
+    over_ui: Option<Res<HudPointerOverUi>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     collision: Option<Res<WorldCollision>>,
@@ -462,7 +462,7 @@ fn track(
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
     let Some(mover) = player.single().ok() else { return };
-    let cursor = if over_ui.0 { None } else { virtual_input.cursor_position(windows.single().ok()) };
+    let cursor = if over_ui.is_some_and(|o| o.0) { None } else { virtual_input.cursor_position(windows.single().ok()) };
     let hit = cursor.and_then(|c| {
         let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
         spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref())
@@ -971,8 +971,8 @@ fn input(
     mut mouse: ResMut<ButtonInput<MouseButton>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut wheel: MessageReader<bevy::input::mouse::MouseWheel>,
-    over_ui: Res<HudPointerOverUi>,
-    focus: Res<HudKeyboardFocus>,
+    over_ui: Option<Res<HudPointerOverUi>>,
+    focus: Option<Res<HudKeyboardFocus>>,
     mut placement: ResMut<Placement>,
     visuals: Res<Visuals>,
     mut virtual_input: ResMut<VirtualInput>,
@@ -981,7 +981,8 @@ fn input(
     mut net: MessageWriter<NetCommand>,
 ) {
     let Some(session) = placement.session.as_mut() else { return };
-    if focus.0 {
+    let over_ui = over_ui.is_some_and(|o| o.0);
+    if focus.is_some_and(|f| f.0) {
         return;
     }
     // picking an item up onto the cursor ends the placement mode (the retail client does the same)
@@ -1023,10 +1024,10 @@ fn input(
     }
     let left_down = mouse.pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
     let left_just = mouse.just_pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
-    if left_just && !over_ui.0 {
+    if left_just && !over_ui {
         mouse.clear_just_pressed(MouseButton::Left);
     }
-    if left_confirm(&mut session.left_armed, left_down, left_just, over_ui.0) {
+    if left_confirm(&mut session.left_armed, left_down, left_just, over_ui) {
         let cooldown = skills
             .cooldown_left(session.plant.use_skill, session.plant.cooldown_tag, session.plant.cooldown_ms)
             .filter(|left| !left.is_zero())

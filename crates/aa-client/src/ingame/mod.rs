@@ -338,6 +338,8 @@ mod tests {
         .insert_resource(ClearColor::default())
         .init_resource::<crate::hud::HudPointerOverUi>()
         .init_resource::<crate::settings::Actions>()
+        // no HudPlugin here: `HudKeyboardFocus` is absent on purpose, the in-game systems must treat
+        // the HUD's optional input state as false rather than require the HUD stage
         // the teleport loading screen puts the HUD stage aside; the run condition must keep working
         // on the multi-threaded executor without touching the non-send stage
         .insert_resource(crate::hud::HudOptions { enabled: true })
