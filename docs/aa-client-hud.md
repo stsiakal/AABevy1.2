@@ -1496,12 +1496,24 @@ player's selection for unit-target skills. Summon stays the original item use: t
 `use_skill_id` goes through the existing item-caster `CSStartSkill`, so its cast bar and the
 server's `SCErrorMsg` texts are the same paths as any other item, not a new mate request.
 
+### Land vehicle mode bar (2026-10-22)
+
+`hud/vehicles.rs` binds the original `hud/mode_action_bar/mode_action.alb` to an owned slave: the
+script's `X2Unit:GetModeActionsCount()` (`mode_action.alb:62-106`) counts the template's
+`slave_mount_skills` rows resolved through `mount_skills`, only while the local player holds a seat.
+`HUD.mode_slot` feeds `ISLOT_MODE_ACTION` and a click sends the same mate-caster
+`UseMateSkill`/`UseMateSkillAt` with the **slave** object id (the server's mount authority accepts an
+owned slave). `X2SiegeWeapon` exposes the native driver/mounted/speed/turn/discard getters;
+`DiscardSiegeWeapon` queues the exact `CSDiscardSlave`. `SLAVE_SPAWN`, `MODE_ACTIONS_UPDATE` and
+`SIEGEWEAPON_UNBOUND` follow the received owned creation and seat transitions. The summon item stays
+the existing item-caster path, so its 5 s cast bar and server errors are the general item paths.
+
 Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
 target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
 a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`
 for the pet action bar, and the movement speed getter. Mounted locomotion checks cover the mate-cast
 forward packet's object id/velocity and the driver-seat gate that hands control back on dismount. The
-full client suite passes418 tests /39 ignored.
+full client suite passes423 tests /39 ignored.
 
 Validation:160 client tests /27 ignored (5.31s), plus the exact original pet probe passes in1.89s.
 It requires both original widgets and completed250x105 bar sizing, exercises physical rename

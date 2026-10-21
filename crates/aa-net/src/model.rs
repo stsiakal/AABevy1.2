@@ -1245,6 +1245,21 @@ pub struct Movement {
     pub support: Option<MoveSupport>,
     /// Facing of a vehicle, ship or transfer movement in radians (they carry a rotation, not a direction byte).
     pub vehicle_yaw: Option<f32>,
+    /// The vehicle body (move type 2): raw quaternion shadows, angular velocity, steering and wheel
+    /// speeds. `None` for the other kinds.
+    pub vehicle: Option<VehicleMove>,
+}
+
+/// `VehicleMove` (cars, carts, tractors): the native body after position and velocity.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VehicleMove {
+    /// Quaternion components (x, z, y) scaled by `1 / 0.00003052`, as the native writer stores them.
+    pub rotation: [i16; 3],
+    pub angular_velocity: [f32; 3],
+    /// -1.0 ..= 1.0.
+    pub steering: f32,
+    /// `WheelAngVel`, prefixed on the wire by a `u8` count.
+    pub wheel_speeds: Vec<f32>,
 }
 
 /// What a unit stands on or hangs from, as a unit movement reports it. While it stands on something, the movement's `pos` is
@@ -1281,6 +1296,32 @@ impl Movement {
             fall_vel: 0,
             support: None,
             vehicle_yaw: None,
+            vehicle: None,
+        }
+    }
+
+    /// A vehicle movement (`MoveTypeEnum::Vehicle`, 2) at `pos` facing `yaw` radians. The native
+    /// writer stores the yaw-only quaternion shadows `(0, 0, sin(yaw/2) / 0.00003052)`; the server
+    /// rebuilds the quaternion and sets the slave transform.
+    pub fn vehicle(pos: Pos, yaw: f32, time: u32) -> Self {
+        const SCALE: f32 = 0.000_030_52;
+        let z = ((yaw * 0.5).sin() / SCALE).round().clamp(-32767.0, 32767.0) as i16;
+        Self {
+            move_type: 2,
+            time,
+            flags: move_flags::MOVING,
+            pos,
+            velocity: [0; 3],
+            direction: 0,
+            tilt: [0; 2],
+            delta_movement: [0; 3],
+            stance: stance::RELAXED,
+            alertness: 0,
+            actor_flags: actor_flags::STANDING_ON_SOLID,
+            fall_vel: 0,
+            support: None,
+            vehicle_yaw: Some(yaw),
+            vehicle: Some(VehicleMove { rotation: [0, 0, z], ..VehicleMove::default() }),
         }
     }
 
@@ -1296,6 +1337,25 @@ impl Movement {
         w.u8(self.move_type).u32(self.time).u8(self.flags);
         if self.flags & move_flags::HAS_SC_TYPE_AND_PHASE != 0 {
             w.u32(0).u8(0);
+        }
+        if self.move_type == 2 {
+            let body = self.vehicle.clone().unwrap_or_default();
+            w.position(self.pos)
+                .i16(self.velocity[0])
+                .i16(self.velocity[1])
+                .i16(self.velocity[2])
+                .i16(body.rotation[0])
+                .i16(body.rotation[1])
+                .i16(body.rotation[2])
+                .f32(body.angular_velocity[0])
+                .f32(body.angular_velocity[1])
+                .f32(body.angular_velocity[2])
+                .f32(body.steering)
+                .u8(body.wheel_speeds.len() as u8);
+            for speed in &body.wheel_speeds {
+                w.f32(*speed);
+            }
+            return;
         }
         w.position(self.pos)
             .i16(self.velocity[0])
@@ -1344,6 +1404,7 @@ impl Movement {
             fall_vel: 0,
             support: None,
             vehicle_yaw: None,
+            vehicle: None,
         };
         if move_type == 4 {
             // Ship request (throttle, steering): no position.
@@ -1364,12 +1425,17 @@ impl Movement {
             2 | 3 => {
                 // Vehicle and ship: rotation as three shorts (a quaternion without its scalar), angular velocity, then the
                 // vehicle's steering (f32) and wheel speeds, or the ship's steering, throttle, zone and stuck flag.
-                m.vehicle_yaw = Some(quat_yaw(short_quat(r)?));
-                r.skip(12)?;
+                let rotation = [r.i16()?, r.i16()?, r.i16()?];
+                m.vehicle_yaw = Some(quat_yaw(quat_from_shorts(rotation)));
+                let angular_velocity = [r.f32()?, r.f32()?, r.f32()?];
                 if move_type == 2 {
-                    r.skip(4)?;
+                    let steering = r.f32()?;
                     let wheels = r.u8()?;
-                    r.skip(usize::from(wheels) * 4)?;
+                    let mut wheel_speeds = Vec::with_capacity(usize::from(wheels));
+                    for _ in 0..wheels {
+                        wheel_speeds.push(r.f32()?);
+                    }
+                    m.vehicle = Some(VehicleMove { rotation, angular_velocity, steering, wheel_speeds });
                 } else {
                     r.skip(1 + 1 + 2 + 1)?;
                 }
@@ -1409,11 +1475,15 @@ impl Movement {
 
 /// A rotation quaternion from three shorts (x, y, z; the scalar is rebuilt as the server does).
 fn short_quat(r: &mut Reader) -> Result<[f32; 4]> {
+    Ok(quat_from_shorts([r.i16()?, r.i16()?, r.i16()?]))
+}
+
+fn quat_from_shorts(rotation: [i16; 3]) -> [f32; 4] {
     const SCALE: f32 = 1.0 / 32767.0;
-    let [x, y, z] = [r.i16()?, r.i16()?, r.i16()?].map(|v| f32::from(v) * SCALE);
+    let [x, y, z] = rotation.map(|v| f32::from(v) * SCALE);
     let norm = x * x + y * y + z * z;
     let w = if norm < 0.9975 { (1.0 - f64::from(norm)).sqrt() as f32 } else { 0.0 };
-    Ok([x, y, z, w])
+    [x, y, z, w]
 }
 
 /// The yaw (radians, 0 faces +y, positive turns left) of a rotation quaternion `[x, y, z, w]`.

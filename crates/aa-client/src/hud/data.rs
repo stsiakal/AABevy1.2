@@ -257,6 +257,7 @@ pub struct GameData {
     pub(super) repair: super::repair::Tables,
     pub(super) crafting: super::crafting::Tables,
     pub(super) pets: super::pets::Tables,
+    pub(super) vehicles: super::vehicles::Tables,
     pub(super) radar: super::radar::Tables,
     pub(super) battlefield: super::battlefield::Tables,
     pub(super) native_buffs: HashMap<u32,aa_net::state::NativeBuffRule>,
@@ -617,6 +618,7 @@ impl GameData {
         data.repair = super::repair::Tables::load(&conn)?;
         data.crafting = super::crafting::Tables::load(&conn)?;
         data.pets = super::pets::Tables::load(&conn)?;
+        data.vehicles = super::vehicles::Tables::load(&conn)?;
         data.radar = super::radar::Tables::load(&conn)?;
         data.battlefield = super::battlefield::Tables::load(&conn)?;
         data.expedition = super::expedition::Tables::load(&conn)?;

@@ -209,6 +209,10 @@ pub enum Command {
     /// `CSMoveUnit` names `obj_id` and the server checks the owner. The mate uses the ordinary
     /// unit movement body; its rider follows through the server's attachment.
     MoveUnit { obj_id: u32, command: MoveCommand },
+    /// Move a controlled slave (cart, car, tractor) with the native `VehicleMove` body (`CSMoveUnit`
+    /// type 2). `movement` must be a [`Movement::vehicle`]; the session fills its send time. Ships
+    /// will use the same writer once their body exists.
+    MoveVehicle { obj_id: u32, movement: Movement },
     Chat { chat_type: i16, target: String, message: String },
     /// Put `action` into hotbar slot `slot` (0 based). The server does not echo it: the session
     /// reports `ActionSlotChanged` itself.
@@ -1070,6 +1074,7 @@ impl Session {
             }
             Command::Move(m) => self.send_move(m).await,
             Command::MoveUnit { obj_id, command } => self.send_move_unit(obj_id, command).await,
+            Command::MoveVehicle { obj_id, movement } => self.send_move_vehicle(obj_id, movement).await,
             Command::Chat { chat_type, target, message } => {
                 self.send_game(game::ClientMsg::Chat { chat_type, target, message }).await;
             }
@@ -1581,6 +1586,15 @@ impl Session {
             return;
         }
         let movement = m.to_movement(self.started.elapsed().as_millis() as u32);
+        self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
+    }
+
+    async fn send_move_vehicle(&mut self, obj_id: u32, mut movement: Movement) {
+        if self.self_obj == 0 || self.phase != Phase::InWorld || obj_id == 0 || obj_id > 0xffffff || movement.move_type != 2 {
+            tracing::debug!("ignoring MoveVehicle {obj_id}: not a valid vehicle in the world");
+            return;
+        }
+        movement.time = self.started.elapsed().as_millis() as u32;
         self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
     }
 
@@ -4392,6 +4406,37 @@ mod tests {
         }
         .encode_body();
         assert_eq!(&frame[6..], &expected[..]);
+    }
+
+    #[tokio::test]
+    async fn vehicle_move_names_the_slave_and_carries_the_native_vehicle_body() {
+        let (addr, stub) = game_stub_bytes(2).await;
+        let options = ClientOptions { first_ping_delay: Duration::from_secs(60), ..ClientOptions::default() };
+        let mut s = session_for(addr, options);
+        s.connect_world().await;
+        s.phase = Phase::InWorld;
+        s.self_obj = 7;
+        let mut movement = Movement::vehicle(Pos::new(10.0, 20.0, 3.0), 0.7, 42);
+        movement.velocity = [1024, -2048, 0];
+        let body = movement.vehicle.as_mut().unwrap();
+        let rotation = body.rotation;
+        *body = crate::model::VehicleMove {
+            rotation,
+            angular_velocity: [0.1, 0.2, 0.3],
+            steering: -0.4,
+            wheel_speeds: vec![1.5, 2.5],
+        };
+        s.command(Command::MoveVehicle { obj_id: 0x445566, movement: movement.clone() }).await;
+        let frames = stub.await.unwrap();
+        assert_eq!(frames.len(), 2);
+        let frame = &frames[1];
+        assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), cs::CSMoveUnitPacket);
+        assert_eq!(&frame[6..9], &[0x66, 0x55, 0x44]);
+        let back = Movement::read(&mut crate::wire::Reader::new(&frame[9..])).unwrap();
+        assert_eq!((back.move_type, back.flags), (2, movement.flags));
+        assert!((back.pos.x - 10.0).abs() < 1e-4 && (back.pos.y - 20.0).abs() < 1e-4);
+        assert_eq!(back.velocity, [1024, -2048, 0]);
+        assert_eq!(back.vehicle, movement.vehicle);
     }
 
     #[tokio::test]

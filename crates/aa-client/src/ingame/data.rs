@@ -28,6 +28,26 @@ struct Lookups {
     anim_actions: HashMap<u32, Option<String>>,
     mount_poses: HashMap<u32, u32>,
     mount_moves: HashMap<u32, MountMove>,
+    vehicle_bodies: HashMap<u32, VehicleBody>,
+    land_vehicles: HashMap<u32, bool>,
+}
+
+/// A land vehicle/slave body from `vehicle_models` (the row `models.sub_id` names when the model
+/// is a `VehicleModel`): native forward speed and angular velocity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VehicleBody {
+    pub speed: f32,
+    /// Radians per second (`vehicle_models.angVel`).
+    pub turn: f32,
+    /// Number of wheel entries the native `VehicleMove` body carries; the client sends this many
+    /// wheel speeds (zero is valid).
+    pub wheels: u8,
+}
+
+impl Default for VehicleBody {
+    fn default() -> Self {
+        Self { speed: 8.0, turn: 1.0, wheels: 2 }
+    }
 }
 
 /// How a ridden mate moves: the actor model's base stance speeds and body (the same `game_stances`
@@ -166,6 +186,8 @@ impl Db {
                 anim_actions: HashMap::new(),
                 mount_poses: HashMap::new(),
                 mount_moves: HashMap::new(),
+                vehicle_bodies: HashMap::new(),
+                land_vehicles: HashMap::new(),
             })),
         })
     }
@@ -273,6 +295,51 @@ impl Db {
             )
             .unwrap_or(d);
         l.mount_moves.insert(model_id, out);
+        out
+    }
+
+    /// The `vehicle_models` row a slave model draws (`models.sub_type = 'VehicleModel'`).
+    pub fn vehicle_body(&self, model_id: u32) -> VehicleBody {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.vehicle_bodies.get(&model_id) {
+            return *v;
+        }
+        let d = VehicleBody::default();
+        let out = l
+            .conn
+            .query_row(
+                "SELECT v.velocity, v.angVel, v.wheel FROM models m \
+                 JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' \
+                 WHERE m.id = ?1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let n = |i: usize, default: f32| -> f32 {
+                        r.get::<_, Option<f64>>(i).ok().flatten().map_or(default, |v| v as f32)
+                    };
+                    Ok(VehicleBody {
+                        speed: n(0, d.speed).max(0.1),
+                        turn: n(1, d.turn).abs().max(0.05),
+                        wheels: r.get::<_, Option<i64>>(2).ok().flatten().map_or(d.wheels, |v| v.clamp(0, 8) as u8),
+                    })
+                },
+            )
+            .unwrap_or(d);
+        l.vehicle_bodies.insert(model_id, out);
+        out
+    }
+
+    /// Whether a slave model is a land vehicle (`models.sub_type = 'VehicleModel'`) rather than a
+    /// ship/siege model. Used to keep the vehicle auto-bind off ships until their flow exists.
+    pub fn is_land_vehicle(&self, model_id: u32) -> bool {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.land_vehicles.get(&model_id) {
+            return *v;
+        }
+        let out = l
+            .conn
+            .query_row("SELECT 1 FROM models WHERE id = ?1 AND sub_type = 'VehicleModel'", params![model_id], |_| Ok(()))
+            .is_ok();
+        l.land_vehicles.insert(model_id, out);
         out
     }
 

@@ -175,6 +175,10 @@ never blocks. `Client` is the only handle; dropping it closes the connections. `
 `MoveUnit { obj_id, command }` sends the same exact body for a unit the character controls (its owned
 mate while riding); the server's `apply_unit_move` checks the owner and runs `on_mate_unit_move` for a
 mate target. The object id and state still have to be nonzero/24-bit and the session must be `InWorld`.
+`MoveVehicle { obj_id, movement }` sends the native `MoveType` type-2 body for a controlled slave
+(cart/car/tractor); `movement` must be `Movement::vehicle(pos, yaw, time)` and the session fills the
+send time. `Movement` retains the full `VehicleMove` body (quaternion shadows, angular velocity,
+steering, wheel speeds) and its writer now emits it; ship type 3 still needs its own body.
 `MoveCommand` is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
 `MoveCommand::running(pos, yaw, speed_mps)` (velocity along the facing + full forward input),
 `MoveCommand::stopped(pos, yaw)`, `.with_state(..)`, `.landing(fall_speed_mps)` or struct update
@@ -1929,10 +1933,10 @@ library and 2 scripted-session tests, with 9 live tests ignored;
 * Korean auth flows (challenge, OTP, ARS) and Mail.Ru / Tencent logins; only the Trion ticket.
 * Server → client packets not decoded (skipped): houses in the character list
   (`SCLoginCharInfoHouse`, so `GetLoginCharacterInfoHouse`), premium grade of the lobby, guilds,
-  slave lifecycle and mate equipment owner packets
-  (`SCSlaveCreated`, `SCMateEquipmentChanged` ...; the units themselves and riding are decoded, see
-  "Other units' motion"), `SCBuffUpdated` (the lane server never sends it and has no writer for it, so its
-  layout is unknown; a buff's time is refreshed by `SCBuffCreated` with the same index). Add a
+  `SCBuffUpdated` (the lane server never sends it and has no writer for it, so its layout is unknown;
+  a buff's time is refreshed by `SCBuffCreated` with the same index). Slave creation/bound/removal/
+  despawn/position/escape/state and slave/mate equipment changes are decoded (see the slave/mate
+  sections); remaining slave/ship UI-specific packets are listed there. Add a
   variant to `game::ServerMsg` + `Event` for each as the UI needs it. A packet in a `DD04` batch
   that is not decoded ends that batch.
 * Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
@@ -1948,9 +1952,9 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   `sub_zones` table. The zone group follows the zone chat channel (Shout).
 * NPC names are empty on the wire (the client resolves them from the NPC template); `Unit.kind` has the
   template id. Slaves / transfers / shipyards only decode their core fields.
-* Movement: we only write a plain unit movement (ground, jump, fall with landing velocity); vehicles, ships,
-  standing on / hanging from objects are read (`Movement::read_typed`) but not written. The server does not
-  echo our own movement back.
+* Movement: unit movements (ground, jump, fall with landing velocity) and the type-2 vehicle body
+  (`MoveVehicle`) are written; ships (type 3), ship requests, standing on / hanging from objects are read
+  (`Movement::read_typed`) but not written. The server does not echo our own movement back.
 * Reconnect after a dropped game connection is not attempted (the session reports `Disconnected` and
   returns to idle).
 

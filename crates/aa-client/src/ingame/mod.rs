@@ -55,6 +55,7 @@ mod swim;
 pub(crate) mod teleport;
 mod trace;
 pub(crate) mod units;
+mod vehicle;
 pub(crate) mod warm;
 pub(crate) mod weapons;
 

@@ -95,6 +95,7 @@ mod tips;
 mod trade;
 mod trial;
 mod usable;
+mod vehicles;
 
 #[allow(dead_code)]
 pub(crate) fn ranking_fixture() {
@@ -434,6 +435,7 @@ impl Plugin for HudPlugin {
         repair::plugin(app);
         crafting::plugin(app);
         pets::plugin(app);
+        vehicles::plugin(app);
         loot::plugin(app);
         dialog::plugin(app);
         ring::plugin(app);

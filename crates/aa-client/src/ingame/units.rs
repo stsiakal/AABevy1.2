@@ -502,7 +502,9 @@ pub fn plugin(app: &mut App) {
         (
             receive_moves.before(move_units),
             (
+                super::vehicle::vehicle_seat,
                 super::mount::drive_mount,
+                super::vehicle::drive_vehicle,
                 super::mount::fake_mount,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,
@@ -615,7 +617,7 @@ const GROUND_SNAP: f32 = 1.0;
 pub fn move_units(
     time: Res<Time>,
     terrain: Res<TerrainQuery>,
-    mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>)>,
+    mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>, Without<super::vehicle::DrivenSlave>)>,
     timers: Option<Res<aa_world::profile::Timers>>,
     mut smoothness: Local<Smoothness>,
 ) {
