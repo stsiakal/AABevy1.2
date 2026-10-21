@@ -18,6 +18,12 @@ use super::data::Db;
 #[derive(Component)]
 pub struct Carried(pub Vec<CarriedItem>);
 
+/// The carried models a character's look was built with (stays after [`Carried`] is attached, so
+/// an equipment change that only swaps a weapon still rebuilds the look).
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct LookCarried(pub Vec<CarriedItem>);
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CarriedItem {
     pub path: String,
     pub bone: &'static str,
