@@ -664,6 +664,9 @@ AAUI.UseSlot = function(slotType, slotIdx, button)
     -- `hud/pet_action_bar/pet.alb:531-545` establishes these slots; its `ShowActionBar`
     -- (`:577-602`) bounds them by `X2Mate:GetNumMountSkills`.
     HUD.request("use_pet_action", slotIdx)
+  elseif slotType == ISLOT_MODE_ACTION then
+    -- `hud/mode_action_bar/mode_action.alb:62-106` establishes the vehicle/slave slots.
+    HUD.request("use_mode_action", slotIdx)
   elseif slotType == ISLOT_BAG and button == "RightButton" then
     HUD.request("use_bag", slotIdx)
   end

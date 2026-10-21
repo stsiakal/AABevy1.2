@@ -114,6 +114,38 @@ own object id; it is not a duplicate of the local player and not a ghost. The re
 same picture. `aa-net` also drops an `SCUnitState` that carries the local player's own object id, so that one could never draw a
 second figure.
 
+## Land vehicles (`vehicle.rs`)
+
+Owned carts, cars and tractors are slaves (`SCSlaveCreated` 061 -> `Slaves::own`, already decoded in
+`aa-net/src/slave.rs`). The vehicle item is used like any item: its `items.use_skill_id` is sent as a
+`CSStartSkill` item caster (`SpawnSlave` special effect 60 on the server) and the existing cast bar /
+`SCErrorMsg` path applies. When the owner's creation record and visible `UnitKind::Slave` correlate,
+`vehicle_seat` sends `CSBindSlave` once (`SlaveCommand::Bind`); leaving uses `CSDiscardSlave`
+(`SlaveCommand::Unbind`, bound to the primary interaction key while seated). `SlaveCommand` already
+had the exact u16 TL bodies; no new server-side request was invented.
+
+With the player in the driver seat (`UnitKind::Slave` attachment point 1, kept on
+`PlayerSpawn.unit.attached_to` by aa-net), `drive_vehicle` drives the slave: W/S throttle, A/D steer,
+mouse heading; speed and turn come from `vehicle_models.velocity` / `angVel` (`Db::vehicle_body`),
+with acceleration/braking, terrain-following `floor_at`, and world-position collision sliding. Every
+0.1 s it sends `Command::MoveVehicle` -> `CSMoveUnit` type 2 for the **slave object id** with the
+native `VehicleMove` body (position, velocity, quaternion shadows, angular velocity, steering, wheel
+speeds); aa-net's `Movement` now has a generic vehicle writer and reader. The server's
+`apply_unit_move`/`vehicle_move` accepts the owned slave, moves it and broadcasts to observers; the
+seated player is positioned by `pose_local_riders` at the vehicle root + 1.1 m (the authored seat
+bone is not mapped yet), so the camera follows the vehicle. Jump/fall are not sent because the
+native vehicle body has no such fields; ships use a different body and remain later work.
+
+The original mode action bar (`hud/mode_action_bar/mode_action.alb`) is bounded by
+`X2Unit:GetModeActionsCount()` and establishes `ISLOT_MODE_ACTION` slots. `hud/vehicles.rs` loads
+`slave_mount_skills` in table order, resolves each to its `mount_skills` combat row, filters by the
+driver seat (attach point 1), and sends the mate-caster `UseMateSkill`/`UseMateSkillAt` for the slave
+object id — the same mount-caster contract the server's `mount_authority` accepts for owned slaves.
+The slave bar is the original mode bar; no invented window. Validation: `ingame::vehicle` checks the
+mate-object vehicle packet/velocity and the one-shot visible slave bind; `hud::vehicles` checks seat
+filtering and self/hostile/position mode skills; aa-net checks the exact type-2 body and session
+send. Full client suite 423 passed / 39 ignored, aa-net library 634 passed.
+
 ## Env switches (dev)
 
 * `AA_UNIT_SMOOTHNESS=1`: logs how the displayed speed of remote units compares with their path speed (mean and p5/p95 per
@@ -128,7 +160,9 @@ second figure.
 * Mount and rider placement (the seat-bone offset) is unverified against the real client; the exact native seat/get-on
   reason for every mount kind and underwater mount motion remain open. Mounted locomotion, mount skills and the get-off clip
   now exist (see Mounts).
-* `SCUnitMovements` entries are all read as unit movements (the real client takes the type from the object).
+* Land vehicles: the authored seat/bone offset and full suspension roll/pitch are not mapped (the client uses
+  root +1.1 m and a level yaw-only quaternion); ship steering/sails/cannons and the type-3 writer remain open.
+  `SCUnitMovements` entries are all read as unit movements (the real client takes the type from the object).
 * Units beyond 140 m are not drawn.
 
 ## Authored NPC facial playback (2026-10-18)

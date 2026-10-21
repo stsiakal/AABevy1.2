@@ -36,7 +36,7 @@ Visibility = how much a player notices. IDs are for section 3 and 4.
 | N1 | network | Live-QA tail after the 2026-10-18 lane-server stall, which no longer reproduces: auction settlement tail/reconnect and the final social unblock/offline/restart checks are still unverified | 2026-10-20 headless smoke run (login, enter world, titles, tooltip, Character Info, emotes, guild window); `aa-client-parity.md` "Verification baseline" | med | S | none |
 | N2 | network | Reconnect after a dropped game connection: session returns to idle | `aa-net.md` Known gaps; parity "reconnect policy" | med | S | none |
 | N3 | network | About 90 server packets still `ServerMsg::Unhandled`; one that fails inside a `DD04` batch ends the whole batch (risk of losing later packets). Per-system list below (G*, H*) | `aa-net/src/game.rs` `decode_game`; sc_sent.json diff | med | M (spread) | per system |
-| N4 | network | Outbound vehicle / ship / hanging / bound-doodad movement is read but not written | `aa-net.md` Known gaps | med | M | G2 |
+| N4 | network | Outbound land-vehicle movement is written (`MoveVehicle`/type 2); ship, hanging and bound-doodad movement remain read-only | `aa-net.md` Known gaps | med | M | G2 |
 | N5 | network | `SCLoginCharInfoHouse` (houses in char list), premium grade in lobby, Korean / Mail.Ru / Tencent logins | `aa-net.md`, parity row 1 | low | S | none |
 | N6 | tooling | `aa-net.md` "Known gaps" is stale (says `SCBuffUpdated`, slave and mate packets are not decoded; they are) | `aa-net/src/game.rs` grep, commits 52bc34b, f14693e | low | S | none |
 

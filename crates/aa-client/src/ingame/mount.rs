@@ -81,6 +81,14 @@ fn riding_clips(character: &Character, mount_model: u32, db: &Db, animator: &Ani
     Some(RidingClips { idle, walk, run, geton: one("l_geton"), getoff: one("l_getoff") })
 }
 
+/// The plain relaxed idle for a character seated in a vehicle (no authored vehicle-specific rider
+/// clips in the 1.2 data).
+fn vehicle_rider_clips(character: &Character, animator: &Animator, clips: &ClipLibrary) -> Option<RidingClips> {
+    let cal = Cal::shared(&character.assets.cal).ok()?;
+    let idle = bind_clip(&animator.rig, &cal, clips, "fist_ba_relaxed_idle")?;
+    Some(RidingClips { idle, walk: None, run: None, geton: None, getoff: None })
+}
+
 /// A unit sitting on a mount.
 #[derive(Component)]
 pub struct Rider {
@@ -106,6 +114,8 @@ pub struct LocalRider {
     run: Option<BoundClip>,
     gait: Option<Gait>,
     boarding: Option<f32>,
+    /// A slave/vehicle seat rather than a mate's bone: the player sits at the vehicle root.
+    vehicle: bool,
     on_foot: Option<Locomotion>,
 }
 
@@ -193,6 +203,9 @@ impl DrivenMount {
     }
 }
 
+/// The seat height over a vehicle/slave root (m, game Z) until the model's authored seat is
+/// mapped: the native `model_attach_point_strings` row is not yet resolved for vehicles.
+const VEHICLE_SEAT_Z: f32 = 1.1;
 const MOUNT_STEP_UP: f32 = 0.5;
 const MOUNT_DROP: f32 = 0.6;
 const MOUNT_CLIMB_LOOK: f32 = 0.5;
@@ -342,19 +355,26 @@ pub fn start_stop_local_riding(
     for (entity, _local, rider, character, animator) in &locals {
         match (attached, rider) {
             (Some(a), None) => {
-                let (Some(db), Some(character), Some(animator), Some(mount)) =
-                    (db.as_deref(), character, animator, net.by_id.get(&a.obj_id))
+                let (Some(character), Some(animator), Some(mount)) = (character, animator, net.by_id.get(&a.obj_id))
                 else {
                     continue;
                 };
-                let Some(clis) = riding_clips(character, mount.model_id, db, animator, &clips) else { continue };
+                let vehicle = matches!(mount.kind, UnitKind::Slave { .. });
+                let clis = if vehicle {
+                    vehicle_rider_clips(character, animator, &clips)
+                } else {
+                    let Some(db) = db.as_deref() else { continue };
+                    riding_clips(character, mount.model_id, db, animator, &clips)
+                };
+                let Some(clis) = clis else { continue };
                 let RidingClips { idle, walk, run, geton, .. } = clis;
                 let boarding = geton.as_ref().map(|c| c.clip.duration);
                 let (mount_id, point) = (a.obj_id, a.point);
-                let body = db.mount_move(mount.model_id);
+                let body = if vehicle { None } else { db.as_deref().map(|db| db.mount_move(mount.model_id)) };
+                let vehicle_body = if vehicle && point == 1 { db.as_deref().map(|db| db.vehicle_body(mount.model_id)) } else { None };
                 let (mount_pos, mount_yaw) = (Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z), mount.yaw());
                 let mount_entity = views.unit_entity(mount_id);
-                debug!("local player rides {mount_id} at point {point}");
+                debug!("local player rides {mount_id} at point {point}{}", if vehicle { " (vehicle)" } else { "" });
                 commands.queue(move |world: &mut World| {
                     if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
                         animator.play_once_then(on, idle.clone(), 0.15);
@@ -362,21 +382,29 @@ pub fn start_stop_local_riding(
                     if point == 1
                         && let Some(mount_entity) = mount_entity
                     {
-                        world.entity_mut(mount_entity).insert(DrivenMount::new(mount_pos, mount_yaw, body));
+                        if let Some(body) = body {
+                            world.entity_mut(mount_entity).insert(DrivenMount::new(mount_pos, mount_yaw, body));
+                        } else if let Some(body) = vehicle_body {
+                            world.entity_mut(mount_entity).insert(super::vehicle::DrivenSlave::new(mount_pos, mount_yaw, body));
+                        }
                     }
                     let on_foot = world.entity_mut(entity).take::<Locomotion>();
-                    world.entity_mut(entity).insert(LocalRider { mount: mount_id, point, idle, walk, run, gait: None, boarding, on_foot });
+                    world.entity_mut(entity).insert(LocalRider { mount: mount_id, point, idle, walk, run, gait: None, boarding, vehicle, on_foot });
                 });
             }
             (None, Some(rider)) => {
-                let getoff = (|| {
-                    let character = character?;
-                    let db = db.as_deref()?;
-                    let animator = animator?;
-                    let mount = net.by_id.get(&rider.mount)?;
-                    Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
-                })()
-                .flatten();
+                let getoff = if rider.vehicle {
+                    None
+                } else {
+                    (|| {
+                        let character = character?;
+                        let db = db.as_deref()?;
+                        let animator = animator?;
+                        let mount = net.by_id.get(&rider.mount)?;
+                        Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
+                    })()
+                    .flatten()
+                };
                 let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
                 let mount_entity = views.unit_entity(rider.mount);
                 commands.queue(move |world: &mut World| {
@@ -386,6 +414,7 @@ pub fn start_stop_local_riding(
                     if let Some(mount_entity) = mount_entity {
                         let mut mount = world.entity_mut(mount_entity);
                         mount.remove::<DrivenMount>();
+                        mount.remove::<super::vehicle::DrivenSlave>();
                         if let Some(mut unit) = mount.get_mut::<RemoteUnit>() {
                             let (pos, facing) = (unit.pos, unit.facing);
                             unit.reset_track(pos, facing);
@@ -422,6 +451,9 @@ pub fn pose_local_riders(
         let mount_entity = views.unit_entity(rider.mount);
         let mounted = mount_entity.and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
         let (pos, facing, speed, tempo) = match mounted {
+            Some((_e, (mount, mount_animator, motion))) if rider.vehicle => {
+                (Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z + VEHICLE_SEAT_Z), mount.facing, motion.speed, mount_animator.speed)
+            }
             Some((e, (mount, mount_animator, motion))) => {
                 let bone = mount_animator.rig.skeleton.bones.iter().position(|b| b.name == seat_bone(rider.point)).and_then(|i| mount_animator.bones.get(i));
                 let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
@@ -430,7 +462,8 @@ pub fn pose_local_riders(
             }
             None => {
                 let Some(m) = net.by_id.get(&rider.mount) else { continue };
-                (Vec3::new(m.pos.x, m.pos.y, m.pos.z), m.yaw(), 0.0, 1.0)
+                let z = m.pos.z + if rider.vehicle { VEHICLE_SEAT_Z } else { 0.0 };
+                (Vec3::new(m.pos.x, m.pos.y, z), m.yaw(), 0.0, 1.0)
             }
         };
         mover.pos = pos;
