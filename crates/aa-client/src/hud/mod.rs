@@ -61,7 +61,7 @@ mod sorting;
 mod specialty;
 mod formula;
 mod family;
-mod farm;
+pub(crate) mod farm;
 mod expedition;
 mod friends;
 mod input;

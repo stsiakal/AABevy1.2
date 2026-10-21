@@ -274,10 +274,7 @@ struct Ghost;
 
 /// One of the two petal-ring meshes.
 #[derive(Component)]
-struct PetalRing;
-
-#[derive(Component)]
-struct PlaceArrow;
+struct PlacementArrow;
 
 #[derive(Component)]
 struct PlacementCursorIcon;
@@ -289,15 +286,25 @@ struct Visuals {
     failed: bool,
     yellow: Option<Handle<StandardMaterial>>,
     red: Option<Handle<StandardMaterial>>,
-    yellow_mesh: Option<Handle<Mesh>>,
-    red_mesh: Option<Handle<Mesh>>,
-    arrow_mesh: Option<Handle<Mesh>>,
-    arrow_material: Option<Handle<StandardMaterial>>,
+    arrow_image: Option<Handle<Image>>,
     cursor_mesh: Option<Handle<Mesh>>,
     cursor_good: Option<Handle<StandardMaterial>>,
     cursor_bad: Option<Handle<StandardMaterial>>,
-    ring: Option<(Entity, Entity)>,
+    ring: RingParts,
     arrow: Option<Entity>,
+}
+
+/// A ring mesh entity and the geometry signature last uploaded.
+struct RingPart {
+    entity: Entity,
+    mesh: Handle<Mesh>,
+    signature: u64,
+}
+
+#[derive(Default)]
+struct RingParts {
+    yellow: Option<RingPart>,
+    red: Option<RingPart>,
 }
 
 pub fn plugin(app: &mut App) {
@@ -437,7 +444,7 @@ fn track(
     water: Option<Res<WaterQuery>>,
     mut visuals: ResMut<Visuals>,
 ) {
-    ensure_visuals(&mut commands, &mut cry.images, &mut cry.meshes, &mut cry.materials, &mut visuals);
+    ensure_visuals(&mut cry.images, &mut cry.meshes, &mut cry.materials, &mut visuals);
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
     let Some(mover) = player.single().ok() else { return };
@@ -477,7 +484,7 @@ fn track(
                 rotation: cry_q,
                 scale: Vec3::splat(session.scale),
             },
-            Visibility::Inherited,
+            Visibility::Visible,
         ));
     }
     if session.changed {
@@ -490,7 +497,7 @@ fn track(
             session.invalid.map_or("is valid", Invalid::text)
         );
     }
-    update_ring(&mut commands, &mut cry.meshes, &visuals, session, mover.pos, &doodads, &catalog, collision.as_deref(), terrain.as_deref());
+    update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &catalog, collision.as_deref(), terrain.as_deref());
 }
 
 /// The ghost entity of the session, loaded once; `None` when the doodad has no model.
@@ -516,10 +523,12 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
         }
     };
     let root = commands
-        .spawn((Name::new("planting ghost"), Ghost, Transform::IDENTITY, Visibility::Hidden))
+        .spawn((Name::new("planting ghost"), Ghost, Transform::IDENTITY, Visibility::Visible))
         .id();
     let model = spawn_loaded(commands, &path, &loaded, &options);
-    commands.entity(model).insert(ChildOf(root));
+    commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+    let parts: usize = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
+    info!("planting: ghost {path} loaded ({parts} parts)");
     session.root = Some(root);
     Some(root)
 }
@@ -561,110 +570,111 @@ fn petal_blocked(plant: &Plantable, p: Vec2, doodads: &Doodads, catalog: &Catalo
     false
 }
 
-/// Rebuilds the two petal meshes and the ground arrow every frame (the original refreshed on mouse events; the
-/// capture is a static frame, and the per-frame refresh costs a few dozen quads).
-#[allow(clippy::too_many_arguments)]
-fn update_ring(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    visuals: &Visuals,
-    session: &Session,
-    player: Vec3,
+/// Builds the two petal lists (yellow valid, red blocked) around `spot`, in Bevy coordinates.
+fn ring_quads(
+    plant: &Plantable,
+    spot: Vec3,
     doodads: &Doodads,
     catalog: &Catalog,
-    collision: Option<&WorldCollision>,
-    terrain: Option<&TerrainQuery>,
-) {
-    if !visuals.ready {
-        return;
-    }
-    let (Some(spot), Some((yellow, red))) = (session.spot, visuals.ring) else {
-        hide_ring(commands, visuals);
-        return;
-    };
-    let (radius, count) = ring_shape(&session.plant);
+    floor: impl Fn(Vec2) -> f32,
+    all_red: bool,
+) -> (Vec<Quad>, Vec<Quad>) {
+    let (radius, count) = ring_shape(plant);
     let half_len = 0.10 + radius * 0.10;
     let half_w = half_len * 0.52;
-    let all_red = matches!(session.invalid, Some(i) if i != Invalid::Footprint);
-    let mut yellow_quads: Vec<Quad> = Vec::new();
-    let mut red_quads: Vec<Quad> = Vec::new();
+    let mut yellow = Vec::with_capacity(count);
+    let mut red = Vec::with_capacity(count);
     for i in 0..count {
         let jitter = (((i * 37) % 101) as f32 / 101.0 - 0.5) * 0.22;
         let ang = i as f32 / count as f32 * std::f32::consts::TAU + jitter;
         let dir = Vec2::new(ang.cos(), ang.sin());
         let side = Vec2::new(-dir.y, dir.x);
         let centre = Vec2::new(spot.x, spot.y) + dir * radius;
-        let z = ground_at(collision, terrain, centre.x, centre.y, spot.z, spot.z) + 0.045;
-        let c = Vec3::new(centre.x, centre.y, z);
-        let quad = Quad {
-            p: [
-                c - (side * half_w + dir * half_len).extend(0.0),
-                c + (side * half_w - dir * half_len).extend(0.0),
-                c + (side * half_w + dir * half_len).extend(0.0),
-                c + (dir * half_len - side * half_w).extend(0.0),
-            ],
-            uv: [[0.5, 0.5], [1.0, 0.5], [1.0, 1.0], [0.5, 1.0]],
-        };
-        if all_red || petal_blocked(&session.plant, centre, doodads, catalog) {
-            red_quads.push(quad);
+        let z = floor(centre) + 0.045;
+        let game = Vec3::new(centre.x, centre.y, z);
+        let p = [
+            game - (side * half_w + dir * half_len).extend(0.0),
+            game + (side * half_w - dir * half_len).extend(0.0),
+            game + (side * half_w + dir * half_len).extend(0.0),
+            game + (dir * half_len - side * half_w).extend(0.0),
+        ];
+        let p = p.map(cry_to_bevy);
+        let quad = Quad { p, uv: [[0.5, 0.5], [1.0, 0.5], [1.0, 1.0], [0.5, 1.0]] };
+        if all_red || petal_blocked(plant, centre, doodads, catalog) {
+            red.push(quad);
         } else {
-            yellow_quads.push(quad);
+            yellow.push(quad);
         }
     }
-    if let Some(mesh) = &visuals.yellow_mesh {
-        set_quads(meshes, mesh, &yellow_quads);
-    }
-    if let Some(mesh) = &visuals.red_mesh {
-        set_quads(meshes, mesh, &red_quads);
-    }
-    commands.entity(yellow).insert(Visibility::Inherited);
-    commands.entity(red).insert(Visibility::Inherited);
+    (yellow, red)
+}
 
-    // the red ground arrow from the player towards the spot
-    if let Some(arrow) = visuals.arrow
-        && let Some(mesh) = &visuals.arrow_mesh
-    {
-        let d = Vec2::new(spot.x - player.x, spot.y - player.y);
-        if d.length() > 0.25 {
-            let dir = d.normalize();
-            let side = Vec2::new(-dir.y, dir.x);
-            let a = ground_at(collision, terrain, player.x, player.y, player.z, player.z) + 0.06;
-            let c = Vec3::new(player.x, player.y, a);
-            let (half_l, half_s) = (0.75, 0.26);
-            let quad = Quad {
-                p: [
-                    c + (dir * half_l - side * half_s).extend(0.0),
-                    c + (dir * half_l + side * half_s).extend(0.0),
-                    c - (dir * half_l - side * half_s).extend(0.0),
-                    c - (dir * half_l + side * half_s).extend(0.0),
-                ],
-                uv: [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]],
-            };
-            set_quads(meshes, mesh, &[quad]);
-            commands.entity(arrow).insert(Visibility::Inherited);
-        } else {
-            commands.entity(arrow).insert(Visibility::Hidden);
+fn quads_signature(quads: &[Quad]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for q in quads {
+        for p in q.p {
+            ((p.x * 100.0).round() as i32).hash(&mut h);
+            ((p.y * 100.0).round() as i32).hash(&mut h);
+            ((p.z * 100.0).round() as i32).hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+/// Uploads a non-empty petal mesh and shows its entity; an empty list only hides the entity. The mesh is not
+/// touched (and not reallocated) while the geometry signature is unchanged.
+fn show_ring_part(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    part: &mut Option<RingPart>,
+    material: &Handle<StandardMaterial>,
+    name: &'static str,
+    quads: &[Quad],
+) {
+    if quads.is_empty() {
+        if let Some(p) = part {
+            commands.entity(p.entity).insert(Visibility::Hidden);
+        }
+        return;
+    }
+    let signature = quads_signature(quads);
+    match part {
+        Some(p) => {
+            if p.signature != signature {
+                if let Some(mesh) = mesh_from_quads(quads)
+                    && let Some(mut m) = meshes.get_mut(&p.mesh)
+                {
+                    *m = mesh;
+                }
+                p.signature = signature;
+            }
+            commands.entity(p.entity).insert(Visibility::Visible);
+        }
+        None => {
+            let Some(mesh) = mesh_from_quads(quads) else { return };
+            let mesh = meshes.add(mesh);
+            let entity = commands
+                .spawn((
+                    Name::new(name),
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Transform::IDENTITY,
+                    Visibility::Inherited,
+                    NoFrustumCulling,
+                    NotShadowCaster,
+                    NotShadowReceiver,
+                ))
+                .id();
+            *part = Some(RingPart { entity, mesh, signature });
         }
     }
 }
 
-fn hide_ring(commands: &mut Commands, visuals: &Visuals) {
-    if let Some((yellow, red)) = visuals.ring {
-        commands.entity(yellow).insert(Visibility::Hidden);
-        commands.entity(red).insert(Visibility::Hidden);
+fn mesh_from_quads(quads: &[Quad]) -> Option<Mesh> {
+    if quads.is_empty() {
+        return None;
     }
-    if let Some(arrow) = visuals.arrow {
-        commands.entity(arrow).insert(Visibility::Hidden);
-    }
-}
-
-/// A textured quad in world space.
-struct Quad {
-    p: [Vec3; 4],
-    uv: [[f32; 2]; 4],
-}
-
-fn set_quads(meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>, quads: &[Quad]) {
     let mut positions = Vec::with_capacity(quads.len() * 4);
     let mut uvs = Vec::with_capacity(quads.len() * 4);
     let mut indices = Vec::with_capacity(quads.len() * 6);
@@ -674,32 +684,61 @@ fn set_quads(meshes: &mut Assets<Mesh>, handle: &Handle<Mesh>, quads: &[Quad]) {
         uvs.extend_from_slice(&q.uv);
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
-    let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; positions.len()])
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(indices));
-    if let Some(mut m) = meshes.get_mut(handle) {
-        *m = mesh;
+    Some(
+        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; positions.len()])
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+            .with_inserted_indices(Indices::U32(indices)),
+    )
+}
+
+/// Rebuilds the two petal meshes when the cursor, the footprint or the blocked petals changed; the CPU work is
+/// cheap but no mesh is reallocated or uploaded while nothing changes.
+#[allow(clippy::too_many_arguments)]
+fn update_ring(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    visuals: &mut Visuals,
+    session: &Session,
+    doodads: &Doodads,
+    catalog: &Catalog,
+    collision: Option<&WorldCollision>,
+    terrain: Option<&TerrainQuery>,
+) {
+    if !visuals.ready {
+        return;
+    }
+    let Some(spot) = session.spot else {
+        hide_ring(commands, visuals);
+        return;
+    };
+    let floor = |p: Vec2| ground_at(collision, terrain, p.x, p.y, spot.z, spot.z);
+    let all_red = matches!(session.invalid, Some(i) if i != Invalid::Footprint);
+    let (yellow, red) = ring_quads(&session.plant, spot, doodads, catalog, floor, all_red);
+    let (Some(yellow_mat), Some(red_mat)) = (visuals.yellow.clone(), visuals.red.clone()) else { return };
+    show_ring_part(commands, meshes, &mut visuals.ring.yellow, &yellow_mat, "planting ring (valid)", &yellow);
+    show_ring_part(commands, meshes, &mut visuals.ring.red, &red_mat, "planting ring (blocked)", &red);
+}
+
+fn hide_ring(commands: &mut Commands, visuals: &Visuals) {
+    for part in [visuals.ring.yellow.as_ref(), visuals.ring.red.as_ref()].into_iter().flatten() {
+        commands.entity(part.entity).insert(Visibility::Hidden);
+    }
+    if let Some(arrow) = visuals.arrow {
+        commands.entity(arrow).insert(Visibility::Hidden);
     }
 }
 
-fn empty_mesh() -> Mesh {
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, Vec::<[f32; 3]>::new())
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, Vec::<[f32; 3]>::new())
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, Vec::<[f32; 2]>::new())
-        .with_inserted_indices(Indices::U32(Vec::new()))
+/// A textured quad in world space.
+#[derive(Clone)]
+struct Quad {
+    p: [Vec3; 4],
+    uv: [[f32; 2]; 4],
 }
 
 /// Loads the original placement textures (`leaf_03.dds`, the road arrow, the housing cursors) once.
-fn ensure_visuals(
-    commands: &mut Commands,
-    images: &mut Assets<Image>,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    visuals: &mut Visuals,
-) {
+fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, visuals: &mut Visuals) {
     if visuals.ready || visuals.failed {
         return;
     }
@@ -717,21 +756,9 @@ fn ensure_visuals(
         };
         visuals.yellow = Some(materials.add(leaf_material(Color::srgba(1.0, 0.82, 0.18, 0.95))));
         visuals.red = Some(materials.add(leaf_material(Color::srgba(0.82, 0.09, 0.05, 0.95))));
-        visuals.yellow_mesh = Some(meshes.add(empty_mesh()));
-        visuals.red_mesh = Some(meshes.add(empty_mesh()));
 
         let arrow = dds_image("textures/decal/roadsign/arrow.dds")?;
-        let arrow = images.add(arrow);
-        visuals.arrow_material = Some(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.62, 0.06, 0.04, 0.85),
-            base_color_texture: Some(arrow),
-            unlit: true,
-            alpha_mode: AlphaMode::Blend,
-            cull_mode: None,
-            depth_bias: 10.0,
-            ..default()
-        }));
-        visuals.arrow_mesh = Some(meshes.add(empty_mesh()));
+        visuals.arrow_image = Some(images.add(arrow));
 
         let good = dds_image("ui/cursor/housing_position.dds")?;
         let bad = dds_image("ui/cursor/housing_invalid.dds")?;
@@ -755,29 +782,8 @@ fn ensure_visuals(
         warn!("planting: cannot read the placement textures (leaf_03 / arrow / housing cursors)");
         return;
     }
-    let (Some(yellow_mesh), Some(red_mesh), Some(yellow_mat), Some(red_mat)) =
-        (visuals.yellow_mesh.clone(), visuals.red_mesh.clone(), visuals.yellow.clone(), visuals.red.clone())
-    else {
-        visuals.failed = true;
-        return;
-    };
-    let yellow = commands
-        .spawn((Name::new("planting ring (valid)"), PetalRing, Mesh3d(yellow_mesh), MeshMaterial3d(yellow_mat), Transform::IDENTITY, Visibility::Hidden, NoFrustumCulling, NotShadowCaster, NotShadowReceiver))
-        .id();
-    let red = commands
-        .spawn((Name::new("planting ring (blocked)"), PetalRing, Mesh3d(red_mesh), MeshMaterial3d(red_mat), Transform::IDENTITY, Visibility::Hidden, NoFrustumCulling, NotShadowCaster, NotShadowReceiver))
-        .id();
-    visuals.ring = Some((yellow, red));
-    if let (Some(mesh), Some(material)) = (visuals.arrow_mesh.clone(), visuals.arrow_material.clone()) {
-        visuals.arrow = Some(
-            commands
-                .spawn((Name::new("planting arrow"), PlaceArrow, Mesh3d(mesh), MeshMaterial3d(material), Transform::IDENTITY, Visibility::Hidden, NoFrustumCulling, NotShadowCaster, NotShadowReceiver))
-                .id(),
-        );
-    }
     visuals.ready = true;
 }
-
 fn dds_image(path: &str) -> Option<Image> {
     let bytes = aa_cry::read(path).ok()?;
     let dds = aa_cry::texture::Dds::parse(&bytes).ok()?;
@@ -798,9 +804,11 @@ fn dds_image(path: &str) -> Option<Image> {
 fn cursor_icon(
     mut commands: Commands,
     placement: Res<Placement>,
-    visuals: Res<Visuals>,
+    mut visuals: ResMut<Visuals>,
     mut windows: Query<(Entity, &mut Window, &mut bevy::window::CursorOptions), With<bevy::window::PrimaryWindow>>,
-    cameras: Query<(Entity, &Camera, &Projection), With<Camera3d>>,    mut icon: Query<(&mut Transform, &mut Visibility, &mut MeshMaterial3d<StandardMaterial>), With<PlacementCursorIcon>>,
+    cameras: Query<(Entity, &Camera, &Projection), With<Camera3d>>,
+    ui_cameras: Query<Entity, With<aa_ui::render::UiCamera>>,
+    mut icon: Query<(&mut Transform, &mut Visibility, &mut MeshMaterial3d<StandardMaterial>), With<PlacementCursorIcon>>,
 ) {
     let Ok((window_entity, window, mut cursor_options)) = windows.single_mut() else { return };
     let placing = placement.session.is_some();
@@ -813,7 +821,43 @@ fn cursor_icon(
         if let Ok((_, mut v, _)) = icon.single_mut() {
             *v = Visibility::Hidden;
         }
+        if let Some(arrow) = visuals.arrow {
+            commands.entity(arrow).insert(Visibility::Hidden);
+        }
         return;
+    }
+    let Some((camera_entity, camera, projection)) = cameras.iter().find(|(_, c, _)| c.is_active) else { return };
+    // the placement-mode arrow: a screen-space HUD element at the bottom centre (the retail arrow is native; the
+    // road arrow texture is the closest original asset and stays documented as a placeholder)
+    if let Some(image) = visuals.arrow_image.clone() {
+        match visuals.arrow {
+            Some(arrow) => {
+                commands.entity(arrow).insert(Visibility::Inherited);
+            }
+            None => {
+                let target = ui_cameras.single().ok().unwrap_or(camera_entity);
+                let arrow = commands
+                    .spawn((
+                        Name::new("planting arrow"),
+                        PlacementArrow,
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(50.0),
+                            bottom: Val::Px(112.0),
+                            width: Val::Px(150.0),
+                            height: Val::Px(60.0),
+                            ..default()
+                        },
+                        UiTransform::from_translation(Val2::new(Val::Px(-75.0), Val::Px(0.0))),
+                        ImageNode { image, color: Color::srgba(0.78, 0.07, 0.04, 0.9), flip_x: true, ..default() },
+                        UiTargetCamera(target),
+                        Visibility::Inherited,
+                        GlobalZIndex(100),
+                    ))
+                    .id();
+                visuals.arrow = Some(arrow);
+            }
+        }
     }
     let Some(cursor) = window.cursor_position() else {
         if let Ok((_, mut v, _)) = icon.single_mut() {
@@ -823,7 +867,6 @@ fn cursor_icon(
     };
     let Some(material) = (if placement.session.as_ref().is_some_and(|s| s.invalid.is_none()) { visuals.cursor_good.clone() } else { visuals.cursor_bad.clone() }) else { return };
     let Some(mesh) = visuals.cursor_mesh.clone() else { return };
-    let Some((camera_entity, camera, projection)) = cameras.iter().find(|(_, c, _)| c.is_active) else { return };
     let size_px = 32.0;
     let view = camera.logical_viewport_size().unwrap_or(Vec2::new(1920.0, 1080.0));
     let fov = match projection {
@@ -987,12 +1030,15 @@ fn log_server(mut events: MessageReader<aa_net::NetEvent>) {
     }
 }
 
-fn leave(mut placement: ResMut<Placement>, ghosts: Query<Entity, With<Ghost>>, visuals: Res<Visuals>, mut windows: Query<&mut bevy::window::CursorOptions>, mut commands: Commands) {
+fn leave(mut placement: ResMut<Placement>, ghosts: Query<Entity, With<Ghost>>, mut visuals: ResMut<Visuals>, mut windows: Query<&mut bevy::window::CursorOptions>, mut commands: Commands) {
     placement.session = None;
     for e in &ghosts {
         commands.entity(e).despawn();
     }
     hide_ring(&mut commands, &visuals);
+    if let Some(arrow) = visuals.arrow.take() {
+        commands.entity(arrow).despawn();
+    }
     for mut cursor in &mut windows {
         cursor.visible = true;
     }
@@ -1224,6 +1270,29 @@ mod tests {
     }
 
     #[test]
+    fn the_ring_geometry_is_non_empty_and_in_bevy_space() {
+        let p = plant();
+        let c = catalog();
+        let doodads = Doodads::default();
+        let spot = Vec3::new(100.0, 200.0, 10.0);
+        let (yellow, red) = ring_quads(&p, spot, &doodads, &c, |_| 10.0, false);
+        assert!(!yellow.is_empty(), "a valid footprint has a petal ring");
+        assert!(red.is_empty());
+        for q in &yellow {
+            for v in q.p {
+                assert!((v.y - 10.045).abs() < 1e-3, "Bevy Y is the ground height: {v:?}");
+                assert!((v.x - 100.0).abs() < 2.0 && (v.z + 200.0).abs() < 2.0, "game y -> Bevy -z: {v:?}");
+            }
+        }
+        let (yellow_red, red_all) = ring_quads(&p, spot, &doodads, &c, |_| 10.0, true);
+        assert!(yellow_red.is_empty() && !red_all.is_empty(), "an invalid spot rings red");
+        let moved = Vec3::new(100.2, 200.0, 10.0);
+        let (moved_quads, _) = ring_quads(&p, moved, &doodads, &c, |_| 10.0, false);
+        assert_ne!(quads_signature(&yellow), quads_signature(&moved_quads), "a new spot changes the upload signature");
+        assert_eq!(quads_signature(&yellow), quads_signature(&yellow.clone()));
+    }
+
+    #[test]
     fn the_real_database_maps_seeds_and_saplings() {
         let Ok(path) = std::env::var("AA_DB") else { return };
         if !std::path::Path::new(&path).exists() {
@@ -1242,5 +1311,84 @@ mod tests {
         assert!(spruce.model.as_deref().is_some_and(|m| m.ends_with("sub_tree_bigfir02.cgf")), "{:?}", spruce.model);
         assert_ne!(spruce.model.as_deref(), Some("objects/env/05_nature/04_subpol/sub_tree_bigfir01_grow03.cgf"));
         let _ = db;
+    }
+
+    #[test]
+    fn the_placement_and_farm_plugins_validate_and_tick() {
+        // The binary's full plugin set needs a window and the renderer; this smoke App keeps the real placement
+        // and farm plugins (and every resource their systems read) so Bevy validates every system parameter and
+        // the startup/update schedules, which is what the B0002 conflict needed.
+        use bevy::asset::AssetPlugin;
+        use bevy::state::app::StatesPlugin;
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), bevy::input::InputPlugin, StatesPlugin))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .add_plugins(aa_cry::CryPlugin)
+            .add_plugins(bevy::camera::visibility::VisibilityPlugin)
+            .init_state::<crate::Screen>()
+            .add_plugins(plugin)
+            .add_plugins(crate::hud::farm::plugin)
+            .add_message::<aa_net::NetCommand>()
+            .add_message::<aa_net::NetEvent>()
+            .init_resource::<aa_net::Farms>()
+            .init_resource::<aa_net::state::Doodads>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<crate::hud::HudPointerOverUi>()
+            .init_resource::<crate::hud::HudKeyboardFocus>()
+            .init_resource::<crate::hud::HudBuilt>()
+            .insert_non_send(crate::hud::api::HudBridge(std::rc::Rc::new(std::cell::RefCell::new(
+                crate::hud::api::HudData::default(),
+            ))));
+        let plant = plant();
+        app.insert_resource(Placement { session: Some(Session::new(1, plant, 0.0)) });
+        app.world_mut().resource_mut::<NextState<crate::Screen>>().set(crate::Screen::InGame);
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(app.world().resource::<Placement>().session.is_some(), "placement survives the ticks");
+        if aa_cry::pak_available() {
+            let roots: Vec<Entity> = {
+                let world = app.world_mut();
+                let mut q = world.query_filtered::<Entity, With<Ghost>>();
+                q.iter(world).collect()
+            };
+            assert_eq!(roots.len(), 1, "one ghost root");
+            assert_eq!(app.world().get::<Visibility>(roots[0]), Some(&Visibility::Visible), "the ghost root is visible");
+            let visible_parts = {
+                let world = app.world_mut();
+                let mut q = world.query_filtered::<&Visibility, With<Mesh3d>>();
+                q.iter(world).filter(|v| **v != Visibility::Hidden).count()
+            };
+            assert!(visible_parts > 0, "the ghost model's meshes inherit the visible root");
+        }
+    }
+
+    #[test]
+    fn the_ghost_model_loads_with_mesh_parts() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        use bevy::asset::AssetPlugin;
+        #[derive(Resource, Default)]
+        struct Parts(usize);
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .add_plugins(aa_cry::CryPlugin)
+            .init_resource::<Parts>()
+            .add_systems(Startup, |mut cry: CryAssets, mut out: ResMut<Parts>| {
+                if let Ok(loaded) = cry.load_model("objects/env/05_nature/00_common/common_plants_rice01.cgf", &ModelOptions::default()) {
+                    out.0 = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
+                }
+            });
+        app.update();
+        assert!(app.world().resource::<Parts>().0 > 0, "the template model has meshes to show as a ghost");
     }
 }

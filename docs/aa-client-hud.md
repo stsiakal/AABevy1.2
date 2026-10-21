@@ -2279,7 +2279,7 @@ list in the window, changing and removing the title updates the own plate and th
 the HUD (`hud/panels.rs`) sees `item_spawn_doodads` in `GameData` and sends `PlantPressed` instead of the item's
 skill. The look follows the original 1.2 capture of 2026-10-21 (rice seed `15646` and a spruce sapling, Gweonid
 Forest): the doodad's plain model under the cursor, a ring of leaf petals (yellow valid, red invalid, mixed when part
-of the footprint touches something), the client's white / red placement cursor, a red ground arrow and the top-centre
+of the footprint touches something), the client's white / red placement cursor, the bottom-centre red placement arrow and the top-centre
 error text.
 
 * **Item -> doodad**: `item_spawn_doodads` is the client database's seed link (`item 15646` rice -> doodad `2246`,
@@ -2295,13 +2295,16 @@ error text.
   `game/materials/effects/leaf_shape.mtl`; the native ring's white / red materials are
   `game/materials/special/housing_build_normal.mtl` and `housing_build_invalid.mtl`. The ring radius follows
   `doodad_almighties.sim_radius` (rice 0.5 m, spruce 2 m), so a tree gets a large ring. A petal turns red when it
-  touches another character- or house-placed doodad; the mixed ring is the retail "too close" warning. The decal is
-  rebuilt every frame (the capture is one frame; the original only updated on mouse events, deliberately not copied).
+  touches another character- or house-placed doodad; the mixed ring is the retail "too close" warning. The ring
+  vertices are converted to Bevy coordinates (`cry_to_bevy`) and the decal is rebuilt on every frame's state but the
+  mesh is uploaded only when the geometry signature changes (no empty meshes are created; the original only updated on
+  mouse events, deliberately not copied).
 * **Cursor**: the original icons were found: `game/ui/cursor/housing_position.dds` (white house + crosshair) and
   `game/ui/cursor/housing_invalid.dds` (red house + x), with `housing_rotation.dds` / `housing_elevation.dds` /
   `housing_zoom.dds` for the other housing modes. They are drawn as a camera-attached quad and the OS cursor is hidden
-  while placing. The red ground arrow uses `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn
-  natively; no matching model was found in the pak, so this is the closest original asset, a placeholder).
+  while placing. The bottom-centre red arrow is a screen-space Bevy UI `ImageNode` (targeted at the HUD camera)
+  using `game/textures/decal/roadsign/arrow.dds` (the retail arrow itself is drawn natively; no matching asset was
+  found in the pak, so this is the closest original texture, a placeholder).
 * **Rotation**: the mouse wheel turns the ghost; Alt makes it fine (1 degree), Shift gives 15 degrees per step;
   Ctrl leaves the wheel to the camera zoom. The initial yaw is the camera heading (`OrbitCamera::yaw`), matching the
   capture's two placements (4.2020082 and 3.166932 rad), with the player's facing as fallback. Arrow keys / `,` / `.`
@@ -2325,11 +2328,14 @@ error text.
   protection times are seconds; `growUp` is `time_left == 0`. Before the database is loaded the reference capture's
   fake farm tables stay (`FALLBACK`).
 * **Script**: `plant ITEM DX DY [YAW]` (see `aa-client-script.md`) uses the same catalogue, ground and validity code
-  without a cursor, finds the item instance in the bag and sends the same command.
+  without a cursor, finds the item instance in the bag and sends the same command. It waits for `DoodadsCreated`;
+  aa-net exposes that packet as `Event::DoodadsSpawned`, so the script event matcher accepts both names.
 
 Tests: `cargo test -p aa-client placement`, `farm`, `script::parse` (item lookup and the template model against the
-real database when `AA_DB` is set, ground / auto-z maths, range / water / surface / footprint rules, the mixed ring,
-the retail error texts, golden `CSCreateDoodad` bytes, command parser).
+real database when `AA_DB` is set, the ghost model loading with mesh parts, ground / auto-z maths, range / water /
+surface / footprint rules, the mixed ring with non-empty Bevy-space geometry, the retail error texts, golden
+`CSCreateDoodad` bytes, command parser, and a minimal-App smoke test that adds the real placement and farm plugins,
+runs four updates and validates every system parameter).
 
 Not done: house placement and construction (the `housings` auto-z fields are not read yet), decoration placement,
 garden plots (`DoodadFuncHouseFarm` is a server no-op), the snap grid (10.x only; default off), harvesting changes and

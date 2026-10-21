@@ -225,7 +225,23 @@ fn event_name(e: &Event) -> String {
 
 fn name_matches(name: &str, pattern: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n == pattern || (n.starts_with(pattern) && n.as_bytes().get(pattern.len()) == Some(&b'.'))
+    // aa-net exposes SCDoodadCreated as `Event::DoodadsSpawned`; scripts and the server log call the packet
+    // `DoodadsCreated`, so the two names are interchangeable here.
+    let alias = matches!((n.as_str(), pattern), ("doodadsspawned", "doodadscreated") | ("doodadscreated", "doodadsspawned"));
+    alias || n == pattern || (n.starts_with(pattern) && n.as_bytes().get(pattern.len()) == Some(&b'.'))
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::name_matches;
+
+    #[test]
+    fn the_doodad_created_names_are_aliases() {
+        assert!(name_matches("DoodadsSpawned", "doodadscreated"));
+        assert!(name_matches("DoodadsCreated", "doodadsspawned"));
+        assert!(name_matches("Interaction.SkillList", "interaction"));
+        assert!(!name_matches("UnitSpawned", "doodadscreated"));
+    }
 }
 
 #[derive(SystemParam)]
@@ -633,7 +649,7 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                         ),
                     );
                     c.net.write(NetCommand(Command::CreateDoodad(request)));
-                    Some(Active::Await { event: "DoodadsSpawned".into(), deadline: now + 10.0, must: false })
+                    Some(Active::Await { event: "DoodadsCreated".into(), deadline: now + 10.0, must: false })
                 }
                 Err(why) => {
                     r.fail(format!("plant {item}: {why}"));
