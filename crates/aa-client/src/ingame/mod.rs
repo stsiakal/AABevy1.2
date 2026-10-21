@@ -31,6 +31,9 @@
 //! cells unload. The character list is then built again by `login`.
 
 mod anim;
+mod cam_fov;
+mod jump;
+pub(crate) mod sprint;
 pub(crate) mod attachments;
 mod bench;
 pub(crate) mod appearance;
@@ -117,6 +120,9 @@ impl Plugin for InGamePlugin {
             .init_resource::<units::Views>()
             .init_resource::<player::SendState>()
             .init_resource::<player::PlayerBuilt>()
+            .init_resource::<anim::LocalJump>()
+            .init_resource::<sprint::Sprint>()
+            .init_resource::<cam_fov::CamFov>()
             .init_resource::<warm::Warm>()
             .add_plugins(enter::plugin)
             .add_plugins(emote::plugin)
@@ -149,6 +155,7 @@ impl Plugin for InGamePlugin {
                     (
                         camera::orbit_input.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         player::follow_server,
+                        sprint::drive_sprint.run_if(in_state(Screen::InGame)),
                         player::control_player.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         camera::follow_player,
                     )
@@ -156,6 +163,8 @@ impl Plugin for InGamePlugin {
                         .after(crate::hud::HudInputReady),
                     (units::sync_views, units::move_units, units::cull_units).chain(),
                     anim::drive_locomotion,
+                    sprint::apply_blur.after(sprint::drive_sprint),
+                    cam_fov::drive_cam_fov.after(camera::follow_player),
                     swim::drive_swim.after(anim::drive_locomotion),
                     player::dev_hide_part,
                     weapons::attach_carried,
@@ -218,7 +227,13 @@ fn leave_game(
     doomed: Query<Entity, Or<(With<player::LocalPlayer>, With<units::RemoteUnit>, With<units::RemoteDoodad>, With<camera::OrbitCamera>)>>,
     anchor: Query<(), With<crate::login::WorldAnchor>>,
     ui_cameras: Query<Entity, With<aa_ui::render::UiCamera>>,
+    switch: Option<ResMut<aa_world::WorldSwitch>>,
 ) {
+    // the server logs a character in at main_world without an SCLoadInstance: leave an instance world behind (a no-op
+    // when already there)
+    if let Some(mut switch) = switch {
+        switch.request(WORLD);
+    }
     let mut n = 0;
     for e in &doomed {
         commands.entity(e).despawn();
@@ -228,6 +243,10 @@ fn leave_game(
     commands.insert_resource(player::SendState::default());
     commands.insert_resource(player::PlayerBuilt::default());
     commands.insert_resource(warm::Warm::default());
+    // a logout mid-Dash or mid-jump must not carry its state (the end-of-Dash FOV fade) into the next world
+    commands.insert_resource(sprint::Sprint::default());
+    commands.insert_resource(cam_fov::CamFov::default());
+    commands.insert_resource(anim::LocalJump::default());
     // the HUD made the UI cameras agree with the world camera (HDR, no MSAA, `hud::cameras`): the login stage camera
     // below them does not, and a stack of cameras that disagree on the sample count is a validation error
     for e in &ui_cameras {
