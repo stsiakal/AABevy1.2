@@ -895,29 +895,40 @@ pub fn handle_requests(
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
             Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
             Request::HouseBuild => {
-                if let Some(placement) = placement.as_deref_mut()
-                    && let Some(session) = placement.session.as_mut()
-                    && session.window_open
-                    && let Some(request) = session.create_house()
-                {
-                    info!("housing: build confirmed by the original build window");
-                    net.write(NetCommand(Command::House(request)));
-                    session.done = true;
+                let Some(placement) = placement.as_deref_mut() else {
+                    warn!("housing: Build pressed with no placement state");
+                    continue;
+                };
+                let Some(session) = placement.session.as_mut() else {
+                    warn!("housing: Build pressed with no house placement");
+                    continue;
+                };
+                if !session.window_open {
+                    warn!("housing: Build pressed but the Start Construction window is not open");
+                    continue;
+                }
+                match session.create_house() {
+                    Some(request) => {
+                        info!("housing: build confirmed by the original build window");
+                        net.write(NetCommand(Command::House(request)));
+                        session.done = true;
+                    }
+                    None => warn!(
+                        "housing: Build cannot send CSCreateHouse: {}",
+                        session.build_blocked().unwrap_or("unknown reason")
+                    ),
                 }
             }
             Request::HouseCancel => {
-                if let Some(placement) = placement.as_deref_mut()
-                    && let Some(session) = placement.session.as_mut()
-                    && session.window_open
-                {
+                let Some(placement) = placement.as_deref_mut() else { continue };
+                let Some(session) = placement.session.as_mut() else { continue };
+                if session.window_open {
                     info!("housing: build window cancelled; the placement stays");
                 }
-                if let Some(placement) = placement.as_deref_mut()
-                    && let Some(session) = placement.session.as_mut()
-                {
-                    session.window_open = false;
-                    session.quote_requested = false;
-                }
+                session.window_open = false;
+                session.quote_requested = false;
+                session.quote = None;
+                session.done = false;
             }
             Request::ItemEffect { character_id, request } => {
                 // The typed request was captured by the original enchant API.
@@ -1153,7 +1164,7 @@ mod tests {
         lua.load("X2Player={GetFeatureSet=function()return{levelLimit=false,mateLevelLimit=false,premium=false}end}").exec()?;
         let bridge = Rc::new(RefCell::new(HudData::default()));
         install_feature_limits(&lua, &bridge)?;
-        lua.load("local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==0 and f.premium==false)").exec()?;
+        lua.load("local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==0 and f.premium==false and f.taxItem==true)").exec()?;
         bridge.borrow_mut().feature_limits = (Some(55), Some(50));
         lua.load(
             "local f=X2Player:GetFeatureSet();assert(f.levelLimit==55 and f.mateLevelLimit==50)",
@@ -1222,6 +1233,68 @@ mod tests {
     }
 
     /// An Archery character (ability 6) with 2000 ability exp: what the scripts read in `HUD.state`.
+    #[test]
+    fn house_build_sends_the_confirmed_spot_even_when_the_pointer_became_invalid() {
+        use crate::ingame::placement::{Grounding, HouseDesign, Placement, Plantable, Session};
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        bridge.borrow_mut().requests.push(Request::HouseBuild);
+        let mut session = Session::new(
+            77,
+            Plantable {
+                item: 15596,
+                doodad: 0,
+                use_skill: 17496,
+                use_range: 0.0,
+                cooldown_ms: 0,
+                cooldown_tag: 0,
+                start_group: 0,
+                model: None,
+                footprint: 4.0,
+                requires_water: false,
+                grounding: Grounding::default(),
+                house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), garden_radius: 4.0, heavy_tax: true }),
+            },
+            0.5,
+        );
+        session.spot = Some(Vec3::new(1000.5, 2000.25, 100.0));
+        session.invalid = Some(crate::ingame::placement::Invalid::NoGround);
+        session.quote_requested = true;
+        session.window_open = true;
+        session.quote = Some(aa_net::housing::ConstructHouseTax {
+            design_id: 267,
+            heavy_tax_house_count: 1,
+            normal_tax_house_count: 0,
+            is_heavy_tax_house: true,
+            base_tax_money_amount: 50000,
+            deposit_tax_money_amount: 100000,
+            total_tax_money_amount: 150000,
+        });
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge))
+            .init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::ActionBar>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Target>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<aa_net::state::Buffs>()
+            .insert_resource(Placement { session: Some(session) })
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_message::<crate::ingame::ground_target::SkillPressed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
+            .add_systems(Update, handle_requests);
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
+        assert!(matches!(
+            &commands[..],
+            [NetCommand(Command::House(aa_net::housing::HouseCommand::CreateHouse {
+                design_id: 267, x: 1000.5, y: 2000.25, z: 100.0, z_rot: 0.5, item_id: 77, money_amount: 150000, ..
+            }))]
+        ), "{commands:?}");
+        assert!(app.world().resource::<Placement>().session.as_ref().is_some_and(|s| s.done));
+    }
+
     #[test]
     fn abilities_reach_the_scripts() {
         let lua = Lua::new();

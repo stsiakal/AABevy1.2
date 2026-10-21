@@ -729,7 +729,10 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                     Some(Active::Await { event: "SCMyHouse".into(), deadline: now + 10.0, must: false })
                 }
                 None => {
-                    r.fail("no tax quote yet".into());
+                    r.fail(format!(
+                        "cannot send CSCreateHouse: {}",
+                        session.build_blocked().unwrap_or("unknown reason")
+                    ));
                     None
                 }
             }

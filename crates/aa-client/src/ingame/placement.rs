@@ -340,8 +340,6 @@ pub struct Session {
     /// The ghost root, its model and the tinted part materials.
     root: Option<Entity>,
     model_failed: bool,
-    /// The state changed since the last log (the spot or its validity).
-    changed: bool,
     /// The left button was released after the session started: only then may a click confirm (the bag click that
     /// used the seed must not carry into the placement).
     left_armed: bool,
@@ -366,7 +364,6 @@ impl Session {
             invalid: Some(Invalid::NoGround),
             root: None,
             model_failed: false,
-            changed: true,
             left_armed: false,
             quote_requested: false,
             quote: None,
@@ -413,9 +410,30 @@ impl Session {
         Some(HouseCommand::ConstructHouseTax { design_id: design, x: spot.x, y: spot.y, z: spot.z })
     }
 
-    /// `CSCreateHouse`: the build window's Build button.
+    /// Why the confirmed house cannot be sent, for the one WARN the Build button logs.
+    pub fn build_blocked(&self) -> Option<&'static str> {
+        if !self.is_house() {
+            return Some("the active placement is not a house");
+        }
+        if self.done {
+            return Some("the build was already confirmed");
+        }
+        if !self.quote_requested {
+            return Some("the placement was not confirmed (no tax quote was requested)");
+        }
+        if self.spot.is_none() {
+            return Some("the confirmed spot is missing");
+        }
+        if self.quote.is_none() {
+            return Some("the server's tax quote has not arrived");
+        }
+        None
+    }
+
+    /// `CSCreateHouse`: the build window's Build button. It uses the confirmed spot, not the live cursor
+    /// validity: the pointer may be over the window and the preview locked when this is called.
     pub fn create_house(&self) -> Option<HouseCommand> {
-        if !self.valid() {
+        if self.build_blocked().is_some() {
             return None;
         }
         let design = self.house_design()?;
@@ -705,6 +723,13 @@ fn track(
     let over_ui = over_ui.is_some_and(|o| o.0);
     let cursor = if over_ui { None } else { raw_cursor };
     let house = session.is_house();
+    // confirmed for the Start Construction window: the spot and yaw stay locked until Cancel. The pointer
+    // over the HUD also neither moves nor re-validates a house preview.
+    if house_locks_pointer(session, over_ui) {
+        show_ghost(&mut commands, root, session);
+        update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
+        return;
+    }
     // a scripted house placement keeps its spot without a pointer (`--offscreen-shot`, headless runs)
     if house && session.scripted && raw_cursor.is_none() {
         show_ghost(&mut commands, root, session);
@@ -719,9 +744,10 @@ fn track(
         // the retail house ghost stays at its last valid spot when the cursor leaves the ground or points at
         // the UI; plants hide instead (their capture shows no ghost over the sky)
         if house && session.spot.is_some() {
-            if raw_cursor.is_some() || over_ui {
+            if raw_cursor.is_some() && session.invalid != Some(Invalid::NoGround) {
                 session.invalid = Some(Invalid::NoGround);
-                session.changed = true;
+                let p = session.spot.unwrap_or_default();
+                info!("housing: spot ({:.1}, {:.1}, {:.1}) no ground under the cursor", p.x, p.y, p.z);
             }
             show_ghost(&mut commands, root, session);
             update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
@@ -751,13 +777,18 @@ fn track(
             invalid
         }
     };
-    if (session.spot, session.invalid) != before {
-        session.changed = true;
-    }
     show_ghost(&mut commands, root, session);
-    if session.changed {
-        session.changed = false;
+    if session.invalid != before.1 {
         info!(
+            "{}: spot ({:.1}, {:.1}, {:.1}) {}",
+            if house { "housing" } else { "planting" },
+            spot.x,
+            spot.y,
+            spot.z,
+            session.invalid.map_or("is valid", Invalid::text)
+        );
+    } else if session.spot != before.0 {
+        debug!(
             "{}: spot ({:.1}, {:.1}, {:.1}) {}",
             if house { "housing" } else { "planting" },
             spot.x,
@@ -767,6 +798,12 @@ fn track(
         );
     }
     update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
+}
+
+/// A house preview stops following the pointer once confirmed (the Start Construction window is open) and
+/// whenever the pointer is over the HUD.
+fn house_locks_pointer(session: &Session, over_ui: bool) -> bool {
+    session.is_house() && (session.quote_requested || over_ui)
 }
 
 /// Puts the ghost root at the session's spot (the last valid one for a house over the UI).
@@ -1406,7 +1443,8 @@ fn input(
             turn += wheel_turn(w.shift, w.alt, w.ctrl, w.steps);
         }
     }
-    if turn != 0.0 {
+    // the confirmed house's yaw is part of the locked placement
+    if turn != 0.0 && !session.quote_requested {
         session.yaw = wrap_angle(session.yaw + turn);
     }
     let right_click = mouse.just_pressed(MouseButton::Right) || virtual_click == Some(MouseButton::Right);
@@ -2051,6 +2089,10 @@ mod tests {
             deposit_tax_money_amount: 100000,
             total_tax_money_amount: 150000,
         });
+        session.quote_requested = true;
+        // The pointer moving over the Start Construction window must not invalidate or move the confirmed spot.
+        session.spot = Some(Vec3::new(1000.5, 2000.25, 100.0));
+        session.invalid = Some(Invalid::NoGround);
         assert_eq!(
             session.create_house(),
             Some(HouseCommand::CreateHouse {
@@ -2065,6 +2107,22 @@ mod tests {
                 auto_use_aa_point: false,
             })
         );
+        assert_eq!(session.build_blocked(), None);
+        session.quote = None;
+        assert_eq!(session.build_blocked(), Some("the server's tax quote has not arrived"));
+    }
+
+    #[test]
+    fn a_house_locks_the_pointer_once_confirmed_and_over_the_hud() {
+        let mut session = Session::new(77, house_plantable(267, 4.0), 0.5);
+        assert!(!house_locks_pointer(&session, false));
+        assert!(house_locks_pointer(&session, true), "the HUD does not move the preview");
+        session.quote_requested = true;
+        assert!(house_locks_pointer(&session, false), "the quote locks the confirmed spot");
+        session.quote_requested = false;
+        assert!(!house_locks_pointer(&session, false));
+        let plant = Session::new(1, plant(), 0.0);
+        assert!(!house_locks_pointer(&plant, true), "planting keeps its existing HUD behaviour");
     }
 
     #[test]

@@ -2374,8 +2374,10 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   edge (turned with the ghost) and small yellow posts mark the housing-area polygon (the
   `housing_area.xml` shape that contains the spot, `ingame/houses.rs`). The white / pink crosshair is the same
   `housing_position.dds` / `housing_invalid.dds`; when the cursor is over the UI or no ground the house ghost stays
-  at its last valid spot (the retail capture shows this; plants hide instead). Wheel / Alt / Shift / Ctrl rotate as
-  for plants.
+  at its last valid spot (the retail capture shows this; plants hide instead). The ghost stops following the pointer
+  as soon as the placement is confirmed for the tax window, so the spot and yaw are locked while the window is open;
+  Cancel returns to free placement. A pointer over the HUD neither moves nor re-validates the preview. Wheel / Alt /
+  Shift / Ctrl rotate as for plants (before the lock).
 * **Validity** (`check_house`): inside a `housing_area.xml` polygon whose `value1` is a `housing_areas` row, not
   overlapping another received house as an axis-aligned square of half extent `garden_radius` + the other's
   `garden_radius` (the server's `validate_house`), on land, and not on the player. The server remains authoritative.

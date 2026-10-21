@@ -188,6 +188,7 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     x2.set(
         "NextStepFromBuildCheck",
         lua.create_function(move |_, _this: Table| {
+            info!("housing: Build pressed in the original build window");
             b.borrow_mut().requests.push(Request::HouseBuild);
             Ok(())
         })?,
@@ -196,6 +197,7 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     x2.set(
         "PrevStepFromBuildCheck",
         lua.create_function(move |_, _this: Table| {
+            info!("housing: Cancel pressed in the original build window");
             b.borrow_mut().requests.push(Request::HouseCancel);
             Ok(())
         })?,
