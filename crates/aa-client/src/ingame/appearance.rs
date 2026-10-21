@@ -11,6 +11,7 @@ use aa_anim::custom::Customization;
 use aa_anim::db::{Decal, GameDb, ItemVisual};
 use aa_anim::{Character, CharacterAssets, CharacterDesc, ClipLibrary, Costume, Gender, PartAsset, PartKind, Race};
 use aa_net::model::{Equipment, Item, ItemDetail, ModelParams, race, slot};
+use aa_net::state::Inventory;
 use aa_net::{Event, NetEvent};
 use aa_cry::scene::CryAssets;
 use bevy::prelude::*;
@@ -35,6 +36,35 @@ const WORN: [usize; 11] = [
     slot::NECK,
     slot::HEAD,
     slot::BACK,
+];
+
+/// Slots whose items can change the resolved look: the armour and body parts, the costume, the
+/// carried weapons and the backpack. Earrings and rings are drawn by nothing here.
+const LOOK_SLOTS: [usize; 24] = [
+    slot::HEAD,
+    slot::NECK,
+    slot::CHEST,
+    slot::WAIST,
+    slot::LEGS,
+    slot::HANDS,
+    slot::FEET,
+    slot::ARMS,
+    slot::BACK,
+    slot::UNDERSHIRT,
+    slot::UNDERPANTS,
+    slot::MAINHAND,
+    slot::OFFHAND,
+    slot::RANGED,
+    slot::MUSICAL,
+    slot::FACE,
+    slot::HAIR,
+    slot::GLASSES,
+    slot::RESERVED,
+    slot::TAIL,
+    slot::BODY,
+    slot::BEARD,
+    slot::BACKPACK,
+    slot::COSPLAY,
 ];
 
 /// The equipment and model parameters a drawn character was described from. Received equipment
@@ -75,6 +105,33 @@ impl LookSource {
 /// textures that replace the nude body's skin and have no part of their own).
 pub fn parts_changed(old: &CharacterAssets, new: &CharacterAssets) -> bool {
     old.parts != new.parts || old.underwear != new.underwear
+}
+
+/// Take the client's authoritative worn equipment into `source`; true when a look slot changed.
+/// The look uses the template and the image-item override of an item, not its instance details
+/// (durability, gems), so those do not force a resolve.
+pub fn sync_equipment(source: &mut LookSource, own: &Equipment) -> bool {
+    let changed = LOOK_SLOTS.into_iter().any(|slot| !same_visual(source.equipment.get(slot), own.get(slot)));
+    if changed {
+        source.equipment = own.clone();
+    }
+    changed
+}
+
+fn same_visual(a: Option<&Item>, b: Option<&Item>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.template_id == b.template_id
+                && match (&a.detail, &b.detail) {
+                    (ItemDetail::Equip(a), ItemDetail::Equip(b)) => a.image_item_template_id == b.image_item_template_id,
+                    (ItemDetail::Equip(a), _) => a.image_item_template_id == 0,
+                    (_, ItemDetail::Equip(b)) => b.image_item_template_id == 0,
+                    _ => true,
+                }
+        }
+        _ => false,
+    }
 }
 
 /// Race and gender of a unit: its model id (`models.id`, 10 / 11 nuian ... 20 / 21 ferre), else the
@@ -361,32 +418,16 @@ type LocalLooks<'w, 's> = Query<
     ),
 >;
 
-/// Received equipment changes (`SCUnitEquipmentsChanged`): the local player's look is rebuilt at
-/// once (the spawn path is synchronous too); remote characters are marked for the worker path of
-/// [`super::units::sync_views`]. The persistent-id packet (`EquipmentIdsChanged`) carries no visual
-/// change and is deliberately ignored.
+/// Remote characters' `SCUnitEquipmentsChanged`: mark their look for the worker path of
+/// [`super::units::sync_views`]. The local player learns its own changes from the item task
+/// results in [`Inventory`] and is handled by [`sync_local_look`]. The persistent-id packet
+/// (`EquipmentIdsChanged`) carries no visual change and is deliberately ignored.
 pub fn watch_equipment_changes(
     mut events: MessageReader<NetEvent>,
-    db: Option<Res<Db>>,
-    mut cry: CryAssets,
-    clips: Res<ClipLibrary>,
-    mut commands: Commands,
-    mut locals: LocalLooks,
     mut remotes: Query<(Entity, &RemoteUnit, &mut LookSource), Without<LocalPlayer>>,
 ) {
-    let mut local_changed = false;
     for NetEvent(event) in events.read() {
         let Event::EquipmentChanged { obj_id, items } = event else { continue };
-        let mut is_local = false;
-        if let Ok((_, player, mut source, _, _)) = locals.single_mut()
-            && player.obj_id == *obj_id
-        {
-            is_local = true;
-            local_changed |= source.apply(items);
-        }
-        if is_local {
-            continue;
-        }
         for (_, unit, mut source) in &mut remotes {
             if unit.obj_id == *obj_id {
                 if source.apply(items) {
@@ -396,18 +437,32 @@ pub fn watch_equipment_changes(
             }
         }
     }
-    if !local_changed {
+}
+
+/// The local player's own equipment is authoritative in [`Inventory`]: `SCItemTaskSuccess` moves,
+/// swaps and removals into/out of container 1 arrive there (the server does not broadcast
+/// `SCUnitEquipmentsChanged` to the owner). Compare the look slots with [`LookSource`] and rebuild
+/// only when the resolved parts or carried weapons changed. The initial equipment selected by
+/// `SCCharacterState` is picked up the same way, and a stray own `SCUnitEquipmentsChanged` too
+/// (aa-net folds it into the same inventory state).
+pub fn sync_local_look(
+    inventory: Option<Res<Inventory>>,
+    db: Option<Res<Db>>,
+    mut cry: CryAssets,
+    clips: Res<ClipLibrary>,
+    mut commands: Commands,
+    mut locals: LocalLooks,
+) {
+    let Some(inventory) = inventory else { return };
+    let Ok((entity, _, mut source, character, look_carried)) = locals.single_mut() else { return };
+    if !sync_equipment(&mut source, &inventory.equipment) && !source.dirty {
         return;
     }
-    // one rebuild for all the slots that changed in this frame
-    let Ok((entity, _, mut source, character, look_carried)) = locals.single_mut() else { return };
-    let Some(character) = character else {
-        source.dirty = true;
-        return;
-    };
+    source.dirty = true;
+    let Some(character) = character else { return };
     let Some(db) = db.as_deref() else {
         warn!("appearance: no game database: the player's equipment change is not drawn");
-        source.dirty = true;
+        source.dirty = false;
         return;
     };
     let (race, gender) = (character.assets.desc.race, character.assets.desc.gender);
@@ -428,7 +483,7 @@ pub fn watch_equipment_changes(
         }
     };
     let Some(assets) = assets else {
-        source.dirty = true;
+        source.dirty = false;
         return;
     };
     let carried = weapons::carried(db, &source.equipment);
@@ -437,7 +492,8 @@ pub fn watch_equipment_changes(
         source.dirty = false;
         return;
     }
-    source.dirty = !rebuild::rebuild(&mut commands, &mut cry, &clips, entity, assets, carried, true);
+    let rebuilt = rebuild::rebuild(&mut commands, &mut cry, &clips, entity, assets, carried, true);
+    source.dirty = !rebuilt;
 }
 
 #[cfg(test)]

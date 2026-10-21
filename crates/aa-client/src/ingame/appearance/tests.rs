@@ -164,6 +164,72 @@ fn an_equipment_change_rebuilds_only_when_the_resolved_parts_change() -> Result<
 }
 
 #[test]
+fn a_confirmed_item_move_into_worn_slot_27_rebuilds_the_local_look() -> Result<(), Box<dyn std::error::Error>> {
+    use aa_net::items::{ItemTask, ItemTasks, container};
+    use aa_net::model::{Character, CharacterState};
+    use aa_net::state::Inventory;
+    use aa_net::Event;
+
+    let db = GameDb::open()?;
+    let mut equipment = equipment(Some(6252));
+    for (s, id) in [(slot::CHEST, 23387), (slot::LEGS, 23388), (slot::FEET, 23390)] {
+        equipment.slots[s] = Some(item(id));
+    }
+    // the character state the client starts from, then the server's SCItemTaskSuccess answers
+    let character = Character { equipment: equipment.clone(), ..default() };
+    let mut inventory = Inventory::default();
+    inventory.apply(&Event::CharacterSelected(Box::new(CharacterState {
+        character,
+        num_inventory_slots: 10,
+        ..default()
+    })));
+    let look = |source: &LookSource| {
+        let desc = describe(&db, Race::Nuian, Gender::Female, &source.equipment, &source.params).unwrap();
+        resolve(&db, &desc, &source.equipment).unwrap()
+    };
+    let mut source = LookSource::new(&equipment, &ModelParams::default());
+    let before = look(&source);
+    let costume = item(28439);
+    let costume_id = costume.id;
+    inventory.bag[0] = Some(costume);
+    assert!(inventory.apply(&Event::ItemsChanged(ItemTasks {
+        reason: 5,
+        tasks: vec![ItemTask::Move {
+            from_container: container::INVENTORY,
+            from_slot: 0,
+            from_item_id: costume_id,
+            to_container: container::EQUIPMENT,
+            to_slot: u8::try_from(slot::COSPLAY)?,
+            to_item_id: 0,
+        }],
+        ..default()
+    })));
+    assert!(sync_equipment(&mut source, &inventory.equipment), "the confirmed move changes the worn look");
+    let worn = look(&source);
+    let cosplay = |parts: &aa_anim::CharacterAssets| parts.parts.iter().any(|part| part.kind == PartKind::Costume && part.equip_slot == Some(27));
+    assert!(parts_changed(&before, &worn));
+    assert!(cosplay(&worn));
+    // the server confirms taking it off again: worn slot 27 -> bag slot 0
+    assert!(inventory.apply(&Event::ItemsChanged(ItemTasks {
+        reason: 5,
+        tasks: vec![ItemTask::Move {
+            from_container: container::EQUIPMENT,
+            from_slot: u8::try_from(slot::COSPLAY)?,
+            from_item_id: costume_id,
+            to_container: container::INVENTORY,
+            to_slot: 0,
+            to_item_id: 0,
+        }],
+        ..default()
+    })));
+    assert!(sync_equipment(&mut source, &inventory.equipment), "the confirmed removal changes the worn look");
+    let removed = look(&source);
+    assert!(parts_changed(&worn, &removed));
+    assert!(!cosplay(&removed));
+    Ok(())
+}
+
+#[test]
 fn a_received_costume_replaces_the_body_and_the_armour_it_covers() -> Result<(), Box<dyn std::error::Error>> {
     let db = GameDb::open()?;
     // the starter set + cap under the butler / maid costume (wire slot 27, tagged like any item)
