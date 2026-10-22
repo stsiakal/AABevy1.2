@@ -64,6 +64,9 @@ const CLICK_SLOP: f32 = 6.0;
 const NAVI_ID: i64 = 1 << 32;
 /// Interaction-list ids of `DoodadFuncPurchase` rows: `COIN_ID + doodad_funcs.id`.
 const COIN_ID: i64 = 1 << 33;
+/// The icon the dynamic action bar shows for G (the craft window) of a finished farm ("Craft Fabric", the generic
+/// crafting icon of the 1.2 skills table); the second action is never cast as a skill.
+const CRAFT_ICON_SKILL: u32 = 14579;
 
 /// A use without a skill.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -204,8 +207,11 @@ struct Focus {
     obj_id: u32,
     skills: Vec<u32>,
     dist: f32,
-    /// `Some` for an unfinished house: the bar's first skill builds it, the second opens the info window.
+    /// `Some` for a house: unfinished, the bar's first skill builds it and the second opens the info window; finished,
+    /// F (the first) opens the info window and G (the second, own house only) the craft window of `craft`.
     house: Option<HouseState>,
+    /// A finished own house with a workbench doodad on it (a farm's bundle crafting): its object id and template.
+    craft: Option<(u32, u32)>,
 }
 
 /// One row of the interaction list.
@@ -282,21 +288,23 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         if uses.skills.is_empty() || !usable_without_pack(data, o.obj_id, &uses.skills) {
             return None;
         }
+        // the info use of a doodad on a house is the house's own (F opens the maintain window)
+        if uses.skills == [INFO_SKILL] && owning_house(o, units, houses).is_some() {
+            return None;
+        }
         let dist = data.pos.distance(to_vec(o.pos));
         if dist > reach(data, uses) {
             return None;
         }
         let toward = (to_vec(o.pos) - data.pos).truncate().normalize_or_zero();
         let score = if data.doodad.preferred == Some(o.obj_id) { f32::MIN } else { dist + BEHIND * 0.5 * (1.0 - forward.dot(toward)) };
-        Some((score, Focus { obj_id: o.obj_id, skills: uses.skills.clone(), dist, house: None }))
+        Some((score, Focus { obj_id: o.obj_id, skills: uses.skills.clone(), dist, house: None, craft: None }))
     });
     let house_candidates = units.iter().filter_map(|u| {
         let aa_net::model::UnitKind::Housing { tl_id, .. } = u.kind else { return None };
         let state = HouseState::of(&houses.by_tl_id.get(&tl_id)?.snapshot);
-        if !state.under_construction() {
-            return None;
-        }
-        let skill = step_skill(game, state.template_id, state.current_actions)?;
+        let finished = !state.under_construction();
+        let skill = if finished { INFO_SKILL } else { step_skill(game, state.template_id, state.current_actions)? };
         let range = game.skills.get(&skill).map_or(0.0, |s| s.max_range as f32);
         let dist = data.pos.distance(to_vec(u.pos));
         if dist > if range > 0.0 { range + REACH_SLACK } else { BASE_REACH } {
@@ -304,7 +312,22 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         }
         let toward = (to_vec(u.pos) - data.pos).truncate().normalize_or_zero();
         let score = dist + BEHIND * 0.5 * (1.0 - forward.dot(toward));
-        Some((score, Focus { obj_id: u.obj_id, skills: vec![skill, INFO_SKILL], dist, house: Some(state) }))
+        // a finished house: F is its info window; G (the craft window of a workbench on it) is the owner's only
+        let craft = (finished && state.owner_id != 0 && state.owner_id == data.character_id)
+            .then(|| {
+                doodads
+                    .by_id
+                    .values()
+                    .find(|o| super::crafting::is_bench(data, o.template_id) && owning_house(o, units, houses) == Some(u.obj_id))
+                    .map(|o| (o.obj_id, o.template_id))
+            })
+            .flatten();
+        let skills = match (finished, craft) {
+            (true, None) => vec![INFO_SKILL],
+            (true, Some(_)) => vec![INFO_SKILL, CRAFT_ICON_SKILL],
+            (false, _) => vec![skill, INFO_SKILL],
+        };
+        Some((score, Focus { obj_id: u.obj_id, skills, dist, house: Some(state), craft }))
     });
     doodad_candidates.chain(house_candidates).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
 }
@@ -800,6 +823,8 @@ fn execute(
     bridge: NonSend<HudBridge>,
     doodads: Res<Doodads>,
     aiming: Option<Res<crate::ingame::ground_target::Aiming>>,
+    units: Res<Units>,
+    houses: Res<Houses>,
     mut out: MessageWriter<NetCommand>,
     mut failed: MessageWriter<super::alerts::UseFailed>,
 ) {
@@ -816,10 +841,24 @@ fn execute(
     let focus = d.doodad.focus.clone();
     let mut commands = Vec::new();
     let mut opened: Option<(u32, HouseState)> = None;
+    let mut maintain: Option<u32> = None;
+    let mut craft_opened: Option<(u32, usize)> = None;
     let mut open_coin = false;
     for i in execute {
         let Some(f) = focus.as_ref() else { continue };
         if let Some(state) = &f.house {
+            if !state.under_construction() {
+                // a finished house or farm: F is the info (maintain) window, G the owner's craft window
+                if i == 1 {
+                    maintain = Some(f.obj_id);
+                } else if i == 2
+                    && let Some((object, template)) = f.craft
+                    && let Some(count) = super::crafting::open_bench(&mut d, object, template)
+                {
+                    craft_opened = Some((object, count));
+                }
+                continue;
+            }
             if i == 1 {
                 if let Some(&skill_id) = f.skills.first() {
                     // the original refuses a cast it knows will fail (material or labor short) instead of asking the server
@@ -890,6 +929,24 @@ fn execute(
         && let Err(error) = rt.exec("@doodad_coin", "OpenCoinShop()")
     {
         warn!("doodad: coin shop dialog: {error}");
+    }
+    if let Some(obj_id) = maintain
+        && let Some(unit) = units.by_id.get(&obj_id)
+        && let aa_net::model::UnitKind::Housing { tl_id, .. } = unit.kind
+        && let Some(house) = houses.by_tl_id.get(&tl_id)
+    {
+        let mut commands = Vec::new();
+        super::house_maintain::open(unit, house, &bridge.0, rt.as_deref(), &mut commands);
+        info!("housing: F on house {obj_id} (tl {tl_id}) opened the maintain window");
+        for command in commands {
+            out.write(NetCommand(command));
+        }
+    }
+    if let Some((object, count)) = craft_opened
+        && let Some(rt) = rt.as_deref()
+    {
+        info!("housing: G on house workbench {object}: {count} recipes");
+        rt.fire_event("CRAFTING_START", (object.to_string(), count as i64));
     }
     if opened.is_some()
         && let Some(rt) = rt.as_deref()
@@ -986,6 +1043,10 @@ mod tests {
     }
 
     fn house_game() -> (HudData, Units, Houses) {
+        house_game_with(|_| {})
+    }
+
+    fn house_game_with(tweak: impl FnOnce(&mut GameData)) -> (HudData, Units, Houses) {
         let mut game = GameData::default();
         game.skills.insert(18553, Default::default());
         game.skills.get_mut(&18553).unwrap().max_range = 10;
@@ -1001,6 +1062,7 @@ mod tests {
         template.build_steps[0].consume_item = 8337;
         template.build_steps[0].consume_count = 1;
         let mut data = HudData::default();
+        tweak(&mut game);
         data.game.0.set(game).ok().expect("one load");
         data.pos = Vec3::ZERO;
         let mut units = Units::default();
@@ -1158,10 +1220,13 @@ mod tests {
         let (mut data, units, houses) = house_game();
         data.doodad.focus = find_focus(&data, &Doodads::default(), &units, &houses);
         data.doodad.execute.push(1);
+        let (units, houses) = (units, houses);
         let bridge = Rc::new(RefCell::new(data));
         let mut app = App::new();
         app.insert_non_send(HudBridge(bridge.clone()))
             .insert_resource(Doodads::default())
+            .insert_resource(units)
+            .insert_resource(houses)
             .add_message::<NetCommand>()
             .add_message::<super::super::alerts::UseFailed>()
             .add_systems(Update, execute);
@@ -1184,6 +1249,80 @@ mod tests {
             [Command::Target { obj_id: 77 }, Command::UseSkill { skill_id: 18553, target_obj_id: 77 }]
         ), "{sent:?}");
         assert!(app.world_mut().resource_mut::<Messages<super::super::alerts::UseFailed>>().drain().next().is_none());
+    }
+
+    /// A finished farm of the character 7 with a workbench doodad (template 973) hanging on it.
+    fn finished_farm(owner: u32) -> (HudData, Doodads, Units, Houses) {
+        let (mut data, units, mut houses) = house_game_with(|g| g.crafting.with_bench(973, &[1, 2]));
+        data.character_id = owner;
+        let snapshot = &mut houses.by_tl_id.get_mut(&13).unwrap().snapshot;
+        snapshot.current_actions = snapshot.all_actions;
+        let mut doodads = Doodads::default();
+        let mut bench = scarecrow_doodad(77);
+        bench.template_id = 973;
+        bench.func_group_id = 0;
+        doodads.by_id.insert(38485, bench);
+        (data, doodads, units, houses)
+    }
+
+    #[test]
+    fn a_finished_own_farm_offers_info_on_f_and_the_craft_window_on_g() {
+        let (data, doodads, units, houses) = finished_farm(7);
+        let focus = find_focus(&data, &doodads, &units, &houses).expect("the farm is in reach");
+        assert_eq!(focus.skills, vec![INFO_SKILL, CRAFT_ICON_SKILL], "F info, G craft");
+        assert_eq!(focus.craft, Some((38485, 973)));
+        // someone else's farm: the info window only
+        let (data, doodads, units, houses) = finished_farm(8);
+        let focus = find_focus(&data, &doodads, &units, &houses).expect("the farm is in reach");
+        assert_eq!(focus.skills, vec![INFO_SKILL], "no G on a farm of somebody else");
+        assert_eq!(focus.craft, None);
+        // an own house without a workbench has no G either
+        let (data, _, units, houses) = finished_farm(7);
+        let focus = find_focus(&data, &Doodads::default(), &units, &houses).unwrap();
+        assert_eq!(focus.skills, vec![INFO_SKILL]);
+    }
+
+    #[test]
+    fn f_opens_the_maintain_window_and_g_the_craft_window_of_the_own_farm() {
+        let (mut data, doodads, units, houses) = finished_farm(7);
+        data.doodad.focus = find_focus(&data, &doodads, &units, &houses);
+        data.doodad.execute.push(1);
+        data.doodad.execute.push(2);
+        let bridge = Rc::new(RefCell::new(data));
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge.clone()))
+            .insert_resource(doodads)
+            .insert_resource(units)
+            .insert_resource(houses)
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_systems(Update, execute);
+        app.update();
+        let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+        assert!(sent.iter().any(|c| matches!(c, Command::Target { obj_id: 77 })), "F selects the house: {sent:?}");
+        assert!(!sent.iter().any(|c| matches!(c, Command::UseSkill { .. } | Command::UseDoodadSkill { .. })), "no cast: {sent:?}");
+        let d = bridge.borrow();
+        assert_eq!(d.house.maintain_house, Some(77), "F opened the info (maintain) window");
+        assert_eq!(super::super::crafting::active_bench(&d), Some((38485, 973, 2)), "G opened the farm's craft list");
+    }
+
+    #[test]
+    fn g_does_nothing_on_a_farm_of_somebody_else() {
+        let (mut data, doodads, units, houses) = finished_farm(8);
+        data.doodad.focus = find_focus(&data, &doodads, &units, &houses);
+        data.doodad.execute.push(2);
+        let bridge = Rc::new(RefCell::new(data));
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge.clone()))
+            .insert_resource(doodads)
+            .insert_resource(units)
+            .insert_resource(houses)
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_systems(Update, execute);
+        app.update();
+        let d = bridge.borrow();
+        assert!(super::super::crafting::active_bench(&d).is_none() && d.house.maintain_house.is_none());
     }
 
     #[test]

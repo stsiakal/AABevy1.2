@@ -106,6 +106,12 @@ pub(in crate::hud) struct Tables {
 }
 
 impl Tables {
+    /// Test helper: a workbench template with recipe ids.
+    #[cfg(test)]
+    pub(in crate::hud) fn with_bench(&mut self, template: u32, recipes: &[u32]) {
+        self.benches.entry(template).or_default().extend(recipes.iter().copied());
+    }
+
     pub(in crate::hud) fn load(conn: &Connection) -> rusqlite::Result<Self> {
         let mut labels = HashMap::new();
         let mut query = conn.prepare("SELECT tbl_name,tbl_column_name,idx,en_us FROM localized_texts WHERE en_us IS NOT NULL AND en_us<>'' AND tbl_name IN ('crafts','actability_groups','actability_categories','expert_limits','doodad_almighties')")?;

@@ -29,6 +29,24 @@ pub(super) struct View {
     expert: expert::View,
 }
 
+/// Opens the workbench identity of the received doodad `object` (template `template`) and returns its recipe count; the
+/// caller then raises `CRAFTING_START`. `None` when the template has no craft list.
+pub(super) fn open_bench(data: &mut HudData, object: u32, template: u32) -> Option<usize> {
+    data.game.get()?.crafting.benches.get(&template).filter(|r| !r.is_empty())?;
+    bench::open(data, object, template)
+}
+
+/// The active workbench `(object, template)` and its recipe count.
+#[cfg(test)]
+pub(super) fn active_bench(data: &HudData) -> Option<(u32, u32, usize)> {
+    data.crafting.current.active.map(|b| (b.object, b.template, data.crafting.current.recipes.len()))
+}
+
+/// Whether doodad template `template` is a workbench (has a craft list).
+pub(super) fn is_bench(data: &HudData, template: u32) -> bool {
+    data.game.get().is_some_and(|g| g.crafting.benches.get(&template).is_some_and(|r| !r.is_empty()))
+}
+
 pub(super) fn refresh(world: &World, data: &mut HudData) {
     if data.crafting.owner != data.character_id {
         data.crafting = View {
