@@ -28,6 +28,9 @@
 //! The quest rows the scripts read (`HUD.quest_list()`, `HUD.quest_info(qtype)`) are made here from
 //! the server's quest state and the game database ([`super::quests`]).
 
+use std::collections::HashMap;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
 use aa_net::interaction::Interact;
 use aa_net::model::UnitKind;
 use aa_net::quest::{Quest, status};
@@ -87,6 +90,8 @@ pub struct DialogView {
     hidden: Vec<aa_ui::tree::Id>,
     /// The active quests as the scripts last saw them, and its version (`HUD.quest_version()`).
     pub quests: Vec<Quest>,
+    /// Milliseconds left of each timed quest, on the server's clock (`X2Quest:GetQuestContextLeftTime`).
+    pub left_times: HashMap<u32, i32>,
     pub version: u64,
     /// Whether `quests` holds the server's list yet (the first one raises no events).
     seen: bool,
@@ -212,6 +217,11 @@ fn bubble_table(lua: &Lua, game: &GameData, texts: &Texts, which: &str, quest: u
 pub fn install(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()> {
     let b = bridge.clone();
     hud.raw_set("quest_version", lua.create_function(move |_, ()| Ok(b.borrow().dialog.version))?)?;
+    let b = bridge.clone();
+    hud.raw_set(
+        "quest_left_time",
+        lua.create_function(move |_, qtype: u32| Ok(b.borrow().dialog.left_times.get(&qtype).copied().unwrap_or(0)))?,
+    )?;
     let b = bridge.clone();
     hud.raw_set(
         "quest_list",
@@ -353,6 +363,34 @@ enum Fire {
     Condition(&'static str),
 }
 
+/// Milliseconds left of timed quest `q` at `now` (Unix seconds): the server's `LeftTime` counts down
+/// from the quest's `accept_time` (`FUN_3937cd80`; negative once it ran out). 0 when there is no limit.
+pub fn left_time_ms(q: &Quest, now: i64) -> i32 {
+    if q.time_left_ms <= 0 {
+        return 0;
+    }
+    let elapsed = now.saturating_sub(q.accept_time).max(0).saturating_mul(1000);
+    let left = i64::from(q.time_left_ms).saturating_sub(elapsed);
+    left.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+/// One tick of the quest clock (`X2::GameClient::UpdateQuestLeftTime`, `FUN_3937cd80`): the timed
+/// active quests get their remaining time, and one with at least 1000 ms left is published as
+/// `(qtype, remaining_ms)` for the tracker. A quest under that takes the native timeout path: its
+/// clock reads past zero (the notifier hides it) and no event is published.
+pub fn tick_left_times(left: &mut HashMap<u32, i32>, quests: &[Quest], now: i64) -> Vec<(u32, i32)> {
+    left.retain(|qtype, _| quests.iter().any(|q| q.template_id == *qtype && q.time_left_ms > 0));
+    let mut events = Vec::new();
+    for q in quests.iter().filter(|q| q.time_left_ms > 0) {
+        let remaining = left_time_ms(q, now);
+        left.insert(q.template_id, remaining);
+        if remaining >= 1000 {
+            events.push((q.template_id, remaining));
+        }
+    }
+    events
+}
+
 /// Folds the server's quest state into what the scripts read and raises the quest events: a new
 /// quest (`started`, with "Quest accepted: [...]"), a counter or status change (`updated`, with the
 /// objective's new text), a quest handed in (`completed`) or given up (`dropped`).
@@ -444,6 +482,33 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
             Fire::Objective(text) => rt.fire_event("QUEST_CONTEXT_OBJECTIVE_EVENT", text),
             Fire::Condition(condition) => rt.fire_event("QUEST_CONTEXT_CONDITION_EVENT", ("", condition)),
         }
+    }
+}
+
+/// The quest clock runs at most once a second (the native's 1.0 s constant) and tells the tracker
+/// the remaining milliseconds of every timed quest (`QUEST_LEFT_TIME_UPDATED`).
+pub fn tick_quest_left_time(
+    rt: Option<NonSend<UiRuntime>>,
+    bridge: NonSend<HudBridge>,
+    quests: Res<Quests>,
+    mut last: Local<Option<Instant>>,
+) {
+    let now = Instant::now();
+    if last.is_some_and(|t| now.duration_since(t) < Duration::from_secs(1)) {
+        return;
+    }
+    *last = Some(now);
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    let events = {
+        let mut d = bridge.0.borrow_mut();
+        if d.game.get().is_none() {
+            return;
+        }
+        tick_left_times(&mut d.dialog.left_times, &quests.active, now_unix)
+    };
+    let Some(rt) = rt else { return };
+    for (qtype, left) in events {
+        rt.fire_event("QUEST_LEFT_TIME_UPDATED", (qtype, left));
     }
 }
 
@@ -835,4 +900,66 @@ fn reset(bridge: NonSend<HudBridge>) {
 
 pub fn plugin(app: &mut App) {
     app.insert_resource(ScriptedTalk::from_args()).add_systems(OnExit(crate::Screen::InGame), reset);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn timed(left_ms: i32, accept_time: i64) -> Quest {
+        Quest { template_id: 330, time_left_ms: left_ms, accept_time, ..Quest::default() }
+    }
+
+    #[test]
+    fn the_quest_clock_counts_down_from_accept_time() {
+        let q = timed(60_000, 1_000);
+        assert_eq!(left_time_ms(&q, 1_000), 60_000);
+        assert_eq!(left_time_ms(&q, 1_030), 30_000);
+        // the server's own clock may be ahead of the acceptance stamp
+        assert_eq!(left_time_ms(&q, 900), 60_000);
+        assert_eq!(left_time_ms(&q, 1_061), -1_000);
+        assert_eq!(left_time_ms(&Quest { time_left_ms: -1, ..q }, 1_030), 0);
+    }
+
+    #[test]
+    fn the_quest_clock_publishes_whole_seconds_and_stops_under_one() {
+        let q = timed(60_000, 1_000);
+        let mut left = HashMap::from([(331, 5_000), (330, 0)]);
+        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_000), vec![(330, 60_000)]);
+        assert_eq!(left.get(&330), Some(&60_000));
+        // the stale quest of another list goes
+        assert!(!left.contains_key(&331));
+        // the last published second, then the native timeout path (no event)
+        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_059), vec![(330, 1_000)]);
+        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_060), Vec::new());
+        assert_eq!(left.get(&330), Some(&0));
+        assert_eq!(tick_left_times(&mut left, &[q], 1_061), Vec::new());
+        assert_eq!(left.get(&330), Some(&-1_000));
+    }
+
+    #[test]
+    fn the_scripts_read_the_quest_clock_and_ask_one_talk_per_objective() -> mlua::Result<()> {
+        let lua = Lua::new();
+        lua.load(
+            r#"
+            X2Quest, X2Decal, X2Interaction, X2Util, X2 = {}, {}, {}, {}, {}
+            LEFT_TIME = { [330] = 4500 }
+            HUD = { quest_left_time = function(qtype) return LEFT_TIME[qtype] or 0 end }
+            EVENTS = {}
+            FAKE = { fire_later = function(...) EVENTS[#EVENTS + 1] = {...} end }
+            "#,
+        )
+        .exec()?;
+        lua.load(QUEST_LUA).set_name("@quest.lua").exec()?;
+        let (left, none): (i32, i32) =
+            lua.load("return X2Quest:GetQuestContextLeftTime(330), X2Quest:GetQuestContextLeftTime(331)").eval()?;
+        assert_eq!((left, none), (4_500, 0));
+        lua.load("X2Quest:CallQuestTalk(330, 20, 7); X2Quest:CallQuestTalk(331, 21, 7)").exec()?;
+        let events: Vec<(String, u32)> = lua
+            .load("return EVENTS[1][1], EVENTS[1][2], EVENTS[2][1], EVENTS[2][2]")
+            .eval::<(String, u32, String, u32)>()
+            .map(|(a, b, c, d)| vec![(a, b), (c, d)])?;
+        assert_eq!(events, [("PROGRESS_TALK_QUEST_CONTEXT".into(), 330), ("PROGRESS_TALK_QUEST_CONTEXT".into(), 331)]);
+        Ok(())
+    }
 }
