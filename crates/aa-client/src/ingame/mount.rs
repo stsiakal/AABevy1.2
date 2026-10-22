@@ -6,6 +6,8 @@
 //! `lion_`, `wildboar_` and `pangolin_` sets; the `models.mount_pose_id` of the mount says which), the mount's from its own
 //! `.cal` as for any creature. The seat is the mount's bone `bone_spine_driver` (attach point 1) or `bone_spine_passenger`.
 
+use std::collections::HashMap;
+
 use aa_anim::pose::BoundClip;
 use aa_anim::{Animator, Cal, Character, ClipLibrary};
 use aa_net::model::{Attachment, Equipment, ModelParams, Movement, UnitKind, stance};
@@ -15,9 +17,10 @@ use aa_world::coords::bevy_to_cry;
 use aa_world::{TerrainQuery, WaterQuery, WorldCollision};
 use bevy::prelude::*;
 
-use super::anim::{Locomotion, Motion, bind_clip};
+use super::anim::{Locomotion, Motion, bind_clip, bind_clip_with};
 use super::camera::OrbitCamera;
 use super::data::{Db, MountMove, Seat};
+use super::mount_anim::{self, Hop, Side};
 use super::player::{LocalPlayer, Mover, PlayerInput, approach_angle, forward, placement, right};
 use super::units::{RemoteUnit, Views};
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
@@ -64,29 +67,70 @@ enum Gait {
     Run,
 }
 
-/// The clips of a rider: the seat idle and the walk/run gaits of the mount's kind, then the
-/// authored get-on / get-off one-shots (`global_player.cal`).
+/// The `reason` byte of the `SCUnitAttached` that seated each rider (rider object id to mount object id and reason): it names the
+/// side the rider got on from, which the get-on clip follows (the original reads it as the rider graph `VehicleSeat`).
+#[derive(Resource, Default)]
+pub struct AttachReasons(HashMap<u32, (u32, u8)>);
+
+/// Remembers the reason of every attach, and forgets it again at the detach.
+pub fn record_attach_reasons(mut events: MessageReader<NetEvent>, mut reasons: ResMut<AttachReasons>) {
+    for NetEvent(event) in events.read() {
+        match event {
+            Event::UnitAttached { obj_id, mount, reason, .. } => {
+                reasons.0.insert(*obj_id, (*mount, *reason));
+            }
+            Event::UnitDetached { obj_id, .. } => {
+                reasons.0.remove(obj_id);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl AttachReasons {
+    /// The side `rider` got on `mount` from, when this client saw the attach happen (a rider already seated when it came into view
+    /// has none and does not play a get-on clip).
+    fn side(&self, rider: u32, mount: u32) -> Option<Side> {
+        self.0.get(&rider).filter(|(m, _)| *m == mount).map(|(_, reason)| Side::of_reason(*reason))
+    }
+}
+
+/// The clips of a rider: the seat idle and the walk/run gaits of the mount kind, then the get-on clip of the side.
 struct RidingClips {
     idle: BoundClip,
     walk: Option<BoundClip>,
     run: Option<BoundClip>,
     geton: Option<BoundClip>,
-    getoff: Option<BoundClip>,
 }
 
-fn riding_clips(character: &Character, mount_model: u32, db: &Db, animator: &Animator, clips: &ClipLibrary) -> Option<RidingClips> {
+/// Binds the first of `names` the character has, with its root motion played (the get-on and get-off clips lift the body).
+fn bind_moving(character: &Character, animator: &Animator, clips: &ClipLibrary, names: &[String]) -> Option<BoundClip> {
+    let cal = Cal::shared(&character.assets.cal).ok()?;
+    names.iter().find_map(|name| bind_clip_with(&animator.rig, &cal, clips, name, false))
+}
+
+/// The get-on clip of a rider that boards from `side` (`None` for a rider that was already seated).
+fn riding_clips(character: &Character, mount_model: u32, db: &Db, animator: &Animator, clips: &ClipLibrary, side: Option<Side>) -> Option<RidingClips> {
     let prefix = rider_prefix(db.mount_pose(mount_model))?;
     let cal = Cal::shared(&character.assets.cal).ok()?;
     let bind = |name: String| bind_clip(&animator.rig, &cal, clips, &name);
     let idle = bind(format!("{prefix}_ba_relaxed_idle")).or_else(|| bind("fist_ba_relaxed_idle".into()))?;
     let run = bind(format!("{prefix}_mo_normal_run_f"));
     let walk = bind(format!("{prefix}_mo_normal_walk_f")).or_else(|| run.clone());
-    // The authored set only has horse / lion / bear one-shots; other mount poses use the horse pair.
-    let one = |side: &str| {
-        bind(format!("fist_ac_{prefix}_{side}"))
-            .or_else(|| bind(format!("fist_ac_horse_{side}")))
-    };
-    Some(RidingClips { idle, walk, run, geton: one("l_geton"), getoff: one("l_getoff") })
+    let geton = side.and_then(|side| bind_moving(character, animator, clips, &mount_anim::geton_names(prefix, side)));
+    Some(RidingClips { idle, walk, run, geton })
+}
+
+/// The dismount clips of a rider on a mount of this model: `getoff_start`, `_loop`, `_end` (the jump pipeline of the rider graph),
+/// or the one-piece `getoff` for a pose that has no split set.
+fn hop_clips(character: &Character, mount_model: u32, db: &Db, animator: &Animator, clips: &ClipLibrary) -> Vec<BoundClip> {
+    let Some(prefix) = rider_prefix(db.mount_pose(mount_model)) else { return Vec::new() };
+    let parts: Vec<BoundClip> = mount_anim::getoff_names(prefix).iter().filter_map(|names| bind_moving(character, animator, clips, names)).collect();
+    if !parts.is_empty() {
+        return parts;
+    }
+    let whole = [format!("fist_ac_{prefix}_l_getoff"), "fist_ac_horse_l_getoff".to_string()];
+    bind_moving(character, animator, clips, &whole).into_iter().collect()
 }
 
 /// The plain relaxed idle for a character seated in a vehicle (no authored vehicle-specific rider
@@ -94,7 +138,7 @@ fn riding_clips(character: &Character, mount_model: u32, db: &Db, animator: &Ani
 fn vehicle_rider_clips(character: &Character, animator: &Animator, clips: &ClipLibrary) -> Option<RidingClips> {
     let cal = Cal::shared(&character.assets.cal).ok()?;
     let idle = bind_clip(&animator.rig, &cal, clips, "fist_ba_relaxed_idle")?;
-    Some(RidingClips { idle, walk: None, run: None, geton: None, getoff: None })
+    Some(RidingClips { idle, walk: None, run: None, geton: None })
 }
 
 /// A unit sitting on a mount.
@@ -106,8 +150,8 @@ pub struct Rider {
     walk: Option<BoundClip>,
     run: Option<BoundClip>,
     gait: Option<Gait>,
-    /// Seconds of the get-on one-shot still to play before the gait clips take over.
-    boarding: Option<f32>,
+    /// The get-on clip in progress.
+    boarding: Option<Boarding>,
     /// A slave seat rather than a mate's bone (`seat` is in the slave's model space).
     vehicle: bool,
     seat: Seat,
@@ -124,17 +168,32 @@ pub struct LocalRider {
     walk: Option<BoundClip>,
     run: Option<BoundClip>,
     gait: Option<Gait>,
-    boarding: Option<f32>,
+    boarding: Option<Boarding>,
     /// A slave/vehicle seat rather than a mate's bone: the player sits at `seat` in the model space.
     vehicle: bool,
     seat: Seat,
     on_foot: Option<Locomotion>,
 }
 
-/// A get-off clip playing before the on-foot locomotion starts again.
+/// A get-on clip in progress: the rider stands at the approach point of its side and the clip lifts it onto the saddle.
+struct Boarding {
+    remaining: f32,
+    side: Side,
+    /// The root offset of the clip at its end (model space).
+    end: Vec3,
+}
+
+impl Boarding {
+    fn new(clip: Option<&BoundClip>, side: Option<Side>, animator: &Animator) -> Option<Boarding> {
+        let (clip, side) = (clip?, side?);
+        Some(Boarding { remaining: clip.clip.duration, side, end: mount_anim::root_offset(&animator.rig, clip, clip.clip.duration) })
+    }
+}
+
+/// The dismount hop (`getoff_start`, `_loop`, `_end`) playing before the on-foot locomotion starts again.
 #[derive(Component)]
 pub struct Dismounting {
-    remaining: f32,
+    hop: Hop,
     on_foot: Option<Locomotion>,
 }
 
@@ -229,6 +288,7 @@ pub fn start_stop_riding(
     net: Res<Units>,
     db: Option<Res<Db>>,
     clips: Res<ClipLibrary>,
+    reasons: Res<AttachReasons>,
     units: Query<(Entity, &RemoteUnit, Option<&Rider>, Option<&Character>, Option<&Animator>)>,
 ) {
     for (entity, unit, rider, character, animator) in &units {
@@ -238,16 +298,17 @@ pub fn start_stop_riding(
                 // wait for the animator (a unit far away has none) and the mount's data
                 let (Some(db), Some(character), Some(animator), Some(mount)) = (db.as_deref(), character, animator, net.by_id.get(&a.obj_id)) else { continue };
                 let vehicle = matches!(mount.kind, UnitKind::Slave { .. });
+                let side = if vehicle { None } else { reasons.side(unit.obj_id, a.obj_id) };
                 let clis = if vehicle {
                     vehicle_rider_clips(character, animator, &clips)
                 } else {
-                    riding_clips(character, mount.model_id, db, animator, &clips)
+                    riding_clips(character, mount.model_id, db, animator, &clips, side)
                 };
                 let Some(clis) = clis else { continue };
                 let (mount_id, point) = (a.obj_id, a.point);
                 let seat = db.seat(mount.model_id, point);
-                let RidingClips { idle, walk, run, geton, .. } = clis;
-                let boarding = geton.as_ref().map(|c| c.clip.duration);
+                let RidingClips { idle, walk, run, geton } = clis;
+                let boarding = Boarding::new(geton.as_ref(), side, animator);
                 debug!("unit {} rides {} (model {}) at point {point}{}", unit.obj_id, mount_id, mount.model_id, if vehicle { " (slave seat)" } else { "" });
                 commands.queue(move |world: &mut World| {
                     if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
@@ -257,42 +318,52 @@ pub fn start_stop_riding(
                     world.entity_mut(entity).insert(Rider { mount: mount_id, point, idle, walk, run, gait: None, boarding, vehicle, seat, on_foot });
                 });
             }
-            (None, Some(_)) => {
-                let getoff = if rider.is_some_and(|r| r.vehicle) {
-                    None
+            (None, Some(rider)) => {
+                let hop = if rider.vehicle {
+                    Vec::new()
                 } else {
                     (|| {
-                        let character = character?;
-                        let db = db.as_deref()?;
-                        let animator = animator?;
-                        let mount = net.by_id.get(&rider?.mount)?;
-                        Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
+                        let mount = net.by_id.get(&rider.mount)?;
+                        Some(hop_clips(character?, mount.model_id, db.as_deref()?, animator?, &clips))
                     })()
-                    .flatten()
+                    .unwrap_or_default()
                 };
-                let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
+                let scale = unit.scale();
                 commands.queue(move |world: &mut World| {
-                    if let (Some(off), Some(mut animator)) = (getoff, world.entity_mut(entity).get_mut::<Animator>()) {
-                        animator.play(off, false, 0.15);
-                    }
                     let Some(rider) = world.entity_mut(entity).take::<Rider>() else { return };
-                    if remaining > 0.0 {
-                        world.entity_mut(entity).insert(Dismounting { remaining, on_foot: rider.on_foot });
-                    } else if let Some(mut on_foot) = rider.on_foot {
-                        on_foot.invalidate();
-                        world.entity_mut(entity).insert(on_foot);
-                    }
-                    // it stands where the mount was: the movement packets of the unit itself carry on from here
-                    if let Some(mut unit) = world.entity_mut(entity).get_mut::<RemoteUnit>() {
-                        let (pos, facing) = (unit.pos, unit.facing);
-                        unit.reset_track(pos, facing);
-                    }
+                    let (pos, facing) = world.entity(entity).get::<RemoteUnit>().map_or((Vec3::ZERO, 0.0), |u| (u.pos, u.facing));
+                    start_hop(world, entity, hop, pos, facing, scale, rider.on_foot);
+                    // it stands where the hop ends: the movement packets of the unit itself carry on from there
                     if let Some(mut motion) = world.entity_mut(entity).get_mut::<Motion>() {
                         *motion = Motion::default();
                     }
                 });
             }
             _ => {}
+        }
+    }
+}
+
+/// Starts the dismount hop of `entity` from the saddle at `pos`, or gives the on-foot locomotion back at once when there is no clip.
+fn start_hop(world: &mut World, entity: Entity, clips: Vec<BoundClip>, pos: Vec3, facing: f32, scale: f32, on_foot: Option<Locomotion>) {
+    let mut hop = Hop::new(clips, pos, facing, scale);
+    let first = world.entity(entity).get::<Animator>().and_then(|a| hop.next(&a.rig));
+    match first {
+        Some(clip) => {
+            if let Some(mut animator) = world.entity_mut(entity).get_mut::<Animator>() {
+                animator.play(clip, false, 0.15);
+            }
+            world.entity_mut(entity).insert(Dismounting { hop, on_foot });
+        }
+        None => {
+            if let Some(mut on_foot) = on_foot {
+                on_foot.invalidate();
+                world.entity_mut(entity).insert(on_foot);
+            }
+            if let Some(mut unit) = world.entity_mut(entity).get_mut::<RemoteUnit>() {
+                let (pos, facing) = (unit.pos, unit.facing);
+                unit.reset_track(pos, facing);
+            }
         }
     }
 }
@@ -333,12 +404,17 @@ pub fn pose_riders(
                 (pos, facing, 0.0, 1.0)
             }
         };
+        // while the get-on clip plays the rider stands at the approach point of its side; the clip walks it onto the saddle
+        let (pos, facing) = match &rider.boarding {
+            Some(b) if !rider.vehicle => boarding_pose(b, pos, facing, unit.scale()),
+            _ => (pos, facing),
+        };
         unit.pos = pos;
         unit.facing = facing;
         *transform = placement(pos, facing, unit.scale());
         if let Some(boarding) = &mut rider.boarding {
-            *boarding -= time.delta_secs();
-            if *boarding > 0.0 {
+            boarding.remaining -= time.delta_secs();
+            if boarding.remaining > 0.0 {
                 animator.speed = 1.0;
                 continue;
             }
@@ -367,6 +443,12 @@ pub fn pose_riders(
     }
 }
 
+/// Where a rider stands (and which way it faces) while its get-on clip plays, for the saddle at `seat` and a mount facing `mount_facing`.
+fn boarding_pose(boarding: &Boarding, seat: Vec3, mount_facing: f32, scale: f32) -> (Vec3, f32) {
+    let facing = boarding.side.rider_facing(mount_facing);
+    (mount_anim::approach_point(seat, facing, boarding.end, scale), facing)
+}
+
 /// Seats the local player when the server attached its own object (`SCUnitAttached`), and starts the
 /// authored get-off clip on the detach that follows an unmount or dismiss.
 #[allow(clippy::type_complexity)]
@@ -377,6 +459,7 @@ pub fn start_stop_local_riding(
     views: Res<Views>,
     db: Option<Res<Db>>,
     clips: Res<ClipLibrary>,
+    reasons: Res<AttachReasons>,
     locals: Query<(Entity, &LocalPlayer, Option<&LocalRider>, Option<&Character>, Option<&Animator>)>,
 ) {
     let Some(spawn) = player.spawn.as_ref() else { return };
@@ -389,15 +472,16 @@ pub fn start_stop_local_riding(
                     continue;
                 };
                 let vehicle = matches!(mount.kind, UnitKind::Slave { .. });
+                let side = if vehicle { None } else { reasons.side(spawn.obj_id, a.obj_id) };
                 let clis = if vehicle {
                     vehicle_rider_clips(character, animator, &clips)
                 } else {
                     let Some(db) = db.as_deref() else { continue };
-                    riding_clips(character, mount.model_id, db, animator, &clips)
+                    riding_clips(character, mount.model_id, db, animator, &clips, side)
                 };
                 let Some(clis) = clis else { continue };
-                let RidingClips { idle, walk, run, geton, .. } = clis;
-                let boarding = geton.as_ref().map(|c| c.clip.duration);
+                let RidingClips { idle, walk, run, geton } = clis;
+                let boarding = Boarding::new(geton.as_ref(), side, animator);
                 let (mount_id, point) = (a.obj_id, a.point);
                 let body = if vehicle { None } else { db.as_deref().map(|db| db.mount_move(mount.model_id)) };
                 let vehicle_body = if vehicle && point == 1 && db.as_deref().is_some_and(|db| db.is_land_vehicle(mount.model_id)) {
@@ -427,24 +511,17 @@ pub fn start_stop_local_riding(
                 });
             }
             (None, Some(rider)) => {
-                let getoff = if rider.vehicle {
-                    None
+                let hop = if rider.vehicle {
+                    Vec::new()
                 } else {
                     (|| {
-                        let character = character?;
-                        let db = db.as_deref()?;
-                        let animator = animator?;
                         let mount = net.by_id.get(&rider.mount)?;
-                        Some(riding_clips(character, mount.model_id, db, animator, &clips)?.getoff)
+                        Some(hop_clips(character?, mount.model_id, db.as_deref()?, animator?, &clips))
                     })()
-                    .flatten()
+                    .unwrap_or_default()
                 };
-                let remaining = getoff.as_ref().map_or(0.0, |c| c.clip.duration);
                 let mount_entity = views.unit_entity(rider.mount);
                 commands.queue(move |world: &mut World| {
-                    if let (Some(off), Some(mut animator)) = (getoff, world.entity_mut(entity).get_mut::<Animator>()) {
-                        animator.play(off, false, 0.15);
-                    }
                     if let Some(mount_entity) = mount_entity {
                         let mut mount = world.entity_mut(mount_entity);
                         mount.remove::<DrivenMount>();
@@ -458,12 +535,8 @@ pub fn start_stop_local_riding(
                         }
                     }
                     let Some(rider) = world.entity_mut(entity).take::<LocalRider>() else { return };
-                    if remaining > 0.0 {
-                        world.entity_mut(entity).insert(Dismounting { remaining, on_foot: rider.on_foot });
-                    } else if let Some(mut on_foot) = rider.on_foot {
-                        on_foot.invalidate();
-                        world.entity_mut(entity).insert(on_foot);
-                    }
+                    let (pos, facing) = world.entity(entity).get::<Mover>().map_or((Vec3::ZERO, 0.0), |m| (m.pos, m.facing));
+                    start_hop(world, entity, hop, pos, facing, 1.0, rider.on_foot);
                 });
             }
             _ => {}
@@ -505,6 +578,10 @@ pub fn pose_local_riders(
                 (pos, facing, 0.0, 1.0)
             }
         };
+        let (pos, facing) = match &rider.boarding {
+            Some(b) if !rider.vehicle => boarding_pose(b, pos, facing, 1.0),
+            _ => (pos, facing),
+        };
         mover.pos = pos;
         mover.facing = facing;
         mover.velocity = Vec3::ZERO;
@@ -513,8 +590,8 @@ pub fn pose_local_riders(
         mover.swim = None;
         *transform = placement(pos, facing, 1.0);
         if let Some(boarding) = &mut rider.boarding {
-            *boarding -= time.delta_secs();
-            if *boarding > 0.0 {
+            boarding.remaining -= time.delta_secs();
+            if boarding.remaining > 0.0 {
                 animator.speed = 1.0;
                 continue;
             }
@@ -543,11 +620,38 @@ pub fn pose_local_riders(
     }
 }
 
-/// Restores the on-foot locomotion once the get-off one-shot finished.
-pub fn finish_dismount(time: Res<Time>, mut commands: Commands, mut dismounting: Query<(Entity, &mut Dismounting)>) {
-    for (entity, mut state) in &mut dismounting {
-        state.remaining -= time.delta_secs();
-        if state.remaining > 0.0 {
+/// Plays the dismount hop: the entity stays at the anchor while the clip moves the body (the root motion), and where the last clip
+/// leaves the body the unit stands from then on and its on-foot locomotion starts again.
+pub fn finish_dismount(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut dismounting: Query<(Entity, &mut Dismounting, &mut Animator, &mut Transform, Option<&mut Mover>, Option<&mut RemoteUnit>)>,
+) {
+    for (entity, mut state, mut animator, mut transform, mover, unit) in dismounting.iter_mut() {
+        state.hop.remaining -= time.delta_secs();
+        let mut over = false;
+        if state.hop.remaining <= 0.0 {
+            match state.hop.next(&animator.rig) {
+                Some(clip) => animator.play(clip, false, 0.0),
+                None => over = true,
+            }
+        }
+        let (pos, facing, scale) = (state.hop.anchor, state.hop.facing, state.hop.scale);
+        *transform = placement(pos, facing, scale);
+        if let Some(mut mover) = mover {
+            mover.pos = pos;
+            mover.facing = facing;
+            mover.velocity = Vec3::ZERO;
+            mover.vz = 0.0;
+        }
+        if let Some(mut unit) = unit {
+            unit.pos = pos;
+            unit.facing = facing;
+            if over {
+                unit.reset_track(pos, facing);
+            }
+        }
+        if !over {
             continue;
         }
         if let Some(mut on_foot) = state.on_foot.take() {
@@ -826,5 +930,38 @@ mod tests {
         assert!(!super::super::player::on_foot_attached(Some(Attachment { obj_id: 201, point: 1 })));
         assert!(!super::super::player::on_foot_attached(Some(Attachment { obj_id: 201, point: 2 })));
         assert!(super::super::player::on_foot_attached(None));
+    }
+}
+
+#[cfg(test)]
+mod attach_tests {
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_message::<NetEvent>().init_resource::<AttachReasons>().add_systems(Update, record_attach_reasons);
+        app
+    }
+
+    #[test]
+    fn the_attach_reason_picks_the_side_until_the_detach() {
+        let mut app = app();
+        app.world_mut().write_message(NetEvent(Event::UnitAttached { obj_id: 7, mount: 90, point: 1, reason: 2 }));
+        app.update();
+        let reasons = app.world().resource::<AttachReasons>();
+        assert_eq!(reasons.side(7, 90), Some(Side::Right));
+        assert_eq!(reasons.side(7, 91), None, "another mount is another attach");
+        assert_eq!(reasons.side(8, 90), None, "a rider that was already seated has no get-on");
+        app.world_mut().write_message(NetEvent(Event::UnitDetached { obj_id: 7, reason: 9 }));
+        app.update();
+        assert_eq!(app.world().resource::<AttachReasons>().side(7, 90), None);
+    }
+
+    #[test]
+    fn a_get_on_stands_the_rider_on_the_approach_side() {
+        let boarding = Boarding { remaining: 1.0, side: Side::Right, end: Vec3::new(0.0, 1.0, 1.888) };
+        let (pos, facing) = boarding_pose(&boarding, Vec3::new(10.0, 10.0, 5.0), 0.0, 1.0);
+        assert!((pos - Vec3::new(11.0, 10.0, 3.112)).length() < 1e-4, "{pos}");
+        assert!((facing - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
     }
 }

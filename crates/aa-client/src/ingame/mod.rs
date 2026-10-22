@@ -51,6 +51,7 @@ pub(crate) mod ground_target;
 pub(crate) mod houses;
 mod idle;
 mod mount;
+mod mount_anim;
 pub(crate) mod placement;
 pub(crate) mod player;
 mod prepare;
