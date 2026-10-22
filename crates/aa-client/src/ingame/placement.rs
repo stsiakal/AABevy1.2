@@ -383,6 +383,9 @@ pub struct Session {
     pub invalid: Option<Invalid>,
     /// The ghost root, its model and the tinted part materials.
     root: Option<Entity>,
+    /// The model child of the ghost root and whether it wears the invalid material (house ghosts only).
+    ghost_model: Option<Entity>,
+    ghost_invalid: bool,
     model_failed: bool,
     /// The left button was released after the session started: only then may a click confirm (the bag click that
     /// used the seed must not carry into the placement).
@@ -455,6 +458,8 @@ impl Session {
             scale: 1.0,
             invalid: Some(Invalid::NoGround),
             root: None,
+            ghost_model: None,
+            ghost_invalid: false,
             model_failed: false,
             left_armed: false,
             rotating: false,
@@ -961,9 +966,35 @@ fn show_ghost(commands: &mut Commands, root: Option<Entity>, session: &Session) 
     ));
 }
 
-/// The ghost entity of the session, loaded once; `None` when the doodad has no model.
+/// The original builder's invalid-ghost material (`FUN_39334460`: `error != 0` overrides the ghost's materials with it,
+/// else the override is cleared). Its `Diffuse` is the red (0.737, 0.013, 0.013) on `defaults/white.dds`.
+pub const INVALID_GHOST_MATERIAL: &str = "materials/special/housing_build_invalid.mtl";
+
+/// The ghost's model options: its own materials, or the original builder's invalid material on every part.
+fn ghost_options(invalid: bool) -> ModelOptions {
+    ModelOptions { material: invalid.then(|| INVALID_GHOST_MATERIAL.to_string()), ..ModelOptions::default() }
+}
+
+/// The ghost entity of the session, loaded once; `None` when the doodad has no model. A house ghost is reloaded with
+/// the original invalid material while the spot is invalid and with its own materials otherwise.
 fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Session) -> Option<Entity> {
+    let want_invalid = session.is_house() && session.invalid.is_some();
     if let Some(root) = session.root {
+        if session.ghost_invalid != want_invalid
+            && let Some(old) = session.ghost_model.take()
+            && let Some(path) = session.plant.model.clone()
+        {
+            let options = ghost_options(want_invalid);
+            if let Ok(loaded) = cry.load_model(&path, &options) {
+                commands.entity(old).despawn();
+                let model = spawn_loaded(commands, &path, &loaded, &options);
+                commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+                session.ghost_model = Some(model);
+                session.ghost_invalid = want_invalid;
+            } else {
+                session.ghost_model = Some(old);
+            }
+        }
         return Some(root);
     }
     if session.model_failed {
@@ -974,7 +1005,7 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
         warn!("planting: doodad {} has no model to ghost", session.plant.doodad);
         return None;
     };
-    let options = ModelOptions::default();
+    let options = ghost_options(want_invalid);
     let loaded = match cry.load_model(&path, &options) {
         Ok(loaded) => loaded,
         Err(e) => {
@@ -988,6 +1019,8 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
         .id();
     let model = spawn_loaded(commands, &path, &loaded, &options);
     commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+    session.ghost_model = Some(model);
+    session.ghost_invalid = want_invalid;
     let parts: usize = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
     info!("planting: ghost {path} loaded ({parts} parts)");
     session.root = Some(root);
@@ -2774,5 +2807,34 @@ mod tests {
         app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, true, false, false);
         app.update();
         assert!((session_of(&app).yaw - (15f32.to_radians() - 0.01)).abs() < 1e-5, "{}", session_of(&app).yaw);
+    }
+
+    #[test]
+    fn an_invalid_house_ghost_wears_the_original_invalid_material() {
+        assert_eq!(ghost_options(false).material, None);
+        assert_eq!(ghost_options(true).material.as_deref(), Some(INVALID_GHOST_MATERIAL));
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let mtl = String::from_utf8(aa_cry::read(INVALID_GHOST_MATERIAL).expect("the 1.2 pak has the invalid material")).unwrap();
+        assert!(mtl.contains("Diffuse=\"0.73720491,0.01266372,0.01266372\""), "{mtl}");
+        use bevy::asset::AssetPlugin;
+        #[derive(Resource, Default)]
+        struct Mtl(Option<String>);
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .add_plugins(aa_cry::CryPlugin)
+            .init_resource::<Mtl>()
+            .add_systems(Startup, |mut cry: CryAssets, mut out: ResMut<Mtl>| {
+                if let Ok(loaded) = cry.load_model("objects/env/05_nature/00_common/common_plants_rice01.cgf", &ghost_options(true)) {
+                    out.0 = loaded.material_path.clone();
+                }
+            });
+        app.update();
+        assert_eq!(app.world().resource::<Mtl>().0.as_deref(), Some(INVALID_GHOST_MATERIAL));
     }
 }
