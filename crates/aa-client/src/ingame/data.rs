@@ -21,6 +21,8 @@ pub const SLAVE_KIND_CANNON: u32 = 8;
 pub struct Db {
     pub game: Arc<Mutex<GameDb>>,
     lookups: Arc<Mutex<Lookups>>,
+    /// The file the lookups were opened from (the indexed copy when it could be built).
+    path: String,
 }
 
 struct Lookups {
@@ -288,6 +290,7 @@ impl Db {
         };
         Some(Db {
             game: Arc::new(Mutex::new(game)),
+            path: path.clone(),
             lookups: Arc::new(Mutex::new(Lookups {
                 conn,
                 actor_files: HashMap::new(),
@@ -311,6 +314,12 @@ impl Db {
                 seats: HashMap::new(),
             })),
         })
+    }
+
+    /// The database file the lookups use: the indexed copy when it could be built, else `AA_DB` /
+    /// [`aa_anim::db::DEFAULT_DB`]. Everything that reads game tables goes through this one file.
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
     /// The model file (`.cdf` / `.chr`) of an actor model (`models.id`), lower case, `/` separators.

@@ -139,6 +139,8 @@ pub struct Catalog {
     area_groups: HashMap<u32, u32>,
     /// `housing_groups.id` -> the categories its `housing_group_categories` rows allow.
     group_categories: HashMap<u32, HashSet<u32>>,
+    /// [`Catalog::load`] filled this from the database (a default catalog has no placement data).
+    loaded: bool,
 }
 
 /// The ground-point offset of a housing design: none (see the design loader for why `housings.auto_z_offset_*` is left out).
@@ -148,9 +150,10 @@ fn house_grounding(_auto_z: bool, _offset: Vec3) -> Grounding {
 
 impl Catalog {
     /// Loads `item_spawn_doodads` and the footprints from the game database; `None` when it cannot be opened.
+    /// The path is the one [`Db`] opened (its indexed copy), so the catalog and the model lookups can never read
+    /// two different database files.
     pub fn load(db: &Db) -> Option<Catalog> {
-        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
-        Catalog::load_path(&path, Some(db))
+        Catalog::load_path(db.path(), Some(db))
     }
 
     fn load_path(path: &str, db: Option<&Db>) -> Option<Catalog> {
@@ -295,6 +298,7 @@ impl Catalog {
                 }
             }
         }
+        catalog.loaded = true;
         Some(catalog)
     }
 
@@ -683,6 +687,9 @@ pub fn plugin(app: &mut App) {
         .init_resource::<Visuals>()
         .insert_resource(Catalog::default())
         .add_systems(Startup, load_catalog)
+        // The game inserts the Db while the plugin is built, so Startup finds it; this retry covers a Db that
+        // becomes available later (and makes an empty catalog impossible to keep silently).
+        .add_systems(Update, load_catalog.run_if(resource_exists::<Db>).run_if(catalog_missing))
         .add_systems(PreUpdate, input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
         .add_systems(Update, (start, finish, track, cursor_icon, log_server).chain().run_if(in_state(Screen::InGame)))
         .add_systems(Update, builder_events.after(finish).run_if(in_state(Screen::InGame)))
@@ -725,14 +732,29 @@ fn finish(mut commands: Commands, mut placement: ResMut<Placement>, visuals: Res
     }
 }
 
+fn catalog_missing(catalog: Option<Res<Catalog>>) -> bool {
+    catalog.is_none_or(|c| !c.loaded)
+}
+
 fn load_catalog(mut catalog: ResMut<Catalog>, db: Option<Res<Db>>) {
-    let Some(db) = db else { return };
+    let Some(db) = db else {
+        warn!("planting: no game database at startup; every seed, sapling and house design has no placement data");
+        return;
+    };
     match Catalog::load(&db) {
         Some(loaded) => {
-            info!("planting: {} seed / sapling items in item_spawn_doodads", loaded.by_item.len());
+            let houses: Vec<_> = loaded.by_item.values().filter(|p| p.house.is_some()).collect();
+            let brushes: usize = houses.iter().map(|p| p.parts.len()).sum();
+            info!(
+                "planting: {} seed / sapling items in item_spawn_doodads, {} house designs with {} prefab brushes from {}",
+                loaded.by_item.len(),
+                houses.len(),
+                brushes,
+                db.path()
+            );
             *catalog = loaded;
         }
-        None => warn!("planting: cannot read item_spawn_doodads"),
+        None => warn!("planting: cannot read item_spawn_doodads from {}", db.path()),
     }
 }
 
@@ -883,8 +905,14 @@ fn start(
         let yaw = camera.single().map(|c| c.yaw).or_else(|_| player.single().map(|m| m.facing)).unwrap_or(0.0);
         match &plant.house {
             Some(house) => info!(
-                "{kind}: {} (item {}) places house {} \"{}\" (plot {:.1} m, model {:?})",
-                template, item_id, house.design, house.name, house.garden_radius, plant.model
+                "{kind}: {} (item {}) places house {} \"{}\" (plot {:.1} m, {} prefab brushes, model {:?})",
+                template,
+                item_id,
+                house.design,
+                house.name,
+                house.garden_radius,
+                plant.parts.len(),
+                plant.model
             ),
             None => info!(
                 "{kind}: {} (item {}) places doodad {} (phase {}, model {:?}, range {:.1} m, footprint {:.2} m)",
@@ -1072,6 +1100,13 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
         warn!("planting: doodad {} has no model to ghost", session.plant.doodad);
         return None;
     }
+    if session.is_house() && session.plant.parts.is_empty() {
+        warn!(
+            "planting: house design {:?} has no prefab brushes in the catalog; the ghost falls back to the single model {:?}",
+            session.house_design(),
+            session.plant.model
+        );
+    }
     let root = commands
         .spawn((Name::new("planting ghost"), Ghost, Transform::IDENTITY, Visibility::Visible))
         .id();
@@ -1084,7 +1119,11 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
     };
     session.ghost_model = Some(model);
     session.ghost_invalid = want_invalid;
-    info!("planting: ghost {:?} loaded ({parts} parts)", session.plant.model);
+    info!(
+        "planting: ghost {:?} loaded ({parts} parts from {} prefab brushes)",
+        session.plant.model,
+        session.plant.parts.len()
+    );
     session.root = Some(root);
     Some(root)
 }
@@ -1440,7 +1479,7 @@ fn post_quads(areas: &HousingAreas, spot: Vec3, floor: impl Fn(Vec2) -> f32) -> 
             let base = cry_to_bevy(Vec3::new(g.x, g.y, z));
             let along = Vec3::new(dir.0, 0.0, -dir.1).normalize_or_zero();
             let across = Vec3::new(-dir.1, 0.0, -dir.0).normalize_or_zero();
-            let (half_w, height) = (0.045f32, 0.55);
+            let (half_w, height) = (0.035f32, 0.50);
             for side in [along, across] {
                 let p = [
                     base - side * half_w,
@@ -1514,8 +1553,11 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
     };
     visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
     visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
+    // The housing area's boundary posts: pale straw-yellow sticks, not glowing points. The live capture
+    // (`a-p-9-lock.png`) shows dull cream sticks about 0.5 m tall; a saturated yellow reads as an orange
+    // glow at distance.
     visuals.post = Some(materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
+        base_color: Color::srgba(0.83, 0.81, 0.58, 1.0),
         unlit: true,
         cull_mode: None,
         alpha_mode: AlphaMode::Blend,
@@ -2497,7 +2539,7 @@ mod tests {
         assert!(!posts.is_empty());
         for q in &posts {
             for v in q.p {
-                assert!((v.y - 10.02).abs() < 1e-3 || (v.y - 10.57).abs() < 1e-3, "posts stand on the ground: {v:?}");
+                assert!((v.y - 10.02).abs() < 1e-3 || (v.y - 10.52).abs() < 1e-3, "posts stand on the ground: {v:?}");
             }
         }
     }
@@ -2666,6 +2708,63 @@ mod tests {
         let pumpkin = catalog.plantable(15566).expect("Pumpkin-head farm design");
         assert_eq!(pumpkin.house.as_ref().map(|h| (h.design, h.garden_radius)), Some((89, 8.0)));
         let _ = db;
+    }
+
+    /// The game's own startup path: `InGamePlugin` inserts the `Db` while the plugin is built, the placement
+    /// plugin's Startup loads the `Catalog`, then a house-design press (`HousePressed`) starts the session and
+    /// `track` spawns the ghost. The ghost must be the prefab's brushes (the whole farmhouse), not one model.
+    #[test]
+    fn the_game_startup_catalog_starts_the_whole_prefab_ghost() {
+        use bevy::asset::AssetPlugin;
+        use bevy::state::app::StatesPlugin;
+        let Some(db) = Db::open() else { return };
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), bevy::input::InputPlugin, StatesPlugin))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .add_plugins(aa_cry::CryPlugin)
+            .add_plugins(bevy::camera::visibility::VisibilityPlugin)
+            .init_state::<crate::Screen>()
+            // exactly `InGamePlugin`: the database first, then the placement plugin (whose Startup builds the Catalog)
+            .insert_resource(db)
+            .add_plugins(plugin)
+            .add_message::<aa_net::NetCommand>()
+            .add_message::<aa_net::NetEvent>()
+            .init_resource::<aa_net::Farms>()
+            .init_resource::<aa_net::Houses>()
+            .init_resource::<aa_net::state::Doodads>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<crate::hud::HudPointerOverUi>()
+            .init_resource::<crate::hud::HudKeyboardFocus>()
+            .init_resource::<crate::ingame::virtual_input::VirtualInput>();
+        app.world_mut().resource_mut::<NextState<crate::Screen>>().set(crate::Screen::InGame);
+        app.update(); // Startup: the placement plugin's `load_catalog`
+        let brushes = {
+            let catalog = app.world().resource::<Catalog>();
+            let farmhouse = catalog.plantable(21165).expect("the Thatched Farmhouse design item");
+            assert_eq!(farmhouse.house.as_ref().map(|h| h.design), Some(171));
+            assert!(farmhouse.parts.len() >= 3, "design 171: {} prefab brushes", farmhouse.parts.len());
+            farmhouse.parts.len()
+        };
+        app.world_mut().write_message(HousePressed { item_id: 16_777_463, item_template: 21165 });
+        app.update(); // `start` opens the session, `track` loads the ghost
+        {
+            let placement = app.world().resource::<Placement>();
+            let session = placement.session.as_ref().expect("the house press started a placement");
+            assert_eq!(session.house_design(), Some(171));
+            assert_eq!(session.plant.parts.len(), brushes, "the session keeps the catalog's prefab brushes");
+        }
+        if aa_cry::pak_available() {
+            let meshes = {
+                let world = app.world_mut();
+                let mut q = world.query_filtered::<Entity, With<Mesh3d>>();
+                q.iter(world).count()
+            };
+            assert!(meshes >= 3, "the ghost draws every prefab brush: {meshes} meshes");
+        }
     }
 
     #[test]
@@ -3183,5 +3282,8 @@ mod tests {
         let mat = materials.get(visuals.dot_valid.as_ref().unwrap()).unwrap();
         assert_eq!(mat.base_color, Color::srgba(1.0, 1.0, 1.0, 0.69), "white, alpha 0.69");
         assert!(mat.base_color_texture.is_none() && mat.alpha_mode == AlphaMode::Blend, "no glow texture, no additive blend");
+        // the housing-area posts are dull straw, not saturated yellow (which reads as an orange glow at distance)
+        let post = materials.get(visuals.post.as_ref().unwrap()).unwrap().base_color.to_srgba();
+        assert!(post.blue > 0.4 && post.red < 0.9, "pale straw posts: {post:?}");
     }
 }
