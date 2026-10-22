@@ -18,7 +18,7 @@ A row is not "a window opens": it is the original behaviour end to end. Every ro
 3. **Oracle-verified** - same packets, values, windows and screenshots compared side by side with the
    hidden original client.
 4. **Owner in-game test** - the owner plays the feature against the original.
-5. **Upstream PR** - fixes and fork deviations are offered upstream (NickMesser/AAEmu).
+5. **Upstream PR** - fixes and fork deviations are offered upstream (NickMesser/AABevy1.2 for the client, NickMesser/AAEmu for server fixes).
 
 Each row below has three status fields, and the row is **done only when all three are done**:
 
@@ -29,7 +29,7 @@ Each row below has three status fields, and the row is **done only when all thre
 `re-equipment.md` and `re-skills.md` are narrow RE notes (costume slots/attachment rotation; skill
 controllers, knockdown, beams), not end-to-end area specs, so they do not make an area's RE spec done.
 
-**Fork deviations from upstream (NickMesser/AAEmu):** see the section at the end of this file.
+**Fork deviations from upstream (NickMesser/AABevy1.2):** see the section at the end of this file.
 
 Execution policy (user instruction,2026-10-18): keep multiple Sol6.1 agents working
 throughout this goal. Use all available concurrency slots (currently root plus
