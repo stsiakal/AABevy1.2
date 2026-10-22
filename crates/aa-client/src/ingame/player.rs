@@ -1176,6 +1176,7 @@ mod scripted_input_tests {
             .init_resource::<crate::settings::Actions>()
             .init_resource::<crate::hud::HudPointerOverUi>()
             .init_resource::<DevOptions>()
+            .init_resource::<aa_net::state::Player>()
             .insert_non_send(crate::hud::api::HudBridge::default())
             .add_message::<NetCommand>()
             .add_systems(PreUpdate, inject.before(bevy::input::InputSystems))
