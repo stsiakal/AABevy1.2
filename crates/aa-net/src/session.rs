@@ -263,6 +263,9 @@ pub enum Command {
     /// template's `use_skill_id` (`items.use_skill_id` in the game database). `target_obj_id` as
     /// in [`Command::UseSkill`]. The effect arrives as `ItemsChanged` (the stack shrinks), buffs
     /// and `UnitPoints`.
+    ///
+    /// The cast names `target_obj_id` as the unit target and 0 when none is selected, as the original does (the summon item sends
+    /// `StartSkill 10602 target=0`); the server resolves a self buff.
     UseItem { item_id: u64, template_id: u32, skill_id: u32, target_obj_id: u32 },
     /// [`Command::UseItem`] for an item whose skill aims at a spot of the ground (a shovel, a thrown bomb): the position target.
     UseItemAt { item_id: u64, template_id: u32, skill_id: u32, pos: Pos },
@@ -330,6 +333,8 @@ pub enum Command {
     Battlefield(crate::battlefield::BattlefieldCommand),
     Actability(crate::actability::ActabilityCommand),
     Mate(crate::mate::MateCommand),
+    /// `CSCreateSkillController` for the player's own unit (the session fills the object id); see [`crate::skill::controller_kind`].
+    SkillController { sc_type: u8, fall_damage_immune: bool },
     Slave(crate::slave_control::SlaveCommand),
     /// Legacy unscoped transport API; new app actions should capture persistent identity below.
     Auction(crate::auction::AuctionCommand),
@@ -1391,6 +1396,12 @@ impl Session {
                     self.emit(Event::Mate(crate::mate::MateEvent::RequestRejected { command, message: "mate request was not sent".into() }));
                 }
             }
+            Command::SkillController { sc_type, fall_damage_immune } => {
+                if self.phase == Phase::InWorld {
+                    let obj_id = self.self_obj;
+                    self.send_game(game::ClientMsg::CreateSkillController { obj_id, sc_type, fall_damage_immune }).await;
+                }
+            }
             Command::LootRoll(command) => {
                 if let Err(message) = command.validate() {
                     self.emit(Event::LootRoll(crate::loot_roll::LootRollEvent::RequestRejected { command, message: message.into() }));
@@ -1517,8 +1528,8 @@ impl Session {
                 self.start_skill(skill_id, StartCaster::Unit, SkillTarget::position(pos)).await;
             }
             Command::UseItem { item_id, template_id, skill_id, target_obj_id } => {
-                let target = SkillTarget::unit(if target_obj_id == 0 { self.self_obj } else { target_obj_id });
-                self.start_skill(skill_id, StartCaster::Item { item_id, template_id }, target).await;
+                // The original names the selected unit and 0 when there is none (summon item: `StartSkill 10602 target=0`).
+                self.start_skill(skill_id, StartCaster::Item { item_id, template_id }, SkillTarget::unit(target_obj_id)).await;
             }
             Command::UseItemAt { item_id, template_id, skill_id, pos } => {
                 self.start_skill(skill_id, StartCaster::Item { item_id, template_id }, SkillTarget::position(pos)).await;
@@ -4443,6 +4454,41 @@ mod tests {
         }
         .encode_body();
         assert_eq!(&frame[6..], &expected[..]);
+    }
+
+    #[tokio::test]
+    async fn an_item_cast_without_a_selected_unit_targets_unit_zero_like_the_original() {
+        let (addr, stub) = game_stub_bytes(2).await;
+        let options = ClientOptions { first_ping_delay: Duration::from_secs(60), ..ClientOptions::default() };
+        let mut s = session_for(addr, options);
+        s.connect_world().await;
+        s.phase = Phase::InWorld;
+        s.self_obj = 7;
+        s.command(Command::UseItem { item_id: 99, template_id: 8159, skill_id: 10602, target_obj_id: 0 }).await;
+        let frames = stub.await.unwrap();
+        let expected = game::ClientMsg::StartSkill {
+            skill_id: 10602,
+            self_obj_id: 7,
+            caster: StartCaster::Item { item_id: 99, template_id: 8159 },
+            target: SkillTarget::unit(0),
+        }
+        .encode_body();
+        assert_eq!(&frames[1][6..], &expected[..]);
+    }
+
+    #[tokio::test]
+    async fn a_skill_controller_report_names_the_players_own_unit() {
+        let (addr, stub) = game_stub_bytes(2).await;
+        let options = ClientOptions { first_ping_delay: Duration::from_secs(60), ..ClientOptions::default() };
+        let mut s = session_for(addr, options);
+        s.connect_world().await;
+        s.phase = Phase::InWorld;
+        s.self_obj = 0x0102;
+        s.command(Command::SkillController { sc_type: crate::skill::controller_kind::UNMOUNT_HORSE, fall_damage_immune: false }).await;
+        let frames = stub.await.unwrap();
+        let frame = &frames[1];
+        assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), cs::CSCreateSkillControllerPacket);
+        assert_eq!(&frame[6..], &[0x02, 0x01, 0, 9, 0]);
     }
 
     #[tokio::test]
