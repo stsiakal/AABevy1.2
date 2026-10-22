@@ -55,8 +55,8 @@ pub struct VehicleBody {
     pub speed: f32,
     /// Radians per second (`vehicle_models.angVel`).
     pub turn: f32,
-    /// Number of wheel entries the native `VehicleMove` body carries; the client sends this many
-    /// wheel speeds (zero is valid).
+    /// Number of wheel entries the native `VehicleMove` body carries: the wheel bones of the body
+    /// skeleton (4 for the Farm Wagon); the client sends this many wheel speeds (zero is valid).
     pub wheels: u8,
 }
 
@@ -483,11 +483,19 @@ impl Db {
         if let Some(v) = l.vehicle_bodies.get(&model_id) {
             return *v;
         }
-        let d = VehicleBody::default();
+        drop(l);
+        // `vehicle_models.wheel` is a wheel MODEL path, not a count: the wheel entries of `VehicleMove` are the wheel bones of
+        // the body (`wheelN`, `wheel_typeN`), 4 for the Farm Wagon.
+        let wheels = self
+            .actor_model_file(model_id)
+            .and_then(|file| aa_cry::skeleton::Skeleton::load(&file).ok())
+            .map(|skeleton| super::wheels::count_wheel_bones(skeleton.bones.iter().map(|b| b.name.as_str())).min(10) as u8);
+        let mut l = self.lookups.lock().unwrap();
+        let d = VehicleBody { wheels: wheels.unwrap_or(VehicleBody::default().wheels), ..VehicleBody::default() };
         let out = l
             .conn
             .query_row(
-                "SELECT v.velocity, v.angVel, v.wheel FROM models m \
+                "SELECT v.velocity, v.angVel FROM models m \
                  JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' \
                  WHERE m.id = ?1 LIMIT 1",
                 params![model_id],
@@ -498,7 +506,7 @@ impl Db {
                     Ok(VehicleBody {
                         speed: n(0, d.speed).max(0.1),
                         turn: n(1, d.turn).abs().max(0.05),
-                        wheels: r.get::<_, Option<i64>>(2).ok().flatten().map_or(d.wheels, |v| v.clamp(0, 8) as u8),
+                        wheels: d.wheels,
                     })
                 },
             )
@@ -1126,6 +1134,22 @@ mod tests {
         let Some(db) = Db::open() else { return };
         let file = db.actor_model_file(1008).expect("the Farm Wagon body");
         assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
+    }
+
+    /// `vehicle_models.wheel` is a model path: the Farm Wagon sends one wheel speed per wheel bone (4), not the 2 the
+    /// failed integer parse fell back to.
+    #[test]
+    fn the_wagon_has_four_wheel_entries() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let body = db.vehicle_body(1008);
+        assert_eq!(body.wheels, 4);
+        assert!((body.speed - 4.0).abs() < 1e-6 && (body.turn - 0.4).abs() < 1e-6, "{body:?}");
+        let wheels = db.vehicle_wheel_models(1008);
+        assert!(wheels.wheel.as_deref().is_some_and(|p| p.ends_with("transfers_trailer_a_wheel01.cgf")), "{wheels:?}");
+        assert!(wheels.wheel2.as_deref().is_some_and(|p| p.ends_with("transfers_trailer_a_wheel02.cgf")), "{wheels:?}");
     }
 
     /// Every `ShipModel` draws a hull: model 393 (the galleon / clipper line) resolves to a body file.

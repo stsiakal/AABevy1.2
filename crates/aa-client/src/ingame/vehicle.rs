@@ -41,13 +41,20 @@ impl DrivenSlave {
         Self { body, pos, facing, speed: 0.0, steering: 0.0, since_sent: 0.0, was_active: false, sent_first: false }
     }
 
-    /// The mate-style object id and the exact client body; the session stamps the send time.
-    fn packet(&self, obj_id: u32, _moving: bool, velocity: [i16; 3]) -> Command {
+    /// The angular speed of every wheel (rad/s) at the forward speed: `speed / radius`; the linear speed while the wheel
+    /// models (and so their radius) are not loaded.
+    fn wheel_speed(&self, radius: f32) -> f32 {
+        if radius > 0.0 { self.speed / radius } else { self.speed }
+    }
+
+    /// The mate-style object id and the exact client body; the session stamps the send time. `wheel_radius` is the
+    /// radius of the wheel models ([`super::wheels::VehicleWheels::radius`], 0 when not loaded).
+    fn packet(&self, obj_id: u32, _moving: bool, velocity: [i16; 3], wheel_radius: f32) -> Command {
         let mut movement = Movement::vehicle(aa_net::Pos::new(self.pos.x, self.pos.y, self.pos.z), self.facing, 0);
         movement.velocity = velocity;
         if let Some(body) = &mut movement.vehicle {
             body.steering = self.steering;
-            body.wheel_speeds = vec![self.speed; usize::from(self.body.wheels)];
+            body.wheel_speeds = vec![self.wheel_speed(wheel_radius); usize::from(self.body.wheels)];
         }
         Command::MoveVehicle { obj_id, movement }
     }
@@ -296,12 +303,12 @@ pub fn drive_vehicle(
     mut input_state: ResMut<PlayerInput>,
     typing: Option<Res<HudKeyboardFocus>>,
     over_ui: Option<Res<HudPointerOverUi>>,
-    mut slaves: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>, &mut DrivenSlave)>,
+    mut slaves: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>, &mut DrivenSlave, Option<&super::wheels::VehicleWheels>)>,
 ) {
     let Some(spawn) = player.spawn.as_ref() else { return };
     let Some(a) = spawn.unit.attached_to.filter(|a| a.point == 1) else { return };
     let Some(entity) = views.unit_entity(a.obj_id) else { return };
-    let Ok((mut unit, mut transform, motion, mut drive)) = slaves.get_mut(entity) else { return };
+    let Ok((mut unit, mut transform, motion, mut drive, wheels)) = slaves.get_mut(entity) else { return };
     let Ok(mut orbit) = cameras.single_mut() else { return };
     let typing = typing.is_some_and(|f| f.0);
     let over_ui = over_ui.is_some_and(|o| o.0);
@@ -360,7 +367,7 @@ pub fn drive_vehicle(
     if (active && due) || (!active && drive.was_active) || first {
         let to_wire = |v: f32| (v * 1024.0).round().clamp(-32767.0, 32767.0) as i16;
         let velocity = [to_wire(actual.x), to_wire(actual.y), 0];
-        out.write(NetCommand(drive.packet(a.obj_id, active, velocity)));
+        out.write(NetCommand(drive.packet(a.obj_id, active, velocity, wheels.map_or(0.0, |w| w.radius))));
         drive.since_sent = 0.0;
         drive.sent_first = true;
     }
@@ -372,7 +379,7 @@ mod tests {
     use super::*;
 
     fn body() -> VehicleBody {
-        VehicleBody { speed: 15.0, turn: 1.0, wheels: 2 }
+        VehicleBody { speed: 15.0, turn: 1.0, wheels: 4 }
     }
 
     #[test]
@@ -380,7 +387,7 @@ mod tests {
         let mut drive = DrivenSlave::new(Vec3::new(10.0, 20.0, 3.0), 0.5, body());
         drive.speed = 15.0;
         drive.steering = -1.0;
-        let command = drive.packet(0x445566, true, [1024, 0, 0]);
+        let command = drive.packet(0x445566, true, [1024, 0, 0], 0.5);
         match command {
             Command::MoveVehicle { obj_id, movement } => {
                 assert_eq!(obj_id, 0x445566);
@@ -388,10 +395,18 @@ mod tests {
                 assert_eq!(movement.velocity, [1024, 0, 0]);
                 let body = movement.vehicle.unwrap();
                 assert_eq!(body.steering, -1.0);
-                assert_eq!(body.wheel_speeds, vec![15.0, 15.0]);
+                assert_eq!(body.wheel_speeds, vec![30.0; 4], "one angular speed (speed / radius) per wheel bone");
             }
             other => panic!("not a vehicle movement: {other:?}"),
         }
+    }
+
+    #[test]
+    fn without_loaded_wheel_models_the_linear_speed_is_sent() {
+        let mut drive = DrivenSlave::new(Vec3::ZERO, 0.0, body());
+        drive.speed = 4.0;
+        let Command::MoveVehicle { movement, .. } = drive.packet(1, true, [0; 3], 0.0) else { panic!("not a vehicle move") };
+        assert_eq!(movement.vehicle.unwrap().wheel_speeds, vec![4.0; 4]);
     }
 
     #[test]
