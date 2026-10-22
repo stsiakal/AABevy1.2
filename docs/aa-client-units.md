@@ -153,9 +153,22 @@ lifecycle as vehicles: `item_summon_slaves` maps the summon item's `use_skill_id
 `target_type_id` 12 `SummonPos`) to a slave whose `models.sub_type` is `ShipModel`. The HUD marks
 those item templates (`GameData::is_ship_summon`), so `ground_target` turns the cursor into the
 water-surface reticle only for them; `WaterQuery` supplies the surface height over the sea bed the
-ray hits, and a dry or out-of-range spot is not sent. The server currently places a summoned slave
+ray hits, and a dry or out-of-range spot is not sent. The aim is the view ray's crossing of the water
+plane (`surface_along_ray`, 1 m steps over `WaterQuery`, bisected), so open sea (no sea bed within the
+400 m reach) gets a spot too; a shore or dock hit before the crossing falls back to the surface over
+that ground. The server currently places a summoned slave
 in front of its owner (`slaves::create_from_skill` drops the cast position), so the chosen shoreline
 point is validated by the client but not used by this lane.
+
+A ship is drawn from the brushes of its `ship_models.normal` prefab (`Db::ship_parts`, `UnitBuild::Ship`):
+hull (`galleon_body.cgf`), rudder, cannons, cargo and shields, each at the prefab's `Pos`/`Rotate`
+(`w,x,y,z`)/`Scale` under the ship root, so every `ShipModel` slave resolves to a body (the prefab name
+is matched case-insensitively; 512 `galleon02`, 1386 and 1402, the sunken wrecks, name prefabs the
+1.2 pak does not contain and stay undrawn). `actor_model_file` returns the hull brush for them. The
+sails of the larger ships are separate slave doodads the server binds, not part of the prefab. A
+ship has no skeleton, so it never plays a swim or idle clip. Creatures and mounts that are not driven
+swim in water deeper than 1.3 m with `fist_ba_idle_swim` / `fist_mo_swim_f` when their `.cal` has them
+(`Motion::swimming`); a driven mount does the same while its `DrivenMount` swims.
 
 `vehicle_seat` binds an owned visible ship with the interaction key (no land-vehicle auto-board:
 that would pull a character who only stands on deck into the helm); `CSDiscardSlave` leaves and
@@ -170,7 +183,10 @@ Space stops/anchors the helm while seated; there is no separate 1.2 anchor skill
 
 `move_units` interpolates the hull; `seat`s come from the server's `slave_attach_points.json`
 (rowboat point 1 has yaw 180; merchant/fishing helm points are at 1.56 m / 6.15 m), so local and
-remote riders sit on the authored seat (`mount::seat_world`). A character who is not attached but
+remote riders sit on the authored seat (`mount::seat_world`); the seat is a point of the hull's model
+space (the Eznan Cutter's driver seat, z 6.2, is the deck beside the prefab's helm chair at z 6.3, tested),
+so a seated player stands at the hull root plus that offset; a root far above the water (the cutter
+summoned in a pond was at about z 145 over water at 127) is the server hull's position, not a seat error. A character who is not attached but
 stands inside the hull box is `DeckRide`: `ship_deck_control` walks it in the ship frame, clamps it
 to `ship_models.mass_box_size_x/y`, follows the interpolated hull, and reports the resulting world
 position 10 times a second. The server's `bind_slave_by_tl` always requests the driver point, so a

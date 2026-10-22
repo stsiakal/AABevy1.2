@@ -1263,7 +1263,7 @@ mod tests {
         }
         let mut app = App::new();
         app.insert_resource(Time::<()>::default()).init_resource::<Gliding>().init_resource::<Buffs>().add_systems(Update, track_remote_gliders);
-        let unit = app.world_mut().spawn((super::super::units::RemoteUnit::test_character(7), Motion { speed: 9.0, local_dir: Vec2::Y, airborne: false })).id();
+        let unit = app.world_mut().spawn((super::super::units::RemoteUnit::test_character(7), Motion { speed: 9.0, local_dir: Vec2::Y, ..default() })).id();
         let pack = app.world_mut().spawn((StowedPack, Visibility::Inherited, ChildOf(unit))).id();
         let step = |app: &mut App| {
             app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_millis(33));

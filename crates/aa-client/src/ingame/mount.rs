@@ -700,7 +700,7 @@ pub fn drive_mount(
     unit.facing = drive.facing;
     *transform = placement(pos, drive.facing, unit.scale());
     if let Some(mut m) = motion {
-        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne };
+        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: drive.swimming };
     }
     let turned = (drive.facing - before_facing).abs() > 1e-4;
     *input_state = PlayerInput { moving, jumped, turned };

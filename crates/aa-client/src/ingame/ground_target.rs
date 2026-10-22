@@ -316,6 +316,54 @@ pub(crate) fn spot_under(camera: &Camera, transform: &GlobalTransform, cursor: V
     None
 }
 
+/// Where the ray `origin + dir * t` (game coordinates, `dir` unit) first goes under the water surface within `reach`
+/// metres: `surface` gives the surface height over an `(x, y, z)` point, `None` where there is no water. The point is
+/// on the surface. A ship summon aims at this, not at the sea bed under it (open sea has no ground within reach).
+fn surface_along_ray(origin: Vec3, dir: Vec3, reach: f32, surface: impl Fn(Vec3) -> Option<f32>) -> Option<Vec3> {
+    const STEP: f32 = 1.0;
+    // the height of the ray above the surface, `None` over dry land
+    let above = |t: f32| {
+        let p = origin + dir * t;
+        surface(p).map(|h| p.z - h)
+    };
+    let mut prev = (0.0f32, above(0.0));
+    let mut t = 0.0;
+    while t < reach {
+        t = (t + STEP).min(reach);
+        let now = above(t);
+        match (prev.1, now) {
+            // the ray was over the water and is now under its surface (or the camera starts under it)
+            (Some(a), Some(b)) if a > 0.0 && b <= 0.0 => {
+                let (mut lo, mut hi) = (prev.0, t);
+                for _ in 0..16 {
+                    let mid = 0.5 * (lo + hi);
+                    if above(mid).is_some_and(|d| d <= 0.0) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                let q = origin + dir * hi;
+                return Some(Vec3::new(q.x, q.y, q.z - above(hi)?));
+            }
+            _ => {}
+        }
+        prev = (t, now);
+    }
+    None
+}
+
+/// The spot a ship summon aims at: the water surface the view ray through `cursor` crosses, unless the ground (a shore, a
+/// dock) is hit first, then the water surface over that ground.
+fn water_spot_under(camera: &Camera, transform: &GlobalTransform, cursor: Vec2, ground: Option<Vec3>, water: Option<&WaterQuery>) -> Option<Vec3> {
+    let water = water?;
+    let ray = camera.viewport_to_world(transform, cursor).ok()?;
+    let (origin, dir) = (bevy_to_cry(ray.origin), bevy_to_cry(*ray.direction));
+    let reach = ground.map_or(REACH, |g| origin.distance(g));
+    let crossing = surface_along_ray(origin, dir, reach, |p| water.water_at(p).map(|(h, _)| h));
+    crossing.or_else(|| water_spot(ground, Some(water)))
+}
+
 /// The water surface over the point under the cursor (a ship summon is placed on the surface,
 /// not on the sea bed the ground ray hits).
 fn water_spot(ground: Option<Vec3>, water: Option<&WaterQuery>) -> Option<Vec3> {
@@ -486,7 +534,8 @@ fn route(
         if key && (again || smart_option(rt.as_deref(), &script)) {
             let ground = spot_at_cursor();
             let spot = if skill.mode == Mode::Water {
-                water_spot(ground, water.as_deref())
+                let aimed = cameras.iter().find(|(c, _)| c.is_active).zip(cursor).and_then(|((camera, transform), cursor)| water_spot_under(camera, transform, cursor, ground, water.as_deref()));
+                aimed.or_else(|| water_spot(ground, water.as_deref()))
             } else {
                 ground
             }
@@ -534,7 +583,11 @@ fn track_cursor(
     let (Ok(mover), Some((camera, transform))) = (player.single(), cameras.iter().find(|(c, _)| c.is_active)) else { return };
     let cursor = if over_ui.0 && script.cursor.is_none() { None } else { cursor_of(windows.single().ok(), &script, virtual_input.as_deref()) };
     let ground = cursor.and_then(|c| spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref()));
-    let spot = if aim.skill.mode == Mode::Water { water_spot(ground, water.as_deref()) } else { ground };
+    let spot = if aim.skill.mode == Mode::Water {
+        cursor.and_then(|c| water_spot_under(camera, transform, c, ground, water.as_deref())).or_else(|| water_spot(ground, water.as_deref()))
+    } else {
+        ground
+    };
     aim.spot = spot.map(|spot| (spot, spot_ok(&aim.skill, mover.pos, spot, 0.0, water.as_deref())));
     if let Some((spot, ok)) = aim.spot
         && last.is_none_or(|l| l.distance(spot) > 0.5)
@@ -774,6 +827,24 @@ mod tests {
         for plain in [(0, 1), (4, 2), (5, 2), (7, 4), (14, 2), (16, 2)] {
             assert_eq!(classify(plain.0, plain.1), None, "{plain:?}");
         }
+    }
+
+    /// Open sea: the cursor ray crosses the water plane within range where no sea bed is within reach.
+    #[test]
+    fn a_ray_over_open_sea_lands_on_the_water_plane() {
+        let sea = |_: Vec3| Some(100.0);
+        // the camera 4 m over the sea looking 30 degrees down: the plane is 4 / tan(30) = 6.9 m ahead
+        let dir = Vec3::new(0.0, 30f32.to_radians().cos(), -30f32.to_radians().sin());
+        let spot = surface_along_ray(Vec3::new(10.0, 20.0, 104.0), dir, 400.0, sea).expect("the sea plane");
+        assert!((spot.z - 100.0).abs() < 1e-3, "{spot:?}");
+        assert!((spot.y - (20.0 + 4.0 / 30f32.to_radians().tan())).abs() < 0.01, "{spot:?}");
+        // looking at the sky or over dry land there is no water
+        assert!(surface_along_ray(Vec3::new(0.0, 0.0, 104.0), Vec3::Y, 400.0, sea).is_none());
+        assert!(surface_along_ray(Vec3::new(0.0, 0.0, 104.0), dir, 400.0, |_| None).is_none());
+        // a pond only: the ray that starts over land crosses the surface where the pond begins
+        let pond = |p: Vec3| (p.y > 30.0).then_some(127.0);
+        let spot = surface_along_ray(Vec3::new(0.0, 0.0, 140.0), Vec3::new(0.0, 0.96, -0.28).normalize(), 400.0, pond).expect("the pond");
+        assert!((spot.z - 127.0).abs() < 1e-3 && spot.y > 30.0, "{spot:?}");
     }
 
     #[test]
