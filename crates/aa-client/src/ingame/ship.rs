@@ -21,6 +21,9 @@ use crate::hud::HudKeyboardFocus;
 const HELM: i8 = 127;
 const RESEND: f32 = 0.5;
 const DECK_STEP: f32 = 1.5;
+/// How far up a walking player steps onto the next bit of deck (a stair, a hatch coaming) and how far it drops to the lower deck.
+const WALK_STEP_UP: f32 = 0.6;
+const WALK_STEP_DOWN: f32 = 4.0;
 
 #[derive(Default)]
 pub(super) struct Helm {
@@ -157,12 +160,16 @@ pub fn board_deck(
         -d.x * s + d.y * c,
         d.z,
     );
-    if local.x.abs() > body.half[0] + 0.8 || local.y.abs() > body.half[1] + 1.0 || (local.z - body.deck).abs() > DECK_STEP {
-        return;
-    }
+    // the hull's own deck where it is known (the main deck, the poop: not the helm's height everywhere), else the hull box
+    let floor = db.ship_floor(ship.model_id);
+    let deck = match &floor {
+        Some(floor) => floor.height(local.x, local.y, local.z + DECK_STEP).filter(|h| local.z - h <= DECK_STEP),
+        None => (local.x.abs() <= body.half[0] + 0.8 && local.y.abs() <= body.half[1] + 1.0 && (local.z - body.deck).abs() <= DECK_STEP).then_some(body.deck),
+    };
+    let Some(deck) = deck else { return };
     commands.entity(entity).insert(DeckRide {
         ship: ship.obj_id,
-        local: Vec3::new(local.x, local.y, body.deck),
+        local: Vec3::new(local.x, local.y, deck),
         facing: mover.facing - yaw,
         since_sent: 1.0,
         last: mover.pos,
@@ -201,6 +208,7 @@ pub fn deck_control(
     }
     let Some(db) = db.as_deref() else { return };
     let body = db.ship_body(ship.model_id);
+    let floor = db.ship_floor(ship.model_id);
     let (root, yaw) = visual.map_or_else(
         || (Vec3::new(ship.pos.x, ship.pos.y, ship.pos.z), ship.yaw()),
         |v| (Vec3::new(v.pos.x, v.pos.y, v.pos.z), v.facing),
@@ -216,18 +224,33 @@ pub fn deck_control(
         mover.vz = 8.0;
         return;
     }
-    let step = |action: &str| (!typing && actions.pressed(action, 0)) as i32 as f32;
-    let (fwd, strafe) = (step("moveforward") - step("moveback"), step("moveright") - step("moveleft"));
-    let turn = step("turnleft") - step("turnright");
+    let held = |action: &str| (!typing && actions.pressed(action, 0)) as i32 as f32;
+    let (fwd, strafe) = (held("moveforward") - held("moveback"), held("moveright") - held("moveleft"));
+    let turn = held("turnleft") - held("turnright");
     let mut local = deck.local;
     if fwd != 0.0 || strafe != 0.0 {
-        local.x = (local.x + strafe * RUN_SPEED * dt).clamp(-(body.half[0] + 0.8), body.half[0] + 0.8);
-        local.y = (local.y + fwd * RUN_SPEED * dt).clamp(-(body.half[1] + 1.0), body.half[1] + 1.0);
         deck.facing = (-strafe).atan2(fwd);
+        let step = Vec2::new(strafe, fwd).normalize_or_zero() * RUN_SPEED * dt;
+        let (x, y) = (local.x + step.x, local.y + step.y);
+        match &floor {
+            // walk where the hull has a deck within a step of the feet; a rail or the edge stops the walk
+            Some(floor) => {
+                if let Some(h) = floor.height(x, y, local.z + WALK_STEP_UP).filter(|h| local.z - h <= WALK_STEP_DOWN) {
+                    local = Vec3::new(x, y, h);
+                }
+            }
+            None => {
+                local.x = x.clamp(-(body.half[0] + 0.8), body.half[0] + 0.8);
+                local.y = y.clamp(-(body.half[1] + 1.0), body.half[1] + 1.0);
+                local.z = body.deck;
+            }
+        }
     } else if turn != 0.0 {
         deck.facing += turn * 2.4 * dt;
     }
-    local.z = body.deck;
+    if floor.is_none() {
+        local.z = body.deck;
+    }
     deck.local = local;
     let world = ship_world(root, yaw, local);
     let facing = yaw + deck.facing;
