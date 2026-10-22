@@ -414,6 +414,7 @@ pub fn direction_index(local_dir: Vec2) -> usize {
 
 /// Picks the clip for the unit's [`Motion`] and keeps the feet matched to its speed. A unit with its weapon out ([`Drawn`]) stands
 /// and runs in the stance of the weapon until it puts it away; walking stays the peaceful walk.
+#[allow(clippy::type_complexity)]
 pub fn drive_locomotion(
     time: Res<Time>,
     library: Res<ClipLibrary>,

@@ -471,8 +471,7 @@ fn mounting_starts_the_walk_controller_instead_of_sending_at_once() -> Result<()
 
 #[test]
 fn command_unmount_is_the_first_dynamic_bar_entry_while_riding_the_own_mate() {
-    let mut data = HudData::default();
-    data.character_id = 5;
+    let mut data = HudData { character_id: 5, ..HudData::default() };
     data.pets.owned.local_mount = Some(LocalMount { obj_id: 201, tl_id: 12, point: 1, own: false });
     unmount_own(&mut data);
     assert!(data.pets.owned.requests.is_empty(), "somebody else's mount has no command_unmount");
