@@ -365,13 +365,13 @@ found), `SCUnitEquipmentsChangedPacket 0x094` (`objId BC, count u8, (slot u8, it
 
 ## 7. Gaps vs Bevy (ranked)
 
-1. **Item security locks are absent.** Original: four-button lock window, `CSItemSecure` /
+1. **Done (`644e473`): item security locks.** Original: four-button lock window, `CSItemSecure` /
    `CSEquipmentsSecure`, flag 0x04, padlock overlay, SKYBLUE tooltip line and a 600 s unlock
    confirmation (`sort_bag.alb:281-347`, `item_handlers.rs:479-558`, `tooltip.alb:1460-1484`).
-   Bevy: `aa-net` has no `CSItemSecure`/`CSEquipmentsSecure` client messages
-   (`crates/aa-net/src/game.rs:89-204` lists only swap/split/destroy), `X2Equipment.SecurityLock`
-   falls through to the fake, and `tips.rs:181-217` sets no `securityState`.
-   Fix: add the two packets and flags, wire SecurityLock/Unlock, render the lock line/overlay.
+   Bevy now sends all four packets (`aa-net::secure`, byte-exact against the server reader),
+   exposes the flag/deadline state as `securityState`/`securityRemainDate`, opens the original
+   window with `itemSecure`, and routes the item modes through `drag.lua`; the original padlock
+   overlay and SKYBLUE line render from the item info table.
 2. **Bag/bank item cooldown is never shown.** Original computes the use-skill cooldown plus the
    600 s sapling timer per slot (`FUN_3944d9e0`). Bevy's item slot hard-codes
    `cooldown: None` (`hud/panels.rs:144-160`) and `X2Bag.GetBagCooldown` returns nil
