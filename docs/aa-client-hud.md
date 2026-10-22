@@ -2549,6 +2549,38 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   never looked up in the NPC table: design 267 collides with NPC 267 "Seagull". When the last action
   completes, the server's finished model (and bound doodads) arrive; the house is a normal selectable unit target
   (health/buff come from the server).
+* **Tooltip permission**: the server's permission is 0-based (private 0, guild 1, public 2, family 3) but every
+  script table is 1-based; `interaction.alb`'s `DRAW_DOODAD_TOOLTIP` (`U0(info.permission)`) therefore raised
+  `interaction.alb:447` on every house hover. The tooltip now gets `wire + 1` (`doodad.rs::lua_permission`), and
+  `X2House:GetHousePermission()` answers `(wire + 1, housings.always_public)`.
+* **Build precheck**: the F-bar build-step skill used to go to the server even without the lumber (the server's effect
+  level material check is soft). `doodad.rs::execute` now refuses it first (`houses.rs::build_shortfall`): the step
+  skill's `skill_effects.consume_item_id`/count short in the bag raises the original `NEED_REAGENT` alert naming the
+  item, else `skills.consume_lp` above the labor raises `NEED_LABOR_POWER`; nothing is sent.
+* **Finished house (maintain window)**: right click on a finished house (`houses.rs::right_click_build`) selects it,
+  sends `CSRequestHouseTax` and raises `HOUSE_INTERACTION_START("housing")`, which `housing_manager.alb` answers with
+  `ShowHousingMainTainWindow(true)` + `UpdateMyHouseDefaultInfo` / `UpdateHouseDefaultInfo`
+  (`hud/house_maintain.rs`). `SCHouseTaxInfo` becomes `HOUSE_TAX_INFO(rate, tax, due date table, weeks unpaid, paid,
+  heavy, tax in copper, certificate item)` -> `UpdateMyHouseTaxInfo` / `UpdateHouseTaxInfo`. The window's `X2House`
+  calls: `GetHouseSaleInfo`, `GetHouseSaleItemInfo` (appraisal certificate 28085, one per 100 gold),
+  `GetHousePermission`/`SetHousePermission` (1-based <-> wire; sent only on a change) ->
+  `CSChangeHousePermission`, `GetHouseAllowRecover`/`SetHouseAllowRecover` (the server toggles, so it is sent only on
+  a change) -> `CSAllowHousingRecover`, `SetHouseForSale` -> `CSSellHouse`, `CancelHouseForSale` ->
+  `CSSellHouseCancel`, `BuyHouse` -> `CSBuyHouse` (listed price), `Demolish` -> the world-interaction skill
+  `11404` ("Demolish", `WI_DEMOLISH` 94, category 3) cast on the house (server `housing::demolish_by_player`), and
+  `IsSiegePeriod` (false). The decoration counters (`GetHouseDecoCount`, `GetActabilityDecoCount`,
+  `GetDecoActabilityLimitGroup`) answer nil because the server sends no counts: the window hides its furniture line.
+  Server answers raise `HOUSE_PERMISSION_UPDATED`, `HOUSE_SET_SELL_SUCCESS`, `HOUSE_CANCEL_SELL_SUCCESS`,
+  `HOUSE_BUY_SUCCESS` / `HOUSE_SALE_SUCCESS` (`SCHouseSold`, by who the player is), `HOUSE_INFO_UPDATED`,
+  `UNIT_NAME_CHANGED` (`SCHouseOwnerNameChanged`) and `HOUSE_SET_SELL_FAIL` (a `HOUSE_CANNOT_SELL_*` error); a
+  demolished house ends the interaction. The window closes by itself 30 m from the house. Not verified against retail
+  (needs a 3.5/1.2 check): whether retail opens the window by right click or by a dynamic-bar entry, and the exact
+  argument order of `HOUSE_TAX_INFO` (taken from how `UpdateMyHouseTaxInfo` uses its eight parameters).
+* **Planting diagnostics**: a seed / sapling / house item refused by the client's own precheck
+  (`panels.rs::use_item`, `Env::precheck_item`) now logs `hud: use of item N (skill S) refused before sending: <result>`
+  instead of only raising an alert; `placement.rs::check` logs (debug) the doodad whose footprint blocks a spot,
+  including house-attached doodads (`owner_type` 3). The server accepts a placement inside the owner's garden
+  (`handle_create_doodad`), so a blocked spot there is a client footprint or precheck refusal.
 * **Script**: `house_place ITEM DX DY [YAW]` aims the real session without a cursor (for headless captures), then
   `click left` asks for the quote (or use the real mouse). `house_build` confirms the open window; `key escape` is
   the original Cancel. See `docs/aa-client-script.md`.
