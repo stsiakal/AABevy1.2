@@ -60,8 +60,26 @@ Reviewed: `crates/aa-client/src/ingame/vehicle.rs`, `ingame/data.rs`, `ingame/gr
 9. **Driving model.** Bevy: arcade accel 8, brake 14 (`vehicle.rs:15-17`), speed scale `velocity`, turn `angVel`, reverse half speed, heading follows the camera. Original uses CryPhysics bodies with `lin_inertia`, `rot_inertia`, `max_climb_ang 45` (not implemented), no camera-follow heading known [?]. Roll/pitch always 0 in Bevy (`vehicle.rs:23-26`), original sends the physical quaternion. Open: needs CryPhysics oracle (already listed open in the parity doc).
 10. **Rendering of slave nameplate/etc.** `models.show_name_tag t`, `name_tag_offset 3.0` for model 1008; check Bevy uses 3.0 rather than a default height for the "Farm Wagon" tag (the screenshot tag sits above the wagon).
 
+## 7. Packet flow measured live against the original (2026-10-22)
+
+Original client (`a-w-*.log`, `a_wagon.py`) against Bevy (`b-wagon-seq.txt`), server log packet names; files in
+`C:/Users/stsiakal/.claude/jobs/7860df55/tmp/oracle/`. Each row is [M] measured live and now matched by Bevy.
+
+| Action | Original | Bevy before | Bevy now |
+|---|---|---|---|
+| Board (nothing targeted) | `CSChangeTarget(wagon)`, `CSBindSlave`; F works within about 4 m, facing it | needed an explicit target; extra `CSStartSkill 15307` before the bind | untargeted F picks the nearest land vehicle within `PICK_RANGE` 4 m in a forward cone (`ingame::vehicle::pick_land_vehicle`, half angle 60 deg is a stand-in: the capture only says "facing"), sends `CSChangeTarget` then `CSBindSlave`; an already targeted wagon sends only the bind; the prechecks and texts are kept |
+| 15307 | never sent | the cargo crates (skill 15307) took F | `hud::doodad::vehicle_owns_key`: a land vehicle in pick reach or a seat on a slave keeps F from the doodad bar (`a-w-board.log`, `b-wagon-seq.txt`) |
+| Leave | `CSDiscardSlave` alone (`a-w-getoff.log`) | `CSStartSkill 15307` before it | `CSDiscardSlave` alone (same F fix) |
+| Recall | using the summon item again sends `CSDespawnSlave` (`a-w-recall.log`; `SCSlaveRemoved`, `SCSlaveDespawn` follow) | `CSStartSkill 15802` again | `ground_target::route`: the land-vehicle summon item used while its slave is out writes `SlaveCommand::Despawn { obj_id }` (opcode `0x02f`, `bc` object id) |
+| Summon position | `CSStartSkill 15802` with target 0 (a position target, `a-w-summon.log`); the wagon stood about 7 m from the player | unit target = self, so the server placed it at its default offset on the player | `CSStartSkill` with a position target `VEHICLE_SUMMON_DISTANCE` 7 m ahead of the player (`UseItemAt`); server validates it (`validated_summon_placement`) |
+
+Notes. The position target carries rotation 0 (the wire writer has no yaw), so the placed wagon's heading is the server's
+(`SummonPlacement.yaw`), not the player's; the original's rotation is unmeasured. The mount summon (skill 10602) logs target 0
+in the original too (`a-m1-log-summon.txt`) and still sends the unit target here: not changed, unmeasured. Recall is wired for
+land vehicles only; whether a ship item recalls the same way is not measured.
+
 ## Open questions
 - Exact interaction input (right click on target versus F) and range constants (`DAT_39ac79fc`): `.data` is absent from the dump; capture from the running original client or the `interaction` keybinding tables.
-- Does the land summon really use the SlaveLocator (kind codes) or a plain cast? Needs a live look at the original (not allowed here).
+- The land summon sends a position target about 7 m ahead (section 7 [M]); whether the SlaveLocator ghost (cursor ray, rotation) drives it, and the rotation it sends, are not measured.
 - Wagon physics (CryPhysics `FUN_3a9c33fa`), wheel spin formula and remote smoothing constants.
 - Whether the mate and the wagon are ever linked (data shows none).

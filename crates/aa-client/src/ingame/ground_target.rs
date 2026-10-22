@@ -103,6 +103,24 @@ pub fn classify(target_type: i64, selection: i64) -> Option<Mode> {
     }
 }
 
+/// How far in front of the player a land vehicle is summoned, measured live: the original's Farm Wagon appeared about 7 m
+/// away (`docs/research/re-wagons.md` 6).
+pub const VEHICLE_SUMMON_DISTANCE: f32 = 7.0;
+
+/// The items that summon a slave: `item template -> (slave template, a land vehicle)`.
+#[derive(Resource, Default)]
+pub struct SummonItems(pub HashMap<u32, (u32, bool)>);
+
+fn load_summon_items() -> Option<HashMap<u32, (u32, bool)>> {
+    let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+    let conn = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI).ok()?;
+    let mut q = conn
+        .prepare("SELECT iss.item_id, iss.slave_id, m.sub_type = 'VehicleModel' FROM item_summon_slaves iss JOIN slaves s ON s.id = iss.slave_id JOIN models m ON m.id = s.model_id")
+        .ok()?;
+    let rows = q.query_map([], |r| Ok((r.get::<_, u32>(0)?, (r.get::<_, u32>(1)?, r.get::<_, bool>(2)?)))).ok()?;
+    Some(rows.flatten().collect())
+}
+
 /// The ground skills of the database (`skills` rows whose target type takes a position).
 #[derive(Resource, Default)]
 pub struct GroundSkills(pub HashMap<u32, GroundSkill>);
@@ -173,6 +191,12 @@ impl SkillPressed {
             None => Command::UseSkillAt { skill_id: self.skill, pos },
         }
     }
+}
+
+/// Where a land vehicle is summoned: [`VEHICLE_SUMMON_DISTANCE`] in front of `pos` (game coordinates) along `facing`.
+pub fn vehicle_summon_spot(pos: Vec3, facing: f32) -> Vec3 {
+    let ahead = crate::ingame::player::forward(facing) * VEHICLE_SUMMON_DISTANCE;
+    Vec3::new(pos.x + ahead.x, pos.y + ahead.y, pos.z)
 }
 
 /// What the player is aiming.
@@ -277,6 +301,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<InFlight>()
         .insert_resource(Script::from_args())
         .insert_resource(GroundSkills(load_skills().unwrap_or_default()))
+        .insert_resource(SummonItems(load_summon_items().unwrap_or_default()))
         .add_systems(PreUpdate, aim_input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
         .add_systems(Update, (dev_script, route, track_cursor, reticle, log_server).chain().run_if(in_state(Screen::InGame)))
         .add_systems(OnExit(Screen::InGame), leave);
@@ -501,7 +526,13 @@ fn route(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     collision: Option<Res<WorldCollision>>,
-    (virtual_input, terrain, water): (Option<Res<crate::ingame::virtual_input::VirtualInput>>, Option<Res<TerrainQuery>>, Option<Res<WaterQuery>>),
+    (virtual_input, terrain, water, summons, slaves): (
+        Option<Res<crate::ingame::virtual_input::VirtualInput>>,
+        Option<Res<TerrainQuery>>,
+        Option<Res<WaterQuery>>,
+        Option<Res<SummonItems>>,
+        Option<Res<aa_net::state::Slaves>>,
+    ),
     target: Res<Target>,
     units: Res<Units>,
     mut player: Query<&mut Mover, With<LocalPlayer>>,
@@ -522,6 +553,25 @@ fn route(
             let record = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
             book.write(crate::hud::PortalBookUsed { item: press.item, record });
             continue;
+        }
+        // a land vehicle's summon item: used again while the vehicle is out it recalls it (`CSDespawnSlave`), else it is placed in
+        // front of the player (both measured live on the original)
+        if let Some((_, template)) = press.item
+            && let Some(&(slave_template, true)) = summons.as_ref().and_then(|s| s.0.get(&template))
+        {
+            let own = slaves.as_ref().and_then(|s| s.own.as_ref()).filter(|o| units.get(o.obj_id).is_some_and(|u| matches!(u.kind, aa_net::model::UnitKind::Slave { template_id, .. } if template_id == slave_template)));
+            if let Some(own) = own {
+                net.write(NetCommand(Command::Slave(aa_net::slave_control::SlaveCommand::Despawn { obj_id: own.obj_id })));
+                info!("ground: summon item {template} used while its vehicle {} is out: CSDespawnSlave", own.obj_id);
+                continue;
+            }
+            if let Ok(mover) = player.single() {
+                let spot = vehicle_summon_spot(mover.pos, mover.facing);
+                net.write(NetCommand(press.at(Pos::new(spot.x, spot.y, spot.z))));
+                sent(&mut flight, press);
+                info!("ground: land vehicle summon placed {:.1} m ahead at ({:.1}, {:.1}, {:.1})", VEHICLE_SUMMON_DISTANCE, spot.x, spot.y, spot.z);
+                continue;
+            }
         }
         let Some(skill) = skills.0.get(&press.skill).copied() else {
             net.write(NetCommand(press.plain()));
@@ -990,6 +1040,63 @@ mod tests {
         assert!(matches!(sent[0], Command::UseMateSkillAt { mate_obj_id: 500, .. }));
         let sent = cast(SkillPressed { caster: None, skill: 10664, ..fire });
         assert!(matches!(sent.as_slice(), [Command::Move(_), Command::UseSkillAt { skill_id: 10664, .. }]), "{sent:?}");
+    }
+
+    /// A route app with the wagon's summon item (18660 -> slave 60, a land vehicle) and, when `out`, the wagon summoned.
+    fn wagon_route(out: bool) -> App {
+        let mut app = App::new();
+        app.add_message::<SkillPressed>()
+            .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<NetCommand>()
+            .insert_resource(GroundSkills(HashMap::from([(15802, GroundSkill { mode: Mode::Water, radius: 0.0, min_range: 0.0, max_range: 0.0 })])))
+            .insert_resource(SummonItems(HashMap::from([(18660, (60, true)), (18000, (22, false))])))
+            .init_resource::<Aiming>()
+            .init_resource::<HudPointerOverUi>()
+            .init_resource::<InFlight>()
+            .init_resource::<Script>()
+            .init_resource::<Target>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Sent>();
+        let mut units = Units::default();
+        let mut slaves = aa_net::state::Slaves::default();
+        if out {
+            let unit = crate::ingame::vehicle::flow_tests::unit(500, aa_net::model::UnitKind::Slave { id: 9, tl_id: 7, template_id: 60, summoner_id: 47 });
+            units.by_id.insert(500, unit);
+            slaves.own = Some(aa_net::slave::SlaveCreated { owner_obj_id: 100, tl_id: 7, obj_id: 500, hide_spawn_effect: true, raw_id: 0, creator_name: String::new() });
+        }
+        app.insert_resource(units).insert_resource(slaves);
+        app.world_mut().spawn((LocalPlayer { obj_id: 100 }, Mover { pos: Vec3::new(100.0, 200.0, 5.0), facing: 0.0, vz: 0.0, grounded: true, velocity: Vec3::ZERO, swim: None, wading: 0.0 }));
+        app.add_systems(Update, (route, collect).chain());
+        app
+    }
+
+    #[test]
+    fn a_land_vehicle_summon_item_is_placed_seven_metres_ahead() {
+        let mut app = wagon_route(false);
+        app.world_mut().write_message(SkillPressed { skill: 15802, item: Some((9, 18660)), target_obj_id: 0, gcd: true, water: false, caster: None });
+        app.update();
+        let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
+        // facing north: 7 m up the y axis, no turn / stop packet before it
+        assert!(
+            matches!(sent.as_slice(), [Command::UseItemAt { item_id: 9, template_id: 18660, skill_id: 15802, pos }] if (pos.x - 100.0).abs() < 1e-3 && (pos.y - 207.0).abs() < 1e-3),
+            "{sent:?}"
+        );
+        let spot = vehicle_summon_spot(Vec3::new(0.0, 0.0, 0.0), std::f32::consts::FRAC_PI_2);
+        assert!((spot.x + 7.0).abs() < 1e-3 && spot.y.abs() < 1e-3, "facing +90 degrees is west: {spot:?}");
+    }
+
+    #[test]
+    fn using_the_summon_item_again_recalls_the_vehicle_with_csdespawnslave() {
+        let mut app = wagon_route(true);
+        app.world_mut().write_message(SkillPressed { skill: 15802, item: Some((9, 18660)), target_obj_id: 0, gcd: true, water: false, caster: None });
+        app.update();
+        let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
+        assert!(matches!(sent.as_slice(), [Command::Slave(aa_net::slave_control::SlaveCommand::Despawn { obj_id: 500 })]), "{sent:?}");
+        // a ship item keeps the plain cast
+        app.world_mut().write_message(SkillPressed { skill: 15802, item: Some((9, 18000)), target_obj_id: 0, gcd: true, water: false, caster: None });
+        app.update();
+        let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
+        assert!(matches!(sent.as_slice(), [Command::UseItem { template_id: 18000, .. }]), "{sent:?}");
     }
 
     #[test]
