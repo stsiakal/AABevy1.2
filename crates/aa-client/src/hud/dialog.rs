@@ -7,10 +7,11 @@
 //! The scripts are the original's; this module and `quest.lua` are the client's native side of them.
 //!
 //! 1. A right click on an NPC in reach, or F with one in reach and no loot (F loots first), starts the
-//!    talk: `CSChangeTarget` and `CSInteractNPC`. What the NPC does for the player is worked out from
-//!    the quest tables ([`QuestTables::talks`], `completes`, `offers`) and goes to the scripts, in
-//!    that order of preference, as `NPC_INTERACTION_START("quest", "talk" | "complete" | "start",
-//!    npcId)` (`npc_interaction.lua`). An NPC with nothing to say ends the talk at once.
+//!    talk: `CSChangeTarget`, `CSInteractNPC` and `CSStartInteraction`. The quest actions are worked out
+//!    from the quest tables ([`QuestTables::talks`], `completes`, `offers`); `services.rs` combines
+//!    them with the received `SCNpcInteractionSkillList` and raises `NPC_INTERACTION_START` — the
+//!    preferred quest action (`"talk"` | `"complete"` | `"start"`, `npc_interaction.lua`) when there
+//!    is no function, the lone service, or the original greeting/function menu.
 //! 2. The scripts ask `X2Quest:CallQuestUi` / `CallQuestTalk`, which raise
 //!    `START_QUEST_CONTEXT_NPC` / `COMPLETE_QUEST_CONTEXT_NPC` / `PROGRESS_TALK_QUEST_CONTEXT(qtype,
 //!    true, npcId)`: the dialog opens (`X2Quest:EnterQuestDirectingMode`: the rest of the HUD is hidden,
@@ -45,7 +46,7 @@ use super::quests::{PlayerFacts, Texts, kind};
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
 /// How far the player reaches to talk to an NPC (F, a right click), metres.
-const TALK_RANGE: f32 = 6.0;
+pub(super) const TALK_RANGE: f32 = 6.0;
 /// How near the view ray has to pass a unit's middle for a right click to pick it, metres.
 const PICK_RADIUS: f32 = 1.1;
 /// A press that moves more than this many pixels before it is released was a camera drag.
@@ -364,21 +365,30 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
         return;
     }
     let quests = &facts.quests;
+    let active = quests.active.clone();
+    let mut started: Vec<u32> = Vec::new();
     let mut fire: Vec<Fire> = Vec::new();
+    let mut condition = None;
     {
         let mut d = bridge.0.borrow_mut();
         let d = &mut *d;
         let Some(game) = d.game.get() else { return };
-        let old = std::mem::take(&mut d.dialog.quests);
+        let old = d.dialog.quests.clone();
         let texts = Texts { game, player: d.snapshot.name.as_str(), race: d.snapshot.race };
         let name = |id: u32| game.quests.def(id).map(|q| texts.expand(&q.name)).unwrap_or_default();
-        let mut condition = None;
-        if !fresh {
-            for q in &quests.active {
+        if fresh {
+            // The tracker (questcontext/quest_context_notifier.lua) adds every active quest to its notify
+            // list and asks the map for a decal index (`X2Map:AddNotifyQuestInfo`); a restored list gets the
+            // same `started` notices as one accepted in game.
+            for q in &active {
+                started.push(q.template_id);
+            }
+        } else {
+            for q in &active {
                 match old.iter().find(|o| o.template_id == q.template_id) {
                     None => {
                         condition = Some(format!("Quest accepted: [{}]", name(q.template_id)));
-                        fire.push(Fire::Updated(q.template_id, "started"));
+                        started.push(q.template_id);
                         fire.push(Fire::Condition("started"));
                     }
                     Some(o) if o != q => {
@@ -400,7 +410,7 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
                 }
             }
             for o in &old {
-                if quests.active.iter().any(|q| q.template_id == o.template_id) {
+                if active.iter().any(|q| q.template_id == o.template_id) {
                     continue;
                 }
                 if quests.is_completed(o.template_id) {
@@ -412,17 +422,19 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
                 }
             }
         }
-        if let Some(c) = condition {
-            d.dialog.condition = c;
-        }
-        d.dialog.quests = quests.active.clone();
-        d.dialog.version += 1;
-        d.dialog.seen = true;
-        if let Some(f) = facts.get() {
-            refresh_npc(d, &f);
-        }
     }
-    let Some(rt) = rt else { return };
+    let Some(rt) = rt else {
+        apply_quest_state(&bridge, &facts, active, condition);
+        return;
+    };
+    // The native client raises a started quest before the quest appears in the journal: the notifier's
+    // AddQuestToNotifyList ignores a quest that `IsExistQuestTypeInJournal` already reports
+    // (quest_context_notifier.lua lines 430-431), and must see the old list to add it.
+    for qtype in started {
+        info!("hud: quest {qtype} started");
+        rt.fire_event("QUEST_CONTEXT_UPDATED", (qtype, "started"));
+    }
+    apply_quest_state(&bridge, &facts, active, condition);
     for f in fire {
         match f {
             Fire::Updated(qtype, condition) => {
@@ -432,6 +444,22 @@ pub fn sync_quests(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>, f
             Fire::Objective(text) => rt.fire_event("QUEST_CONTEXT_OBJECTIVE_EVENT", text),
             Fire::Condition(condition) => rt.fire_event("QUEST_CONTEXT_CONDITION_EVENT", ("", condition)),
         }
+    }
+}
+
+/// Publish the new active quest list after the `started` notices: the scripts' `HUD.quest_list` and
+/// version, the condition message and what the open NPC now offers.
+fn apply_quest_state(bridge: &HudBridge, facts: &Facts, active: Vec<Quest>, condition: Option<String>) {
+    let mut d = bridge.0.borrow_mut();
+    let d = &mut *d;
+    if let Some(c) = condition {
+        d.dialog.condition = c;
+    }
+    d.dialog.quests = active;
+    d.dialog.version += 1;
+    d.dialog.seen = true;
+    if let Some(f) = facts.get() {
+        refresh_npc(d, &f);
     }
 }
 
@@ -558,14 +586,18 @@ fn begin_talk(d: &mut HudData, facts: &PlayerFacts, npc: (u32, u32), target: Opt
         None
     };
     info!("hud: talk to npc {obj_id} (template {template}): start {:?}, complete {:?}, talk {:?}", d.dialog.start, d.dialog.complete, d.dialog.talk);
-    if what.is_none() {
-        if d.game.get().is_some_and(|g| g.stores.has_service(template) || g.pets.stables.contains(&template) || g.battlefield.field(template).is_some() || g.expedition.is_creator(template)) {
-            net.write(NetCommand(Command::Interact(Interact::Start { npc_obj_id:obj_id, obj_id:d.snapshot.unit_id.parse().unwrap_or(0), extra_info:0, pick_id:0, mouse_button:2, modifier_keys:0 })));
-        } else {
-            net.write(NetCommand(Command::Interact(Interact::NpcEnd { obj_id })));
-            d.dialog.npc = None;
-        }
-    }
+    // Native input dispatch390f37b3 constructs CS068 for every selected unit, so the original
+    // sends CSStartInteraction for every NPC, quest-only or silent too. Its answer
+    // (SCNpcInteractionSkillList) is what `services.rs` turns into the function menu or the
+    // lone service window; only then does it open the quest action or end a silent talk.
+    net.write(NetCommand(Command::Interact(Interact::Start {
+        npc_obj_id: obj_id,
+        obj_id: d.snapshot.unit_id.parse().unwrap_or(0),
+        extra_info: 0,
+        pick_id: 0,
+        mouse_button: 2,
+        modifier_keys: 0,
+    })));
     what
 }
 
@@ -681,10 +713,9 @@ pub fn talk_input(
     }
     let what = begin_talk(&mut d, &player_facts, npc, target.obj_id, &mut net);
     script_pick.talked(npc.0, what);
+    // `services.rs` opens the quest action (or the function menu) from the server's
+    // SCNpcInteractionSkillList, so a quest and a shop on the same NPC can both be offered.
     drop(d);
-    if let Some(what) = what {
-        rt.fire_event("NPC_INTERACTION_START", ("quest", what, npc.0.to_string()));
-    }
 }
 
 /// The scripts' requests become packets; the dialog hides the HUD and brings it back. A doodad's quest
@@ -740,7 +771,7 @@ pub fn handle_dialog(rt: Option<NonSend<UiRuntime>>, bridge: NonSend<HudBridge>,
     }
 }
 
-fn end_talk(d: &mut HudData, net: &mut MessageWriter<NetCommand>) {
+pub(super) fn end_talk(d: &mut HudData, net: &mut MessageWriter<NetCommand>) {
     d.dialog.doodad = None;
     if let Some((obj_id, _)) = d.dialog.npc.take() {
         net.write(NetCommand(Command::Interact(Interact::NpcEnd { obj_id })));

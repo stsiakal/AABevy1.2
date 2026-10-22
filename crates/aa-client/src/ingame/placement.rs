@@ -32,7 +32,7 @@
 //! doodad's footprint (`doodad_almighties.sim_radius`). The server stays authoritative: nothing is consumed locally,
 //! and the doodad appears with the server's echo.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use aa_cry::scene::{CryAssets, ModelOptions, spawn_loaded};
 use aa_net::farm::CreateDoodad;
@@ -97,6 +97,8 @@ pub struct HouseDesign {
     /// `housings.id`, the design id the server calls `design_id`.
     pub design: u32,
     pub name: String,
+    /// `housings.category_id`: the design's category, which the housing area's group must allow.
+    pub category_id: u32,
     /// `housings.garden_radius`: the half extent of the axis-aligned plot square (m).
     pub garden_radius: f32,
     pub heavy_tax: bool,
@@ -121,7 +123,11 @@ pub struct Catalog {
     /// `housings.id` (design) -> plot radius and name.
     houses: HashMap<u32, HouseDesign>,
     /// `housing_areas.id` the server knows (the client's `housing_area.xml` tags).
-    area_ids: std::collections::HashSet<u32>,
+    area_ids: HashSet<u32>,
+    /// `housing_areas.id` -> `housing_areas.housing_group_id`.
+    area_groups: HashMap<u32, u32>,
+    /// `housing_groups.id` -> the categories its `housing_group_categories` rows allow.
+    group_categories: HashMap<u32, HashSet<u32>>,
 }
 
 impl Catalog {
@@ -195,7 +201,7 @@ impl Catalog {
                      i.use_skill_id, s.cooldown_time, s.cooldown_tag_id, \
                      CASE WHEN h.auto_z IN ('t', 'T', 1) THEN 1 ELSE 0 END, \
                      h.auto_z_offset_x, h.auto_z_offset_y, h.auto_z_offset_z, \
-                     CASE WHEN h.heavy_tax IN ('t', 'T', 1) THEN 1 ELSE 0 END \
+                     CASE WHEN h.heavy_tax IN ('t', 'T', 1) THEN 1 ELSE 0 END, h.category_id \
                      FROM item_housings ih JOIN housings h ON h.id = ih.design_id \
                      LEFT JOIN items i ON i.id = ih.item_id \
                      LEFT JOIN skills s ON s.id = i.use_skill_id \
@@ -222,7 +228,8 @@ impl Catalog {
                     r.get::<_, Option<f64>>(11).unwrap_or_default().unwrap_or(0.0) as f32,
                 );
                 let heavy_tax: bool = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0) != 0;
-                let house = HouseDesign { design, name: name.clone(), garden_radius: garden, heavy_tax };
+                let category_id: u32 = r.get::<_, Option<i64>>(13).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let house = HouseDesign { design, name: name.clone(), category_id, garden_radius: garden, heavy_tax };
                 catalog.houses.insert(design, house.clone());
                 catalog.by_item.entry(item).or_insert(Plantable {
                     item,
@@ -243,12 +250,26 @@ impl Catalog {
             }
         }
         // The housing polygons' `value1` tags must be rows the server knows, or `validate_house` refuses them.
-        if let Ok(mut q) = conn.prepare("SELECT id FROM housing_areas")
+        // Each area's group then says which design categories it allows (`housing_group_categories`).
+        if let Ok(mut q) = conn.prepare("SELECT id, housing_group_id FROM housing_areas")
             && let Ok(mut rows) = q.query([])
         {
             while let Ok(Some(r)) = rows.next() {
                 if let Ok(id) = r.get::<_, i64>(0) {
-                    catalog.area_ids.insert(id.max(0) as u32);
+                    let id = id.max(0) as u32;
+                    catalog.area_ids.insert(id);
+                    if let Ok(Some(group)) = r.get::<_, Option<i64>>(1) {
+                        catalog.area_groups.insert(id, group.max(0) as u32);
+                    }
+                }
+            }
+        }
+        if let Ok(mut q) = conn.prepare("SELECT housing_group_id, category_id FROM housing_group_categories")
+            && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                if let (Ok(Some(group)), Ok(Some(category))) = (r.get::<_, Option<i64>>(0), r.get::<_, Option<i64>>(1)) {
+                    catalog.group_categories.entry(group.max(0) as u32).or_default().insert(category.max(0) as u32);
                 }
             }
         }
@@ -272,6 +293,19 @@ impl Catalog {
     /// The housing area tags the server's `housing_areas` table knows.
     pub fn area_known(&self, id: u32) -> bool {
         self.area_ids.contains(&id)
+    }
+
+    /// Whether any area carries category data at all (the server's `housing_groups` tables are loaded).
+    fn has_area_categories(&self) -> bool {
+        !self.group_categories.is_empty()
+    }
+
+    /// `housing_areas.housing_group_id` -> `housing_group_categories` contains the design category.
+    pub fn area_allows(&self, area: u32, category: u32) -> bool {
+        self.area_groups
+            .get(&area)
+            .and_then(|group| self.group_categories.get(group))
+            .is_some_and(|categories| categories.contains(&category))
     }
 
     #[cfg(test)]
@@ -308,6 +342,7 @@ pub enum Invalid {
     Footprint,
     BadSurface,
     OutsideHousingArea,
+    WrongCategory,
     Overlap,
     Player,
 }
@@ -322,6 +357,7 @@ impl Invalid {
             Self::Footprint => "another doodad is in the way",
             Self::BadSurface => "the surface cannot be planted on",
             Self::OutsideHousingArea => "outside a housing area",
+            Self::WrongCategory => "the housing area does not allow this design",
             Self::Overlap => "another house is in the way",
             Self::Player => "the player is in the way",
         }
@@ -633,6 +669,10 @@ pub fn check_house(
     let tags = areas.area_at(spot.x, spot.y);
     if tags.is_empty() || !tags.iter().any(|id| catalog.area_known(*id)) {
         return Err(Invalid::OutsideHousingArea);
+    }
+    // `validate_groups`: the area's housing group must list the design's category.
+    if catalog.has_area_categories() && !tags.iter().any(|id| catalog.area_allows(*id, design.category_id)) {
+        return Err(Invalid::WrongCategory);
     }
     let extent = design.garden_radius.max(0.0);
     for house in houses.by_tl_id.values() {
@@ -1528,8 +1568,14 @@ fn input(
         if let Some(seconds) = cooldown {
             notify(rt.as_deref(), cooldown_message(seconds));
         } else if let Some(reason) = session.invalid {
-            match error_message(reason) {
-                Some(text) => notify(rt.as_deref(), text.into()),
+            let text = if reason == Invalid::WrongCategory {
+                localized_error(rt.as_deref(), "HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA")
+                    .or_else(|| error_message(reason).map(str::to_string))
+            } else {
+                error_message(reason).map(str::to_string)
+            };
+            match text {
+                Some(text) => notify(rt.as_deref(), text),
                 None => info!("placement: not confirmed: {}", reason.text()),
             }
         } else if session.is_house() {
@@ -1602,8 +1648,20 @@ fn error_message(reason: Invalid) -> Option<&'static str> {
     match reason {
         Invalid::Footprint | Invalid::Overlap => Some("Too close to other objects."),
         Invalid::OutOfRange => None,
+        Invalid::WrongCategory => Some("Building doesn't fit in this area."),
         _ => Some("Can't be installed here."),
     }
+}
+
+/// The localized text of an `ERROR_MSG` key (`X2Locale:LocalizeUiText`), for the server's own wording.
+fn localized_error(rt: Option<&aa_ui::UiRuntime>, key: &str) -> Option<String> {
+    let rt = rt?;
+    let globals = rt.lua.globals();
+    let locale: mlua::Table = globals.get("X2Locale").ok()?;
+    let localize: mlua::Function = locale.get("LocalizeUiText").ok()?;
+    let group: mlua::Value = globals.get("ERROR_MSG").ok()?;
+    let text: String = localize.call((locale, group, key)).ok()?;
+    (!text.is_empty() && text != key).then_some(text)
 }
 
 fn wrap_angle(mut a: f32) -> f32 {
@@ -1975,6 +2033,7 @@ mod tests {
             house: Some(HouseDesign {
                 design,
                 name: "Scarecrow Garden".into(),
+                category_id: 16,
                 garden_radius: radius,
                 heavy_tax: true,
             }),
@@ -1984,6 +2043,9 @@ mod tests {
     fn house_catalog() -> Catalog {
         let mut c = Catalog::default();
         c.insert(house_plantable(267, 4.0));
+        c.area_ids.insert(128);
+        c.area_groups.insert(128, 13);
+        c.group_categories.entry(13).or_default().insert(16);
         c
     }
 
@@ -2002,15 +2064,17 @@ mod tests {
                  CREATE TABLE skills (id INT, max_range REAL, cooldown_time INT, cooldown_tag_id INT);
                  CREATE TABLE localized_texts (tbl_name TEXT, idx INT, tbl_column_name TEXT, en_us TEXT);
                  CREATE TABLE item_housings (id INT, item_id INT, design_id INT);
-                 CREATE TABLE housings (id INT, name TEXT, main_model_id INT, garden_radius REAL, heavy_tax NUM,
+                 CREATE TABLE housings (id INT, name TEXT, category_id INT, main_model_id INT, garden_radius REAL, heavy_tax NUM,
                      auto_z NUM, auto_z_offset_x REAL, auto_z_offset_y REAL, auto_z_offset_z REAL);
                  CREATE TABLE housing_areas (id INT, name TEXT, housing_group_id INT, comments TEXT);
+                 CREATE TABLE housing_group_categories (id INT, housing_group_id INT, category_id INT);
                  INSERT INTO items VALUES (15596, 17496);
                  INSERT INTO skills VALUES (17496, 0.0, 0, 0);
                  INSERT INTO localized_texts VALUES ('housings', 267, 'name', 'Scarecrow Garden');
                  INSERT INTO item_housings VALUES (58, 15596, 267);
-                 INSERT INTO housings VALUES (267, 'Korean', 987, 4.0, 't', 't', 0.0, 0.0, 0.0);
-                 INSERT INTO housing_areas VALUES (128, 'gwe_housing', 1, '');",
+                 INSERT INTO housings VALUES (267, 'Korean', 16, 987, 4.0, 't', 't', 0.0, 0.0, 0.0);
+                 INSERT INTO housing_areas VALUES (128, 'gwe_housing', 13, '');
+                 INSERT INTO housing_group_categories VALUES (1, 13, 16);",
             )
             .unwrap();
         }
@@ -2018,10 +2082,11 @@ mod tests {
         let plant = catalog.plantable(15596).expect("design item");
         let house = plant.house.as_ref().expect("house design");
         assert_eq!((house.design, house.garden_radius), (267, 4.0));
-        assert_eq!(house.name, "Scarecrow Garden");
+        assert_eq!((house.category_id, house.name.as_str()), (16, "Scarecrow Garden"));
         assert!(house.heavy_tax);
         assert_eq!(catalog.house_radius(267), 4.0);
         assert!(catalog.area_known(128) && !catalog.area_known(129));
+        assert!(catalog.area_allows(128, 16) && !catalog.area_allows(128, 17));
         assert_eq!(plant.doodad, 0);
         let _ = std::fs::remove_file(&path);
     }
@@ -2129,6 +2194,14 @@ mod tests {
         let houses = Houses::default();
         let me = Vec3::new(100.0, 100.0, 10.0);
         assert_eq!(check_house(&design, Vec3::new(10.0, 10.0, 10.0), me, &houses, &cat, Some(&area), None), Ok(()));
+        // The same polygon with a group that does not list the design's category (server error 580).
+        let mut wrong = house_catalog();
+        wrong.group_categories.insert(13, [17].into_iter().collect());
+        assert_eq!(
+            check_house(&design, Vec3::new(10.0, 10.0, 10.0), me, &houses, &wrong, Some(&area), None),
+            Err(Invalid::WrongCategory)
+        );
+        assert_eq!(error_message(Invalid::WrongCategory), Some("Building doesn't fit in this area."));
         assert_eq!(
             check_house(&design, Vec3::new(40.0, 10.0, 10.0), me, &houses, &cat, Some(&area), None),
             Err(Invalid::OutsideHousingArea)
@@ -2258,7 +2331,11 @@ mod tests {
         assert_ne!(spruce.model.as_deref(), Some("objects/env/05_nature/04_subpol/sub_tree_bigfir01_grow03.cgf"));
         let farm = catalog.plantable(15596).expect("Scarecrow Garden design");
         let house = farm.house.as_ref().expect("housing design");
-        assert_eq!((house.design, house.garden_radius), (267, 4.0));
+        assert_eq!((house.design, house.category_id, house.garden_radius), (267, 16, 4.0));
+        // housing area 100 is in group 5 (categories 10-12): a category-16 design does not fit there.
+        assert!(catalog.area_known(100));
+        assert!(!catalog.area_allows(100, 16));
+        assert!(catalog.area_allows(100, 10));
         assert!(farm.model.as_deref().is_some_and(|m| m.ends_with("nuia_housing_scarecrow_b.cgf")), "{:?}", farm.model);
         let pumpkin = catalog.plantable(15566).expect("Pumpkin-head farm design");
         assert_eq!(pumpkin.house.as_ref().map(|h| (h.design, h.garden_radius)), Some((89, 8.0)));

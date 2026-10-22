@@ -188,6 +188,13 @@ pub struct Marker {
     /// The big map: the map `(level, id)` the marker is on (`level` and `id` of the entry); the
     /// roadmap shows one map and ignores it.
     pub map: Option<(i64, i64)>,
+    /// Optional size as a fraction of the map drawable (quest objective discs scale with the map).
+    pub w: Option<f32>,
+    pub h: Option<f32>,
+    /// Optional tint (`AAUI` passes straight colour components, 0..1): the quest area colour.
+    pub color: Option<[f32; 4]>,
+    /// Optional drawable layer: `"background"` keeps quest discs under the icons.
+    pub layer: Option<String>,
 }
 
 impl Marker {
@@ -309,6 +316,15 @@ pub(super) fn parse_markers(r: &Table) -> mlua::Result<Vec<Marker>> {
             ]),
             None => None,
         };
+        let color = match v.raw_get::<Option<Table>>("color")? {
+            Some(c) => Some([
+                c.raw_get::<Option<f32>>(1)?.unwrap_or(1.0),
+                c.raw_get::<Option<f32>>(2)?.unwrap_or(1.0),
+                c.raw_get::<Option<f32>>(3)?.unwrap_or(1.0),
+                c.raw_get::<Option<f32>>(4)?.unwrap_or(1.0),
+            ]),
+            None => None,
+        };
         out.push(Marker {
             u: mu,
             v: mv,
@@ -320,6 +336,10 @@ pub(super) fn parse_markers(r: &Table) -> mlua::Result<Vec<Marker>> {
                 (Some(level), Some(id)) => Some((level, id)),
                 _ => None,
             },
+            w: v.raw_get("w")?,
+            h: v.raw_get("h")?,
+            color,
+            layer: v.raw_get("layer")?,
         });
     }
     Ok(out)
@@ -375,7 +395,10 @@ fn sync_markers(lua: &Lua, id: Id, shown_map: Option<Id>, markers: Option<Arc<Ve
             match (spec, cell, shown_map) {
                 (Some(m), Some((path, c)), Some(map)) => {
                     let (mw, mh) = (u.tree.get(map).width, u.tree.get(map).height);
-                    let (w, h) = (c[2].abs(), c[3].abs());
+                    let (w, h) = match (m.w, m.h) {
+                        (Some(fw), Some(fh)) => (fw * mw, fh * mh),
+                        _ => (c[2].abs(), c[3].abs()),
+                    };
                     let o = u.tree.get_mut(dr);
                     o.width = w;
                     o.height = h;
@@ -390,6 +413,12 @@ fn sync_markers(lua: &Lua, id: Id, shown_map: Option<Id>, markers: Option<Arc<Ve
                     if let Some(dd) = o.drawable_mut() {
                         dd.texture = Some(path);
                         dd.coords = Some(c);
+                        dd.color = m.color.unwrap_or([1.0; 4]);
+                        dd.layer = match m.layer.as_deref() {
+                            Some("background") => DrawLayer::Background,
+                            Some("overlay") => DrawLayer::Overlay,
+                            _ => DrawLayer::Artwork,
+                        };
                     }
                 }
                 _ => u.tree.get_mut(dr).shown = false,

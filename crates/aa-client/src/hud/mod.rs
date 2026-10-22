@@ -35,6 +35,7 @@
 #[path = "../addons/mod.rs"]
 pub(crate) mod addons;
 mod achievement;
+mod auction;
 mod alerts;
 mod battlefield;
 mod breath;
@@ -71,6 +72,7 @@ mod item_effects;
 mod items;
 mod loot;
 mod loot_roll;
+mod look;
 mod mail;
 mod marks;
 mod markers;
@@ -86,6 +88,7 @@ mod pvp;
 mod radar;
 mod ranking;
 mod repair;
+mod services;
 mod quests;
 mod ring;
 pub(crate) mod script_api;
@@ -100,6 +103,7 @@ mod tips;
 mod trade;
 mod trial;
 mod usable;
+mod vehicles;
 
 #[allow(dead_code)]
 pub(crate) fn ranking_fixture() {
@@ -190,6 +194,11 @@ pub(crate) fn crafting_fixture() {
 #[allow(dead_code)]
 pub(crate) fn stablehand_fixture() {
     pets::fixture::run();
+}
+
+#[allow(dead_code)]
+pub(crate) fn npc_services_fixture() {
+    services::run();
 }
 
 #[allow(dead_code)]
@@ -444,7 +453,10 @@ impl Plugin for HudPlugin {
         expansion::plugin(app);
         repair::plugin(app);
         crafting::plugin(app);
+        look::plugin(app);
+        services::plugin(app);
         pets::plugin(app);
+        vehicles::plugin(app);
         loot::plugin(app);
         dialog::plugin(app);
         ring::plugin(app);
@@ -456,6 +468,7 @@ impl Plugin for HudPlugin {
         farm::plugin(app);
         expedition::plugin(app);
         achievement::plugin(app);
+        auction::plugin(app);
         chat::config::plugin(app);
         crime::plugin(app);
         duel::plugin(app);

@@ -62,6 +62,7 @@ Scripted input for unattended runs (seconds counted from the moment the HUD is u
 | tooltips: bag items, action bar and use-skill, buffs, equipped items | `tips.rs`: `HUD.item_tip` / `HUD.skill_tip` / `HUD.buff_text` fill the client's tooltip tables (`name`, `grade` / `gradeColor` from `item_grades`, `category`, `item_impl`, `soul_bound` / `soul_bind`, `skillType`, `description`, price, `tipType = "skill"` with ability, rank, mana, cast, range, radius, cooldown) from the DB; `slot.tooltip`, `X2Bag:GetBagItemInfo`, `X2Skill:GetSkillTooltip`, `X2Unit:UnitBuff` (`tipType = "buff"`) return them. The numbers in descriptions (`#{avg_damage}`, `#{buff_duration}`, `#{ua_*}` ...) are worked out in `tipcalc.rs`, the weapon and armor sections (attack, defence, speed, stat bonuses, durability, set bonuses) in `tipitem.rs` (see "Tooltip numbers" below) |
 | unit frame tooltip (hover the player / target frame) | the original script formats the text with the `UFT_*` codes `|p1;` .. `|p11;` (name, hp, max hp, hp %, mp, max mp, mp %, labor, max labor, pvp honor, hostile faction kills); `SetTooltipData(unit)` binds the unit token to the tooltip widget and aa-ui substitutes the codes from `AAUI_TooltipUnitValues(unit)` (`ingame.lua`: `X2Unit` hp / mana, `floor(100 * cur / max)`, labor for the player, `Unit::pvp_honor` / `pvp_kills`), again every frame while the tooltip is shown. The pvp values come from the unit state and `SCUnitPvPPointsChanged` (0x204; kind 0 honor gained in combat, kind 1 hostile faction kills, per the server's C# port) |
 | bag window | `aa_net::Inventory`: items, counts, icons, grade frames, tooltips, "n/50"; the tabs filter by item group (below) |
+| auction house (auctioneer NPC) | the original `x2ui/auction` windows: search (keyword, level, grade, category, exact match, paging, sort), result rows, bid/buyout, put-up (attached item, start/buyout, 6/12/24/48 h, deposit) and cancel over `aa_net::Auction`; see "Auction house" |
 | max HP / MP of the player and of the target | the DB's unit formulas (below); the server sends none |
 | quest marks over NPCs | `aa_net::Quests` + the DB's quest tables (below) |
 | character info window | the numbers (`X2Unit:UnitInfo` / `UnitModifierInfo` / `UnitAttr` of the player) are worked out from the game database, not from `PlayerStats` (the server sends none): `tipcalc/charstats.rs` over level, worn items (`Inventory`) and the buffs (`Buffs`), see "Character stats" below; equipment slots from `Inventory` (see below) |
@@ -477,28 +478,50 @@ data); the icons are drawn natively from `ui/map/icon/npc_icon.dds` (24 px cells
 `map/common.lua`) and the player is `player_cursor.dds`, turned by the heading.
 
 * **Where things are.** The client's own `worlds/main_world/map_data/npc_map/<zone>.dat` and `doodad_map/<zone>.dat`
-  (16 byte records: template id, x, y, z, game metres) list every NPC and map-worthy doodad of a zone group. The
-  database says what they are: NPC service flags -> bank, auction house, stabler, expedition, trade, ability
-  changer; the doodad's `group_id` -> mailbox, workbenches, portals, memory tomes (the blue book, `doodad_inn`,
-  mostly hidden behind the bank chest), housing province signs (`doodad_icon`). Weapon / armor / general
-  merchants and priests get no icon: `reference/ingame/worldmap_zone` shows none (only the bank, mailbox,
-  memory tome and stables of Desireen, the farm sign west of it).
+  (16 byte records: template id, x, y, z, game metres) list every NPC and map-worthy doodad of a zone group. All
+  zone groups' files are loaded, so a map the player is not in shows its icons too (the 1.2 patch notes: "Maps
+  now display icons in zones that your character is not located in"). The database says what they are: NPC service
+  flags -> bank, auction house, stabler, expedition, trade, ability changer; the doodad's `group_id` -> mailbox,
+  workbenches, portals, memory tomes (the blue book, `doodad_inn`, mostly hidden behind the bank chest), housing
+  province signs (`doodad_icon`). Weapon / armor / general merchants and priests get no icon:
+  `reference/ingame/worldmap_zone` shows none (only the bank, mailbox, memory tome and stables of Desireen, the
+  farm sign west of it).
 * **Quests** come from the units the client has, like the 3D marks (`game.quests.mark`: "!" yellow, "?" for ready,
   grey "?" in progress, the main / livelihood / repeat variants of the sheet). The capture's big map shows no "!" at
   Desireen, 170 m from where it stands, and its roadmap the two givers within 120 m (Maude and an NPC south west).
+* **Objective areas.** The client's `<world>/level_design/zone/<zone>/client/quest_sign_sphere.g` has the `area`
+  records (`qtype` quest, `ctype` component, `pos`, `radius`; the position is relative to the zone's origin cell in
+  `world.xml`). `data.rs` reads them for every world into `zone_groups.id -> QuestArea`; `markers.rs` keeps the
+  circles of the active quests' Progress components (`HUD.map_quest_areas`, with `qtype`, `x`, `y`, `radius`,
+  `zone`, `city`). The notifier (`questcontext/quest_context_notifier.lua`) hands the map the numbered decal of a
+  tracked quest through `X2Map:AddNotifyQuestInfo(decalIndex, qType, show)` (line 23 of `AddMapQuestSign`); the
+  natives are in `markers.lua`, as are the tables `map/common.lua` passes (`SetNotifyCoords`, `SetNotifyAreaCoords`
+  and `SetNotifyAreaColors`, which take a count first). `markers.lua` draws each circle as a translucent
+  `ui/map/territory_circle.dds` ring in the decal's colour (`AREA_COLOR_ALPHA` 0.5) and the grey 1..9 number of the
+  matching `SetNotifyAreaCoords` cell at its centre, on the zone map and the city map; the circle size is a fraction
+  of the map drawable, so it follows the roadmap size and the big map's expansion. The marker bridge carries the
+  optional `w`/`h` fractions, `color` and `layer`, so the discs stay below the icons. A quest restored at login
+  gets the same `QUEST_CONTEXT_UPDATED(..., "started")` notice as one accepted in game, before the scripts' active
+  list has it, which is the order the notifier's `AddQuestToNotifyList` needs to give it a decal.
+  `quest_sign_sphere.g` is checked against the server's `quest_contexts` / `quest_components`: an area is drawn only
+  for the quest's Progress components, so the report/accept steps' spheres do not leak onto the map.
 * **Gravesite** (`corpse_pos`) while the exp lost can still be won back; **dots** (`hostile` / `friendly`) of the
   units in view within 250 m when the roadmap's "NPC" check is on.
 * **Filters.** The "Show Icons" window of the big map works: `markers.lua` keeps each check (`SetNpcFilter`) and the
   three folders (Merchants, Infrastructure, Housing Province) and leaves the filtered icons out of both maps; the
   roadmap's NPC check hides every npc-like icon until it is on, as the toolkit's `roadmap` widget does.
-* **Placement.** Rust hands `HUD.map_icons` (game x, y, symbol, name, city) to Lua; `markers.lua` turns them into
-  the fraction of the zone rectangle (the big map's zone level, the whole image) or of the road map image (the
+* **Placement.** Rust hands `HUD.map_icons` (game x, y, symbol, name, zone group, city) and
+  `HUD.map_quest_areas` to Lua; `markers.lua` turns them into the fraction of each zone rectangle
+  (`HUD.map_zone_rects`, the big map's level 2 by the icon's own `zone`) or of the road map image (the
   roadmap, through `HUD_ROAD_FRAMES` / the form frames) and of the city's rectangle (level 3) and hands them over as
   `AAUI.RoadMap().markers` / `AAUI.WorldMap().markers` with a `markers_version` (an unchanged version costs no
   re-read). aa-ui draws them (`Marker` in `roadmap.rs`, `place_markers` in `worldmap.rs`) and shows the tooltip of
   the icon under the mouse through `SHOW_WORLDMAP_TOOLTIP`.
 * The list is rebuilt every 30 frames and only pushed to Lua when it changed; the database tables are read once on a
-  background thread (own connection).
+  background thread (own connection). `cargo test -p aa-client --bin aa-client` covers the `quest_sign_sphere.g`
+  parser, the zone-name -> group lookup and the Progress-component filter. A real client run with quest 269
+  (`/quest add 269`, GM test account, access reverted afterwards) showed its three Solzreed areas at Desiree Peak
+  with the grey `1` badge: `shots/hud/map-quest-areas.png`.
 
 ### Bag tabs
 
@@ -658,9 +681,9 @@ about 20-50 ms instead of 1.5-2 s because the stage is built during Loading (`hu
   is unit tested in aa-net, but no other character was in view on the lane server to see it.
 * Dark slots: buff restrictions, equipment and `or_unit_reqs` rules are covered by unit tests (`usable.rs`), the lane run only
   met range, mana, casting, target and combat. The unit requirement kinds that need quests, doodads, zones or factions count as met.
-* Map icons: quest objective areas and the numbered notifier icons
-  (`X2Map:AddNotifyQuestInfo`), icons for other zones than the one the player is in, the real client's `npc_station`,
-  `npc_graveyard`, public farm and live housing icons (no data source), ship markers.
+* Map icons: the real client's `npc_station`, `npc_graveyard`, public farm and live housing icons (no data
+  source), ship markers. Quest objective areas, numbered notifier icons and the static icons of every zone group
+  are done (see "Map icons").
 * The white beams of the quest effect over an NPC (a particle effect of the NPC, aa-fx).
 * Bag/equipment/action-bar drag requests are now routed through `drag.lua` / `drag.rs`;
   their live visual coverage is still being completed.
@@ -696,8 +719,8 @@ requests. Bag/bank clicks, right-click transfer and partial-stack dragging share
 planning and real item identity. Bank filter tabs are independent of bag tabs and are saved in the
 same account-local settings file. Bank capacity/items are pushed separately; original BANK_UPDATE
 and PLAYER_BANK_MONEY events refresh their widgets. NPC context ends on target, range, logout or
-window close. Remaining: sorting, expansion dialog/certificate flow, full lock/new-item behavior,
-merchant service choice for NPCs that also offer quests, and unsupported AA-cash services.
+window close. Remaining: sorting, expansion dialog/certificate flow, full lock/new-item behavior
+and unsupported AA-cash services.
 
 Original PLAYER_MONEY receives `(numeric_delta, decimal_delta_string)`; the balance is read via
 GetMyMoneyString. A real sell/buyback exposed the former balance-string argument error; the new
@@ -727,6 +750,71 @@ its NPC context. A later `--enter-world` cold run opened the bank with the saved
 zero script/handler errors and 79?84 FPS (`cold-bank.png`). Full-flow and direct world entry both
 work with actual spawned data. The earlier empty-data `run_stage(World)` unit probe hang was not
 reproduced by this actual cold path; it is not counted as a client-flow failure.
+
+## NPC function menu, repair, ability and priest services (2026-10-21)
+
+Every NPC talk now sends `CSStartInteraction` as well as `CSInteractNPC`, like the original's
+selected-unit path. `hud/services.rs` receives `SCNpcInteractionSkillList` and owns the function
+choice: a lone store/bank/repair/ability/priest/stabler/auction skill opens its window at once, while two
+functions or a quest plus a function show the original `npcInteraction` greeting window
+(`npc_interaction_view.alb`: `locale.npcInteraction.baseText`, `interactionButtons`, and the
+`start`/`complete`/`talk` groups). Shop, auction and ability labels use the authored
+`locale.npcInteraction.interactions` entries where one exists; bank/repair/stabler use the received
+skill's name. Choosing a row fires the original `NPC_INTERACTION_START` service key or
+`("quest", "talk"|"complete"|"start", npcId)`, hides the menu and opens the authored window. Closing
+the menu ends the talk; target/range/logout/`NPC_INTERACTION_END` invalidates it. A received list
+with neither a supported function nor a quest ends the talk without inventing a service.
+
+`12086` (repair) routes to the original `"blacksmith"` branch: the 1.2 script's `"repairman"`
+branch references an undefined `REPAIRMAN_NPC`, and the server repairs at both blacksmiths and
+repairmen. The existing repair window supplies the native quote, single/all and money checks.
+`12082` opens `abilityChangeFrame` (its original ShowProc still requires three active abilities),
+`12084` opens the divine-blessing message box, and `12195` reuses the stablehand context.
+`X2Priest` now reads `priest_buffs` (row 1 sells buff 239, Nui's blessing: one in-place revival at 10% HP/MP within 30 minutes) and `CSBuyPriestBuff` travels through
+`ShopCommand::PriestBuff`; the server remains authoritative for the buff, cost and interaction
+identity. `X2Priest:RecoverExp`/`GetCostForRecoverExp` stay unreachable because the lane's priest
+interaction advertises only blessing (12084); no recovery skill is invented here.
+
+Validation: 419 client tests pass / 40 ignored. The isolated original-stage probe
+`hud::services::tests::original_windows_open_from_a_multi_service_interaction_list` passed in 2.6 s:
+real banker, repair, ability and blessing windows, the greeting menu over a quest plus shop +
+repair, the chosen shop row, and a real blessing OK producing one `CSBuyPriestBuff` for priest buff
+1. `shots/hud/npc-services-choice.png` shows the original greeting window with Start / Shop / Repair
+at 101/179/146/360 FPS over the run (stage construction was still finishing in the first sample). No live multi-service NPC, teleporter or
+specialty service was claimed; the auctioneer's `12083` is one of the routed services (see
+"Auction house").
+
+## Doodad coin shops and item-look conversion (2026-10-21)
+
+`hud/doodad.rs` now loads `doodad_func_purchases` joined to the current phase's
+`doodad_funcs`. A `DoodadFuncPurchase` is no longer cast as its `func_skill_id`: a right click
+on a phase with one purchase opens the original `DLG_TASK_PURCHASE_COIN` decorator
+(`dialoghandler/dialog_handler.alb` F11, lines 207-228) with the item, count, coin name and coin
+count. OK sends `CSBuyCoinItem` (`Interact::BuyCoinItem`: BC doodad, u32 `doodad_funcs.id`);
+the server (`systems/economy/store.rs`) finds that func and runs
+`DoodadFuncPurchase::Use`, which consumes `coin_item_id`/`coin_count` and grants the item. Phases
+with several entries keep the original interaction list and mark the purchase row separately.
+Rows without a coin item/coin count are not offered. The server resolves `CSBuyCoinItem` only
+against a doodad (`WorldInstance::doodad`), so an NPC-hosted coin shop has no server path here;
+the normal NPC catalog still uses `CSBuyItems` and its currency byte.
+
+`hud/look.rs` binds `X2ItemLookConverter` and the `X2Item` convert-mode queries used by
+`changeitemlook.alb` (F1, lines 27-286) and `sort_bag.alb`'s `AttachItemToItemConverter`.
+Skill 23478 (`ITEM_FUSION`, the server's primary option for blacksmiths) routes
+`NPC_INTERACTION_START("look_converter", ...)` to the authored `changeItemLookWindow`; bag
+clicks select the base and appearance item, `GetItemLookConvertInfo` shows
+`item_look_convert_required_items` availability, and confirmation sends
+`CSConvertItemLook` (two item UIDs). The server consumes the required powder and applies the
+image template; item task reason 111 raises the original `ITEM_LOOK_CONVERTED` and leaves
+convert mode. The server's `interaction_option` does not advertise `npcs.look_converter`, so a
+look-converter flag alone produces no service; only the advertised blacksmith 23478 is routed.
+
+Validation: 422 client tests pass / 42 ignored. The isolated stage probes
+`hud::doodad::tests::original_coin_dialog_confirms_a_purchase_func` and
+`hud::look::tests::original_look_converter_window_and_packet` passed: the original coin dialog
+over a real purchase row produced one `CSBuyCoinItem`, and the original look-converter window
+selected two bag items and produced one `CSConvertItemLook`. `cargo test -p aa-net --lib` passed
+629 tests. No live coin purchase or appearance change was issued.
 
 ## Raid controls and authoritative map pings (2026-10-17)
 
@@ -1518,6 +1606,39 @@ does not consult that cap. Current HP/MP/level/name are received; maximum pools 
 existing observed lower-bound fallback until native Mate5 formula/item/buff integration lands.
 Full pet-stat tooltips currently retain player-attribute limitations and are not a fidelity claim.
 
+The original command bar's mount/dismiss buttons now work through their own Lua: `CanMount` tries
+the selected mount (passenger seat) before the current pet, `CanDismiss` and both wrappers share the
+native two-second vehicle cooldown and casting/pending-action gate, and `MountMate` sends the
+decompiled `FUN_3909ae90` reason byte (mount→player direction: rear3, front4, sides1/2, with the
+occupied-seat override). `DismissPet` mounted on the same pet first sends the reason10 unmount and
+sends `CSRemoveMate` after the server's `SCUnitDetached`, as the native model-action continuation.
+`GetSpeedInfo` returns one f32 from the last received movement report (m/s); position-targeted
+mount skills send a mate-caster position target at the selected unit's spot. The pet bar's
+`ISLOT_PET_ACTION` slots now reach the app through
+`AAUI.UseSlot`; a click sends a mate-cast `CSStartSkill` with the mate as the self target and the
+player's selection for unit-target skills. Summon stays the original item use: the summon item's
+`use_skill_id` goes through the existing item-caster `CSStartSkill`, so its cast bar and the
+server's `SCErrorMsg` texts are the same paths as any other item, not a new mate request.
+
+### Land vehicle mode bar (2026-10-22)
+
+`hud/vehicles.rs` binds the original `hud/mode_action_bar/mode_action.alb` to an owned slave: the
+script's `X2Unit:GetModeActionsCount()` (`mode_action.alb:62-106`) counts the template's
+`slave_mount_skills` rows resolved through `mount_skills`, only while the local player holds a seat.
+`HUD.mode_slot` feeds `ISLOT_MODE_ACTION` and a click sends the same mate-caster
+`UseMateSkill`/`UseMateSkillAt` with the **slave** object id (the server's mount authority accepts an
+owned slave). `X2SiegeWeapon` exposes the native driver/mounted/speed/turn/discard getters;
+`DiscardSiegeWeapon` queues the exact `CSDiscardSlave`. `SLAVE_SPAWN`, `MODE_ACTIONS_UPDATE` and
+`SIEGEWEAPON_UNBOUND` follow the received owned creation and seat transitions. The summon item stays
+the existing item-caster path, so its 5 s cast bar and server errors are the general item paths.
+
+Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
+target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
+a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`
+for the pet action bar, and the movement speed getter. Mounted locomotion checks cover the mate-cast
+forward packet's object id/velocity and the driver-seat gate that hands control back on dismount. The
+full client suite passes423 tests /39 ignored.
+
 Validation:160 client tests /27 ignored (5.31s), plus the exact original pet probe passes in1.89s.
 It requires both original widgets and completed250x105 bar sizing, exercises physical rename
 Cancel/OK and passive mode, checks native getter types/XP thresholds, and rejects a queued rename
@@ -1752,8 +1873,10 @@ two owner5 expression cases and ten modifier cases. Static DB/AST lookups are
 reconstructed; external CRT pow/floor use explicitly mocked libm/integral-double
 results. These goldens are embedded in client tests, without depending on ignored
 artifact files. All72 gear values, ten returned modifier values and two expression
-stages match. Native engine-component `GetSpeedInfo` remains open: the original Lua
-nil-to0 speed presentation is retained, with no invented maximum-speed formula.
+stages match. `GetSpeedInfo` now returns one f32 from the current mate's last received
+movement report (horizontal m/s) and no values without a pet. This is the wire's
+runtime motion, not the native controller component's maximum-speed formula (the
+controller+1f0 producer remains unmapped); the original Lua nil-to0 fallback is kept.
 Pet equipment item display/cursor/confirmation/transactions remain separate work.
 
 Full client suite:195 passed/33 ignored in14.01s. The exact original panel probe
@@ -2446,3 +2569,46 @@ housing-area and overlap rules, the `CSConstructHouseTax` / `CSCreateHouse` fiel
 the tax certificate count, the build-progress model update, the script parser and the headless placement smoke test.
 Not done: the maintenance/tax/sale/decoration windows (phase 5), garden plots, and a live comparison capture of the
 completed farm (the live server check follows this work).
+
+## Auction house (2026-10-22)
+
+`hud/auction.rs` runs the original `x2ui/auction` windows (bid / put-up / bid history) unchanged and
+answers their `X2Auction` calls from the last received page (`aa_net::Auction`, `docs/aa-net.md`
+"Auction protocol and escrow state"). The auctioneer NPC is the service skill `12083`
+(`SkillsEnum.USE_AUCTIONEER`): `dialog.rs` now admits `npcs.auctioneer` templates to the service
+talk, the `SCNpcInteractionSkillList` opens the original window through
+`NPC_INTERACTION_START("auction", "", npc)`, and the context closes when the talk ends, the NPC
+leaves or the player walks out of the server's 5 m service range.
+
+* Search: `SearchAuctionArticle` (page/level/grade/category/exact/keyword; the wrapper subtracts the
+  Lua page and the raw grade one, `common.alb`/`bid.alb`), `SearchAuctionArticleByPage`,
+  `SearchMyAuctionArticles` (`client_id` = the character), `SearchMyBidList` (`MyBids`) and
+  `SearchedListSort` (the `columnSortKind` headers re-issue the current query with the toggled
+  order). `GetSearchedItemInfo` returns the normal item tip plus `idx`, `articleId` (decimal string),
+  `stackCount`, seller/bidder names and worlds, `leftTime`, `bidPriceStr` (start price while there is
+  no bid), `directPriceStr`, `depositStr` (`aa_net::auction::listing_fee`) and `extra`;
+  `GetSearchedItemTotalCount` is the native page bound 50. `GetSearchedItemPrice` returns the two
+  decimal strings the bid dialog increments.
+* Bids and buys: `BidAuctionArticle` and `DirectPurchaseAuctionArticle` echo the complete cached lot
+  and build the bid from the character (`Command::AuctionForCharacter`); `CancelAuctionArticle` only
+  queues the seller's own lot. Requests follow the original `AUCTION_ITEM_SEARCH` /
+  `AUCTION_ITEM_SEARCHED` / `AUCTION_BIDDED` / `AUCTION_CANCELED` / `AUCTION_LOWEST_PRICE` /
+  `AUCTION_ITEM_PUT_UP` events and server refusals show through `SYSMSG`.
+* Put-up: `AttachItemFromBag`/`AttachItemFromPick` lock the physical bag slot, keep the exact
+  received item (whole stack) and raise `AUCTION_ITEM_ATTACHMENT_STATE_CHANGED(true)`; `DetachItem`
+  unlocks it. `GetAttachedItemInfo` is the item tip with `stack`/`stackCount`, `CalcDeposit` is the
+  lane's `min(buyout*.01*(duration+1), 1000000)` and `SetDuration` converts the Lua 1..4 to wire
+  0..3. `AskAuctionArticle` rechecks that the attached stack is still the received item before
+  `Post`; the wire prices are the whole-stack totals the UI computes (the direct price edit is per
+  item and the script multiplies it by the stack). `GetLowestPrice` requests the cached lane quote
+  and `GetCurrencyForBid`/`GetCurrencyForFee` are copper (`CURRENCY_GOLD`), which the original
+  tooltip builder needs.
+* No item, money or escrow state is changed locally; possession still waits for the authoritative
+  inventory/mail tasks.
+
+Tests: `cargo test -p aa-client auction` (3) cover query mapping, command fields, attachment/posting
+identity and the received-event routing. The ignored `original_auction_search_bid_and_putup_controls`
+loads the real world stage and drives the original search button, list selection, attach and put-up
+button (`cargo test -p aa-client --bin aa-client original_auction_search_bid_and_putup_controls --
+--ignored`). Remaining: live transactions and mail settlement against the lane (the parity row keeps
+the live checks open).

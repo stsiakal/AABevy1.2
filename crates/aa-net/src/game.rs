@@ -1634,6 +1634,51 @@ mod tests {
     }
 
     #[test]
+    fn move_unit_body_names_the_controlled_object() {
+        use crate::model::Movement;
+        let movement = Movement::unit(crate::Pos::new(1.0, 2.0, 3.0), 0.5, 42);
+        let msg = ClientMsg::Move { obj_id: 0x445566, movement: movement.clone() };
+        assert_eq!(msg.opcode(), cs::CSMoveUnitPacket);
+        let body = msg.encode_body();
+        assert_eq!(&body[..3], &[0x66, 0x55, 0x44], "bc controlled object id");
+        let mut r = Reader::new(&body[3..]);
+        let back = Movement::read(&mut r).unwrap();
+        assert_eq!((back.move_type, back.time, back.flags), (movement.move_type, movement.time, movement.flags));
+        assert!((back.pos.x - 1.0).abs() < 1e-4 && (back.pos.y - 2.0).abs() < 1e-4 && (back.pos.z - 3.0).abs() < 1e-3);
+        assert_eq!(back.direction, crate::model::radians_to_direction(0.5));
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn vehicle_move_body_roundtrips_the_native_wheels_and_rotation() {
+        use crate::model::{Movement, VehicleMove};
+        let mut movement = Movement::vehicle(crate::Pos::new(10.0, 20.0, 3.0), 0.7, 42);
+        movement.velocity = [1024, -2048, 0];
+        let body = movement.vehicle.as_mut().unwrap();
+        let rotation = body.rotation;
+        *body = VehicleMove {
+            rotation,
+            angular_velocity: [0.1, 0.2, 0.3],
+            steering: -0.4,
+            wheel_speeds: vec![1.5, 2.5],
+        };
+        let msg = ClientMsg::Move { obj_id: 0x445566, movement: movement.clone() };
+        assert_eq!(msg.opcode(), cs::CSMoveUnitPacket);
+        let bytes = msg.encode_body();
+        assert_eq!(&bytes[..3], &[0x66, 0x55, 0x44]);
+        let back = Movement::read(&mut Reader::new(&bytes[3..])).unwrap();
+        assert_eq!((back.move_type, back.time, back.flags), (2, 42, movement.flags));
+        assert!((back.pos.x - 10.0).abs() < 1e-4 && (back.pos.y - 20.0).abs() < 1e-4 && (back.pos.z - 3.0).abs() < 1e-3);
+        assert_eq!(back.velocity, [1024, -2048, 0]);
+        let got = back.vehicle.as_ref().unwrap();
+        assert_eq!(got.rotation, rotation);
+        assert_eq!(got.angular_velocity, [0.1, 0.2, 0.3]);
+        assert_eq!(got.steering, -0.4);
+        assert_eq!(got.wheel_speeds, vec![1.5, 2.5]);
+        assert!((back.yaw() - 0.7).abs() < 0.01, "{}", back.yaw());
+    }
+
+    #[test]
     fn client_item_move_bytes() {
         // CSSwapItems: from item id, to item id (u64 each), then from container, slot, to container, slot. Equipping into
         // an empty worn slot is "from the empty equipment slot (item 0) to the bag item".

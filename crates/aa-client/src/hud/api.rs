@@ -39,6 +39,12 @@ pub enum Request {
     UseAction { slot: usize },
     /// `HUD.request("use_bag", slot)`: a right click on the bag item in real slot `slot` (1 based).
     UseBag { slot: usize },
+    /// `HUD.request("use_pet_action", index)`: the original pet bar's `ISLOT_PET_ACTION` slot (`1`
+    /// based in the displayed mount-skill order).
+    UsePetAction { slot: usize },
+    /// `HUD.request("use_mode_action", index)`: the original vehicle mode bar's `ISLOT_MODE_ACTION`
+    /// slot (`1` based in the displayed vehicle-skill order).
+    UseModeAction { slot: usize },
     /// `HUD.request("resurrect", inPlace)`: the death window's buttons (`X2Player:Resurrect(inPlace)`).
     Resurrect { in_place: bool },
     LearnSkill { id: u32 },
@@ -110,6 +116,7 @@ pub struct HudData {
     pub(super) repair: super::repair::View,
     pub(super) crafting: super::crafting::View,
     pub(super) pets: super::pets::View,
+    pub(super) vehicles: super::vehicles::View,
     /// The casts the cast bars show (`cast.rs`).
     pub casts: super::cast::Casts,
     /// The loot window's rows and what it asked for (`loot.rs`).
@@ -153,6 +160,10 @@ pub struct HudData {
     pub party_pushed: Option<aa_net::Party>,
     pub character_id: u32,
     pub store: super::store::View,
+    /// The NPC function menu and the priest blessing requests (`services.rs`).
+    pub(super) services: super::services::View,
+    /// The original item-look converter (`look.rs`).
+    pub(super) look: super::look::View,
     pub(super) specialty: super::specialty::View,
 }
 
@@ -193,6 +204,7 @@ impl Default for HudData {
             repair: Default::default(),
             crafting: Default::default(),
             pets: Default::default(),
+            vehicles: Default::default(),
             casts: Default::default(),
             loot: Default::default(),
             dialog: Default::default(),
@@ -224,6 +236,8 @@ impl Default for HudData {
             party_pushed: None,
             character_id: 0,
             store: Default::default(),
+            services: Default::default(),
+            look: Default::default(),
             specialty: Default::default(),
         }
     }
@@ -302,6 +316,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::friends::install(lua, bridge)?;
     super::store::install(lua, &hud, bridge)?;
     lua.globals().raw_set("HUD", hud.clone())?;
+    super::services::install(lua, bridge)?;
     push_snapshot(lua, &hud, &bridge.borrow().snapshot)?;
     panels::push(lua, &hud, &bridge.borrow().panels, None)?;
     let frames: Table = lua.load(ROAD_FRAMES_LUA).set_name("@road_frames.lua").eval()?;
@@ -319,6 +334,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::store::load_script(lua)?;
     super::specialty::install(lua, bridge)?;
     super::mail::install(lua, bridge)?;
+    super::auction::install(lua, bridge)?;
     super::itemlinks::install(lua, bridge)?;
     super::item_effects::install(lua, bridge)?;
     super::enchant::install(lua, bridge)?;
@@ -332,6 +348,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::repair::install(lua, bridge)?;
     super::crafting::install(lua, bridge)?;
     super::pets::install(lua, bridge)?;
+    super::vehicles::install(lua, bridge)?;
     super::family::install(lua, bridge)?;
     super::farm::install(lua, bridge)?;
     super::houses::install(lua, bridge)?;
@@ -344,6 +361,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
+    super::look::install(lua, bridge)?;
     super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;
     super::ranking::install(lua, bridge)?;
@@ -415,6 +433,8 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                 "leave_cancel" => Request::CancelLeave,
                 "use_action" => Request::UseAction { slot: num(1).max(1) as usize },
                 "use_bag" => Request::UseBag { slot: num(1).max(1) as usize },
+                "use_pet_action" => Request::UsePetAction { slot: num(1).max(1) as usize },
+                "use_mode_action" => Request::UseModeAction { slot: num(1).max(1) as usize },
                 "resurrect" => Request::Resurrect { in_place: num(1) != 0 },
                 "learn_skill" => Request::LearnSkill { id: num(1).max(0) as u32 },
                 "learn_buff" => Request::LearnBuff { id: num(1).max(0) as u32 },
@@ -682,6 +702,7 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
     super::repair::refresh(world, &mut data);
     super::crafting::refresh(world, &mut data);
     super::pets::refresh(world, &mut data);
+    super::vehicles::refresh(world, &mut data);
     if let Some(party) = world.get_resource::<aa_net::Party>() {
         if data.party != *party { data.party.clone_from(party); }
     }
@@ -983,6 +1004,18 @@ pub fn handle_requests(
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
                 panels::use_bag_slot(slot - 1, &env, &flight, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
             }
+            Request::UsePetAction { slot } => {
+                let data = bridge.0.borrow();
+                if let Some(command) = super::pets::use_pet_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
+                    net.write(NetCommand(command));
+                }
+            }
+            Request::UseModeAction { slot } => {
+                let data = bridge.0.borrow();
+                if let Some(command) = super::vehicles::use_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
+                    net.write(NetCommand(command));
+                }
+            }
             Request::Resurrect { in_place } => {
                 net.write(NetCommand(Command::Resurrect { in_place }));
             }
@@ -1015,6 +1048,7 @@ pub fn mark_pushed(bridge: &Shared) {
 /// Push what changed into the Lua state and raise the events the scripts listen for.
 pub fn push_changes(rt: &UiRuntime, bridge: &Shared) {
     super::pets::push(rt, bridge);
+    super::vehicles::push(rt, bridge);
     push_state(rt, bridge);
     // after the state: the character window's handler reads HUD.state (level, ...)
     push_character_stats(rt, bridge);
@@ -1258,7 +1292,7 @@ mod tests {
                 footprint: 4.0,
                 requires_water: false,
                 grounding: Grounding::default(),
-                house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), garden_radius: 4.0, heavy_tax: true }),
+                house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), category_id: 16, garden_radius: 4.0, heavy_tax: true }),
             },
             0.5,
         );

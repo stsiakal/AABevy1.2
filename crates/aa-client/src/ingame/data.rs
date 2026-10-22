@@ -34,6 +34,47 @@ struct Lookups {
     anim_actions: HashMap<u32, Option<String>>,
     anim_action_tools: HashMap<u32, [Option<Tool>; 2]>,
     mount_poses: HashMap<u32, u32>,
+    mount_moves: HashMap<u32, MountMove>,
+    vehicle_bodies: HashMap<u32, VehicleBody>,
+    land_vehicles: HashMap<u32, bool>,
+}
+
+/// A land vehicle/slave body from `vehicle_models` (the row `models.sub_id` names when the model
+/// is a `VehicleModel`): native forward speed and angular velocity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VehicleBody {
+    pub speed: f32,
+    /// Radians per second (`vehicle_models.angVel`).
+    pub turn: f32,
+    /// Number of wheel entries the native `VehicleMove` body carries; the client sends this many
+    /// wheel speeds (zero is valid).
+    pub wheels: u8,
+}
+
+impl Default for VehicleBody {
+    fn default() -> Self {
+        Self { speed: 8.0, turn: 1.0, wheels: 2 }
+    }
+}
+
+/// How a ridden mate moves: the actor model's base stance speeds and body (the same `game_stances`
+/// rows the server's `Npc.BaseMoveSpeed` reads), plus its jump/gravity and turn rate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MountMove {
+    pub walk: f32,
+    pub run: f32,
+    pub radius: f32,
+    pub height: f32,
+    pub jump_height: f32,
+    pub gravity: f32,
+    /// Radians per second (`actor_models.turn_speed` is degrees per second).
+    pub turn: f32,
+}
+
+impl Default for MountMove {
+    fn default() -> Self {
+        Self { walk: 1.8, run: 5.4, radius: 0.6, height: 1.8, jump_height: 1.3, gravity: 25.0, turn: 360.0_f32.to_radians() }
+    }
 }
 
 /// What the glider backpack item `item` is for the flight: its use skill and the model it flies with.
@@ -202,6 +243,9 @@ impl Db {
                 anim_actions: HashMap::new(),
                 anim_action_tools: HashMap::new(),
                 mount_poses: HashMap::new(),
+                mount_moves: HashMap::new(),
+                vehicle_bodies: HashMap::new(),
+                land_vehicles: HashMap::new(),
             })),
         })
     }
@@ -235,6 +279,20 @@ impl Db {
                     .ok()
                     .flatten();
                 prefab.and_then(|p| prefab_model_file(&p))
+            })
+            .or_else(|| {
+                // a land vehicle (the Farm Wagon, 92 slave models): `vehicle_models.normal`, usually
+                // a `prefab://` element whose animated object is the body `.chr`
+                let raw: Option<String> = l
+                    .conn
+                    .query_row(
+                        "SELECT v.normal FROM models m JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' WHERE m.id = ?1",
+                        params![model_id],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten();
+                raw.as_deref().and_then(model_file)
             });
         l.actor_files.insert(model_id, file.clone());
         file
@@ -293,6 +351,90 @@ impl Db {
             .unwrap_or(0);
         l.mount_poses.insert(model_id, pose);
         pose
+    }
+
+    /// The actor model's base stance speeds/body a driven mate moves with. The first stance row
+    /// (`stance_id = 1`) is the normal one the server's `Npc.BaseMoveSpeed` uses outside battle.
+    pub fn mount_move(&self, model_id: u32) -> MountMove {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(m) = l.mount_moves.get(&model_id) {
+            return *m;
+        }
+        let d = MountMove::default();
+        let out = l
+            .conn
+            .query_row(
+                "SELECT g.ai_move_speed_walk, g.ai_move_speed_run, a.radius, a.height, \
+                        a.game_jump_height, a.physics_living_gravity, a.turn_speed \
+                 FROM models m \
+                 JOIN actor_models a ON a.id = m.sub_id AND m.sub_type = 'ActorModel' \
+                 JOIN game_stances g ON g.actor_model_id = a.id \
+                 WHERE m.id = ?1 AND g.stance_id = 1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let n = |i: usize, default: f32| -> f32 {
+                        r.get::<_, Option<f64>>(i).ok().flatten().map_or(default, |v| v as f32)
+                    };
+                    let turn = n(6, 360.0);
+                    Ok(MountMove {
+                        walk: n(0, d.walk).max(0.1),
+                        run: n(1, d.run).max(0.1),
+                        radius: n(2, d.radius).max(0.1),
+                        height: n(3, d.height).max(0.1),
+                        jump_height: n(4, d.jump_height).max(0.0),
+                        gravity: n(5, d.gravity).max(1.0),
+                        turn: if turn > 0.0 { turn.to_radians() } else { d.turn },
+                    })
+                },
+            )
+            .unwrap_or(d);
+        l.mount_moves.insert(model_id, out);
+        out
+    }
+
+    /// The `vehicle_models` row a slave model draws (`models.sub_type = 'VehicleModel'`).
+    pub fn vehicle_body(&self, model_id: u32) -> VehicleBody {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.vehicle_bodies.get(&model_id) {
+            return *v;
+        }
+        let d = VehicleBody::default();
+        let out = l
+            .conn
+            .query_row(
+                "SELECT v.velocity, v.angVel, v.wheel FROM models m \
+                 JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' \
+                 WHERE m.id = ?1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let n = |i: usize, default: f32| -> f32 {
+                        r.get::<_, Option<f64>>(i).ok().flatten().map_or(default, |v| v as f32)
+                    };
+                    Ok(VehicleBody {
+                        speed: n(0, d.speed).max(0.1),
+                        turn: n(1, d.turn).abs().max(0.05),
+                        wheels: r.get::<_, Option<i64>>(2).ok().flatten().map_or(d.wheels, |v| v.clamp(0, 8) as u8),
+                    })
+                },
+            )
+            .unwrap_or(d);
+        l.vehicle_bodies.insert(model_id, out);
+        out
+    }
+
+    /// Whether a slave model is a land vehicle (`models.sub_type = 'VehicleModel'`) rather than a
+    /// ship/siege model. Used to keep the vehicle auto-bind off ships until their flow exists.
+    pub fn is_land_vehicle(&self, model_id: u32) -> bool {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.land_vehicles.get(&model_id) {
+            return *v;
+        }
+        let out = l
+            .conn
+            .query_row("SELECT 1 FROM models WHERE id = ?1 AND sub_type = 'VehicleModel'", params![model_id], |_| Ok(()))
+            .is_ok();
+        l.land_vehicles.insert(model_id, out);
+        out
     }
 
     /// `npcs.scale` of an NPC template (1 when unknown).
@@ -624,6 +766,18 @@ mod tests {
             return;
         }
         assert_eq!(prefab_model_file("prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02").as_deref(), Some("objects/env/01_nuia/001_ndeco/old/learning_ob01_e.chr"));
+    }
+
+    /// Model 1008 (`models.sub_type = 'VehicleModel'`, the Farm Wagon): `vehicle_models.normal`
+    /// is a prefab whose animated body is `transfers_trailer_a_body.chr`.
+    #[test]
+    fn a_vehicle_model_resolves_to_its_prefab_body() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let file = db.actor_model_file(1008).expect("the Farm Wagon body");
+        assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
     }
 
     #[test]

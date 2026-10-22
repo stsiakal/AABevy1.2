@@ -50,6 +50,11 @@ pub enum ShopCommand {
     ListSold {
         npc_obj_id: u32,
     },
+    /// `CSBuyPriestBuff`: buy blessing `priest_buff_id` (`priest_buffs.id`) from the priest NPC.
+    PriestBuff {
+        npc_obj_id: u32,
+        priest_buff_id: u32,
+    },
 }
 
 impl ShopCommand {
@@ -87,6 +92,9 @@ impl ShopCommand {
                 }
             }
             Self::ListSold { npc_obj_id } if *npc_obj_id == 0 => return Err("sold list has no NPC"),
+            Self::PriestBuff { npc_obj_id, priest_buff_id } if *npc_obj_id == 0 || *priest_buff_id == 0 => {
+                return Err("priest blessing has no NPC or buff")
+            }
             _ => {}
         }
         Ok(())
@@ -97,6 +105,7 @@ impl ShopCommand {
             Self::Buy { .. } => cs::CSBuyItemsPacket,
             Self::Sell { .. } => cs::CSSellItemsPacket,
             Self::ListSold { .. } => cs::CSListSoldItemPacket,
+            Self::PriestBuff { .. } => cs::CSBuyPriestBuffPacket,
         }
     }
 
@@ -123,6 +132,9 @@ impl ShopCommand {
             }
             Self::ListSold { npc_obj_id } => {
                 w.bc(*npc_obj_id);
+            }
+            Self::PriestBuff { npc_obj_id, priest_buff_id } => {
+                w.u32(*priest_buff_id).bc(*npc_obj_id);
             }
         }
     }
@@ -244,6 +256,13 @@ mod tests {
         let packet = ClientMsg::Shop(ShopCommand::ListSold { npc_obj_id: 0x010203 });
         assert_eq!(packet.opcode(), 0x0b1);
         assert_eq!(packet.encode_body(), [3, 2, 1]);
+        // CSBuyPriestBuff: u32 priest_buff_id then bc NPC (the server's `read_body`).
+        let packet = ClientMsg::Shop(ShopCommand::PriestBuff { npc_obj_id: 0x010203, priest_buff_id: 9 });
+        assert_eq!(packet.opcode(), 0x0b2);
+        assert_eq!(packet.encode_body(), [9, 0, 0, 0, 3, 2, 1]);
+        assert!(ShopCommand::PriestBuff { npc_obj_id: 0, priest_buff_id: 9 }.validate().is_err());
+        assert!(ShopCommand::PriestBuff { npc_obj_id: 1, priest_buff_id: 0 }.validate().is_err());
+        assert!(ShopCommand::PriestBuff { npc_obj_id: 1, priest_buff_id: 9 }.validate().is_ok());
     }
 
     #[test]

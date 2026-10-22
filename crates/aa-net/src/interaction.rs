@@ -45,6 +45,11 @@ pub enum Interact {
     /// `CSNaviOpenPortal`: open the portal of the navi doodad `doodad_obj_id` (`DoodadFuncNaviOpenPortal`, a Guide
     /// Gate). The lane only logs it.
     NaviOpenPortal { doodad_obj_id: u32 },
+    /// `CSBuyCoinItem`: buy the item of the doodad's `DoodadFuncPurchase` `func_id` (the server's
+    /// `doodad_funcs.id`) by spending its coin item. Used by the original coin-shop dialog.
+    BuyCoinItem { doodad_obj_id: u32, func_id: u32 },
+    /// `CSConvertItemLook`: after confirmation, apply `look_id`'s appearance to `base_id` (both item UIDs).
+    ConvertItemLook { base_id: u64, look_id: u64 },
 }
 
 impl Interact {
@@ -59,6 +64,8 @@ impl Interact {
             Self::QuestTalk { .. } => cs::CSQuestTalkMadePacket,
             Self::NaviTeleport { .. } => cs::CSNaviTeleportPacket,
             Self::NaviOpenPortal { .. } => cs::CSNaviOpenPortalPacket,
+            Self::BuyCoinItem { .. } => cs::CSBuyCoinItemPacket,
+            Self::ConvertItemLook { .. } => cs::CSConvertItemLookPacket,
         }
     }
 
@@ -87,6 +94,12 @@ impl Interact {
             }
             Self::NaviTeleport { doodad_obj_id } | Self::NaviOpenPortal { doodad_obj_id } => {
                 w.bc(doodad_obj_id);
+            }
+            Self::BuyCoinItem { doodad_obj_id, func_id } => {
+                w.bc(doodad_obj_id).u32(func_id);
+            }
+            Self::ConvertItemLook { base_id, look_id } => {
+                w.u64(base_id).u64(look_id);
             }
         }
     }
@@ -228,6 +241,15 @@ mod tests {
         assert_eq!(body(&Interact::NaviTeleport { doodad_obj_id: 0x0A0B0C }), [0x0C, 0x0B, 0x0A]);
         assert_eq!(Interact::NaviTeleport { doodad_obj_id: 1 }.opcode(), 0x0e7);
         assert_eq!(Interact::NaviOpenPortal { doodad_obj_id: 1 }.opcode(), 0x0e8);
+        // CSBuyCoinItem: bc doodad, then the doodad func id as u32 (10117 = 0x2785).
+        assert_eq!(body(&Interact::BuyCoinItem { doodad_obj_id: 0x0A0B0C, func_id: 10117 }), [0x0C, 0x0B, 0x0A, 0x85, 0x27, 0, 0]);
+        assert_eq!(Interact::BuyCoinItem { doodad_obj_id: 1, func_id: 2 }.opcode(), 0x0af);
+        // CSConvertItemLook: two item UIDs.
+        assert_eq!(
+            body(&Interact::ConvertItemLook { base_id: 0x0102030405060708, look_id: 1 }),
+            [8, 7, 6, 5, 4, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(Interact::ConvertItemLook { base_id: 1, look_id: 2 }.opcode(), 0x049);
     }
 
     #[test]

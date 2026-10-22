@@ -103,6 +103,11 @@ fn quote(data: &HudData) -> f64 {
     f64::from(sum as f32)
 }
 
+/// Opens the original stablehand window for `npc` (the NPC function router chose it).
+pub(super) fn open_service(data: &mut HudData, npc: (u32, u32)) {
+    data.pets.service = Some(npc);
+}
+
 pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     owned::install(lua, bridge)?;
     let x2: Table = lua.globals().get("X2")?;
@@ -127,6 +132,11 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
 }
 
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) { owned::push(rt, bridge); }
+
+/// `ISLOT_PET_ACTION` click: the displayed mount skill of the current pet.
+pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<Command> {
+    owned::use_pet_action(data, index, target_obj_id, target_pos)
+}
 
 fn valid_stable(data: &HudData, units: &Units, npc: (u32, u32)) -> bool {
     units
@@ -179,11 +189,16 @@ pub(super) fn update(
                 ..
             }) = event
             {
-                if *obj_id == own && *interactable && skills.contains(&12195) {
-                    if let Some(npc) = data.dialog.npc.filter(|n| n.0 == *npc_obj_id && valid_stable(&data, &units, *n)) {
-                        data.pets.service = Some(npc);
-                        starts.push(npc.0);
-                    }
+                // The NPC function router owns a received function list (including the
+                // single-choice convenience case); only an unclaimed packet opens here.
+                if !data.services.claimed(*npc_obj_id)
+                    && *obj_id == own
+                    && *interactable
+                    && skills.contains(&12195)
+                    && let Some(npc) = data.dialog.npc.filter(|n| n.0 == *npc_obj_id && valid_stable(&data, &units, *n))
+                {
+                    data.pets.service = Some(npc);
+                    starts.push(npc.0);
                 }
             }
         }
@@ -223,6 +238,7 @@ pub(super) fn plugin(app: &mut App) {
         update
             .after(super::sync_hud)
             .after(super::dialog::handle_dialog)
+            .after(super::services::update)
             .before(aa_ui::UiFrame)
             .run_if(super::hud_up),
     )

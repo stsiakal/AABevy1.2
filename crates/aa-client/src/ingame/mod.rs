@@ -65,6 +65,7 @@ mod tools;
 mod trace;
 pub(crate) mod units;
 pub(crate) mod virtual_input;
+mod vehicle;
 pub(crate) mod warm;
 pub(crate) mod weapons;
 pub(crate) mod world_switch;

@@ -171,8 +171,15 @@ while let Some(event) = client.recv().await { /* or client.try_recv() from a gam
 never blocks. `Client` is the only handle; dropping it closes the connections. `spawn_on_with` /
 `spawn_thread_with(ClientOptions)` take the keep-alive tunables (defaults are right for apps).
 
-`Move(MoveCommand)` sends `CSMoveUnit` for the local player (ignored until `InWorld`). `MoveCommand`
-is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
+`Move(MoveCommand)` sends `CSMoveUnit` for the local player (ignored until `InWorld`).
+`MoveUnit { obj_id, command }` sends the same exact body for a unit the character controls (its owned
+mate while riding); the server's `apply_unit_move` checks the owner and runs `on_mate_unit_move` for a
+mate target. The object id and state still have to be nonzero/24-bit and the session must be `InWorld`.
+`MoveVehicle { obj_id, movement }` sends the native `MoveType` type-2 body for a controlled slave
+(cart/car/tractor); `movement` must be `Movement::vehicle(pos, yaw, time)` and the session fills the
+send time. `Movement` retains the full `VehicleMove` body (quaternion shadows, angular velocity,
+steering, wheel speeds) and its writer now emits it; ship type 3 still needs its own body.
+`MoveCommand` is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
 `MoveCommand::running(pos, yaw, speed_mps)` (velocity along the facing + full forward input),
 `MoveCommand::stopped(pos, yaw)`, `.with_state(..)`, `.landing(fall_speed_mps)` or struct update
 syntax:
@@ -693,7 +700,9 @@ whatever the speed): the speed has to be measured from the positions. Players se
 pressed direction in `delta_movement` and, in the air, no `STANDING_ON_SOLID` (a jump: `JUMPING` and flags `Moving | Stopping`).
 Mounts move like any unit; the rider gets no movement of its own (the server puts its local position at 0, 0, 0 under the mount).
 An announced player is not announced again to itself: a later `SCUnitState` with our own object id is dropped (it would draw a
-second figure on top of the player).
+second figure on top of the player). Because the local player is not in `Units`, `Player::apply` keeps its own
+`SCUnitAttached` / `SCUnitDetached` on `PlayerSpawn.unit.attached_to` (and only its own object id); the HUD's mount state and
+the local rider view read that field.
 
 ## Moving items
 
@@ -886,10 +895,10 @@ roster refresh alone loses the original localized notices and specific offline/u
 ## NPC shops and banks (2026-10-17)
 
 `Command::Shop(ShopCommand)` exposes `ListSold { npc_obj_id }`,
-`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`, and
+`Sell { npc_obj_id, items: Vec<SellEntry { container, slot, item_id }> }`,
 `Buy { npc_obj_id, doodad_obj_id, buy: Vec<BuyEntry { item_id, grade, count, currency }>,
-buy_back: Vec<i32>, use_aa_point }`. A sale moves the entire stack; split beforehand for a
-partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
+buy_back: Vec<i32>, use_aa_point }`, and `PriestBuff { npc_obj_id, priest_buff_id }`. A sale moves
+the entire stack; split beforehand for a partial sale. Buyback entries are zero-based positions in the latest sold list. Batch counts
 are bytes (at most 255); non-positive purchase counts, invalid buyback slots, duplicate
 sale/buyback entries and invalid containers are rejected locally before sending.
 `Event::Shop(ShopEvent::RequestRejected(message))` reports that local failure.
@@ -929,6 +938,14 @@ already arrive at login in `Inventory.bank_slots` / `bank`; read them with `bank
 `SplitItem` commands with container3. Balances are `PlayerStats.money` / `bank_money`, updated
 by the money tasks; expansion is acknowledged by `InventoryExpanded` and preserves slot items.
 
+`ShopCommand::PriestBuff { npc_obj_id, priest_buff_id }` is `CSBuyPriestBuff` 0x0b2:
+u32 `priest_buffs.id`, then BC NPC object (the server's `read_body`, matching
+`systems/economy/store.rs`). Both zero IDs are refused locally; the server checks the active
+interaction object, dead state, the blessing's copper cost and its buff before the buff/item
+tasks. `ShopCommand::Buy` carries the catalog currency byte unchanged for money(0), honor(1)
+and vocation badges(2), the three values the lane checkout accepts; siege(3) remains a wire
+value only. Tests cover the exact blessing bytes and money/honor/vocation carts.
+
 Opening services uses `Interact::Npc`, then `Interact::Start`: its `SkillList` contains 12087
 for a merchant or 13238 for a banker. Original `ShowInteraction` categories are STORE_NPC=3,
 BANKER_NPC=10. `SelectNpcInteraction(category,0)` is a native no-op (method `3947da30` only
@@ -938,6 +955,22 @@ merchant. The lane bank handlers currently do not enforce an interaction object.
 fields and auto-AA expansion are parsed but ignored. Expansion deducts its configured money
 price without emitting the corresponding MoneyChange task (an explicit C# carry-over in
 `inventory::expand_slot`); the capacity is confirmed but wire balance stays stale until refreshed.
+
+`Interact::BuyCoinItem { doodad_obj_id, func_id }` writes `CSBuyCoinItem` 0x0af (BC doodad,
+u32 `doodad_funcs.id`). The lane resolves the object only as a doodad, finds the current phase's
+function by that id and runs `DoodadFuncPurchase::Use`: it consumes `coin_item_id` /
+`coin_count` through `DOODAD_INTERACTION` and grants `item_id` / `count`. A missing doodad or
+function is logged and changes nothing. There is no NPC lookup in this handler, so the client
+routes only doodad-hosted purchase functions; normal NPC stores still use `CSBuyItems` and its
+money/honor/vocation currency byte.
+
+`Interact::ConvertItemLook { base_id, look_id }` writes `CSConvertItemLook` 0x049 as two u64
+item UIDs. The lane requires both in the inventory, an equipment base template with an
+`ItemLookConvert` entry, and consumes `item_look_convert_required_items` before setting the
+base item's image template; the image item is removed and the receipt is item task reason 111
+(`CONVERT_ITEM_LOOK`). It has no NPC/doodad context check, so the client only opens the original
+converter for an advertised service (the blacksmith `ITEM_FUSION` 23478). `CSChangeItemLook`
+0xfff remains unregistered/logged in the lane and is not used.
 
 `SCItemTaskSuccess` now consumes its trailing `u32 type(id)` and refuses a partial transaction
 with unknown item tasks. `SCCharacterInvenContents` reads exactly `numChunks * 10` slots;
@@ -1413,6 +1446,11 @@ process was restarted or modified. Combined refund claim/delete, buyer win-item 
 post-buyout search, saved balances/item identity and graceful final logout are **not live
 verified**. The complete ignored fixture retains those assertions for a later functional
 lane; no success is fabricated here.
+
+The client HUD consumes this module through the original `x2ui/auction` windows
+(`hud/auction.rs`, `docs/aa-client-hud.md` "Auction house"): `Command::AuctionForCharacter` for all
+six requests, the received page/quote cache for the script queries, and the original chat notices
+for ACKs and refusals.
 
 Read-only diagnosis: every claim starts ItemTxn::begin and takes economy System.ops, a
 lane-wide mutex (inventory.rs:67, economy/mod.rs:129), so a stuck operation can affect all
@@ -1896,6 +1934,12 @@ u8 targetKind 0, bc targetObjId, u8 flag 0. The low-level
 `skill::StartCaster::Mount { obj_id, mount_skill_id }` is also available.
 The player's own object ID is not substituted into the mount caster.
 
+`Command::UseMateSkillAt { skill_id, mate_obj_id, mount_skill_id, pos }` sends the same mount
+caster with a `SkillTargetType::Pos` target (`targetKind` 1 and the packed position): leap,
+cannon, harpoon and artillery mount skills. The IDs have the same nonzero/24-bit rules and the
+position must be finite. No automatic spot/target selection is imposed. `aa-net` has no local
+`MateEvent` for this send; authoritative `SCPlotEvent`/`SCSkillStarted` remain the evidence.
+
 Local `MateEvent::SkillRequested { skill_id, mate_obj_id, mount_skill_id, target_obj_id }`
 and `SkillRejected { same fields, message }` do not create a cast or consume resources.
 Actual SkillStarted/Fired/Ended and costs remain authoritative. The lane's mount authority
@@ -1921,15 +1965,18 @@ library and 2 scripted-session tests, with 9 live tests ignored;
 
 * Korean auth flows (challenge, OTP, ARS) and Mail.Ru / Tencent logins; only the Trion ticket.
 * Server → client packets not decoded (skipped): premium grade of the lobby, guilds,
-  slave lifecycle and mate equipment owner packets
-  (`SCSlaveCreated`, `SCMateEquipmentChanged` ...; the units themselves and riding are decoded, see
-  "Other units' motion"), `SCBuffUpdated` (the lane server never sends it and has no writer for it, so its
-  layout is unknown; a buff's time is refreshed by `SCBuffCreated` with the same index). Add a
+  `SCBuffUpdated` (the lane server never sends it and has no writer for it, so its
+  layout is unknown; a buff's time is refreshed by `SCBuffCreated` with the same index). Houses in
+  the character list (`SCLoginCharInfoHouse`), slave creation/bound/removal/despawn/position/escape/
+  state and slave/mate equipment changes are decoded (see the housing and slave/mate sections);
+  remaining slave/ship UI-specific packets are listed there. Add a
   variant to `game::ServerMsg` + `Event` for each as the UI needs it. A packet in a `DD04` batch
   that is not decoded ends that batch.
 * Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
-  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions.
-  Coin/doodad shops, priest buffs and the other NPC functions still need their own requests.
+  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions,
+  priest blessing (`CSBuyPriestBuff`), doodad coin purchases (`CSBuyCoinItem`) and item-look
+  conversion (`CSConvertItemLook`). NPC-hosted coin shops and the other NPC functions still
+  need a server path.
 * No maximum HP / MP on the wire: `PlayerStats::max_hp` is the highest value seen (a character that
   spawns dead or hurt shows too small a maximum until it has been at full health once) unless the
   application sets the formula value with `PlayerStats::set_max` (the HUD does).
@@ -1940,9 +1987,9 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   `sub_zones` table. The zone group follows the zone chat channel (Shout).
 * NPC names are empty on the wire (the client resolves them from the NPC template); `Unit.kind` has the
   template id. Slaves / transfers / shipyards only decode their core fields.
-* Movement: we only write a plain unit movement (ground, jump, fall with landing velocity); vehicles, ships,
-  standing on / hanging from objects are read (`Movement::read_typed`) but not written. The server does not
-  echo our own movement back.
+* Movement: unit movements (ground, jump, fall with landing velocity) and the type-2 vehicle body
+  (`MoveVehicle`) are written; ships (type 3), ship requests, standing on / hanging from objects are read
+  (`Movement::read_typed`) but not written. The server does not echo our own movement back.
 * Reconnect after a dropped game connection is not attempted (the session reports `Disconnected` and
   returns to idle).
 
@@ -7672,4 +7719,3 @@ character's own shown (active) title. The layouts are the server's (`packets/wor
 * `Appellations` has a revision that the HUD compares to raise its events.
 
 Tests: `cargo test -p aa-net appellation` (6).
-
