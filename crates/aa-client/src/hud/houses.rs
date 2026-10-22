@@ -861,6 +861,24 @@ pub(super) mod tests {
         let _ = std::fs::remove_file(path);
     }
 
+    /// The stock `hud/build_guide.alb` handles `BUILDER_STEP` / `BUILDER_END`: the help tooltip is for `"rotation"` only.
+    #[test]
+    fn the_original_build_guide_shows_for_rotation_and_hides_on_builder_end() {
+        let Ok((rt, _bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        rt.lua
+            .load("GUIDE = {}; local f = ShowBuildGuide; ShowBuildGuide = function(show, ...) GUIDE[#GUIDE + 1] = tostring(show); return f(show, ...) end")
+            .exec()
+            .unwrap();
+        rt.fire_event("BUILDER_STEP", "position");
+        rt.fire_event("BUILDER_STEP", "rotation");
+        rt.fire_event("BUILDER_END", ());
+        let calls: String = rt.lua.load("return table.concat(GUIDE, ',')").eval().unwrap();
+        assert_eq!(calls, "false,true,false", "hidden at position, shown at rotation, hidden at BUILDER_END");
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn get_house_permission_answers_the_script_index_and_the_always_public_flag() {
         let lua = Lua::new();

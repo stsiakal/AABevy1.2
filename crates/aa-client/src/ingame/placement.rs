@@ -573,7 +573,31 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, load_catalog)
         .add_systems(PreUpdate, input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
         .add_systems(Update, (start, finish, track, cursor_icon, log_server).chain().run_if(in_state(Screen::InGame)))
+        .add_systems(Update, builder_events.after(finish).run_if(in_state(Screen::InGame)))
         .add_systems(OnExit(Screen::InGame), leave);
+}
+
+/// The `BUILDER_STEP` argument of the original builder (`FUN_39017410`, table `{"stanby","position","rotation","elevation"}`)
+/// for a house / farm placement; seeds and saplings are not builder placements.
+fn builder_step(session: Option<&Session>) -> Option<&'static str> {
+    let session = session.filter(|s| s.is_house())?;
+    Some(if session.locked() { "rotation" } else { "position" })
+}
+
+/// Raises the original builder's UI events: `BUILDER_STEP(step)` whenever the state changes (the stock
+/// `hud/build_guide.alb` shows its help tooltip for `"rotation"` only) and `BUILDER_END` when the placement ends.
+fn builder_events(placement: Res<Placement>, rt: Option<NonSend<aa_ui::UiRuntime>>, mut last: Local<Option<&'static str>>) {
+    let now = builder_step(placement.session.as_ref());
+    if now == *last {
+        return;
+    }
+    if let Some(rt) = rt.as_deref() {
+        match now {
+            Some(step) => rt.fire_event("BUILDER_STEP", step),
+            None => rt.fire_event("BUILDER_END", ()),
+        }
+    }
+    *last = now;
 }
 
 /// A house create was sent: put the ghost, ring, stones and arrow away in this frame.
@@ -2641,5 +2665,17 @@ mod tests {
         app.update();
         click(&mut app, MouseButton::Left);
         assert!(matches!(sent(&mut app).as_slice(), [Command::CreateDoodad(_)]));
+    }
+
+    #[test]
+    fn the_builder_steps_follow_the_house_state_and_seeds_have_none() {
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        assert_eq!(builder_step(Some(&session)), Some("position"));
+        session.rotating = true;
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        session.quote_requested = true;
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        assert_eq!(builder_step(Some(&Session::new(2, plant(), 0.0))), None);
+        assert_eq!(builder_step(None), None);
     }
 }
