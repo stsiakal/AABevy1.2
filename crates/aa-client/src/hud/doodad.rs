@@ -45,6 +45,9 @@ use super::{HudKeyboardFocus, HudPointerOverUi};
 
 /// Skills the dynamic action bar leaves out (`dynamic_action_bar.lua`, `ShoulPassShow`).
 const HIDDEN_SKILLS: [u32; 2] = [0, 10994];
+/// The Trade Pack Storage use of a ship's chest (`skill 15307`, "Place trade pack in storage chest"): it needs a worn
+/// trade pack, so it is neither the bar's nor F's business while the player carries none (F boards the ship).
+const TRADE_PACK_STORAGE_SKILL: u32 = 15307;
 /// Keys of the dynamic action bar (`do_interaction_1` ... ) that use a doodad.
 const KEYS: usize = 4;
 /// Reach of a doodad use without a skill range, and the slack on top of a skill's `max_range` (the range is to the
@@ -260,6 +263,14 @@ fn to_vec(p: aa_net::Pos) -> Vec3 {
     Vec3::new(p.x, p.y, p.z)
 }
 
+/// Whether the doodad is a use for this player now: a storage chest for a trade pack only when one is worn or the chest was
+/// picked with the right click.
+fn usable_without_pack(data: &HudData, obj_id: u32, skills: &[u32]) -> bool {
+    !skills.contains(&TRADE_PACK_STORAGE_SKILL)
+        || data.doodad.preferred == Some(obj_id)
+        || super::enchant::equipment(data, aa_net::model::slot::BACKPACK as u8).is_some()
+}
+
 /// The doodad in reach whose phase has a skill to use that the bar is about: the one last right clicked, else the
 /// nearest, a doodad behind the player counting up to [`BEHIND`] metres further away than one in front (an inn's
 /// chairs around the Memory Tome).
@@ -268,7 +279,7 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
     let forward = Vec2::new(-data.yaw.sin(), data.yaw.cos());
     let doodad_candidates = doodads.by_id.values().filter_map(|o| {
         let uses = game.doodad.uses(o.func_group_id)?;
-        if uses.skills.is_empty() {
+        if uses.skills.is_empty() || !usable_without_pack(data, o.obj_id, &uses.skills) {
             return None;
         }
         let dist = data.pos.distance(to_vec(o.pos));
@@ -788,12 +799,19 @@ fn execute(
     rt: Option<NonSend<UiRuntime>>,
     bridge: NonSend<HudBridge>,
     doodads: Res<Doodads>,
+    aiming: Option<Res<crate::ingame::ground_target::Aiming>>,
     mut out: MessageWriter<NetCommand>,
     mut failed: MessageWriter<super::alerts::UseFailed>,
 ) {
     let mut d = bridge.0.borrow_mut();
-    let execute = std::mem::take(&mut d.doodad.execute);
-    let chosen = std::mem::take(&mut d.doodad.chosen);
+    let mut execute = std::mem::take(&mut d.doodad.execute);
+    let mut chosen = std::mem::take(&mut d.doodad.chosen);
+    // aiming a ground skill (a ship summon) owns the click: a use button under the cursor must not start a cast that
+    // cancels the aimed one
+    if aiming.is_some_and(|a| a.active()) {
+        execute.clear();
+        chosen.clear();
+    }
     let buys = std::mem::take(&mut d.doodad.coin_buys);
     let focus = d.doodad.focus.clone();
     let mut commands = Vec::new();
@@ -1311,6 +1329,16 @@ mod tests {
         drop(bridge);
         std::fs::remove_file(path)?;
         Ok(())
+    }
+
+    #[test]
+    fn a_ships_pack_chest_is_not_a_use_without_a_worn_trade_pack() {
+        let mut data = HudData::default();
+        assert!(!usable_without_pack(&data, 7, &[TRADE_PACK_STORAGE_SKILL]), "F must board the ship, not offer the chest");
+        assert!(usable_without_pack(&data, 7, &[13312]));
+        data.doodad.preferred = Some(7);
+        assert!(usable_without_pack(&data, 7, &[TRADE_PACK_STORAGE_SKILL]), "picked with the right click");
+        assert!(!usable_without_pack(&HudData::default(), 8, &[TRADE_PACK_STORAGE_SKILL]));
     }
 
     #[test]

@@ -186,6 +186,13 @@ struct Aim {
 #[derive(Resource, Default)]
 pub struct Aiming(Option<Aim>);
 
+impl Aiming {
+    /// A ground skill is being aimed: the HUD's use buttons (a doodad's bar) must not take the click.
+    pub fn active(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
 /// `--ground-press` and friends.
 #[derive(Resource, Default)]
 struct Script {
