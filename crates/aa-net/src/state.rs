@@ -286,6 +286,24 @@ impl Units {
             }
             Event::UnitPvpPointsChanged(change) => return self.by_id.get_mut(&change.obj_id).is_some_and(|unit| unit.apply_pvp_points(change)),
             Event::UnitGmModeChanged(change) => return self.by_id.get_mut(&change.obj_id).is_some_and(|unit| unit.apply_gm_mode(change)),
+            // An accepted part move also names what each end holds afterwards, so the slave's parts follow even
+            // when the `SCUnitEquipmentsChanged` broadcast does not reach this client; it sets, so both agree.
+            Event::Slave(crate::slave::SlaveEvent::EquipmentChanged(change)) if change.success => {
+                let Some(unit) = self.by_id.values_mut().find(|u| matches!(u.kind, crate::model::UnitKind::Slave { tl_id, .. } if tl_id == change.slave_tl_id)) else { return false };
+                let mut changed = false;
+                for (location, after) in [(change.first_location, &change.second_item), (change.second_location, &change.first_item)] {
+                    if location.container != crate::slave_control::SLAVE_EQUIPMENT_CONTAINER {
+                        continue;
+                    }
+                    if let Some(slot) = unit.equipment.slots.get_mut(usize::from(location.slot))
+                        && slot != after
+                    {
+                        *slot = after.clone();
+                        changed = true;
+                    }
+                }
+                return changed;
+            }
             Event::Slave(crate::slave::SlaveEvent::Escaped(escape)) => {
                 let Some(unit) = self.by_id.get_mut(&escape.obj_id) else { return false };
                 if !matches!(unit.kind, crate::model::UnitKind::Slave { .. }) { return false; }
@@ -677,6 +695,40 @@ pub(crate) mod tests {
             owner_db_id: 0,
             data: 0,
         }
+    }
+
+    /// One equipped part keeps the slave's other parts (the unit's slots merge), and an accepted move's reply sets both
+    /// ends as the server settled them even when no `SCUnitEquipmentsChanged` arrived.
+    #[test]
+    fn a_slave_part_move_keeps_the_other_parts_and_the_reply_sets_the_slot() {
+        use crate::model::{Item, UnitKind};
+        use crate::slave::{SlaveEquipmentChange, SlaveEvent};
+        use crate::slave_control::{BAG_CONTAINER, SLAVE_EQUIPMENT_CONTAINER, SlaveItemLocation};
+        let part = |id: u64| Item { template_id: 28852, id, count: 1, ..Item::default() };
+        let mut ship = unit(7);
+        ship.kind = UnitKind::Slave { id: 1, tl_id: 75, template_id: 22, summoner_id: 9 };
+        for slot in [4, 5, 6] {
+            ship.equipment.slots[slot] = Some(part(100 + slot as u64));
+        }
+        let mut world = WorldState::default();
+        world.apply(&Event::UnitSpawned(Box::new(ship)));
+        // the server's broadcast names only the changed slot
+        world.apply(&Event::EquipmentChanged { obj_id: 7, items: vec![(3, Some(part(70)))] });
+        let slots = &world.units.by_id[&7].equipment.slots;
+        assert_eq!([3, 4, 5, 6].map(|s| slots[s].is_some()), [true; 4]);
+        // the reply of an unequip: the bag slot was empty, slave slot 3 held the part
+        let reply = |success| SlaveEquipmentChange {
+            character_id: 1, slave_tl_id: 75, db_slave_id: 1, bts: false,
+            first_item: None, second_item: Some(part(70)),
+            first_location: SlaveItemLocation { container: BAG_CONTAINER, slot: 5 },
+            second_location: SlaveItemLocation { container: SLAVE_EQUIPMENT_CONTAINER, slot: 3 },
+            success,
+        };
+        assert!(!world.units.apply(&Event::Slave(SlaveEvent::EquipmentChanged(reply(false)))));
+        assert!(world.units.apply(&Event::Slave(SlaveEvent::EquipmentChanged(reply(true)))));
+        let slots = &world.units.by_id[&7].equipment.slots;
+        assert_eq!([3, 4, 5, 6].map(|s| slots[s].is_some()), [false, true, true, true]);
+        assert!(!world.units.apply(&Event::Slave(SlaveEvent::EquipmentChanged(reply(true)))), "already settled");
     }
 
     #[test]

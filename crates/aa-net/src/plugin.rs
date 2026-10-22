@@ -145,6 +145,12 @@ macro_rules! net_state {
                 {
                     self.inventory.set_changed();
                 }
+                // the server settles an accepted slave part move with its reply, not an item move
+                if let Event::Slave(crate::slave::SlaveEvent::EquipmentChanged(change)) = event
+                    && self.inventory.bypass_change_detection().apply_slave_equipment_reply(change)
+                {
+                    self.inventory.set_changed();
+                }
                 let now=self.server_clock.mapped_now();
                 if self.battlefield.bypass_change_detection().apply_with_time(event,now) {self.battlefield.set_changed();}
                 self.advance_battlefield_clock();

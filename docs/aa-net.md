@@ -1873,11 +1873,14 @@ separate full-item transaction contract. Slave info/equipment Lua uses **X2Siege
 `PickEquipSlotOfSlave`, `UninstallEquipSlotOfSlave`); this is not an invented X2Slave API.
 Lane slave repair requests are logging-only stubs, and slave target has no
 
-Slave equipment moves (`CSChangeSlaveEquipment`): the server answers with `SCItemTaskSuccess` `ItemMove` tasks whose
-slave end is container `0xF2` (`items::container::EQUIPMENT_SLAVE`) and then `SCUnitEquipmentsChanged`. `Inventory`
-does not hold a slave's parts, so `Inventory::apply_slave_moves` (run by the net state after the generic apply, with the
-owned slave unit's equipment as it was before the move) fills the bag slot with the part that came off the slave
-(unequip, or the part a swap takes off). `Units::slave_local` / `resolve_children` place a child slave (a ship's cannon)
+Slave equipment moves (`CSChangeSlaveEquipment`): the server (`change_slave_equipment` runs `split_or_move_item_ex` with
+`ItemTaskType::INVALID`, which sends no item task) answers with `SCSlaveEquipmentChanged` (both ends as they were before the
+move, `success`) and `SCUnitEquipmentsChanged` (only the changed slave slots; `Units` merges them per slot). The bag is
+settled from the reply: `Inventory::apply_slave_equipment_reply` swaps the two ends on a success and only where the slot
+still holds what the reply says it held, so it is safe next to an `ItemMove` (`apply_slave_moves`, which fills the bag slot
+from the slave unit's equipment when a move with the slave end `0xF2` does arrive) and to a repeated reply; `Units` also
+sets the slave's slot from the reply. Without it the bag kept the equipped part, the next request echoed a stale bag slot
+and the server refused it (a re-equipped cannon never spawned). `Units::slave_local` / `resolve_children` place a child slave (a ship's cannon)
 from its parent slave's frame like `Doodads::resolve_parents` does for doodads.
 registered 1.2 opcode. Slave created/removed/despawn/bound/my-slave/escape packets and
 owned-slave state remain subsequent bounded work.

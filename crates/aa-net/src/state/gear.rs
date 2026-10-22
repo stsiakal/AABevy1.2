@@ -296,6 +296,39 @@ impl Inventory {
         changed
     }
 
+    /// The bag end of an accepted `CSChangeSlaveEquipment`. The server settles the bag with no item move of its own: it
+    /// answers with `SCSlaveEquipmentChanged` carrying both ends as they were before the move, so a success swaps them. An
+    /// end changes only while its slot still holds what the reply says it held (an `ItemMove` that did arrive, or this
+    /// reply seen twice, finds it already settled), so the bag never goes stale and a later request echoes what the server
+    /// has. The slave's own parts come from `SCUnitEquipmentsChanged`.
+    pub fn apply_slave_equipment_reply(&mut self, change: &crate::slave::SlaveEquipmentChange) -> bool {
+        use crate::slave_control::BAG_CONTAINER;
+        if !change.success {
+            return false;
+        }
+        let ends = [
+            (change.first_location, &change.first_item, &change.second_item),
+            (change.second_location, &change.second_item, &change.first_item),
+        ];
+        let mut changed = false;
+        for (location, before, after) in ends {
+            if location.container != BAG_CONTAINER || (before.is_none() && after.is_none()) {
+                continue;
+            }
+            let Some(slot) = self.slot_mut(location.container, usize::from(location.slot)) else { continue };
+            let holds_before = match (slot.as_ref(), before) {
+                (Some(now), Some(before)) => now.id == before.id,
+                (None, None) => true,
+                _ => false,
+            };
+            if holds_before {
+                *slot = after.clone();
+                changed = true;
+            }
+        }
+        changed
+    }
+
     fn remove_by_id(&mut self, id: u64) -> bool {
         let mut removed = false;
         for list in [&mut self.bag[..], &mut self.bank[..], &mut self.equipment.slots[..]] {
@@ -574,6 +607,57 @@ mod tests {
         inv.apply(&equip);
         assert!(!inv.apply_slave_moves(&equip, &parts));
         assert!(inv.bag[4].is_none());
+    }
+
+    fn slave_reply(first: (u8, Option<Item>), second: (u8, Option<Item>), success: bool) -> crate::slave::SlaveEquipmentChange {
+        use crate::slave_control::{BAG_CONTAINER, SLAVE_EQUIPMENT_CONTAINER, SlaveItemLocation};
+        crate::slave::SlaveEquipmentChange {
+            character_id: 1, slave_tl_id: 2, db_slave_id: 3, bts: false,
+            first_item: first.1, second_item: second.1,
+            first_location: SlaveItemLocation { container: BAG_CONTAINER, slot: first.0 },
+            second_location: SlaveItemLocation { container: SLAVE_EQUIPMENT_CONTAINER, slot: 3 },
+            success,
+        }
+    }
+
+    #[test]
+    fn an_accepted_slave_part_move_settles_the_bag_from_the_reply() {
+        let mut inv = Inventory::default();
+        inv.apply(&selected(10));
+        let (cannon, other) = (item(28852, 70, 1), item(28852, 71, 1));
+        inv.bag[5] = Some(cannon.clone());
+        inv.bag[6] = Some(other.clone());
+        // equip into an empty slave slot: the bag slot empties, the neighbours stay
+        assert!(inv.apply_slave_equipment_reply(&slave_reply((5, Some(cannon.clone())), (3, None), true)));
+        assert!(inv.bag[5].is_none() && inv.bag[6] == Some(other.clone()));
+        // seen twice: nothing more happens
+        assert!(!inv.apply_slave_equipment_reply(&slave_reply((5, Some(cannon.clone())), (3, None), true)));
+        // unequip into the free bag slot: the part arrives
+        assert!(inv.apply_slave_equipment_reply(&slave_reply((5, None), (3, Some(cannon.clone())), true)));
+        assert_eq!(inv.bag[5], Some(cannon.clone()));
+        assert!(!inv.apply_slave_equipment_reply(&slave_reply((5, None), (3, Some(cannon.clone())), true)));
+        // swap with a worn part: the bag slot takes the old part
+        let old = item(28853, 72, 1);
+        assert!(inv.apply_slave_equipment_reply(&slave_reply((6, Some(other.clone())), (3, Some(old.clone())), true)));
+        assert_eq!(inv.bag[6], Some(old));
+        // a refused move and a bag that no longer holds what the reply names change nothing
+        assert!(!inv.apply_slave_equipment_reply(&slave_reply((5, Some(cannon.clone())), (3, None), false)));
+        assert!(!inv.apply_slave_equipment_reply(&slave_reply((8, Some(other)), (3, None), true)));
+        assert_eq!(inv.bag[5], Some(cannon));
+    }
+
+    /// An `ItemMove` for the same transfer (the generic path) and the reply do not apply twice.
+    #[test]
+    fn a_slave_part_move_with_both_an_item_move_and_the_reply_applies_once() {
+        use crate::items::container::{EQUIPMENT_SLAVE, INVENTORY};
+        let mut inv = Inventory::default();
+        inv.apply(&selected(10));
+        let cannon = item(28852, 70, 1);
+        inv.bag[5] = Some(cannon.clone());
+        inv.apply(&tasks(0, vec![ItemTask::Move { from_container: INVENTORY, from_slot: 5, from_item_id: 70, to_container: EQUIPMENT_SLAVE, to_slot: 3, to_item_id: 0 }]));
+        assert!(inv.bag[5].is_none());
+        assert!(!inv.apply_slave_equipment_reply(&slave_reply((5, Some(cannon)), (3, None), true)));
+        assert!(inv.bag[5].is_none());
     }
 
     #[test]
