@@ -145,6 +145,7 @@ fn valid_stable(data: &HudData, units: &Units, npc: (u32, u32)) -> bool {
         && data.game.get().is_some_and(|game| game.pets.stables.contains(&npc.1))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn update(
     mut events: MessageReader<NetEvent>,
     rt: Option<NonSend<UiRuntime>>,
@@ -153,6 +154,9 @@ pub(super) fn update(
     units: Res<Units>,
     mates: Option<Res<aa_net::Mates>>,
     mut net: MessageWriter<NetCommand>,
+    mut mounting: Option<ResMut<crate::ingame::mount::MountFlow>>,
+    collision: Option<Res<aa_world::WorldCollision>>,
+    keys: Option<(Res<crate::settings::Actions>, Res<super::HudKeyboardFocus>)>,
 ) {
     let Some(rt) = rt else {
         events.clear();
@@ -170,6 +174,10 @@ pub(super) fn update(
             data.pets = default();
             events.clear();
             return;
+        }
+        // F (`do_interaction_1`) next to the own mate mounts it
+        if keys.as_ref().is_some_and(|(actions, typing)| !typing.0 && actions.just_pressed("do_interaction_1", 0)) {
+            owned::mount_near(&mut data);
         }
         for NetEvent(event) in events.read() {
             equipment.extend(owned::equipment_slots(&data, event));
@@ -219,7 +227,7 @@ pub(super) fn update(
                 net.write(NetCommand(Command::Mate(MateCommand::ReviveItems { npc_obj_id: npc.0 })));
             }
         }
-        if let Some(mates)=mates { owned::commands(&mut data,&player,&units,&mates,&mut net); }
+        if let Some(mates)=mates { owned::commands(&mut data,&player,&units,&mates,&mut net,(mounting.as_deref_mut(),collision.as_deref(),&mut errors)); }
     }
     owned::push(&rt,&bridge.0);
     for slot in equipment { rt.fire_event("UNIT_NPC_EQUIPMENT_CHANGED", slot); }

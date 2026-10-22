@@ -168,6 +168,7 @@ opcodes! {
         CSSetPingPosPacket = 0x087,
         CSAskRiskyTeamActionPacket = 0x088,
         CSMoveUnitPacket = 0x089,
+        CSCreateSkillControllerPacket = 0x08b,
         CSLootOpenBagPacket = 0x08e,
         CSLootItemPacket = 0x08f,
         CSLootCloseBagPacket = 0x090,

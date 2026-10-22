@@ -112,20 +112,30 @@ fn local_modes_use_attackable_and_active_command_duplicate_guards() {
 
 #[test]
 fn mount_reason_follows_native_approach_and_seat_rules() {
+    // The player stands at the origin; the mate faces +y (yaw 0) unless a test turns it.
     let mut data = HudData::default();
     data.pos = Vec3::ZERO;
-    data.yaw = 0.0; // faces +y
+    data.yaw = 2.0; // the player's own facing does not matter
     let at = |x: f32, y: f32| Vec3::new(x, y, 0.0);
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, false), 4, "in front");
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), true, false), 1, "front + occupied driver seat");
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, true), 4, "front ignores the passenger seat");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, false), 3, "behind");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, true), 1, "behind + occupied passenger seat");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), true, false), 3, "behind ignores the driver seat");
-    assert_eq!(mount_reason(&data, at(1.0, 0.0), false, false), 2, "right side");
-    assert_eq!(mount_reason(&data, at(-1.0, 0.0), false, false), 1, "left side");
-    assert_eq!(mount_reason(&data, at(1.0, 0.0), true, false), 1, "driver seat wins on the side");
-    assert_eq!(mount_reason(&data, Vec3::ZERO, false, false), 2, "under the seat is the side split");
+    // the mate stands ahead of the player and faces away from it: the player is behind the mate
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, false, false), 3, "behind the mate");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, false, true), 1, "behind + occupied passenger seat");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, true, false), 3, "behind ignores the driver seat");
+    // the mate faces the player: the player is in front of the mate
+    let toward = std::f32::consts::PI;
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, false, false), 4, "in front of the mate");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, true, false), 1, "front + occupied driver seat");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, false, true), 4, "front ignores the passenger seat");
+    // the mate at +x of the player and facing +y: the player is on the mate's left
+    assert_eq!(mount_reason(&data, at(3.0, 0.0), 0.0, false, false), 1, "left side");
+    assert_eq!(mount_reason(&data, at(-3.0, 0.0), 0.0, false, false), 2, "right side");
+    assert_eq!(mount_reason(&data, at(3.0, 0.0), 0.0, true, true), 1, "left side, seats ignored");
+    assert_eq!(mount_reason(&data, at(-3.0, 0.0), 0.0, true, true), 2, "right side ignores the driver seat");
+    assert_eq!(mount_reason(&data, Vec3::ZERO, 0.0, false, false), 2, "under the seat is the side split");
+    // the band edge: 0.96 is cos(16.3 deg)
+    let near = 16.0_f32.to_radians();
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), near, false, false), 3, "inside the back cone");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 17.0_f32.to_radians(), false, false), 1, "outside it: the side by the cross sign");
 }
 
 #[test]
@@ -187,7 +197,10 @@ fn original_pet_mount_dismiss_and_action_bar_controls() -> Result<(), Box<dyn st
         .add_systems(Update, super::super::update);
     let drain = |app: &mut App| app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
     app.update();
-    assert!(drain(&mut app).is_empty());
+    // The summoned mate is pointed at its owner once, like the original (`CSChangeMateTarget`), and nothing else goes out.
+    assert!(matches!(drain(&mut app).as_slice(), [Command::Mate(MateCommand::Target { .. })]));
+    app.update();
+    assert!(drain(&mut app).is_empty(), "the target is sent once per mate");
     // The speed getter is the last received movement speed (3,4 m/s -> 5 m/s).
     app.world_mut()
         .resource_mut::<Units>()
@@ -427,5 +440,72 @@ fn original_chat_and_portal_name_dialogs_keep_case_spaces_and_distinct_limits() 
     if path.exists() {
         std::fs::remove_file(path)?;
     }
+    Ok(())
+}
+
+#[test]
+fn mounting_starts_the_walk_controller_instead_of_sending_at_once() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
+    let _ = path;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .insert_non_send(rt)
+        .insert_non_send(HudBridge(bridge.clone()))
+        .insert_resource(player)
+        .insert_resource(units)
+        .insert_resource(mates)
+        .init_resource::<crate::ingame::mount::MountFlow>()
+        .add_message::<NetEvent>()
+        .add_message::<NetCommand>()
+        .add_systems(Update, super::super::update);
+    app.update();
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+    }
+    let runtime = app.world().non_send::<UiRuntime>();
+    super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_MOUNT]")?;
+    app.update();
+    let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).filter(|c| !matches!(c, Command::Mate(MateCommand::Target { .. }))).collect::<Vec<_>>();
+    assert!(sent.is_empty(), "CSMountMate waits for the controller: {sent:?}");
+    assert!(app.world().resource::<crate::ingame::mount::MountFlow>().active());
+    Ok(())
+}
+
+#[test]
+fn f_next_to_the_own_mate_starts_the_mount_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
+    let _ = path;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .insert_non_send(rt)
+        .insert_non_send(HudBridge(bridge.clone()))
+        .insert_resource(player)
+        .insert_resource(units)
+        .insert_resource(mates)
+        .init_resource::<crate::ingame::mount::MountFlow>()
+        .init_resource::<crate::settings::Actions>()
+        .init_resource::<crate::hud::HudKeyboardFocus>()
+        .add_message::<NetEvent>()
+        .add_message::<NetCommand>()
+        .add_systems(Update, super::super::update);
+    app.update();
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+        let far = data.pos + Vec3::new(30.0, 0.0, 0.0);
+        data.pets.owned.current.as_mut().expect("own mate").pos = far;
+    }
+    app.world_mut().resource_mut::<crate::settings::Actions>().tap_for_test("do_interaction_1");
+    app.update();
+    assert!(!app.world().resource::<crate::ingame::mount::MountFlow>().active(), "30 m away F does nothing");
+    {
+        let mut data = bridge.borrow_mut();
+        let near = data.pos + Vec3::new(2.0, 0.0, 0.0);
+        data.pets.owned.current.as_mut().unwrap().pos = near;
+    }
+    app.world_mut().resource_mut::<crate::settings::Actions>().tap_for_test("do_interaction_1");
+    app.update();
+    assert!(app.world().resource::<crate::ingame::mount::MountFlow>().active(), "F within reach of the own mate mounts it");
     Ok(())
 }

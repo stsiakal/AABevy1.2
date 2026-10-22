@@ -149,6 +149,8 @@ pub enum ClientMsg {
     Battlefield(crate::battlefield::BattlefieldCommand),
     Actability(crate::actability::ActabilityCommand),
     Mate(crate::mate::MateCommand),
+    /// `CSCreateSkillController`: the local unit's controller changed, see [`crate::skill::controller_kind`].
+    CreateSkillController { obj_id: u32, sc_type: u8, fall_damage_immune: bool },
     Slave(crate::slave_control::SlaveCommand),
     Auction(crate::auction::AuctionCommand),
     Trade(crate::trade::TradeCommand),
@@ -234,6 +236,7 @@ impl ClientMsg {
             Self::Battlefield(m) => m.opcode(),
             Self::Actability(m) => m.opcode(),
             Self::Mate(m) => m.opcode(),
+            Self::CreateSkillController { .. } => cs::CSCreateSkillControllerPacket,
             Self::Slave(m) => m.opcode(),
             Self::Auction(m) => m.opcode(),
             Self::Trade(m) => m.opcode(),
@@ -359,6 +362,9 @@ impl ClientMsg {
             Self::Battlefield(m) => m.write(&mut w),
             Self::Actability(m) => m.write(&mut w),
             Self::Mate(m) => m.write(&mut w),
+            Self::CreateSkillController { obj_id, sc_type, fall_damage_immune } => {
+                w.bc(*obj_id).u8(*sc_type).bool(*fall_damage_immune);
+            }
             Self::Slave(m) => m.write(&mut w),
             Self::Auction(m) => m.write(&mut w),
             Self::Trade(m) => m.write(&mut w),
@@ -1885,6 +1891,14 @@ mod tests {
         };
         assert_eq!(m.encode_body(), [0xD4, 0x46, 0, 0, 0, 0x02, 0x01, 0, 0, 0x0C, 0x0B, 0x0A, 0]);
         assert_eq!(m.encode(1)[..6], [0xDD, 0x01, 0, 1, 0x52, 0x00]);
+        // CSCreateSkillController: bc object, controller type, fall damage immunity (the server's reader layout).
+        let sc = ClientMsg::CreateSkillController { obj_id: 0x0102, sc_type: crate::skill::controller_kind::MOUNT_HORSE, fall_damage_immune: false };
+        assert_eq!(sc.encode_body(), [0x02, 0x01, 0, 8, 0]);
+        assert_eq!(sc.encode(2)[..6], [0xDD, 0x01, 0, 2, 0x8b, 0x00]);
+        assert_eq!(
+            ClientMsg::CreateSkillController { obj_id: 0x0A0B0C, sc_type: crate::skill::controller_kind::NONE, fall_damage_immune: true }.encode_body(),
+            [0x0C, 0x0B, 0x0A, 0, 1]
+        );
         // CSStopCasting: timeline, plot timeline, the unit.
         let stop = ClientMsg::StopCasting { tl: 7, plot_tl: 0, obj_id: 0x0102 };
         assert_eq!(stop.encode_body(), [7, 0, 0, 0, 0x02, 0x01, 0]);

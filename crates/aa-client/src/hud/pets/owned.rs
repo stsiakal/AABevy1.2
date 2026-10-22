@@ -129,6 +129,8 @@ struct Pet {
     /// The horizontal speed of the last received movement report (m/s).
     speed: f32,
     pos: Vec3,
+    /// The mount's facing (radians), for the entry side of `CSMountMate`.
+    yaw: f32,
     info: Option<super::super::stats::MateDetails>,
 }
 
@@ -144,6 +146,7 @@ struct TargetMount {
     seat2: bool,
     distance: f32,
     pos: Vec3,
+    yaw: f32,
 }
 
 /// Where the local player sits (the server's `SCUnitAttached` for its own object).
@@ -186,6 +189,8 @@ pub(super) struct View {
     last_action_ms: Option<u64>,
     /// A mounted dismiss continues with `CSRemoveMate` after the server's detach.
     pending_dismiss: bool,
+    /// The mate whose target the client already set to its owner (native `FUN_3933b0f0` sends `CSChangeMateTarget` only on a change).
+    targeted: Option<(u32, u16, u32)>,
     requests: Vec<Request>,
 }
 
@@ -264,6 +269,7 @@ pub(super) fn refresh(world: &World, data: &mut HudData) {
             seat2,
             distance: (dx * dx + dy * dy + dz * dz).sqrt() as f32,
             pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
+            yaw: unit.yaw(),
         })
     })();
     let next = (|| {
@@ -323,6 +329,7 @@ pub(super) fn refresh(world: &World, data: &mut HudData) {
             seat2,
             speed: reported_speed(unit),
             pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
+            yaw: unit.yaw(),
             info: game.and_then(|game| super::super::stats::mate_details(game, unit, native_buffs)),
         })
     })();
@@ -347,7 +354,7 @@ fn on_vehicle_cooldown(data: &HudData) -> bool {
     data.pets
         .owned
         .last_action_ms
-        .is_some_and(|then| now_ms(data).saturating_sub(then) <= 1999)
+        .is_some_and(|then| now_ms(data).saturating_sub(then) < crate::ingame::mount_anim::COOLDOWN_MS)
 }
 
 /// The native controller/casting/channel gate of `CanDismiss` (reason 7 from `39357830`).
@@ -365,7 +372,7 @@ fn mount_seats(data: &HudData, model: u32) -> (bool, bool) {
 
 fn own_pet_can_mount(data: &HudData) -> bool {
     let Some(pet) = &data.pets.owned.current else { return false };
-    if pet.mounted || pet.dead || data.pos.distance(pet.pos) > 25.0 || casting(data) || on_vehicle_cooldown(data) {
+    if pet.mounted || pet.dead || data.pos.distance(pet.pos) > crate::ingame::mount_anim::MOUNT_RANGE || casting(data) || on_vehicle_cooldown(data) {
         return false;
     }
     let (driver, _) = mount_seats(data, pet.model);
@@ -373,7 +380,7 @@ fn own_pet_can_mount(data: &HudData) -> bool {
 }
 
 fn target_mount_point(data: &HudData, target: &TargetMount) -> Option<u8> {
-    if target.dead || target.distance > 25.0 || casting(data) || on_vehicle_cooldown(data) {
+    if target.dead || target.distance > crate::ingame::mount_anim::MOUNT_RANGE || casting(data) || on_vehicle_cooldown(data) {
         return None;
     }
     let (driver, passenger) = mount_seats(data, target.model);
@@ -399,36 +406,21 @@ fn can_mount_any(data: &HudData) -> bool {
             .is_some_and(|t| target_mount_point(data, t).is_some())
 }
 
-/// Native `FUN_3909ae90`: the approach-geometry reason byte for `CSMountMate`. It is the direction
-/// from the mount to the player projected on the player's forward: `>= 0.96` is behind (3), `< -0.96`
-/// in front (4), the band between is the left/right side (1/2 by the cross sign). An occupied
-/// passenger seat forces 1 for a rear approach; an occupied driver seat forces 1 otherwise.
-fn mount_reason(data: &HudData, mount_pos: Vec3, seat1: bool, seat2: bool) -> u8 {
-    let diff = mount_pos - data.pos;
-    let fwd = Vec2::new(-data.yaw.sin(), data.yaw.cos());
-    let len = diff.truncate().length();
-    if len <= 1e-5 {
-        return 2;
-    }
-    let dot = -(diff.x * fwd.x + diff.y * fwd.y) / len;
-    if 0.96 <= dot {
-        if seat2 { 1 } else { 3 }
-    } else if dot < -0.96 {
-        if seat1 { 1 } else { 4 }
-    } else if seat1 {
-        1
-    } else if diff.x * fwd.y - diff.y * fwd.x >= 0.0 {
-        2
-    } else {
-        1
-    }
+/// Native `FUN_3909ae90`: the approach-geometry reason byte for `CSMountMate`. `d` is the unit
+/// direction from the player to the mount and `f` the **mount's** forward vector: `d.f >= 0.96` is
+/// the player behind the mount (3; 1 when the passenger seat is taken), `< -0.96` in front of it
+/// (4; 1 when the driver seat is taken), the band between is the mount's left/right side by the
+/// sign of `d.y*f.x - d.x*f.y` (2 right, 1 left) with no occupancy override.
+fn mount_reason(data: &HudData, mount_pos: Vec3, mount_yaw: f32, seat1: bool, seat2: bool) -> u8 {
+    crate::ingame::mount_anim::entry_reason(data.pos, mount_pos, mount_yaw, seat1, seat2)
 }
 
-fn queue_mount(data: &mut HudData, obj_id: u32, tl_id: u16, point: u8, seats: (bool, bool), mount_pos: Vec3, own: Option<(u32, u16, u32)>) {
+#[allow(clippy::too_many_arguments)]
+fn queue_mount(data: &mut HudData, obj_id: u32, tl_id: u16, point: u8, seats: (bool, bool), mount_pos: Vec3, mount_yaw: f32, own: Option<(u32, u16, u32)>) {
     if on_vehicle_cooldown(data) || casting(data) {
         return;
     }
-    let reason = mount_reason(data, mount_pos, seats.0, seats.1);
+    let reason = mount_reason(data, mount_pos, mount_yaw, seats.0, seats.1);
     data.pets.owned.last_action_ms = Some(now_ms(data));
     let command = MateCommand::Mount { tl_id, point, reason };
     if command.validate().is_err() {
@@ -445,7 +437,7 @@ fn mount_mate(data: &mut HudData) {
     if let Some(target) = data.pets.owned.target_mount.clone()
         && let Some(point) = target_mount_point(data, &target)
     {
-        queue_mount(data, target.obj_id, target.tl_id, point, (target.seat1, target.seat2), target.pos, None);
+        queue_mount(data, target.obj_id, target.tl_id, point, (target.seat1, target.seat2), target.pos, target.yaw, None);
         return;
     }
     let Some(pet) = data.pets.owned.current.clone() else { return };
@@ -453,7 +445,7 @@ fn mount_mate(data: &mut HudData) {
         return;
     }
     let own = Some(pet.identity());
-    queue_mount(data, pet.object, pet.spawn.tl_id, 1, (pet.seat1, pet.seat2), pet.pos, own);
+    queue_mount(data, pet.object, pet.spawn.tl_id, 1, (pet.seat1, pet.seat2), pet.pos, pet.yaw, own);
 }
 
 fn unmount_mate(data: &mut HudData) {
@@ -865,6 +857,23 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     Ok(())
 }
 
+/// How close the own mate must stand for the interaction key (F) to mount it: the interaction reach,
+/// well inside the 25 m of the pet bar command; the mount flow then walks the last metres.
+pub(super) const KEY_MOUNT_REACH: f32 = 6.0;
+
+/// F next to the own, unmounted mate mounts it without selecting it (the original gives no dynamic
+/// action bar while riding; dismounting is the pet bar command).
+pub(super) fn mount_near(data: &mut HudData) {
+    if data.pets.owned.mounted || data.pets.owned.local_mount.is_some() || data.loot.nearest.is_some() || data.doodad.claims_key() {
+        return;
+    }
+    let Some(pet) = &data.pets.owned.current else { return };
+    if data.pos.distance(pet.pos) > KEY_MOUNT_REACH {
+        return;
+    }
+    mount_mate(data);
+}
+
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     let (old, next, old_mount, new_mount) = {
         let mut data = bridge.borrow_mut();
@@ -890,8 +899,18 @@ pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     // `MOUNT_PET(isMyPet)` / `UNMOUNT_PET(isMyPet)`: the native event follows the local player's
     // own seat, including a passenger seat on somebody else's mount.
     match (old_mount, new_mount) {
-        (None, Some(m)) => rt.fire_event("MOUNT_PET", m.own),
-        (Some(m), None) => rt.fire_event("UNMOUNT_PET", m.own),
+        (None, Some(m)) => {
+            rt.fire_event("MOUNT_PET", m.own);
+            if m.own {
+                rt.fire_event("DYNAMIC_ACTION_BAR_SHOW", ("mate", m.obj_id.to_string()));
+            }
+        }
+        (Some(m), None) => {
+            rt.fire_event("UNMOUNT_PET", m.own);
+            if m.own {
+                rt.fire_event("DYNAMIC_ACTION_BAR_HIDE", ());
+            }
+        }
         (Some(a), Some(b)) if a.obj_id != b.obj_id => {
             rt.fire_event("UNMOUNT_PET", a.own);
             rt.fire_event("MOUNT_PET", b.own);
@@ -993,9 +1012,43 @@ pub(super) fn event(data: &mut HudData, event: &Event) -> Option<(bool, u32)> {
     None
 }
 
-pub(super) fn commands(data: &mut HudData, player: &Player, units: &Units, mates: &Mates, net: &mut MessageWriter<NetCommand>) {
+/// What the original does before it walks to a mate (`FUN_3935aa10`): the mate must be in line of sight of the player. Without the
+/// collision world (a test) nothing blocks.
+fn mount_blocked(collision: Option<&aa_world::WorldCollision>, from: Vec3, to: Vec3) -> bool {
+    let Some(collision) = collision else { return false };
+    let (a, b) = (from + Vec3::Z, to + Vec3::Z);
+    let dir = b - a;
+    let len = dir.length();
+    len > 1.0 && collision.raycast_mask(a, dir / len, len - 0.5, aa_world::collide::Mask::CAMERA).is_some()
+}
+
+/// The text of system message 0x6b (`mate_cannot_mount_blocked`).
+const MOUNT_BLOCKED: &str = "You can't mount that: something is in the way.";
+
+pub(super) fn commands(
+    data: &mut HudData,
+    player: &Player,
+    units: &Units,
+    mates: &Mates,
+    net: &mut MessageWriter<NetCommand>,
+    (mut flow, collision, messages): (Option<&mut crate::ingame::mount::MountFlow>, Option<&aa_world::WorldCollision>, &mut Vec<String>),
+) {
     let owner = player.spawn.as_ref().map_or(0, |p| p.character().id);
     let actual = current(mates, units, owner).map(|(unit, spawn)| (unit.obj_id, spawn.tl_id, spawn.id));
+    // The original points a summoned mate at its owner once (`FUN_3933c8f0` -> `FUN_3933b0f0`: `CSChangeMateTarget` with the player's
+    // object id, sent while the stored target differs).
+    if let (Some(identity), Some(spawn)) = (actual, player.spawn.as_ref())
+        && owner != 0
+        && data.pets.owned.targeted != Some(identity)
+    {
+        data.pets.owned.targeted = Some(identity);
+        let command = MateCommand::Target { tl_id: identity.1, target_obj_id: spawn.obj_id };
+        if command.validate().is_ok() {
+            net.write(NetCommand(Command::Mate(command)));
+        }
+    } else if actual.is_none() {
+        data.pets.owned.targeted = None;
+    }
     for request in std::mem::take(&mut data.pets.owned.requests) {
         if owner == 0 || owner != request.owner || data.character_id != owner {
             continue;
@@ -1007,9 +1060,25 @@ pub(super) fn commands(data: &mut HudData, player: &Player, units: &Units, mates
                 .get(request.obj_id)
                 .is_some_and(|u| matches!(u.kind, UnitKind::Mate { tl_id, .. } if tl_id == request.tl_id) && !u.dead),
         };
-        if valid {
-            net.write(NetCommand(Command::Mate(request.command)));
+        if !valid {
+            continue;
         }
+        // Mounting is not immediate: the controller walks the player to the mate and sends `CSMountMate` within 3 m.
+        if let (MateCommand::Mount { tl_id, point, .. }, Some(flow)) = (&request.command, flow.as_deref_mut()) {
+            let Some(mate) = units.get(request.obj_id) else { continue };
+            if mount_blocked(collision, data.pos, Vec3::new(mate.pos.x, mate.pos.y, mate.pos.z)) {
+                messages.push(MOUNT_BLOCKED.to_string());
+            } else {
+                flow.begin(request.obj_id, *tl_id, *point);
+            }
+            continue;
+        }
+        // A dismiss goes out when the `UnMountHorseController` ends (1 s after its start, the original model action).
+        if let (MateCommand::Dismiss { .. }, Some(flow)) = (&request.command, flow.as_deref_mut()) {
+            flow.start_unmount(10, Some(Command::Mate(request.command)));
+            continue;
+        }
+        net.write(NetCommand(Command::Mate(request.command)));
     }
 }
 

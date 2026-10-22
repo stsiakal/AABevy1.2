@@ -1076,3 +1076,15 @@ pub(crate) fn write_item_effect_start(w:&mut Writer,skill_id:u32,self_obj_id:u32
     w.u8(3).bc(self_obj_id).u64(target.id).u32(target.template_id).u8(target.grade);
     if let Some(auto)=auto_aa {w.u8(7).u32(support.map_or(0,|v|v.template_id)).u64(support.map_or(0,|v|v.id)).bool(auto);} else {w.u8(0);}
 }
+
+/// The `CSCreateSkillController` type byte: the kind of the local player's active controller object (the `+8` virtual of the
+/// x2game controller classes `399a30b8` / `399a3108`, read from their code). The client announces every start with the
+/// kind and every end with [`NONE`]; `fall_damage_immune` is the `+0x24` virtual, false for both (the end report has no value).
+pub mod controller_kind {
+    /// The controller ended.
+    pub const NONE: u8 = 0;
+    /// The `MountHorse Controller` (`FUN_390a5f00`): the walk to the mate and the 2 s wait after `CSMountMate`.
+    pub const MOUNT_HORSE: u8 = 8;
+    /// The `UnMountHorseController` (`FUN_390a6110`): 500 ms after a reason 9 unmount, 1000 ms for reason 10 (dismiss).
+    pub const UNMOUNT_HORSE: u8 = 9;
+}

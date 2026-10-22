@@ -668,7 +668,7 @@ const MOUNT_SWIM_DEPTH: f32 = 1.3;
 /// The systems that follow the movement packets and the idle poses; they run around the main chain of `sync_views`,
 /// `move_units` and `cull_units` (registered by [`super::InGamePlugin`]) and [`super::anim::drive_locomotion`].
 pub fn plugin(app: &mut App) {
-    app.add_systems(
+    app.init_resource::<super::mount::AttachReasons>().init_resource::<super::mount::MountFlow>().add_systems(
         Update,
         (
             receive_moves.before(move_units),
@@ -680,6 +680,10 @@ pub fn plugin(app: &mut App) {
                 super::ship::drive_ship,
                 super::ship::board_deck,
                 super::mount::fake_mount,
+                super::mount::record_attach_reasons,
+                super::mount::tag_mates,
+                super::mount::drive_mount_flow,
+                super::mount::unmount_controller_on_detach,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,
                 super::mount::start_stop_local_riding,
@@ -858,7 +862,7 @@ pub fn move_units(
             // a creature, mount or player character (not a ship, which only floats) in deep water swims, when its model has the clips
             let swimming = !floating
                 && ground.zip(water.as_deref()).is_some_and(|(g, w)| w.water_at(Vec3::new(pos.x, pos.y, g + 0.1)).is_some_and(|(surface, _)| surface - g > MOUNT_SWIM_DEPTH && pos.z < surface));
-            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character && !swimming, swimming };
+            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character && !swimming, swimming, auto: false, request: None };
         }
     }
     if measure {
