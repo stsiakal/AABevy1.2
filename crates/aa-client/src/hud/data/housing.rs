@@ -27,6 +27,23 @@ pub struct ItemHousing {
     pub design_id: u32,
 }
 
+/// A `housing_binding_doodads` row (`owner_type = 'Housing'`): a built-in doodad of a house template.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HousingBindingDoodad {
+    pub id: u32,
+    pub housing_id: u32,
+    pub doodad_id: u32,
+}
+
+/// A `housing_deco_limit_elems` row: the decoration cap of one actability group.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HousingDecoLimitElem {
+    pub id: u32,
+    pub housing_deco_limit_id: u32,
+    pub deco_actability_group_id: u32,
+    pub count: u32,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ItemHousingDecoration {
     pub id: u32,
@@ -72,6 +89,8 @@ pub struct HousingTemplate {
     pub heavy_tax: bool,
     pub always_public: bool,
     pub build_steps: Vec<HousingBuildStep>,
+    /// `housing_binding_doodads.doodad_id` (the built-in doodads spawned with the finished house).
+    pub binding_doodads: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -137,6 +156,10 @@ pub struct Tables {
     pub item_housings: Vec<ItemHousing>,
     /// `item_housings.item_id` -> design (`housings.id`).
     pub housing_design_by_item: HashMap<u32, u32>,
+    pub housing_binding_doodads: Vec<HousingBindingDoodad>,
+    pub deco_limit_elems: Vec<HousingDecoLimitElem>,
+    /// `deco_actability_groups.id` -> name.
+    pub deco_actability_groups: HashMap<u32, String>,
     pub housings: HashMap<u32, HousingTemplate>,
     pub decorations: HashMap<u32, HousingDecoration>,
     /// `housing_decorations.doodad_id` -> first decoration row, as the server's `FirstOrDefault`.
@@ -206,6 +229,7 @@ impl Tables {
                         heavy_tax: any_flag(r, 27)?,
                         always_public: any_flag(r, 28)?,
                         build_steps: Vec::new(),
+                        binding_doodads: Vec::new(),
                     },
                 );
             }
@@ -246,6 +270,46 @@ impl Tables {
 
         for house in t.housings.values_mut() {
             house.build_steps.sort_by_key(|step| step.step);
+        }
+
+        {
+            // The C# runs one query per template; the rows of other owners ('Ship') are not houses.
+            let mut q = conn.prepare(
+                "SELECT id, owner_id, doodad_id FROM housing_binding_doodads WHERE owner_type = 'Housing' ORDER BY id",
+            )?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                let row = HousingBindingDoodad {
+                    id: any_int(r, 0)?.max(0) as u32,
+                    housing_id: any_int(r, 1)?.max(0) as u32,
+                    doodad_id: any_int(r, 2)?.max(0) as u32,
+                };
+                if let Some(house) = t.housings.get_mut(&row.housing_id) {
+                    house.binding_doodads.push(row.doodad_id);
+                }
+                t.housing_binding_doodads.push(row);
+            }
+        }
+
+        {
+            let mut q = conn.prepare("SELECT id, housing_deco_limit_id, deco_actability_group_id, count FROM housing_deco_limit_elems ORDER BY id")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                t.deco_limit_elems.push(HousingDecoLimitElem {
+                    id: any_int(r, 0)?.max(0) as u32,
+                    housing_deco_limit_id: any_int(r, 1)?.max(0) as u32,
+                    deco_actability_group_id: any_int(r, 2)?.max(0) as u32,
+                    count: any_int(r, 3)?.max(0) as u32,
+                });
+            }
+        }
+
+        {
+            let mut q = conn.prepare("SELECT id, name FROM deco_actability_groups")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                t.deco_actability_groups.insert(any_int(r, 0)?.max(0) as u32, r.get::<_, Option<String>>(1)?.unwrap_or_default());
+            }
         }
 
         {
@@ -417,6 +481,33 @@ impl Tables {
         self.decoration_design_by_item.get(&item_id).copied()
     }
 
+    /// The decoration of a doodad template and item template (`decoration_for_item`): some 1.2
+    /// decorations share a doodad model, so the item identity picks the design.
+    pub fn decoration_for_item(&self, doodad_id: u32, item_id: u32) -> Option<&HousingDecoration> {
+        self.item_housing_decorations
+            .iter()
+            .filter(|row| row.item_id == item_id)
+            .find_map(|row| self.decorations.get(&row.design_id).filter(|d| d.doodad_id == doodad_id))
+    }
+
+    /// `deco_actability_groups.name` (empty when the row is missing).
+    pub fn deco_group_name(&self, group_id: u32) -> &str {
+        self.deco_actability_groups.get(&group_id).map_or("", String::as_str)
+    }
+
+    /// The `housing_deco_limit_elems` rows of a template's limit id, in row order.
+    pub fn deco_limit_elems(&self, limit_id: u32) -> impl Iterator<Item = &HousingDecoLimitElem> + '_ {
+        self.deco_limit_elems.iter().filter(move |e| e.housing_deco_limit_id == limit_id)
+    }
+
+    /// `housing_deco_limit_elems.count` of a limit id and group.
+    pub fn deco_limit(&self, limit_id: u32, group_id: u32) -> Option<u32> {
+        self.deco_limit_elems
+            .iter()
+            .find(|e| e.housing_deco_limit_id == limit_id && e.deco_actability_group_id == group_id)
+            .map(|e| e.count)
+    }
+
     /// All construction actions of a housing template.
     pub fn all_actions(&self, housing_id: u32) -> i32 {
         self.housings
@@ -446,6 +537,9 @@ mod tests {
             CREATE TABLE skills (id INT, consume_lp INT);
             CREATE TABLE skill_effects (id INT, skill_id INT, consume_item_id INT, consume_item_count INT);
             CREATE TABLE item_housings (id INT, item_id INT, design_id INT);
+            CREATE TABLE housing_binding_doodads (id INT, owner_id INT, owner_type TEXT, attach_point_id INT, doodad_id INT);
+            CREATE TABLE housing_deco_limit_elems (id INT, housing_deco_limit_id INT, deco_actability_group_id INT, count INT);
+            CREATE TABLE deco_actability_groups (id INT, name TEXT);
             CREATE TABLE housing_decorations (id INT, name TEXT, allow_on_floor NUM, allow_on_wall NUM,
                 allow_on_ceiling NUM, doodad_id INT, allow_pivot_on_garden NUM, actability_group_id INT,
                 actability_up INT, deco_actability_group_id INT, allow_mesh_on_garden NUM);
@@ -460,7 +554,7 @@ mod tests {
             INSERT INTO taxations VALUES (3, 150000, 'small', 't');
             INSERT INTO localized_texts VALUES ('housings', 100, 'name', 'Rose Villa');
             INSERT INTO housings VALUES (100, 'Korean', 1, 737, NULL, NULL, 't', 't', 1600, 10, 0.0, 'f',
-                3, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 40, 60, NULL, 61, 0, 'f', 't', 'f', 0);
+                3, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 40, 60, NULL, 61, 5, 'f', 't', 'f', 0);
             INSERT INTO housings VALUES (101, 'Second', 1, 921, 0, 0, 'f', 'f', 4000, 10, 0.0, 'f',
                 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 40, 60, NULL, 61, 0, 't', 'f', 't', 0);
             INSERT INTO skills VALUES (11026, 25);
@@ -469,7 +563,14 @@ mod tests {
             INSERT INTO housing_build_steps VALUES (2, 100, 1, 734, 11026, 2);
             INSERT INTO housing_build_steps VALUES (3, 999, 0, 1, 2, 3);
             INSERT INTO item_housings VALUES (47, 14805, 100);
-            INSERT INTO housing_decorations VALUES (10, 'Pot', '1', '0', '0', 5461, 't', 0, 0, 0, 'f');
+            INSERT INTO housing_binding_doodads VALUES (1, 100, 'Housing', 9, 4001);
+            INSERT INTO housing_binding_doodads VALUES (2, 100, 'Housing', 10, 4002);
+            INSERT INTO housing_binding_doodads VALUES (3, 100, 'Ship', 9, 4003);
+            INSERT INTO housing_deco_limit_elems VALUES (1, 5, 1, 3);
+            INSERT INTO housing_deco_limit_elems VALUES (2, 5, 5, 2);
+            INSERT INTO deco_actability_groups VALUES (1, 'Professional');
+            INSERT INTO deco_actability_groups VALUES (5, 'Storage');
+            INSERT INTO housing_decorations VALUES (10, 'Pot', '1', '0', '0', 5461, 't', 0, 0, 1, 'f');
             INSERT INTO item_housing_decorations VALUES (20, 107, 10, 't');
             INSERT INTO item_spawn_doodads VALUES (21, 4865, 413);
             INSERT INTO item_spawn_doodads VALUES (68, 13725, 380);
@@ -508,6 +609,14 @@ mod tests {
         assert_eq!(t.decorations[&10].doodad_id, 5461);
         assert_eq!(t.decoration_by_doodad[&5461], 10);
         assert_eq!(t.decoration_design_for_item(107), Some(10));
+        assert_eq!(t.decoration_for_item(5461, 107).map(|d| d.id), Some(10));
+        assert!(t.decoration_for_item(4001, 107).is_none(), "the doodad template has to match too");
+        assert_eq!(t.housings[&100].binding_doodads, vec![4001, 4002], "only owner_type 'Housing' rows are built-ins");
+        assert_eq!(t.deco_group_name(5), "Storage");
+        assert_eq!(t.deco_limit(5, 1), Some(3));
+        assert_eq!(t.deco_limit(5, 5), Some(2));
+        assert_eq!(t.deco_limit(5, 7), None);
+        assert_eq!(t.deco_limit_elems(5).map(|e| e.deco_actability_group_id).collect::<Vec<_>>(), vec![1, 5]);
         assert!(t.item_housing_decorations[0].restore);
         assert_eq!(t.doodad_by_item[&4865], 413);
         assert_eq!(t.item_spawn_doodads.len(), 2);
@@ -541,6 +650,12 @@ mod tests {
         assert_eq!(t.item_housings.len(), count("item_housings"));
         assert_eq!(t.item_housing_decorations.len(), count("item_housing_decorations"));
         assert_eq!(t.item_spawn_doodads.len(), count("item_spawn_doodads"));
+        let housing_bindings: i64 = conn
+            .query_row("SELECT COUNT(*) FROM housing_binding_doodads WHERE owner_type = 'Housing'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t.housing_binding_doodads.len() as i64, housing_bindings);
+        assert_eq!(t.deco_limit_elems.len(), count("housing_deco_limit_elems"));
+        assert_eq!(t.deco_actability_groups.len(), count("deco_actability_groups"));
         assert_eq!(t.housing_areas.len(), count("housing_areas"));
         assert_eq!(t.housing_groups.len(), count("housing_groups"));
         assert_eq!(t.farm_groups.len(), count("farm_groups"));
@@ -564,5 +679,12 @@ mod tests {
         assert_eq!((garden.build_steps[0].consume_item, garden.build_steps[0].consume_count), (8337, 1));
         let pumpkin = &t.housings[&89];
         assert_eq!((pumpkin.garden_radius, pumpkin.build_steps[0].skill_id), (8.0, 14574));
+        // Thatched Farmhouse: six built-ins, limit 40 counted / 51 absolute, groups 1 and 5 capped at 3.
+        let farmhouse = &t.housings[&171];
+        assert_eq!((farmhouse.deco_limit, farmhouse.absolute_deco_limit), (40, 51));
+        assert_eq!(farmhouse.binding_doodads, vec![2392, 4278, 4322, 4322, 4922, 5539]);
+        assert_eq!(t.deco_limit(10, 1), Some(3));
+        assert_eq!(t.deco_limit(10, 5), Some(3));
+        assert_eq!(t.housings[&267].binding_doodads.len(), 1);
     }
 }
