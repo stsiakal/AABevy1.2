@@ -1301,7 +1301,7 @@ mod tests {
                 footprint: 4.0,
                 requires_water: false,
                 grounding: Grounding::default(),
-                house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), category_id: 16, garden_radius: 4.0, heavy_tax: true }),
+                house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), category_id: 16, garden_radius: 4.0, heavy_tax: true, fixed_orientation: false }),
             },
             0.5,
         );

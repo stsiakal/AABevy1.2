@@ -102,7 +102,16 @@ pub struct HouseDesign {
     /// `housings.garden_radius`: the half extent of the axis-aligned plot square (m).
     pub garden_radius: f32,
     pub heavy_tax: bool,
+    /// A farm (`housings.category_id` in [`FARM_CATEGORIES`]): its orientation is fixed, the wheel does not turn it.
+    pub fixed_orientation: bool,
 }
+
+/// `housings.category_id` of the scarecrow gardens / farms (16: straw-hat scarecrow, 17: pumpkin scarecrows, 18:
+/// thatched farm). The 1.2 data has no rotation flag; these are the designs the owner confirmed cannot be turned.
+pub const FARM_CATEGORIES: [i64; 3] = [16, 17, 18];
+
+/// The yaw a fixed-orientation design is placed (and sent) with.
+pub const FIXED_YAW: f32 = 0.0;
 
 /// The offset fields a placement template may carry. The 1.2 server database has none on doodads (only `housings`),
 /// so plants keep the defaults; the maths is here for the house placement of a later phase.
@@ -229,7 +238,8 @@ impl Catalog {
                 );
                 let heavy_tax: bool = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0) != 0;
                 let category_id: u32 = r.get::<_, Option<i64>>(13).unwrap_or_default().unwrap_or(0).max(0) as u32;
-                let house = HouseDesign { design, name: name.clone(), category_id, garden_radius: garden, heavy_tax };
+                let fixed_orientation = FARM_CATEGORIES.contains(&(category_id as i64));
+                let house = HouseDesign { design, name: name.clone(), category_id, garden_radius: garden, heavy_tax, fixed_orientation };
                 catalog.houses.insert(design, house.clone());
                 catalog.by_item.entry(item).or_insert(Plantable {
                     item,
@@ -393,7 +403,19 @@ pub struct Session {
 }
 
 impl Session {
+    /// The wheel turns the ghost (and so is not the camera's): not for a fixed-orientation farm, not once the
+    /// placement is locked for the tax window.
+    pub fn rotatable(&self) -> bool {
+        !self.plant.house.as_ref().is_some_and(|h| h.fixed_orientation)
+    }
+
+    /// The wheel is spent on rotating the ghost this frame, so the camera must not zoom with it.
+    pub fn wheel_rotates(&self) -> bool {
+        self.rotatable() && !self.quote_requested && !self.window_open
+    }
+
     pub fn new(item_id: u64, plant: Plantable, yaw: f32) -> Session {
+        let yaw = if plant.house.as_ref().is_some_and(|h| h.fixed_orientation) { FIXED_YAW } else { yaw };
         Session {
             item_id,
             plant,
@@ -1552,8 +1574,8 @@ fn input(
     for ev in wheel.read() {
         turn += wheel_turn(shift, alt, ctrl, ev.y);
     }
-    // the confirmed house's yaw is part of the locked placement
-    if turn != 0.0 && !session.quote_requested {
+    // the confirmed house's yaw is part of the locked placement; a farm's orientation is fixed
+    if turn != 0.0 && !session.quote_requested && session.rotatable() {
         session.yaw = wrap_angle(session.yaw + turn);
     }
     let right_click = mouse.just_pressed(MouseButton::Right);
@@ -2042,6 +2064,7 @@ mod tests {
                 category_id: 16,
                 garden_radius: radius,
                 heavy_tax: true,
+                fixed_orientation: false,
             }),
         }
     }
@@ -2053,6 +2076,21 @@ mod tests {
         c.area_groups.insert(128, 13);
         c.group_categories.entry(13).or_default().insert(16);
         c
+    }
+
+    #[test]
+    fn a_fixed_orientation_farm_ignores_the_initial_yaw_and_the_wheel() {
+        let mut fixed = house_plantable(267, 4.0);
+        fixed.house.as_mut().unwrap().fixed_orientation = true;
+        let session = Session::new(1, fixed, 2.5);
+        assert_eq!(session.yaw, FIXED_YAW, "a fixed design starts (and is sent) with its fixed yaw");
+        assert!(!session.rotatable() && !session.wheel_rotates(), "the wheel stays the camera's");
+        let free = Session::new(1, house_plantable(267, 4.0), 2.5);
+        assert_eq!(free.yaw, 2.5);
+        assert!(free.rotatable() && free.wheel_rotates(), "a rotatable design takes the wheel from the zoom");
+        let mut locked = Session::new(1, house_plantable(267, 4.0), 2.5);
+        locked.quote_requested = true;
+        assert!(!locked.wheel_rotates(), "a locked placement no longer rotates, the camera may zoom");
     }
 
     #[test]
@@ -2090,6 +2128,7 @@ mod tests {
         assert_eq!((house.design, house.garden_radius), (267, 4.0));
         assert_eq!((house.category_id, house.name.as_str()), (16, "Scarecrow Garden"));
         assert!(house.heavy_tax);
+        assert!(house.fixed_orientation, "category 16 is a scarecrow farm");
         assert_eq!(catalog.house_radius(267), 4.0);
         assert!(catalog.area_known(128) && !catalog.area_known(129));
         assert!(catalog.area_allows(128, 16) && !catalog.area_allows(128, 17));
