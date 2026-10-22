@@ -476,8 +476,29 @@ fn hit(ray: Ray3d, centre: Vec3, radius: f32) -> Option<f32> {
     (along > 0.0 && (ray.origin + *ray.direction * along).distance(centre) <= radius).then_some(along)
 }
 
-/// The usable doodad or house the ray picks, unless an NPC is in front of it.
-fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) -> Option<Pick> {
+/// The obj id of the house unit a doodad is part of (a finished farm's Scarecrow Garden): its explicit parent, else
+/// the housing owner (`owner_type` 3) the doodad names by the house's database id.
+fn owning_house(o: &aa_net::model::Doodad, units: &Units, houses: &Houses) -> Option<u32> {
+    if let Some(parent) = units.by_id.get(&o.parent_obj_id)
+        && matches!(parent.kind, aa_net::model::UnitKind::Housing { .. })
+    {
+        return Some(parent.obj_id);
+    }
+    if o.owner_type != HOUSING_OWNER || o.owner_db_id == 0 {
+        return None;
+    }
+    units.iter().find_map(|u| {
+        let aa_net::model::UnitKind::Housing { tl_id, .. } = u.kind else { return None };
+        (houses.by_tl_id.get(&tl_id)?.snapshot.db_id == o.owner_db_id).then_some(u.obj_id)
+    })
+}
+
+/// `doodad_owner_type::HOUSING` on the wire.
+const HOUSING_OWNER: u8 = 3;
+
+/// The usable doodad or house the ray picks, unless an NPC is in front of it. A doodad that belongs to a house is
+/// the house (its tooltip, its maintain window), not a doodad of its own.
+fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses, own: u32) -> Option<Pick> {
     let game = data.game.get()?;
     let mut best: Option<(f32, Pick)> = None;
     for o in doodads.by_id.values() {
@@ -489,7 +510,7 @@ fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) 
         if let Some(along) = hit(ray, centre, 1.3 * scale.max(0.7))
             && best.is_none_or(|(a, _)| along < a)
         {
-            best = Some((along, Pick::Doodad(o.obj_id)));
+            best = Some((along, owning_house(o, units, houses).map_or(Pick::Doodad(o.obj_id), Pick::House)));
         }
     }
     for u in units.iter().filter(|u| matches!(u.kind, aa_net::model::UnitKind::Housing { .. })) {
@@ -629,17 +650,17 @@ fn track(
         && let (Some(start), Some(end), Some(ray)) = (pressed_at.take(), cursor, ray)
         && start.distance(end) <= CLICK_SLOP
     {
-        clicked = match pick(ray, &d, &doodads, &units, own) {
+        clicked = match pick(ray, &d, &doodads, &units, &houses, own) {
             Some(Pick::Doodad(id)) => Some(id),
             _ => None,
         };
     }
     if script.rclicks.last().is_some_and(|t| script.since >= *t) {
         script.rclicks.pop();
-        clicked = nearest_usable(&d, &doodads);
+        clicked = nearest_usable(&d, &doodads, &units, &houses);
         info!("doodad: --doodad-rclick on {clicked:?}");
     }
-    let hover = ray.and_then(|r| pick(r, &d, &doodads, &units, own));
+    let hover = ray.and_then(|r| pick(r, &d, &doodads, &units, &houses, own));
     let hover_changed = hover != d.doodad.hover;
     d.doodad.hover = hover;
     let menu = clicked.is_some_and(|obj_id| right_click(&mut d, &doodads, obj_id));
@@ -704,12 +725,12 @@ fn log_near(d: &HudData, doodads: &Doodads) {
 }
 
 /// The nearest doodad with a use within the pick distance (`--doodad-rclick`).
-fn nearest_usable(d: &HudData, doodads: &Doodads) -> Option<u32> {
+fn nearest_usable(d: &HudData, doodads: &Doodads, units: &Units, houses: &Houses) -> Option<u32> {
     let game = d.game.get()?;
     doodads
         .by_id
         .values()
-        .filter(|o| game.doodad.uses(o.func_group_id).is_some())
+        .filter(|o| game.doodad.uses(o.func_group_id).is_some() && owning_house(o, units, houses).is_none())
         .map(|o| (d.pos.distance(to_vec(o.pos)), o.obj_id))
         .filter(|(dist, _)| *dist <= PICK_DISTANCE)
         .min_by(|a, b| a.0.total_cmp(&b.0))
@@ -952,6 +973,7 @@ mod tests {
         game.skills.get_mut(&18553).unwrap().max_range = 10;
         game.skills.insert(INFO_SKILL, Default::default());
         game.skills.get_mut(&INFO_SKILL).unwrap().max_range = 6;
+        game.doodad.uses.insert(5, Uses { skills: vec![INFO_SKILL], navi: vec![], purchases: vec![] });
         game.housing.housings.insert(267, Default::default());
         let template = game.housing.housings.get_mut(&267).unwrap();
         template.garden_radius = 4.0;
@@ -1063,6 +1085,54 @@ mod tests {
             assert!(matches!(fire(super::lua_permission(wire)), Value::Nil), "wire permission {wire}");
         }
         let _ = std::fs::remove_file(path);
+    }
+
+    fn scarecrow_doodad(parent_obj_id: u32) -> aa_net::model::Doodad {
+        aa_net::model::Doodad {
+            obj_id: 38485,
+            template_id: 1,
+            owner_obj_id: 0,
+            parent_obj_id,
+            attach_point: 0xff,
+            pos: aa_net::Pos::new(2.0, 0.0, 0.0),
+            rotation: [0.0; 4],
+            scale: 1.0,
+            has_loot_item: false,
+            func_group_id: 5,
+            owner_id: 0,
+            ucc_id: 0,
+            item_template_id: 0,
+            type2: 0,
+            time_left: 0,
+            plant_time: 0,
+            quest_glow: 0,
+            family: 0,
+            puzzle_group: 0,
+            owner_type: 0,
+            owner_db_id: 0,
+            data: 0,
+        }
+    }
+
+    #[test]
+    fn a_doodad_of_a_house_picks_as_the_house() {
+        let (data, units, houses) = house_game();
+        // the ray runs along the bevy x axis into the doodad's sphere (game x 2 -> bevy x 2)
+        let centre = aa_world::cry_to_bevy(Vec3::new(2.0, 0.0, 0.8));
+        let ray = Ray3d::new(centre - Vec3::X * 3.0, Dir3::X);
+        let mut doodads = Doodads::default();
+        doodads.by_id.insert(38485, scarecrow_doodad(0));
+        assert_eq!(pick(ray, &data, &doodads, &units, &houses, 1), Some(Pick::Doodad(38485)), "a free doodad stays a doodad");
+        // parent link
+        doodads.by_id.insert(38485, scarecrow_doodad(77));
+        assert_eq!(pick(ray, &data, &doodads, &units, &houses, 1), Some(Pick::House(77)));
+        assert_eq!(nearest_usable(&data, &doodads, &units, &houses), None, "no doodad use for a house part");
+        // housing owner link
+        let mut owned = scarecrow_doodad(0);
+        owned.owner_type = HOUSING_OWNER;
+        owned.owner_db_id = 1;
+        doodads.by_id.insert(38485, owned);
+        assert_eq!(pick(ray, &data, &doodads, &units, &houses, 1), Some(Pick::House(77)));
     }
 
     #[test]
