@@ -148,6 +148,7 @@ fn valid_stable(data: &HudData, units: &Units, npc: (u32, u32)) -> bool {
         && data.game.get().is_some_and(|game| game.pets.stables.contains(&npc.1))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn update(
     mut events: MessageReader<NetEvent>,
     rt: Option<NonSend<UiRuntime>>,
