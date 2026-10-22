@@ -211,6 +211,7 @@ pub fn spawn_player(
     drop(game);
     let carried = weapons::carried(&db, equipment);
     let swim_clips = SwimClips::load(&assets.skeleton, &assets.cal, &clips);
+    let ladder_clips = super::ladder::LadderClips::load(&assets.skeleton, &assets.cal, &clips);
     let actor = ActorParams::load(spawn.unit.model_id).unwrap_or_default();
     debug!("actor params: {actor:?}, swim clips: {}", swim_clips.is_some());
     let look_carried = carried.clone();
@@ -228,6 +229,9 @@ pub fn spawn_player(
     }
     if let Some(swim_clips) = swim_clips {
         commands.entity(root).insert(swim_clips);
+    }
+    if let Some(ladder_clips) = ladder_clips {
+        commands.entity(root).insert(ladder_clips);
     }
 }
 
@@ -364,7 +368,18 @@ pub fn control_player(
     (keys, actions): (Res<ButtonInput<KeyCode>>, Res<crate::settings::Actions>),
     mouse: Res<ButtonInput<MouseButton>>,
     mut cameras: Query<&mut OrbitCamera>,
-    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>, Has<super::ship::DeckRide>)>,
+    mut player: Query<(
+        &LocalPlayer,
+        &mut Mover,
+        &mut Transform,
+        &mut Motion,
+        Option<&ActorParams>,
+        Has<super::combat::Dead>,
+        Has<super::skill_motion::SkillMove>,
+        Has<super::mount::Dismounting>,
+        Has<super::ship::DeckRide>,
+        Has<super::ladder::Ladder>,
+    )>,
     (net_player, stats): (Res<aa_net::state::Player>, Option<Res<aa_net::state::PlayerStats>>),
     terrain: Res<TerrainQuery>,
     collision: Res<WorldCollision>,
@@ -377,7 +392,12 @@ pub fn control_player(
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     (mut trace, sprint, mut local_jump, gliding, mut mounting): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>, ResMut<super::mount::MountFlow>),
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride, on_ladder)) = player.single_mut() else { return };
+    // a ladder owns the character: `ladder::control_ladder` moves it and sends the hanging packets
+    // (the component and `Motion::on_ladder` are set in the same frame as the grab)
+    if on_ladder || motion.on_ladder {
+        return;
+    }
     // a glider flies the character: `glide::control_glide` moves it and sends the packets
     if gliding.flying() && !dead {
         return;
@@ -625,7 +645,7 @@ pub fn control_player(
         *local_jump = jump_now;
     }
     // the swim clips are driven by `swim::drive_swim`; the locomotion sees a character standing still
-    *motion = if swimming { Motion::default() } else { Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: false, auto: false, request: None } };
+    *motion = if swimming { Motion::default() } else { Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: false, auto: false, request: None, on_ladder: false } };
     let turned = (mover.facing - before_facing).abs() > 1e-4;
     let input = PlayerInput { moving, jumped, turned };
     if *input_state != input {
@@ -737,6 +757,33 @@ impl SendState {
         self.since_spawn += dt;
         self.grace = (self.grace - dt).max(0.0);
         self.since_spawn
+    }
+
+    /// The ladder controller's clock: [`SEND_INTERVAL`] since the last hanging packet.
+    pub(super) fn ladder_clock(&mut self, dt: f32) {
+        self.since_sent += dt;
+    }
+
+    /// A hanging movement packet is due.
+    pub(super) fn ladder_due(&self) -> bool {
+        self.since_sent >= SEND_INTERVAL
+    }
+
+    /// A hanging movement packet was sent.
+    pub(super) fn ladder_sent(&mut self) {
+        self.since_sent = 0.0;
+        self.sent_first = true;
+        self.was_active = true;
+    }
+
+    /// The ladder was grabbed or left: the on-foot packet cadence starts over without a stop packet.
+    pub(super) fn after_ladder(&mut self) {
+        self.since_sent = 0.0;
+        self.sent_first = true;
+        self.was_active = false;
+        self.swimming = false;
+        self.took_off = false;
+        self.freefall = false;
     }
 
     /// A flight began or ended: the air time that follows is not a jump (`freefall` for a glider folded in the air, which falls on),

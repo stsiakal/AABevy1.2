@@ -33,6 +33,7 @@
 mod anim;
 pub(crate) mod cam_fov;
 mod jump;
+mod ladder;
 pub(crate) mod sprint;
 pub(crate) mod attachments;
 mod bench;
@@ -169,6 +170,7 @@ impl Plugin for InGamePlugin {
                         glide::request_deploy.run_if(in_state(Screen::InGame)),
                         glide::track_flight.run_if(in_state(Screen::InGame)),
                         glide::control_glide.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
+                        ladder::control_ladder.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         player::control_player.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         ship::deck_control.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         camera::follow_player,
@@ -182,6 +184,7 @@ impl Plugin for InGamePlugin {
                     sprint::apply_blur.after(sprint::drive_sprint),
                     cam_fov::drive_cam_fov.after(camera::follow_player),
                     swim::drive_swim.after(anim::drive_locomotion),
+                    ladder::drive_ladder.after(anim::drive_locomotion),
                     glide::drive_glide.after(anim::drive_locomotion),
                     glide::show_glider,
                     player::dev_hide_part,

@@ -51,6 +51,24 @@ impl Actions {
         self.tapped.push(Action { name: action.into(), index: 0, button: false });
     }
 
+    /// Holds `action` down (a flow test of a system that reads `pressed`).
+    #[cfg(test)]
+    pub(crate) fn hold_for_test(&mut self, action: &str) {
+        self.pressed.insert(Action { name: action.into(), index: 0, button: false });
+    }
+
+    /// Lets go of an action held with [`Actions::hold_for_test`].
+    #[cfg(test)]
+    pub(crate) fn release_for_test(&mut self, action: &str) {
+        self.pressed.retain(|a| !(a.name == action && a.index == 0 && !a.button));
+    }
+
+    /// Clears the one-frame taps (the input system does this at every frame in the app).
+    #[cfg(test)]
+    pub(crate) fn clear_taps_for_test(&mut self) {
+        self.tapped.clear();
+    }
+
     pub fn hotkeys(&self) -> impl Iterator<Item = (&str, u32, bool)> {
         self.tapped.iter().map(|a| (a.name.as_str(), a.index, a.button))
     }

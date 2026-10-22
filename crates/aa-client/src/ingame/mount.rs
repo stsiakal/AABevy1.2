@@ -1091,7 +1091,7 @@ pub fn drive_mount(
         // the request, not the speed the inertia is at: coasting to a stop is idle, not a walk (cryaction `FUN_306747f0` zeroes it
         // under 0.5 m/s)
         let request = mount_anim::requested_pseudo(local_dir != Vec2::ZERO || drive.autorun, drive.walking != shift, drive.autorun, speed);
-        *m = Motion { speed, local_dir, airborne, swimming: drive.swimming, auto: drive.autorun, request: Some(request) };
+        *m = Motion { speed, local_dir, airborne, swimming: drive.swimming, auto: drive.autorun, request: Some(request), on_ladder: false };
     }
     let turned = (drive.facing - before_facing).abs() > 1e-4;
     *input_state = PlayerInput { moving, jumped, turned };

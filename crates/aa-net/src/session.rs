@@ -22,7 +22,7 @@ use crate::skill::{PlotEvent, SkillFired, SkillStarted, SkillTarget, StartCaster
 use crate::unit_msg::AggroEntry;
 use crate::login::{self, AccountInfo, Secret, WorldCookie, WorldList, WorldQueue};
 use crate::model::{
-    ChatMessage, Character, CharacterState, CreateCharacter, Doodad, Item, Movement, Unit, UnitKind,
+    ChatMessage, Character, CharacterState, CreateCharacter, Doodad, Item, MoveSupport, Movement, Unit, UnitKind,
     actor_flags, move_flags, stance,
 };
 use crate::net::{self, GameConn, LoginConn, NetError, StreamConn};
@@ -77,6 +77,9 @@ pub enum MoveState {
     Jump,
     /// In the air without a jump, or on the way down: no ground under the feet.
     Fall,
+    /// Hanging from a ladder or rope: no ground flag; [`MoveCommand::support`] carries the object
+    /// and climb data.
+    Hang,
 }
 
 /// A movement the app wants to send for the local player. All fields are public; build one with
@@ -106,6 +109,9 @@ pub struct MoveCommand {
     /// per m/s). Non-zero only in the packet of the landing; the server applies fall damage from
     /// it (nothing below 20 m/s).
     pub fall_vel: u16,
+    /// The object the unit stands on or hangs from (a ship deck, a ladder). Its blocks and the
+    /// actor flags they imply (0x20 / 0x40) are written after the movement block.
+    pub support: Option<MoveSupport>,
 }
 
 impl Default for MoveCommand {
@@ -121,6 +127,7 @@ impl Default for MoveCommand {
             alertness: 0,
             in_combat: false,
             fall_vel: 0,
+            support: None,
         }
     }
 }
@@ -167,7 +174,7 @@ impl MoveCommand {
         m.actor_flags = match self.state {
             MoveState::Ground => actor_flags::STANDING_ON_SOLID,
             MoveState::Jump => actor_flags::JUMPING,
-            MoveState::Fall => 0,
+            MoveState::Fall | MoveState::Hang => 0,
         };
         if self.state == MoveState::Jump {
             m.flags = move_flags::JUMPING;
@@ -178,6 +185,15 @@ impl MoveCommand {
         if self.fall_vel != 0 {
             m.actor_flags |= actor_flags::FALL_VELOCITY;
             m.fall_vel = self.fall_vel;
+        }
+        if let Some(support) = self.support {
+            if support.world.is_some() {
+                m.actor_flags |= actor_flags::STANDING_ON_OBJECT;
+            }
+            if support.climb.is_some() {
+                m.actor_flags |= actor_flags::HANGING_FROM_OBJECT;
+            }
+            m.support = Some(support);
         }
         m
     }
@@ -4344,6 +4360,34 @@ mod tests {
         let m = fight.to_movement(0);
         assert_eq!(m.flags, move_flags::MOVING | move_flags::IN_COMBAT);
         assert_eq!((m.alertness, m.stance), (alertness::COMBAT, stance::COMBAT));
+    }
+
+    #[test]
+    fn hanging_adds_the_object_and_climb_blocks_and_no_ground_flag() {
+        let base = MoveCommand::new(at(1.0, 2.0, 3.0), 0.0);
+        let hang = MoveCommand {
+            state: MoveState::Hang,
+            support: Some(MoveSupport { obj_id: 0x010203, climb: Some(77), ..MoveSupport::default() }),
+            ..base
+        }
+        .to_movement(0);
+        assert_eq!(hang.flags, move_flags::MOVING);
+        assert_eq!(hang.actor_flags, actor_flags::HANGING_FROM_OBJECT);
+        assert_eq!(hang.support.unwrap().climb, Some(77));
+        // both blocks when the unit also stands on the object
+        let both = MoveCommand {
+            state: MoveState::Hang,
+            support: Some(MoveSupport {
+                obj_id: 9,
+                kind: 2,
+                part: 3,
+                world: Some((at(4.0, 5.0, 6.0), [0; 3])),
+                climb: Some(10),
+            }),
+            ..base
+        }
+        .to_movement(0);
+        assert_eq!(both.actor_flags, actor_flags::STANDING_ON_OBJECT | actor_flags::HANGING_FROM_OBJECT);
     }
 
     #[test]
