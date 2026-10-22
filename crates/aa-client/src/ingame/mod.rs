@@ -67,6 +67,7 @@ mod trace;
 pub(crate) mod units;
 pub(crate) mod virtual_input;
 mod vehicle;
+pub mod wheels;
 pub(crate) mod warm;
 pub(crate) mod weapons;
 pub(crate) mod world_switch;
@@ -138,6 +139,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(sounds::plugin)
             .add_plugins(stealth::plugin)
             .add_plugins(tools::plugin)
+            .add_plugins(wheels::plugin)
             .add_plugins(flow::plugin)
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)

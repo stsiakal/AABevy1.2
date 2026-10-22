@@ -66,6 +66,13 @@ impl Default for VehicleBody {
     }
 }
 
+/// The wheel `.cgf` files of a land vehicle (`vehicle_models.wheel` / `wheel2`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VehicleWheelModels {
+    pub wheel: Option<String>,
+    pub wheel2: Option<String>,
+}
+
 /// A ship hull from `ship_models` (the row `models.sub_id` names when the model is a
 /// `ShipModel`). The server owns the hull physics; these numbers are the authored top speed,
 /// reverse speed, rudder rate and the hull box used to keep a standing passenger on deck.
@@ -452,6 +459,22 @@ impl Db {
             .unwrap_or(d);
         l.mount_moves.insert(model_id, out);
         out
+    }
+
+    /// The wheel models of a land vehicle (`vehicle_models.wheel` for the bones `wheel0..9`, `wheel2` for `wheel_type20..9`):
+    /// pak paths of `.cgf` files (the columns are model paths, not counts).
+    pub fn vehicle_wheel_models(&self, model_id: u32) -> VehicleWheelModels {
+        let l = self.lookups.lock().unwrap();
+        l.conn
+            .query_row(
+                "SELECT v.wheel, v.wheel2 FROM models m JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' WHERE m.id = ?1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let path = |i: usize| r.get::<_, Option<String>>(i).ok().flatten().as_deref().and_then(model_file);
+                    Ok(VehicleWheelModels { wheel: path(0), wheel2: path(1) })
+                },
+            )
+            .unwrap_or_default()
     }
 
     /// The `vehicle_models` row a slave model draws (`models.sub_type = 'VehicleModel'`).
