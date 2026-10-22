@@ -998,8 +998,10 @@ fn ship_seat(model_id: u32, point: u8) -> Seat {
         128 => ([0.0, -2.9, 1.043_76], [0.0, -4.0, 1.0]),
         1205 => ([-0.004_175_19, -6.540_26, 1.558_67], [-0.004, -7.6, 1.6]),
         1383 | 1384 => ([0.000_815_43, -4.696_58, 6.151_29], [0.0, -5.8, 6.2]),
-        1249 => ([0.0, -12.510_9, 5.880_29], [0.0, -13.6, 5.9]),
-        393 | 523 => ([0.0, -14.696_7, 6.208_24], [0.0, -15.8, 6.2]),
+        1249 | 1482 => ([0.0, -12.510_9, 5.880_29], [0.0, -13.6, 5.9]),
+        1046 => ([0.0, -20.079_1, 12.310_5], [0.0, -21.2, 12.3]),
+        1546 => ([0.0, -24.590_7, 10.107_6], [0.0, -25.7, 10.1]),
+        393 | 511 | 523 => ([0.0, -14.696_7, 6.208_24], [0.0, -15.8, 6.2]),
         1287 => ([0.0, 0.405_178, 1.409_84], [0.0, -1.5, 1.0]),
         _ => ([0.0, 0.0, 1.1], [0.0, -1.5, 1.1]),
     };
@@ -1175,6 +1177,23 @@ mod tests {
         assert!(Vec2::new(seat.local[0], seat.local[1]).distance(Vec2::new(chair.pos.x, chair.pos.y)) < 2.0, "seat {:?} chair {:?}", seat.local, chair.pos);
         // the deck the walking player stands on is the same height
         assert!((db.ship_body(393).deck - chair.pos.z).abs() < 2.0);
+    }
+
+    /// Leaving the driver seat of a ship with an authored seat puts the player on the hull's deck (`board_deck` takes a floor
+    /// within 1.5 m under the feet): the small galleon (slave 22, model 511) once had the default seat 1.1 m above its keel
+    /// and the player stood in the water.
+    #[test]
+    fn the_driver_seat_of_each_authored_ship_is_over_its_deck() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        for model in [393, 511, 523, 1249, 1046, 1482, 1546, 1205] {
+            let Some(floor) = db.ship_floor(model) else { continue };
+            let seat = db.seat(model, 1).local;
+            let deck = floor.height(seat[0], seat[1], seat[2] + 1.5).unwrap_or(f32::NEG_INFINITY);
+            assert!(seat[2] - deck <= 1.5 && deck - seat[2] <= 0.0 + 1.5, "model {model}: seat {seat:?} deck {deck}");
+        }
     }
 
     /// The ship slave models draw a hull. Three have no prefab in the 1.2 pak, so the original draws nothing for them
