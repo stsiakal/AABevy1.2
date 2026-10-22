@@ -1673,6 +1673,11 @@ weight, ramming or customize UI; only Type, Classification, Move and Turn speed 
   busy player, already seated 19, range 154, seat taken 97, not the summoner 96); a refusal prints the
   `SCErrorMsg` text through the usual `SYSMSG` path. Nothing binds after `SCSlaveCreated`. The range
   (`BOARD_RANGE`, 10 m) is a stand-in: the original's constant is not in the dump.
+* Packet flow measured live (`re-wagons.md` 7): with nothing targeted F picks the nearest land vehicle within 4 m in front
+  (`ingame::vehicle::pick_land_vehicle`) and sends `CSChangeTarget` then `CSBindSlave`; the cargo crates' storage cast
+  (skill 15307) never fires on F while a vehicle is in pick reach or the player is seated (`hud::doodad::vehicle_owns_key`).
+  Using the summon item places the wagon 7 m ahead (position target) and using it again while the wagon is out sends
+  `CSDespawnSlave` instead of a second cast.
 * Getting off: `CSDiscardSlave` is refused above 5 m/s (`SLAVE_SHUT_OFF_TO_UNBIND`, code 103).
 * Wheels (`ingame/wheels.rs`): `wheelN` bones take `vehicle_models.wheel`, `wheel_typeN` bones take
   `wheel2`; each wheel rolls by distance / its own radius (half its model's extent). The wheel
