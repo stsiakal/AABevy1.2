@@ -1245,6 +1245,18 @@ mod tests {
         Ok(())
     }
 
+    /// The auction script tells the player's own bid from another's by the bidder name and the world id
+    /// (`auction/common.alb` `CreateItemBiddingState`): the native must answer `X2.GetCurrentWorldId`.
+    #[test]
+    fn the_current_world_id_is_the_players_world_instance() {
+        let (rt, bridge, _state) = setup();
+        super::super::api::push_changes(&rt, &bridge);
+        bridge.borrow_mut().snapshot.instance_id = 3;
+        super::super::api::push_changes(&rt, &bridge);
+        let id: u32 = rt.lua.load("return X2.GetCurrentWorldId()").eval().unwrap();
+        assert_eq!(id, 3);
+    }
+
     #[test]
     fn attachment_uses_physical_whole_stack_and_posting_keeps_the_item_until_sent() -> mlua::Result<()> {
         let (rt, _, state) = setup();
@@ -1444,9 +1456,14 @@ mod tests {
             view.inventory.bag_slots = 8;
             view.inventory.bag.resize(8, None);
             view.inventory.bag[4] = Some(item.clone());
+            let mut own_bid = lot_for(902, template, 3);
+            own_bid.client_id = 8;
+            own_bid.client_name = "Seller".into();
+            own_bid.bidder_name = "Auction fixture".into();
+            own_bid.bid_world_id = 0;
             view.received = Auction {
                 page: 0,
-                lots: vec![lot_for(900, template, 3), lot_for(901, template, 3), lot_for(902, template, 3)],
+                lots: vec![lot_for(900, template, 3), lot_for(901, template, 3), own_bid],
                 reported_count: 3,
                 loaded: true,
                 server_time: 1_700_000_000,
@@ -1476,6 +1493,8 @@ mod tests {
                 assert(f.listCtrl.items[1].subItems[1].itemNameLabel:GetText()==[[{name}]])
                 assert(f.listCtrl.items[2].subItems[1].itemNameLabel:GetText()==[[{name}]])
                 assert(f.listCtrl.items[3].subItems[1].itemNameLabel:GetText()==[[{name}]])
+                local state=f.listCtrl.items[3].subItems[4].textbox:GetText()
+                assert(state:find(locale.auction.myselfBid, 1, true) ~= nil, state..' ~= '..locale.auction.myselfBid)
                 "#,
             ))
             .exec()?;

@@ -10,6 +10,11 @@ local function isPlayer(unit) return unit == "player" or unit == S().unit_id end
 -- Cutscene playback and its UI suppression remain an unimplemented feature.
 Movie.GetNumOfPlayingCutscenes = function() return 0 end
 
+-- The world template id the server stamps on the player's transform (0 = main_world). The auction
+-- script compares it with a lot's `bidWorldId` to tell the player's own bid from someone else's
+-- (auction/common.alb `CreateItemBiddingState`).
+X2.GetCurrentWorldId = function(self) return S().instance_id end
+
 -- Name policies, normalization and validation are installed natively by api.rs.
 
 -- No peace tax on this server (the world map's bottom info reads it for the zone under the cursor).
