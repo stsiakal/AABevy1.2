@@ -522,6 +522,12 @@ struct HouseInfo {
     all: i64,
 }
 
+/// The 1-based permission index the original script tables use (`U0` in interaction.alb and the maintain
+/// window's `GetHousePermission`) for the 0-based wire value.
+pub(super) fn lua_permission(wire: u8) -> i64 {
+    i64::from(wire) + 1
+}
+
 fn house_info(units: &Units, houses: &Houses, obj_id: u32) -> Option<HouseInfo> {
     let unit = units.by_id.get(&obj_id)?;
     let aa_net::model::UnitKind::Housing { tl_id, .. } = unit.kind else { return None };
@@ -530,7 +536,7 @@ fn house_info(units: &Units, houses: &Houses, obj_id: u32) -> Option<HouseInfo> 
     Some(HouseInfo {
         name: if snapshot.name.is_empty() { unit.name.clone() } else { snapshot.name.clone() },
         owner: snapshot.owner_name.clone(),
-        permission: i64::from(snapshot.permission),
+        permission: lua_permission(snapshot.permission),
         current: i64::from(snapshot.current_actions),
         all: i64::from(snapshot.all_actions),
     })
@@ -979,6 +985,48 @@ mod tests {
         assert_eq!(focus.obj_id, 77);
         assert_eq!(focus.skills, vec![18553, INFO_SKILL]);
         assert_eq!(focus.house.as_ref().map(|h| h.current_actions), Some(0));
+    }
+
+    #[test]
+    fn the_tooltip_permission_is_the_one_based_script_index() {
+        let (_data, units, mut houses) = house_game();
+        // private (wire 0) is index 1 of the original table, family (wire 3) index 4: nil would break the tooltip
+        assert_eq!(house_info(&units, &houses, 77).map(|h| h.permission), Some(1));
+        houses.by_tl_id.get_mut(&13).unwrap().snapshot.permission = 3;
+        assert_eq!(house_info(&units, &houses, 77).map(|h| h.permission), Some(4));
+    }
+
+    #[test]
+    fn the_original_tooltip_formats_the_permission_without_an_error() {
+        let Ok((rt, _bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        // `interaction.alb` F9 (DRAW_DOODAD_TOOLTIP) runs `string.format("%s: %s", .., U0(permission))`; U0 indexes a
+        // 1-based table, so the raw wire value 0 is nil and the call errors
+        rt.lua
+            .load(
+                "TOOLTIP_ERR = nil; local f = string.format;                 string.format = function(...) local ok, r = pcall(f, ...) if not ok then TOOLTIP_ERR = r error(r, 0) end return r end",
+            )
+            .exec()
+            .unwrap();
+        let fire = |permission: i64| {
+            let info = rt.lua.create_table().unwrap();
+            info.set("name", "Scarecrow Garden").unwrap();
+            info.set("owner", "Farmax").unwrap();
+            info.set("permission", permission).unwrap();
+            let progress = rt.lua.create_table().unwrap();
+            progress.set("curCount", 0).unwrap();
+            progress.set("maxCount", 1).unwrap();
+            info.set("progress", progress).unwrap();
+            rt.lua.globals().set("TOOLTIP_ERR", Value::Nil).unwrap();
+            rt.fire_event("DRAW_DOODAD_TOOLTIP", info);
+            rt.lua.globals().get::<Value>("TOOLTIP_ERR").unwrap()
+        };
+        assert!(!matches!(fire(0), Value::Nil), "the handler runs and rejects the 0-based value");
+        for wire in 0..=3 {
+            assert!(matches!(fire(super::lua_permission(wire)), Value::Nil), "wire permission {wire}");
+        }
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

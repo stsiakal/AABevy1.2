@@ -46,11 +46,14 @@ pub struct HouseState {
     pub owner_id: u32,
     pub name: String,
     pub owner_name: String,
+    /// The wire permission (`HousePermission`: private 0, guild 1, public 2, family 3).
+    pub permission: u8,
 }
 
 impl HouseState {
     pub(super) fn of(snapshot: &HouseSnapshot) -> HouseState {
         HouseState {
+            permission: snapshot.permission,
             tl_id: snapshot.tl_id,
             template_id: snapshot.template_id,
             model_id: snapshot.model_id,
@@ -267,6 +270,17 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         lua.create_function(move |_, _this: Table| {
             let d = b.borrow();
             Ok(d.house.selected.as_ref().is_some_and(|h| h.owner_id != 0 && h.owner_id == d.character_id))
+        })?,
+    )?;
+    let b = bridge.clone();
+    x2.set(
+        "GetHousePermission",
+        lua.create_function(move |_, _this: Table| {
+            let d = b.borrow();
+            let Some(h) = d.house.selected.as_ref() else { return Ok((1, false)) };
+            let always_public = d.game.get().and_then(|g| g.housing.housings.get(&h.template_id)).is_some_and(|t| t.always_public);
+            // the scripts index their permission tables from 1; the wire value starts at 0 (private)
+            Ok((super::doodad::lua_permission(h.permission), always_public))
         })?,
     )?;
     let b = bridge.clone();
@@ -753,6 +767,26 @@ mod tests {
             "BUILDER_END hides the original Start Construction window"
         );
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn get_house_permission_answers_the_script_index_and_the_always_public_flag() {
+        let lua = Lua::new();
+        lua.globals().set("X2House", lua.create_table().unwrap()).unwrap();
+        let bridge = with_house(HouseState { tl_id: 7, template_id: 267, permission: 0, ..Default::default() });
+        install(&lua, &bridge).unwrap();
+        let (index, always): (i64, bool) = lua.load("return X2House:GetHousePermission()").eval().unwrap();
+        assert_eq!((index, always), (1, false), "private is index 1");
+        bridge.borrow_mut().house.selected.as_mut().unwrap().permission = 3;
+        let (index, _): (i64, bool) = lua.load("return X2House:GetHousePermission()").eval().unwrap();
+        assert_eq!(index, 4, "family is index 4");
+        // a house the template keeps public
+        let mut game = super::super::data::GameData::default();
+        game.housing.housings.insert(267, Default::default());
+        game.housing.housings.get_mut(&267).unwrap().always_public = true;
+        bridge.borrow().game.0.set(game).ok().expect("one load");
+        let (_, always): (i64, bool) = lua.load("return X2House:GetHousePermission()").eval().unwrap();
+        assert!(always);
     }
 
     #[test]
