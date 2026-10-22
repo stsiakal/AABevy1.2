@@ -1,10 +1,35 @@
 # ArcheAge 1.2 feature parity
 
-Updated 2026-10-18. This is the working completion ledger for the original-client parity goal.
+Updated 2026-10-22. This is the working completion ledger for the original-client parity goal.
 The original `scriptsbin/x2ui/` content groups, game database, native client, reference captures,
 and lane-server protocol are the sources. A window opening with fallback data is not a complete
 feature. Each row requires real data, input/actions, lifecycle/error behavior, and appropriate
 live or visual validation. No overall completion percentage is inferred from script counts.
+
+## How a row becomes done
+
+A row is not "a window opens": it is the original behaviour end to end. Every row runs the same loop:
+
+1. **RE spec** - reverse the original 1.2 client into `docs/research/re-<area>.md` (Ghidra `proj-aa12u`,
+   `game_pak`, `compact.sqlite3`, Lua bytecode, live captures). Every rule carries an address or
+   `file:line`; inferred parts are marked (see `docs/research/README.md`).
+2. **Implement** - the Bevy client follows the spec, including real data, input/actions and
+   lifecycle/error behaviour.
+3. **Oracle-verified** - same packets, values, windows and screenshots compared side by side with the
+   hidden original client.
+4. **Owner in-game test** - the owner plays the feature against the original.
+5. **Upstream PR** - fixes and fork deviations are offered upstream (NickMesser/AAEmu).
+
+Each row below has three status fields, and the row is **done only when all three are done**:
+
+* **RE spec** - link to the area spec, or `none`.
+* **Implemented** - `none`, `partial` (with what is missing) or `done`.
+* **Oracle-verified** - `none`, `partial` (what was compared live) or `done`.
+
+`re-equipment.md` and `re-skills.md` are narrow RE notes (costume slots/attachment rotation; skill
+controllers, knockdown, beams), not end-to-end area specs, so they do not make an area's RE spec done.
+
+**Fork deviations from upstream (NickMesser/AAEmu):** see the section at the end of this file.
 
 Execution policy (user instruction,2026-10-18): keep multiple Sol6.1 agents working
 throughout this goal. Use all available concurrency slots (currently root plus
@@ -202,6 +227,42 @@ scene/unload runs; ATI2/detail controls remain pixel-identical. Signed heightmap
 22 GPU controls and seven inspected original-scene/control/unload runs. Trial spatial strings/live validation, bounty asset
 compatibility and ranking live integration, remaining cooldown producers and further rendering/gameplay gaps stay active; overall1.2
 parity is unfinished.
+
+## Status by row
+
+Keyed by the row names in the ledger below. The ledger keeps the evidence; this matrix keeps the loop
+state. A row is done only when all three fields are done.
+
+| Row | RE spec | Implemented | Oracle-verified |
+|---|---|---|---|
+| World selection and login | none | partial - live Trion login, world list/queue and connect; regional auth, premium/house lobby and reconnect open | none |
+| Character selection and creation | none | partial - four races/genders, appearance controls, server create/re-entry; material differences, hat/beard variants, training-field animation open | none |
+| Loading and screen lifecycle | none | partial - full flow, prebuilt HUD, return/logout/disconnect; persistent pipeline cache and interruption coverage open | none |
+| Ground movement and camera | none | partial - walk/run/strafe/turn/jump/fall, collision, clipped camera, server movement; presets, click-to-move and uncommon modes open | none |
+| Water and mounted movement | `re-mounts.md`, `re-mounts-full.md` | partial - wading/swimming/diving, breath, remote mount/rider movement; live drowning QA, local mounts, ships/gliders and hanging open | partial - mount/rider packet sequence and gaits measured live once (`re-mounts.md` §9-10) |
+| World geometry | none | partial - terrain, brushes, vegetation, roads, decals, props, caves, streaming; HLOD, voxel variants, portal lighting and FlowGraph entities open | none |
+| Environment | none | partial - curves, sky, stars, moons, fog, water, music/ambience; area overrides, shafts/glow/adaptation and underwater fidelity open | none |
+| Character and animation rendering | none | partial - meshes/skeletons, locomotion/combat layers, equipment, customization, faces; lip sync, full-world remote QA, fur/hair/clipping open | none |
+| Combat and HUD | none | partial - timelines, hits/projectiles/buffs, gates, death/resurrection; force-mode, skill-by-skill references and FX decals/lights open | none |
+| Skill progression | none | partial - trees/tooltips, learn/reset/swap, cooldown selection; native TL lifetimes, Fired/GCD producers and broader live coverage open | none |
+| Inventory and equipment | none | partial - bag/equipment/actions, bank, tooltips, enchant controls and result dialogs; repair routing, enchant planning, dye/look/temper open | none |
+| NPC interactions and commerce | none | partial - greeting menu, repair, ability, priest, coin shops, auctioneer, stablehand, trade; coin-shop NPCs, teleporter, specialty and live multi-service open | none |
+| Quests and map | none | partial - accept/talk/hand-in/drop, icons, quest areas, radar; expedition relations, area fog and live housing icons open | none |
+| Chat | none | partial - channels/whispers, links, tabs, settings, reset; send overflow, position persistence, full command set and moderation open | none |
+| Party and raid | none | partial - invite/decline/leave/kick/leader, loot prompts, marks and pings; live loot settlement, 3D marks and broader raid coverage open | none |
+| Social/community | none | partial - friends/blocks, family, guild roster/permissions/invite; live settlement, overhead titles and nation open | none |
+| Mail, trade and auctions | none | partial - mail, player trade, auction UI over `aa_net`; live paired mail/trade, restart checks and auction settlement open | none |
+| Crafting, gathering and trade packs | none | partial - Folio, materials/labor, workbench maps, proficiency; gathering, processing and trade-pack flows open | none |
+| Housing and territory | `re-placement.md` | partial - placement/construction/maintain windows, builder steps and errors; plain wheel step, rotating plot dots, decoration counters and maintain live QA open | partial - two-click/quote/cancel/guide/wheel/tax-cert flow measured live once (`re-placement.md`) |
+| Pets, slaves and transport | `re-mounts.md`, `re-mounts-full.md`, `re-wagons.md` | partial - mounts, carts, ships, mode bar; rider skills, stirrup IK, wagon physics/locator, gliders and hanging open | partial - mount summon/mount/dismount/dismiss and wagon board/leave/recall/summon measured live once (`re-mounts.md` §9, `re-wagons.md` §7) |
+| Battlefields | none | partial - recruiter/queue/invitation, phases/scores/results, leave; live matchmaking, Pong/start clock and protected casting open | none |
+| Unit colours | `re-unit-colors.md` | partial - aggressive red, passive orange, friendly green, own-faction villagers yellow; aggressive name scale assumed, other-faction friendly plates unverified | partial - passive-hostile orange confirmed on a retail capture; no live side-by-side |
+| Duels | none | partial - challenge/prompt/accept/refuse, start/end, countdown; countdown placement and area-chat bubble remain | none |
+| Achievements, ranking and trials | none | partial - achievements, crime/jury, trials, ranking, bounty; English data, live settlement and bounty payment open | none |
+| Music and other special systems | none | partial - audio playback and music UI; bard instruments, books/UCC, portals and premium/shop open | none |
+| Options and UI toolkit | none | partial - options pages, key bindings, bag persistence and toolkit; binding blob sync, remaining quality knobs and layout persistence open | none |
+
+## Completion ledger
 
 | Area | Current evidence | Remaining work |
 |---|---|---|

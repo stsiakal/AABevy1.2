@@ -1,14 +1,15 @@
-# What is left: inventory of AABevy1.2
+# What is left: ordered work queue for AABevy1.2
 
-Date: 2026-10-18 (evening). Read-only stocktaking, no code changed. Sources: every `docs/*.md` gap section, `docs/research/*`,
-`docs/aa-client-parity.md` (the completion ledger), `git log` (693 commits, 2026-10-16 to 2026-10-18), `git status`,
-`data/extract/game/scriptsbin/x2ui`, `crates/aa-client/src/hud`, `crates/aa-ui/examples/fake`, the AAEmu lane source
-(`D:\aaemu-wt\bevy`, its `rust/tools/opcode_coverage/sc_sent.json`), `reference/`.
+Date: 2026-10-22. Restructured from the 2026-10-18 stocktaking into the order the parity loop needs; no code changed.
+Sources: every `docs/*.md` gap section, `docs/research/*`, `docs/aa-client-parity.md` (the completion ledger), `git log`,
+`git status`, `data/extract/game/scriptsbin/x2ui`, `crates/aa-client/src/hud`, `crates/aa-ui/examples/fake`, the AAEmu lane
+source (`D:\aaemu-wt\bevy`, its `rust/tools/opcode_coverage/sc_sent.json`), `reference/`.
 
 How sure each claim is: "doc" = a doc says so and I did not re-check the code. "code" = I grepped the tree. "run" = I ran it
-today. Two read-only sub-agent sweeps (server packets vs `aa-net`, x2ui windows vs HUD) produced the system lists; I spot-checked
-the headline claims (auction, housing, duel, slave, tower defense, portal, cash shop have no `aa-client` consumer; `SCBuffUpdated`
-is already decoded) but not every row. Sizes: S = under a day for one agent, M = a few days, L = a week or more.
+on 2026-10-18. Two read-only sub-agent sweeps (server packets vs `aa-net`, x2ui windows vs HUD) produced the system lists; I
+spot-checked the headline claims (auction, housing, duel, slave, tower defense, portal, cash shop have no `aa-client` consumer;
+`SCBuffUpdated` is already decoded) but not every row. Sizes: S = under a day for one agent, M = a few days, L = a week or more.
+Items that the parity ledger or git log has since closed are marked stale instead of being dropped.
 
 ## 1. Status summary
 
@@ -25,58 +26,109 @@ passed the headless smoke tests (titles, tooltip, Character Info, emotes, guild 
 settlement tail/reconnect and the final social unblock/offline/restart live checks remain unverified. By the parity ledger's
 own words, "overall 1.2 parity is unfinished".
 
-## 2. Remaining work items
+The parity loop and its three status fields are in `docs/aa-client-parity.md`. Four areas have end-to-end RE specs today
+(placement, mounts, wagons, unit colours); the rest have none, so their rows cannot be done yet even where the feature mostly
+works.
 
-Visibility = how much a player notices. IDs are for section 3 and 4.
+## 2. Engine systems first
 
-### Blockers and network
+These are shared foundations. Most partial rows wait on one of them, so they run before the area queue or in parallel with the
+first area that needs them.
+
+### 2.1 Animation graph player (CryEngine `.xml` / `.ag`)
+
+**Why.** The original selects locomotion and actions from the compiled graph per actor model: inputs `PseudoSpeed`,
+`RequestedTurnSpeedLZ`, `Stance`, `Action`, `Signal`, `Vehicle` and `VehicleSeat`, with per-state templates/transitions; the mount
+feeds the rider each frame (`FUN_390dcc80`). Ad-hoc clip selection cannot reproduce gait bands, turn-in-place, idle/run
+transitions, jump/swim states or mounted rider poses.
+
+**Rows that depend on it.** Ground movement and camera; Water and mounted movement; Character and animation rendering; Combat and
+HUD; Skill progression; Pets, slaves and transport; Duels.
+
+**Next step.** Load `game/animations/graphs/*.xml` plus the matching `.ag`, compile states/templates/transitions and drive the
+inputs; start with `horse_full_body` and `player_full_body` (state tables in `re-mounts-full.md` §2-4), then upper-body and
+creature graphs.
+
+### 2.2 Original tick rate for movement and animation
+
+**Why.** Movement samples, animation phase, jump/fall and packet cadence all follow the original tick. The original clamps a
+remote movement sample to `min(dt, 0.033 s)` (`FUN_390a30e0`, `re-mounts-full.md` §6); a different client step or send rate
+changes speeds, gaits and interpolation.
+
+**Rows that depend on it.** Ground movement and camera; Water and mounted movement; Combat and HUD; Skill progression; Pets,
+slaves and transport; `N4`.
+
+**Next step.** Measure the original tick and movement send rate (client log or oracle capture), pin the client fixed step,
+animation sampling and `CSMoveUnit`/`VehicleMove` cadence to it, then re-run the mount gait trace and a wagon drive.
+
+### 2.3 CryPhysics port (`aaemu-physics`) in the client
+
+**Why.** 1.2 movement is CryPhysics-driven: wagon/Cart driving, roll/pitch, linear/rotational inertia, `max_climb_ang`, mount
+jump/fall and collision. Bevy's vehicle is arcade with roll/pitch always 0 (`re-wagons.md` §6.9), and mount inertia semantics are
+inferred (`re-mounts-full.md` §6-7).
+
+**Rows that depend on it.** Ground movement and camera; Water and mounted movement; Pets, slaves and transport; `G2a`, `G4`,
+`CH2`, `CB2`, `N4`.
+
+**Next step.** Wire the bit-exact port (`C:/Users/stsiakal/AAEmu/rust/crates/aaemu-physics`, with `physoracle.exe` scenarios and
+goldens) into the client as the living/vehicle mover and query service; start with the Farm Wagon from `re-wagons.md` §2/§4 and
+match the oracle before replacing the arcade path.
+
+### 2.4 Flow graphs and cutscenes
+
+**Why.** Quest cameras/cinematics, animated entities/controllers and skill controller kind 8 are FlowGraph assets, and the client
+has no flowgraph player. Hidden cinematic actors are still "aa-client's screen-flow responsibility" (`aa-world.md` §6), `WR6`
+animated entities are open and `G6` is untouched.
+
+**Rows that depend on it.** World geometry; Quests and map; Combat and HUD (flowgraph skill controller); Character and animation
+rendering (animated props).
+
+**Next step.** Load FlowGraph assets from the pak and implement module/entity nodes; wire the quest camera/cinematic actors and
+skill controller kind 8; verify on one quest cutscene and one animated prop before enabling more.
+
+## 3. Area queue
+
+Queue order is priority. Independent areas may still run in parallel by crate ownership (`AGENTS.md`). Each entry gives the RE
+spec status, the next step and every old item moved under it.
+
+### 3.1 Movement and mounts
+
+**RE spec.** `re-mounts.md` + `re-mounts-full.md`: graph states, DB speeds, attach/seat rules and the measured packet sequence;
+`re-mounts-full.md` §7 lists what stays inferred (PseudoSpeed producer, inertia semantics, jump impulse, turn 360, camera, XL14
+tier, rider idle quirk, transition choice, `normal_speed`). Mount flow, controllers and PseudoSpeed were matched to the original
+once (`re-mounts.md` §9-10).
+
+**Next step.** Close the remaining rider/mount items (`CH2`): rider skills (`ride_ub`, `<weapon>_co_horse_attack_*`,
+`horse_ac_spur_f`), stirrup IK, `CSRemoveMate` auto-dismiss and humanoid combat idle; then re-verify placement/gaits with the
+animation graph player and tick rate, and do the live owner test (jump, strafe, mount/dismount).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| N1 | network | Live-QA tail after the 2026-10-18 lane-server stall, which no longer reproduces: auction settlement tail/reconnect and the final social unblock/offline/restart checks are still unverified | 2026-10-20 headless smoke run (login, enter world, titles, tooltip, Character Info, emotes, guild window); `aa-client-parity.md` "Verification baseline" | med | S | none |
-| N2 | network | Reconnect after a dropped game connection: session returns to idle | `aa-net.md` Known gaps; parity "reconnect policy" | med | S | none |
-| N3 | network | About 90 server packets still `ServerMsg::Unhandled`; one that fails inside a `DD04` batch ends the whole batch (risk of losing later packets). Per-system list below (G*, H*) | `aa-net/src/game.rs` `decode_game`; sc_sent.json diff | med | M (spread) | per system |
-| N4 | network | Outbound land-vehicle (`MoveVehicle`/type 2) and ship helm (`SteerShip`/type 4) movement are written; type-3 ship bodies and hanging/support blocks remain read-only | `aa-net.md` Known gaps | med | M | G2 |
-| N5 | network | `SCLoginCharInfoHouse` (houses in char list), premium grade in lobby, Korean / Mail.Ru / Tencent logins | `aa-net.md`, parity row 1 | low | S | none |
-| N6 | tooling | `aa-net.md` "Known gaps" is stale (says `SCBuffUpdated`, slave and mate packets are not decoded; they are) | `aa-net/src/game.rs` grep, commits 52bc34b, f14693e | low | S | none |
-
-### Login, world select, character select, create, loading
-
-| ID | Area | Item | Evidence | Vis | Size | Depends on |
-|---|---|---|---|---|---|---|
-| L1 | login | Fields / buttons are drawn (no original `field.png` / `button*.png`); no text selection, IME, Ctrl+C; generic kick text off World Select | `aa-client-login.md` Not done | low | S | none |
-| L2 | tooling / login | Client runs only on this box: game DB read from `D:/aaemu-live/rs-game/Data/compact.sqlite3` (the client's own copy is encrypted), pak at `D:\AA1.2`; log shows "6325 UI texts from D:/aaemu-live/..." | `aa-anim/src/db.rs:29`, `aa-ui/examples/fake/mod.rs:192`, log-sweep #14, run | med (for anyone else) | M | decrypt the client DB, or ship an export |
-| W1 | world select | Nothing open besides N5 / N2 (matches captures, 53 of 53 widgets) | `aa-ui.md` table | low | S | none |
-| C1 | char select | Skin: one calibrated colour per model instead of the HumanSkin SSS shader; fur drawn flat (ferre); hair spec is a baked strand map; flatter lighting than captures ("Char BackLight" lights missing) | `aa-anim.md` Gaps, `aa-cry.md` Known gaps, `aa-world.md` §6 | med | M | uncommitted calibration (section 4) |
-| C2 | char select / create | Hat / beard variants: beard meshes absent in the pak for ferre and orc (only dwarf has one), no automatic voice lip sync, appearance-change rebuilding of remote / NPC units | `aa-anim.md` Gaps, `aa-client-units.md` | low | S to M | none |
-| C3 | char select | Order of the hair / hair-colour grids and preset order not verified against the screen | `aa-anim.md` Gaps | low | S | a reference capture |
-| CR1 | create | Step 3 field: no wind, no dummy animation; `elf_fog_01` is in no particle library of the pak (WARN logged each time) | `aa-client-create.md`, `aa-fx.md:362`, log-sweep #4 | low | S | substitute effect |
-| CR2 | create / perf | Step 3 runs 34 to 76 fps; GPU bound, the stage camera re-filters the environment cube map every frame (`GeneratedEnvironmentMapLight`) | `research/perf.md` "Character create, step 3" | med | S | aa-cry `stage::environment_light` |
-| CR3 | create | In-game re-customize / beauty salon (`EnterBeautyShop` etc. are stubs; server has `beauty_salon.rs`) | HUD sweep; opcodes 0x12c to 0x12e, 0x1f1, 0x1f3 | low | M | G* wiring |
-| LD1 | loading | No persistent pipeline cache: frame 2 of a cold entry takes 0.1 to 2.8 s; `--enter-world` (test path) has no loading screen or prewarm; interruption / race coverage thin | parity row "Loading", `research/perf.md`, log-sweep #2 | med | S to M | none |
-
-### World rendering
-
-| ID | Area | Item | Evidence | Vis | Size | Depends on |
-|---|---|---|---|---|---|---|
-| WR1 | world | No HLOD / impostors: brushes vanish beyond 1000 m, small vegetation 220 m, trees 600 m; units beyond 140 m not drawn | `aa-world.md` §6 last bullet, `aa-client-units.md` | high | L | perf (P1) |
-| WR2 | world / cry | Illum `VERTCOLORS` (RGB squared after interpolation) used by Palace / castle brushes is dropped: `subset_mesh_with` omits `ATTRIBUTE_COLOR`; baked occlusion missing, dark canyon walls too bright | `aa-world.md` §7 "aa-cry, source-audited follow-up" | med | S to M | aa-cry then aa-world |
-| WR3 | world | Post: sun shafts, glow buffer, eye adaptation, photofilter / blueshift, SSDO bounce (SSAO opt-in), cooler grade vs real | `aa-world.md` §6, `research/time-of-day.md` | med | M | none |
-| WR4 | world | Water: sea foam / whitecaps / beach gradient, caustics, waterfalls, refraction from below, pond bed colour, only one pond calibrated, rivers dark | `aa-world.md` §6 | med | M | reference captures of lakes / sea |
-| WR5 | world | Terrain: no `_sp` specular (ground fully rough), 4 missing diffuse maps, decal MRT normal / specular, voxel specular / atlases, portal and area lighting, procedural grass blades | `aa-world.md` §6, parity "World geometry" | low to med | M to L | none |
-| WR6 | world | Vegetation bending / wind not applied; animated entities / FlowGraph / unsupported CGA clips; far clouds animation and calibration | `aa-cry.md`, parity | low | M | none |
-| WR7 | world | Time of day: area / relic overrides, subject-qualification producer, 12:00 to 19:05 "noon plateau" never checked against the real client | `research/time-of-day.md`, `aa-world.md` §6 | med | S | real-client captures at several hours (`time set hour=H`) |
-| WR8 | world | Sub-zone queries pass native tests but are not auto-registered live | parity "World geometry / Environment" | low | S | none |
-
-### Characters, animation, units
-
-| ID | Area | Item | Evidence | Vis | Size | Depends on |
-|---|---|---|---|---|---|---|
-| CH1 | characters | Costume specular / silver armour duller than captures; clothing clipping (the `Cut` hulls leave straddling triangles); dye only for the bake path (weapons, bows, non-default armour dye, dynamic UCC) | `aa-anim.md` Gaps, `aa-cry.md`, parity | med | M | uncommitted calibration |
 | CH2 | units | Mount / rider placement unverified (the get-on/get-off clips, PseudoSpeed gaits and mount inertia are in, unchecked against the retail client), no rider/mount skills (`ride_ub`, `<weapon>_co_horse_attack_*`, `horse_ac_spur_f`, jousting), no stirrup IK, no `CSRemoveMate` auto-dismiss, PseudoSpeed formula/turn thresholds/approach point/hop exit inferred (`re-mounts.md` section 7); humanoid NPCs lack combat idle; `SCUnitMovements` types read from the packet not the object | `aa-client-units.md` Gaps | med | M | G2 |
-| CH3 | units | Remote units: full-world facial / attachment QA, CDF entity bindings, skinned render slots | parity "Character and animation rendering" | low | M | none |
+| G4 | gameplay | Click-to-move, camera preset actions, hanging / moving supports, less common locomotion | parity row "Ground movement" | med | M | none |
 
-### Combat and skills
+### 3.2 Housing and farming
+
+**RE spec.** `re-placement.md`: builder state machine, ghost model/tint, checks/error codes, plot border, packets, Start
+Construction/Construction windows, F/G actions; the two-click/quote/cancel/guide/wheel/tax-cert flow was measured live once.
+Farming/crops: no RE spec.
+
+**Next step.** Finish `H2` (plain wheel step, rotating plot dots, decoration counters/`X2House` decorate, live maintain-window
+and retail entry checks) and `G3` (gathering, farming, coffers, switches); crops need their own `doodad`/`DoodadFunc*` RE pass
+before implementation.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H2 | HUD | Housing: placement, construction, tooltip, build precheck and the finished-house maintain window (tax, permission, recover, sale, buy, demolish) exist (`hud/houses.rs`, `hud/house_maintain.rs`); still open: plain placement wheel step (unresolved, 10 deg placeholder `ROT_STEP_PLAIN`; one live retail count), plot dots rotating with the model / following the terrain (rotated retail screenshot first), decoration counters/`X2House` decorate, live checks, retail entry point of the finished-house window; server `systems/housing` ~14k lines | HUD sweep; opcodes 0x0c1 to 0x0ca, 0x056 to 0x060 | high | L | aa-net + aa-client + aa-world placement |
+| G3 | gameplay | Doodad interaction: gathering, farming, coffers, switches (`ChangeDoodadPhase`, `SelectInteractionEx`, `SCCofferContentsUpdate`, `SCVegetationCutdowning` unhandled) | opcodes 0x096, 0x081 | high | M | none |
+
+### 3.3 Combat and HUD
+
+**RE spec.** None as an area spec. `re-skills.md` covers skill controllers (kinds/parameters, Dash, Leap), knockdown and effect
+lookup/beams, but not the combat row end to end.
+
+**Next step.** `CB1` effect decals/lights/forces, `CB2` casters/projectiles/poses, `CB3` cooldown/GCD producers and TL lifetimes,
+`CB4` force-mode plus more reference captures; the skill-caster flowgraph (kind 8) waits on 2.4 and mounted/flying casting on 3.1.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
@@ -85,99 +137,285 @@ Visibility = how much a player notices. IDs are for section 3 and 4.
 | CB3 | combat | Cooldown / GCD: native Fired producers, custom GCD, full timeline lifetimes, lane cooldown emitter re-entry check | parity row "Skill progression" | med | M | N1 for live check |
 | CB4 | combat | Force-mode (protected / team) eligibility; skill-by-skill reference verification (only 6 combat captures exist) | parity "Combat and HUD", `reference/ingame/combat_*` | med | L | more captures |
 
-### HUD windows and systems on fake or no data
+### 3.4 Inventory and items
 
-x2ui has about 70 groups. About 22 are wired, 9 partly, and 14 or more have no real data behind them (sub-agent count, loose). The HUD does not log
-`FALLBACK` at run time (it appears only in comments): fakes load silently from `aa-ui/examples/fake/*.lua` (8 files) under
-`hud/ingame.lua`. Bare stubs (callable, return nothing): `X2Auction`, `X2House`, `X2Coffer`, `X2Nation`, `X2InGameShop`, `X2Ucc`, `X2Warp`,
-`X2Priest`, `X2Racing`, `X2Book`, `X2UserMusic`, `X2Security`, `X2SiegeWeapon`, `X2ItemLookConverter`, `X2MiaMail`, `X2GoodsMail`.
+**RE spec.** None as an area spec. `re-equipment.md` covers costume slot clearing, attachment rotation and heel use, not the
+inventory row.
+
+**Next step.** `H11` item workflows (enchant protected planning/shared pending/continuation, dye, look converter, temper, secure),
+`H10` remaining tooltip fields, `H7` crafting/gathering/trade-pack follow-ups; live repair/expansion routing stays with the NPC
+entry (3.5).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| H1 | HUD | Auction house: protocol, escrow state and a live test exist in aa-net (`auction.rs`, 1273 lines); no HUD module, `X2Auction` is a stub; server is real | grep `aa-client`; `aa-net.md` | high | M | N1 to validate |
-| H2 | HUD | Housing: placement, construction, tooltip, build precheck and the finished-house maintain window (tax, permission, recover, sale, buy, demolish) exist (`hud/houses.rs`, `hud/house_maintain.rs`); still open: plain placement wheel step (unresolved, 10 deg placeholder `ROT_STEP_PLAIN`; one live retail count), plot dots rotating with the model / following the terrain (rotated retail screenshot first), decoration counters/`X2House` decorate, live checks, retail entry point of the finished-house window; server `systems/housing` ~14k lines | HUD sweep; opcodes 0x0c1 to 0x0ca, 0x056 to 0x060 | high | L | aa-net + aa-client + aa-world placement |
-| H3 | HUD | Territory / siege / dominion / nation: `X2Dominion` has 2 constant getters, `X2Nation` stub; guild web and siege controls | HUD sweep; `dominion.rs` unwired | med | L | none |
-| H4 | HUD | In-game shop, premium service, cash points: `X2InGameShop` stub, `X2PremiumService` fixed getters; server has `cash_shop.rs` (AA-point wallet is a server gap) | HUD sweep; opcodes 0x1cf to 0x1d8 | med | M | server wallet |
-| H5 | HUD | Portals / teleport / navi / return points: nothing wired, `SCCharacterPortals` etc. undecoded | opcodes 0x05b to 0x05d, 0x0b3, 0x115 | med | M | none |
-| H6 | HUD | Appellations (titles): `GetAppellationCount` fake 0 in the character window; `SCAppellations` etc. undecoded and `ChangeAppellation` unsent | `fake_ingame.lua`; opcodes 0x1a4 to 0x1a6 | med | S to M | none |
 | H7 | HUD | Crafting follow-ups: workbench input / range / permissions, gathering interactions, processing, trade-pack (specialty) sale flow and coin payout, `X2Store` zone-group getters and `BackCarryingOrders` still fake | parity rows "Crafting" and "NPC interactions", `aa-client-specialty.md` | high | M to L | G4 |
-| H8 | HUD | NPC services: multi-service NPCs (quest and shop choice), live repair routing, ability services, priest buffs, coin / doodad shops, teleport | parity row "NPC interactions" | med | M | none |
-| H9 | HUD | Map: quest objective areas, notifier icons, other-zone icons, climate / conflict overlays, live housing / public farm icons, ship markers | `aa-client-hud.md` Not done | med | M | H2, G2 |
 | H10 | HUD | Tooltips: damage breakdown option, `ea_*` / `return_point`, buff caster stats on others, gems / tempers / enchants, repair cost | `aa-client-hud.md` "Tooltip numbers" | med | S to M | none |
 | H11 | HUD | Item workflows: enchant protected planning / shared pending / continuation, dye, look converter (`X2ItemLookConverter`), temper, item secure / unsecure sends | `aa-client-enchant.md`, parity row "Inventory" | med | M | none |
-| H12 | HUD | Options: texture / terrain detail / character / water quality and DoF have no renderer knob, a changed draw distance only reaches cells loaded afterwards, key-binding blob and character sync, remaining action consumers, layout persistence | parity row "Options" | med | M | aa-ui |
-| H13 | HUD | Chat: send-size overflow, window position persistence, other-tab splitting, full command set, moderation. Emotes and bubbles are done (`CSExpressEmotion`, `SCEmotionExpressed`, `SCChatBubble`, `SCAreaChatBubble` decoded, say-chat bubbles; see `docs/aa-client-hud.md`, "Emotes and speech bubbles"); there is no `SCUserChatMessage` in the server's opcode tables or the C# project | parity row "Chat"; opcodes 0x12b, 0x153, 0x154 | med | S to M | none |
-| H14 | HUD | Overhead 3D glyphs: raid markers, family / guild titles; party buff / combat indicators | `aa-client-hud.md`, `aa-ui.md` "Native 3D overhead marker audit" | med | S to M | aa-ui |
-| H15 | HUD | Music: `X2UserMusic` stub (composition, percussion windows), bard instruments; `SCSendUserMusic`, `SCUserNoteLoaded` undecoded | HUD sweep; opcodes 0x1df to 0x1e1 | low | L | G* |
-| H16 | HUD | UCC / crest / books (`X2Ucc`, `X2Book`), common / public farm, racing, second password, web browser, tutorial (one canned page) | HUD sweep | low | M | server (racing, second password have no server types) |
-| H17 | HUD | Social live settlement (paired guild, family, mail, trade, raid loot, friends unblock / restart) never re-run after the lane stalled; 3D titles; nation | parity rows "Mail", "Social", "Party" | med | M | N1 |
-| H18 | HUD | Ability change / reset costs fake (`X2Ability`), `X2Player` pay / cash / schedule getters fake | `fake_ingame.lua:790-806` | low | S | none |
-| H19 | tooling | No run-time report of which stubs / fakes the scripts hit (`ui.stub_calls()` only printed by the fake example) | HUD sweep: `aa-ui/src/lib.rs:192` | low | S | none |
 
-### Gameplay systems (server supports, client does not)
+### 3.5 Quests and NPCs
+
+**RE spec.** None.
+
+**Next step.** `H8` NPC services (multi-service choice, live repair routing, ability, priest, coin/doodad shops, teleport), `H9`
+map (objective areas, notifier icons, other zones, climate/conflict, housing/public-farm, ship markers), `H5`
+portals/teleport/navi/return points, and `G6` quest camera (with 2.4).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| G1 | gameplay | Duels: server real (`duel.rs`); client has no packets or UI (`SCDuel*` 0x08b to 0x08f, `ChallengeDuel` 0x050) | server grep; aa-net grep | med | S to M | none |
-| G2 | gameplay | Transport: local owned mounts and mounting UI, summon / dismiss, owned land vehicles and ships (water placement, boarding, helm, deck standing, mode mount skills, unsummon); gliders, hanging, flying state (`SCSkillControllerState`, `SCUnitFlyingStateChanged`, `SCShipyardState`, `SCHung`, `SCBondDoodad` undecoded); ship cannons blocked by the server's log-only slave-equipment stub; server drops the ship summon position and always binds the driver seat | `aa-client-units.md`, parity "Pets, slaves", opcodes 0x06d, 0x07a, 0x137 to 0x13a, 0x1aa | med | L | N4 |
-| G2a | gameplay | Land vehicles (Farm Wagon), left after the `fix/wagon-retail` pass (`docs/research/re-wagons.md` 6): gap 7 summon locator ghost (`SlaveLocator`: cursor ray, wheel rotation, OBB validity, red invalid material) and gap 8 CryPhysics driving (inertia, roll/pitch, `max_climb_ang`); `$IK_Grip_L/R` hand IK on the helm and the helm's exact orientation (no `$helms` helper in the wagon skeleton: it sits between the grips); the boarding range constant `DAT_39ac79fc` (10 m stand-in); the `builtin_vehicle_info` key has no default key; cargo crate models per loaded pack and `VehicleMove` remote steering from the packet instead of the heading rate are unverified live | `re-wagons.md` | med | M | G2 |
-| G3 | gameplay | Doodad interaction: gathering, farming, coffers, switches (`ChangeDoodadPhase`, `SelectInteractionEx`, `SCCofferContentsUpdate`, `SCVegetationCutdowning` unhandled) | opcodes 0x096, 0x081 | high | M | none |
-| G4 | gameplay | Click-to-move, camera preset actions, hanging / moving supports, less common locomotion | parity row "Ground movement" | med | M | none |
-| G5 | gameplay | Tower defense (0x16b to 0x16e), siege alerts (0x0ec to 0x0ef), crime arrest (0x170), appearance gender change (0x1f3) | opcodes | low | M | H3 |
+| H5 | HUD | Portals / teleport / navi / return points: nothing wired, `SCCharacterPortals` etc. undecoded | opcodes 0x05b to 0x05d, 0x0b3, 0x115 | med | M | none |
+| H8 | HUD | NPC services: multi-service NPCs (quest and shop choice), live repair routing, ability services, priest buffs, coin / doodad shops, teleport | parity row "NPC interactions" | med | M | none |
+| H9 | HUD | Map: quest objective areas, notifier icons, other-zone icons, climate / conflict overlays, live housing / public farm icons, ship markers | `aa-client-hud.md` Not done | med | M | H2, G2 |
 | G6 | gameplay | Cinema / quest camera: hidden cinematic actors are "aa-client's screen-flow responsibility"; `X2Quest.UseQuestCamera` false | `aa-world.md` §6 | low | M | none |
-| G7 | gameplay | Misc small: dice (0x134), impulse / knockback visuals (0x079), idle status, visual options, PvP point change (0x204), `SCPlaySound` (0x1de), item look convert, lobby refresh (0x1cd) | opcodes | low | S each | none |
 
-### Audio, performance, tooling
+### 3.6 Transport (ships, gliders, carts)
+
+**RE spec.** `re-wagons.md` for the Farm Wagon (identity, model/wheels/helm, seats/boarding, driving, cargo/mode bar, despawn;
+packet flow measured live). Ships, gliders, hanging/flying: none.
+
+**Next step.** `G2a` land-vehicle leftovers (SlaveLocator ghost, CryPhysics driving, `$IK_Grip`/helm, boarding range constant,
+cargo models per pack), `G2` ships/gliders/hanging/flying and ship cannons, `N4` outbound land/ship movement plus type-3 bodies.
+CryPhysics driving waits on 2.3; ship cannons remain blocked by the server's log-only slave-equipment stub.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| G2a | gameplay | Land vehicles (Farm Wagon), left after the `fix/wagon-retail` pass (`docs/research/re-wagons.md` 6): gap 7 summon locator ghost (`SlaveLocator`: cursor ray, wheel rotation, OBB validity, red invalid material) and gap 8 CryPhysics driving (inertia, roll/pitch, `max_climb_ang`); `$IK_Grip_L/R` hand IK on the helm and the helm's exact orientation (no `$helms` helper in the wagon skeleton: it sits between the grips); the boarding range constant `DAT_39ac79fc` (10 m stand-in); the `builtin_vehicle_info` key has no default key; cargo crate models per loaded pack and `VehicleMove` remote steering from the packet instead of the heading rate are unverified live | `re-wagons.md` | med | M | G2 |
+| G2 | gameplay | Transport: the mount core is implemented (`re-mounts.md`); remaining: ships (water placement, boarding, helm, deck standing, mode mount skills, unsummon), gliders, hanging, flying state (`SCSkillControllerState`, `SCUnitFlyingStateChanged`, `SCShipyardState`, `SCHung`, `SCBondDoodad` undecoded); ship cannons blocked by the server's log-only slave-equipment stub; server drops the ship summon position and always binds the driver seat | `aa-client-units.md`, parity "Pets, slaves", opcodes 0x06d, 0x07a, 0x137 to 0x13a, 0x1aa | med | L | N4 |
+| N4 | network | Outbound land-vehicle (`MoveVehicle`/type 2) and ship helm (`SteerShip`/type 4) movement are written; type-3 ship bodies and hanging/support blocks remain read-only | `aa-net.md` Known gaps | med | M | G2 |
+
+## 4. Remaining ledger rows
+
+Rows not covered by 3.1-3.6, in ledger order. Each entry gives the RE spec status, the next step and the old items moved under
+it.
+
+### 4.1 World selection and login
+
+**RE spec.** None. **Next step.** `N2` reconnect policy, `N5` houses in the char list/premium lobby/regional logins, `L1` login
+fields and text; `W1` has nothing open besides these.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| L1 | login | Fields / buttons are drawn (no original `field.png` / `button*.png`); no text selection, IME, Ctrl+C; generic kick text off World Select | `aa-client-login.md` Not done | low | S | none |
+| N2 | network | Reconnect after a dropped game connection: session returns to idle | `aa-net.md` Known gaps; parity "reconnect policy" | med | S | none |
+| N5 | network | `SCLoginCharInfoHouse` (houses in char list), premium grade in lobby, Korean / Mail.Ru / Tencent logins | `aa-net.md`, parity row 1 | low | S | none |
+| W1 | world select | Nothing open besides N5 / N2 (matches captures, 53 of 53 widgets) | `aa-ui.md` table | low | S | none |
+
+### 4.2 Character selection and creation
+
+**RE spec.** None. **Next step.** `C1` skin/fur/hair lighting, `C2` hat/beard/lip sync/appearance rebuild, `C3` grid order,
+`CR1` wind/dummy/elf fog, `CR2` step-3 GPU cost, `CR3` beauty salon.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| C1 | char select | Skin: one calibrated colour per model instead of the HumanSkin SSS shader; fur drawn flat (ferre); hair spec is a baked strand map; flatter lighting than captures ("Char BackLight" lights missing) | `aa-anim.md` Gaps, `aa-cry.md` Known gaps, `aa-world.md` §6 | med | M | character-lighting calibration |
+| C2 | char select / create | Hat / beard variants: beard meshes absent in the pak for ferre and orc (only dwarf has one), no automatic voice lip sync, appearance-change rebuilding of remote / NPC units | `aa-anim.md` Gaps, `aa-client-units.md` | low | S to M | none |
+| C3 | char select | Order of the hair / hair-colour grids and preset order not verified against the screen | `aa-anim.md` Gaps | low | S | a reference capture |
+| CR1 | create | Step 3 field: no wind, no dummy animation; `elf_fog_01` is in no particle library of the pak (WARN logged each time) | `aa-client-create.md`, `aa-fx.md:362`, log-sweep #4 | low | S | substitute effect |
+| CR2 | create / perf | Step 3 runs 34 to 76 fps; GPU bound, the stage camera re-filters the environment cube map every frame (`GeneratedEnvironmentMapLight`) | `research/perf.md` "Character create, step 3" | med | S | aa-cry `stage::environment_light` |
+| CR3 | create | In-game re-customize / beauty salon (`EnterBeautyShop` etc. are stubs; server has `beauty_salon.rs`) | HUD sweep; opcodes 0x12c to 0x12e, 0x1f1, 0x1f3 | low | M | G* wiring |
+
+### 4.3 Loading and screen lifecycle
+
+**RE spec.** None. **Next step.** `LD1`: persistent pipeline cache, loading screen for `--enter-world`, interruption/race coverage.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| LD1 | loading | No persistent pipeline cache: frame 2 of a cold entry takes 0.1 to 2.8 s; `--enter-world` (test path) has no loading screen or prewarm; interruption / race coverage thin | parity row "Loading", `research/perf.md`, log-sweep #2 | med | S to M | none |
+
+### 4.4 World geometry
+
+**RE spec.** None. **Next step.** `WR1` HLOD/impostors, `WR2` vertex colours, `WR5` terrain/decal material gaps, `WR6`
+vegetation wind and FlowGraph entities, `WR8` live sub-zone registration.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| WR1 | world | No HLOD / impostors: brushes vanish beyond 1000 m, small vegetation 220 m, trees 600 m; units beyond 140 m not drawn | `aa-world.md` §6 last bullet, `aa-client-units.md` | high | L | perf (P1) |
+| WR2 | world / cry | Illum `VERTCOLORS` (RGB squared after interpolation) used by Palace / castle brushes is dropped: `subset_mesh_with` omits `ATTRIBUTE_COLOR`; baked occlusion missing, dark canyon walls too bright | `aa-world.md` §7 "aa-cry, source-audited follow-up" | med | S to M | aa-cry then aa-world |
+| WR5 | world | Terrain: no `_sp` specular (ground fully rough), 4 missing diffuse maps, decal MRT normal / specular, voxel specular / atlases, portal and area lighting, procedural grass blades | `aa-world.md` §6, parity "World geometry" | low to med | M to L | none |
+| WR6 | world | Vegetation bending / wind not applied; animated entities / FlowGraph / unsupported CGA clips; far clouds animation and calibration | `aa-cry.md`, parity | low | M | none |
+| WR8 | world | Sub-zone queries pass native tests but are not auto-registered live | parity "World geometry / Environment" | low | S | none |
+
+### 4.5 Environment
+
+**RE spec.** None. **Next step.** `WR3` post effects, `WR4` water fidelity, `WR7` time-of-day overrides and the unchecked noon
+plateau.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| WR3 | world | Post: sun shafts, glow buffer, eye adaptation, photofilter / blueshift, SSDO bounce (SSAO opt-in), cooler grade vs real | `aa-world.md` §6, `research/time-of-day.md` | med | M | none |
+| WR4 | world | Water: sea foam / whitecaps / beach gradient, caustics, waterfalls, refraction from below, pond bed colour, only one pond calibrated, rivers dark | `aa-world.md` §6 | med | M | reference captures of lakes / sea |
+| WR7 | world | Time of day: area / relic overrides, subject-qualification producer, 12:00 to 19:05 "noon plateau" never checked against the real client | `research/time-of-day.md`, `aa-world.md` §6 | med | S | real-client captures at several hours (`time set hour=H`) |
+
+### 4.6 Character and animation rendering
+
+**RE spec.** None. **Next step.** `CH1` shading/clipping/dye, `CH3` remote facial/attachment QA, CDF bindings and skinned render
+slots; the graph player (2.1) is a prerequisite for the remaining clips.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| CH1 | characters | Costume specular / silver armour duller than captures; clothing clipping (the `Cut` hulls leave straddling triangles); dye only for the bake path (weapons, bows, non-default armour dye, dynamic UCC) | `aa-anim.md` Gaps, `aa-cry.md`, parity | med | M | character-lighting calibration |
+| CH3 | units | Remote units: full-world facial / attachment QA, CDF entity bindings, skinned render slots | parity "Character and animation rendering" | low | M | none |
+
+### 4.7 Skill progression
+
+**RE spec.** None. **Next step.** `H18` ability change/reset and `X2Player` pay/cash/schedule getters; cooldown work is `CB3` in
+3.3.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H18 | HUD | Ability change / reset costs fake (`X2Ability`), `X2Player` pay / cash / schedule getters fake | `fake_ingame.lua:790-806` | low | S | none |
+
+### 4.8 Chat
+
+**RE spec.** None. **Next step.** `H13`: send-size overflow, window position persistence, other-tab splitting, full command set,
+moderation.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H13 | HUD | Chat: send-size overflow, window position persistence, other-tab splitting, full command set, moderation. Emotes and bubbles are done (`CSExpressEmotion`, `SCEmotionExpressed`, `SCChatBubble`, `SCAreaChatBubble` decoded, say-chat bubbles; see `docs/aa-client-hud.md`, "Emotes and speech bubbles"); there is no `SCUserChatMessage` in the server's opcode tables or the C# project | parity row "Chat"; opcodes 0x12b, 0x153, 0x154 | med | S to M | none |
+
+### 4.9 Party and raid
+
+**RE spec.** None. **Next step.** `H14` overhead 3D glyphs and party indicators; paired live loot settlement waits on `N1`.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H14 | HUD | Overhead 3D glyphs: raid markers, family / guild titles; party buff / combat indicators | `aa-client-hud.md`, `aa-ui.md` "Native 3D overhead marker audit" | med | S to M | aa-ui |
+
+### 4.10 Social/community
+
+**RE spec.** None. **Next step.** `H17` live settlement/unblock/restart and 3D titles; guild web/siege controls are in `H3`
+(4.12), nation in 4.12.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H17 | HUD | Social live settlement (paired guild, family, mail, trade, raid loot, friends unblock / restart) never re-run after the lane stalled; 3D titles; nation | parity rows "Mail", "Social", "Party" | med | M | N1 |
+
+### 4.11 Mail, trade and auctions
+
+**RE spec.** None. **Next step.** `H1`: live search/bid/buyout/put-up/cancel/settlement and escrow/restart; paired mail/trade
+checks wait on `N1`.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H1 | HUD | Auction house. Stale first line: the sweep said "no HUD module, `X2Auction` is a stub", but the upstream auction UI merged in d627eec (parity row "Mail, trade and auctions"). Remaining: live search/bid/buyout/put-up/cancel/settlement, escrow/restart and the original chat notices | `aa-net.md`, parity row "Mail, trade and auctions" | high | M | N1 to validate |
+
+### 4.12 Territory, siege and dominion
+
+**RE spec.** None. **Next step.** `H3`: territory/siege/dominion/nation plus guild web and siege controls.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H3 | HUD | Territory / siege / dominion / nation: `X2Dominion` has 2 constant getters, `X2Nation` stub; guild web and siege controls | HUD sweep; `dominion.rs` unwired | med | L | none |
+
+### 4.13 Battlefields
+
+**RE spec.** None. **Next step.** `G5` tower defense/siege alerts/crime arrest/appearance gender, plus live matchmaking/QA, the
+lane Pong/start timer-origin mismatch and protected native ordinary skill eligibility/casting (`CB4`). Queue errors and remaining
+scheduled-event presentation are open.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| G5 | gameplay | Tower defense (0x16b to 0x16e), siege alerts (0x0ec to 0x0ef), crime arrest (0x170), appearance gender change (0x1f3) | opcodes | low | M | H3 |
+
+### 4.14 Unit colours
+
+**RE spec.** `re-unit-colors.md` (rules, `hud.dds` rows, passive-hostile evidence, Bevy fix). **Next step.** Capture the
+aggressive name colour (the red row scaled is assumed), check a friendly NPC of another faction, and run one live side-by-side.
+No item ID.
+
+### 4.15 Duels
+
+**RE spec.** None. **Next step.** Retail placement of the countdown text (currently a system message) and the
+`SCAreaChatBubble` 0x153 (type 543, ignored). `G1` is closed since the sweep: challenge/prompt/accept/refuse, `STARTED_DUEL`/`ENDED_DUEL`
+and the countdown are in the parity row; the server now sends `SCDuelStartCountdownPacket` at acceptance (NickMesser/AAEmu#15).
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| G1 | gameplay | Duels: closed as an open item (server real, client now has the packets and UI). Historical text was "server real (`duel.rs`); client has no packets or UI (`SCDuel*` 0x08b to 0x08f, `ChallengeDuel` 0x050)" | server grep; aa-net grep; parity row "Duels" | med | closed | none |
+
+### 4.16 Achievements, ranking and trials
+
+**RE spec.** None. **Next step.** English summary/description data, live achievement save/re-entry, ranking reward-mail
+formatter/live settlement, the original nonempty bounty asset defect/payment lane gaps, trial spatial strings and mixed-subsystem
+ordering, crime reporting/prison and racing flows, and paired live crime/jury settlement. No item IDs.
+
+### 4.17 Music and other special systems
+
+**RE spec.** None. **Next step.** `A1`/`A2` audio gaps, `H15` bard/composition, `H4` in-game shop/premium, `H16` UCC/books/
+common farm/racing/second password/web/tutorial.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
 | A1 | audio | Voice-over gaps: `x2voice_prologue` has no FEV (client-driven indun voices), 59 absent events and 41 absent FEVs play nothing; one CELT subsound | `research/audio.md` §5.4, `aa-audio.md` | low | S (CELT L) | none |
 | A2 | audio | FEV features read but not played (pitch / low-pass envelopes, doppler, cones, spawn templates, oscillator), no ducking, no `is_playing` / music-ended query, ambience loops decoded whole; moods beyond 5 and live zone / combat crossfade not walked | `aa-audio.md`, `aa-client-sound.md` | low to med | M | none |
-| P1 | perf | Town fps: Marianople 38 fps (40k entities, 19k mesh entities, 836 mesh assets rewritten per frame by aa-fx, `allocate_and_free_meshes` 8 ms). One fix landed (77d3f01, invisible emitters skip rewrites); no re-measurement. Frame is render-thread bound, GPU 3 to 4 ms idle | `research/perf.md` (draft), commit 77d3f01 | high | M | aa-fx, aa-world |
-| P2 | perf | Entity / draw-call count: merge static part entities, cull earlier; `CryAssets::load_model` is main-thread only (prepare / finish split requested) | `research/perf.md`, `aa-world.md` §7 | med | L | aa-cry |
-| P3 | perf | 3 to 10 fps stalls when other processes load the CPU (cause found: scheduler hand-offs; above-normal priority class added in `priority.rs`). Not re-verified on a quiet machine; no memory / VRAM budget measured anywhere | `research/perf.md` | med | S | none |
+| H4 | HUD | In-game shop, premium service, cash points: `X2InGameShop` stub, `X2PremiumService` fixed getters; server has `cash_shop.rs` (AA-point wallet is a server gap) | HUD sweep; opcodes 0x1cf to 0x1d8 | med | M | server wallet |
+| H15 | HUD | Music: `X2UserMusic` stub (composition, percussion windows), bard instruments; `SCSendUserMusic`, `SCUserNoteLoaded` undecoded | HUD sweep; opcodes 0x1df to 0x1e1 | low | L | G* |
+| H16 | HUD | UCC / crest / books (`X2Ucc`, `X2Book`), common / public farm, racing, second password, web browser, tutorial (one canned page) | HUD sweep | low | M | server (racing, second password have no server types) |
+
+### 4.18 Options and UI toolkit
+
+**RE spec.** None. **Next step.** `H12`: remaining quality knobs, live draw-distance change, key-binding blob/character sync,
+remaining action consumers and layout persistence.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| H12 | HUD | Options: texture / terrain detail / character / water quality and DoF have no renderer knob, a changed draw distance only reaches cells loaded afterwards, key-binding blob and character sync, remaining action consumers, layout persistence | parity row "Options" | med | M | aa-ui |
+
+## 5. Other open items
+
+### 5.1 Live validation and network
+
+`N1` gates every live check in the area entries (auction settlement tail/reconnect, mail/trade, guild/family, battlefield,
+cooldowns). Once the lane is confirmed, run the offline/fixture items live, then territory/siege/tower defense. `N3` is
+cross-cutting per-system decode work; `N6` is the stale network doc.
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| N1 | network | Live-QA tail after the 2026-10-18 lane-server stall, which no longer reproduces: auction settlement tail/reconnect and the final social unblock/offline/restart checks are still unverified | 2026-10-20 headless smoke run (login, enter world, titles, tooltip, Character Info, emotes, guild window); `aa-client-parity.md` "Verification baseline" | med | S | none |
+| N3 | network | About 90 server packets still `ServerMsg::Unhandled`; one that fails inside a `DD04` batch ends the whole batch (risk of losing later packets). Per-system lists live in the area entries above | `aa-net/src/game.rs` `decode_game`; sc_sent.json diff | med | M (spread) | per system |
+| N6 | tooling | `aa-net.md` "Known gaps" is stale (says `SCBuffUpdated`, slave and mate packets are not decoded; they are) | `aa-net/src/game.rs` grep, commits 52bc34b, f14693e | low | S | none |
+
+### 5.2 Tooling, docs and portability
+
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| L2 | tooling / login | Client runs only on this box: game DB read from `D:/aaemu-live/rs-game/Data/compact.sqlite3` (the client's own copy is encrypted), pak at `D:\AA1.2`; log shows "6325 UI texts from D:/aaemu-live/..." | `aa-anim/src/db.rs:29`, `aa-ui/examples/fake/mod.rs:192`, log-sweep #14, run | med (for anyone else) | M | decrypt the client DB, or ship an export |
+| H19 | tooling | No run-time report of which stubs / fakes the scripts hit (`ui.stub_calls()` only printed by the fake example) | HUD sweep: `aa-ui/src/lib.rs:192` | low | S | none |
 | T1 | tooling | Reference gaps: no `ingame/worldmap_*` check in docs, `combat_kick`, `combat_death`, tooltips, Palace each mentioned once; no captures at all for skill book, quest log, mail, party, crafting, friends, mounts, ships, housing, weather, night. Real client (`archeage.exe` pid 48924) is up | `reference/`, grep of docs | med | S per set | N1 (lane) |
 | T2 | tooling | Docs are 2.6 MB (`aa-net.md` 714 KB, `aa-ui.md` 464 KB, `aa-world.md` 420 KB) and gap lists are stale in places; no single status page besides the parity ledger | `wc -c docs` | low | S | none |
 
-## 3. Suggested order and parallel groups
+### 5.3 Performance
 
-Round 0, before anything: **N1** (diagnose / restart the lane server; the server owner or the orchestrator, not a code agent) and
-decide the uncommitted work in section 4 (item U1 first: HEAD may not build). Everything in "live validation" waits on it.
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| P1 | perf | Town fps: Marianople 38 fps (40k entities, 19k mesh entities, 836 mesh assets rewritten per frame by aa-fx, `allocate_and_free_meshes` 8 ms). One fix landed (77d3f01, invisible emitters skip rewrites); no re-measurement. Frame is render-thread bound, GPU 3 to 4 ms idle | `research/perf.md` (draft), commit 77d3f01 | high | M | aa-fx, aa-world |
+| P2 | perf | Entity / draw-call count: merge static part entities, cull earlier; `CryAssets::load_model` is main-thread only (prepare / finish split requested) | `research/perf.md`, `aa-world.md` §7 | med | L | aa-cry |
+| P3 | perf | 3 to 10 fps stalls when other processes load the CPU (cause found: scheduler hand-offs; above-normal priority class added in `priority.rs`). Not re-verified on a quiet machine; no memory / VRAM budget measured anywhere | `research/perf.md` | med | S | none |
 
-Round 1, all groups independent. "Owns" = the files only that agent edits. Shared choke points (listed per group) are the only
-conflict risk, so register them through one integrator or in separate small commits.
+### 5.4 Misc gameplay
 
-| Group | Items | Owns | Shared files to watch |
-|---|---|---|---|
-| A World look | WR2 (second half), WR3, WR4, WR7, WR5, then WR1 | `crates/aa-world/**`, `docs/aa-world.md` | none |
-| B Characters and materials | WR2 (aa-cry half: vertex colours), C1, CH1, C2, CR2, decide U2 calibration | `crates/aa-cry/**`, `crates/aa-anim/**` | aa-cry change must land before A's WR2 |
-| C Effects and combat | CB1, CB2, CB4, CR1, P1 (aa-fx side) | `crates/aa-fx/**`, `crates/aa-client/src/ingame/combat*` | `ingame/combat.rs` has live uncommitted edits (U5) |
-| D Auction and small systems | H1, G1, H6, H13 emotes and bubbles, H5 | new `aa-net/src/<feature>.rs` and `aa-client/src/hud/<feature>/` per feature | `aa-net/src/game.rs` (`decode_game`), `opcodes.rs`, `session.rs` Command / Event, `aa-client/src/hud/mod.rs`, `hud/api.rs`, `hud/ingame.lua` |
-| E Housing | H2 (then H9 icons) | `aa-net/src/housing.rs`, new `aa-client/src/hud/housing/`, a placement module in aa-world only by agreement | same shared files as D |
-| F Transport | G2, N4, CH2, CB2 mounted part, H15 later | `aa-client/src/ingame/mount.rs`, `hud/pets/**`, `aa-net` slave / mate / movement | `aa-net/src/movement` (writer), D's shared files |
-| G Crafting, gathering, NPC services | G3, H7, H8, H11, H10 | `aa-client/src/hud/{crafting,specialty,store,repair,enchant}*` | D's shared files |
-| H Client perf and loading | P1, P2, P3, LD1, WR1 spike (design only) | `crates/aa-client/src/{ingame/{prewarm,flow,enter}.rs,login/loading.rs,priority.rs}`, `docs/research/perf.md` (finish it) | A and C for the render side |
-| I UI toolkit and options | H12, H14, H19, L1 | `crates/aa-ui/**`, `crates/aa-client/src/{settings*,login/login_screen*}` | none |
-| J Audio | A1, A2 | `crates/aa-audio/**`, `crates/aa-client/src/sound/**` | none |
-| K Portability and docs | L2, N6, T2, T1 (capture sets once N1 is fixed) | `tools/`, `docs/`, `reference/` | none |
+`G7` spans systems instead of belonging to one row. `H6` (appellations/titles) has no natural ledger entry.
 
-Round 2 (after N1 is fixed): live validation of everything marked "offline / fixture" (H17, CB3, H1, mail, trade, guilds), then
-H3 / G5 (territory, siege, tower defense, nation), H4 (needs the server's AA-point wallet), H16, G6.
+| ID | Area | Item | Evidence | Vis | Size | Depends on |
+|---|---|---|---|---|---|---|
+| G7 | gameplay | Misc small: dice (0x134), impulse / knockback visuals (0x079), idle status, visual options, PvP point change (0x204), `SCPlaySound` (0x1de), item look convert, lobby refresh (0x1cd) | opcodes | low | S each | none |
+| H6 | HUD | Appellations (titles): `GetAppellationCount` fake 0 in the character window; `SCAppellations` etc. undecoded and `ChangeAppellation` unsent | `fake_ingame.lua`; opcodes 0x1a4 to 0x1a6 | med | S to M | none |
 
-## 4. Uncommitted or abandoned work
+### 5.5 Uncommitted or abandoned work (U1-U8)
 
-`git status` at 19:16 shows 20 modified files and 2 untracked. At least two sessions look active right now (files touched within two hours: U1, U5, U6).
+The 2026-10-18 table is closed in this worktree: `git status` shows only the untracked `docs/research/re-mounts-full.md`
+(committed with this docs change). Historical entries:
 
-| ID | Files | Age | State | Decision needed |
-|---|---|---|---|---|
-| U1 | `aa-client/src/hud/data.rs` (`specialties: Tables`, `Tables::load`), `hud/enchant.rs` (`pub(super) fn equipment`), `hud/enchant/selection.rs` (`equipment()`) | 17:45 today | **Committed HEAD depends on them**: `hud/specialty/quote.rs` (commit d612b06, 18:03) uses `game.specialties` and `enchant::equipment`, which exist only in the working tree (I did not run a build to confirm). Looks like the missed tail of the specialty-quote commit | commit now (specialty owner) |
-| U2 | `aa-anim/src/character.rs` (skin_tune retune for 8 models, elf-female tint), `aa-anim/examples/compare.rs` (`--ssao`, `--key-from`, `--shadows`), `aa-cry/src/stage.rs` (`StageShadows`, stage-frame doc fix: front is -Z), `aa-cry/src/shade.rs` (costume gloss by `ReflectAmount`) | 10-17 13:46 to 10-18 01:12 | One character-lighting calibration session, stale 18 to 29 hours, half merged: no commit, no doc entry. Visual effect on char select / create unverified | owner of aa-anim / aa-cry: finish (re-shoot against `reference/character_create`) and commit, or `git checkout` |
-| U3 | `aa-world/src/post.wesl` (NaN / negative guard for refraction), `sky.rs` (`ambient_rel`, `water_lod` tuning), `water.wesl`, `water_material.rs` (cube map mip level), `examples/fly.rs` (`--pos x,y`) | post / fly 10-17 15:41; sky 10-17 23:10; water 10-18 15:37 to 15:56 | Parity doc calls them "inherited calibration / performance edits ... not counted until validated". The NaN guard is a pure bug fix; `sky.rs` references `TerrainQuery` and is stale | aa-world owner: commit the NaN guard and `fly.rs` now; validate or drop the water / sky tuning |
-| U4 | `aa-audio/src/reverb.rs` | 10-17 16:10 | Adds one `#[ignore]` cost test only; harmless | commit |
-| U5 | `aa-dev/src/{lib.rs,record.rs (untracked)}`, `aa-dev/Cargo.toml`, `Cargo.lock`, `aa-fx/examples/effects.rs` (`--list` contact sheet), `aa-client/src/ingame/combat.rs` (`AA_COMBAT_FAKE_TARGET`, `--record-gate`) | 19:12 to 19:15 today | Active: a frame-recorder (`--record`) and combat video tooling being written right now. `aa-dev` is shared by every example, so a broken edit blocks everyone | leave; ask the owner to commit `aa-dev` first and in one go with `Cargo.lock` |
-| U6 | `aa-net/src/state/stats.rs` (labor wraps like the native signed add, new test), `docs/aa-net.md` (3 sections on labor delta, specialty affordability) | 18:06 to 18:08 today | Active, small and self-contained | aa-net owner: commit |
-| U7 | `docs/research/perf.md` (untracked) | 10-17 15:51 | Abandoned draft: still contains the literal placeholders `RESULTS_TABLE`, `AA_FX_SECTION`, `OTHER_CRATES` and no "Fixed in aa-fx" content. The numbers above the placeholders are good and I used them | finish (group H) or commit as a draft with the placeholders removed |
-| U8 | `target/agents/*` (perf, sol61, reel, ...), `target/debug/aa-client-2026*.exe` (140 MB each) | n/a | Not in git; many immutable builds of the client pile up on a disk the AGENTS file calls limited | prune by the owners |
+| ID | Former item | State now |
+|---|---|---|
+| U1 | Specialty-quote tail (`hud/data.rs` specialties, `hud/enchant.rs` equipment) | committed (d612b06 and later specialty work) |
+| U2 | Character-lighting calibration (`aa-anim/src/character.rs`, `aa-cry/src/stage.rs`, `shade.rs`) | landed in the stage/skin commits |
+| U3 | World post/sky/water tuning (`post.wesl`, `sky.rs`, `water_material.rs`, `examples/fly.rs`) | NaN guard/water knobs landed (76af157 and later) |
+| U4 | `aa-audio/src/reverb.rs` ignored cost test | committed (5883e6f) |
+| U5 | Frame recorder (`aa-dev/record.rs`) and combat video tooling | closed in this worktree |
+| U6 | Labor delta (`aa-net/src/state/stats.rs`) | committed (4903cea, a9d96df) |
+| U7 | `docs/research/perf.md` placeholder draft | committed without placeholders (25f62dc) |
+| U8 | `target/agents/*` and `target/debug/aa-client-2026*.exe` build pile | **still open**: prune by the owners (not in git) |
 
 Not abandoned but worth a look: the `.bashrc` of this machine begins with a UTF-16 BOM and prints an error on every Bash call
 (`$'\377\376export': command not found`); harmless but noisy for every agent.
