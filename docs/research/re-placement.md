@@ -138,3 +138,9 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
 * Initial yaw code ("faces the player") and the dot spacing / gate of `FUN_39334ab0` (guide decal option vs debug).
 * G action on a house under construction (which step skill) and the per-house dynamic action source.
 * The owner's "one click opens the popup" (3.5 retail) contradicts 1.2 code (two clicks); the screenshot with tooltip and no popup supports 1.2. Please re-check in 3.5 whether a second click is needed.
+
+## Status in Bevy (fix/placement-re)
+
+Gaps 1, 2, 3, 4 (Shift/Alt exact; plain step still a named placeholder `ROT_STEP_PLAIN`, 10 degrees), 6, 7, 9, 10 and 11 are implemented
+(see `docs/aa-client-hud.md`, "Builder state machine"). Gap 5 (rebinding through `builder_rotate_mode`) is not done. Gap 8 (plot dots
+rotating with the model, following the terrain, white/grey colour) is open until a rotated retail screenshot confirms it.
