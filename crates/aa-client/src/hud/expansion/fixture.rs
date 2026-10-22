@@ -80,7 +80,7 @@ pub(crate) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared
         data.expansion.received = Some(inventory.clone());
         let mut world = World::new();
         world.insert_resource(inventory.clone());
-        data.panels = panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
     }
     api::push_changes(&rt, &bridge);

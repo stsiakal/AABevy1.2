@@ -45,6 +45,8 @@ pub enum Request {
     /// `HUD.request("use_mode_action", index)`: the original vehicle mode bar's `ISLOT_MODE_ACTION`
     /// slot (`1` based in the displayed vehicle-skill order).
     UseModeAction { slot: usize },
+    /// `X2Action:SetActionBarPage(page)`: switch the action bar to page `page` (0 based).
+    SetActionBarPage { page: u8 },
     /// `HUD.request("resurrect", inPlace)`: the death window's buttons (`X2Player:Resurrect(inPlace)`).
     Resurrect { in_place: bool },
     LearnSkill { id: u32 },
@@ -94,6 +96,8 @@ pub struct HudData {
     pub leaving: Option<u8>,
     /// The connection dropped and the disconnect dialog was shown.
     pub disconnected: bool,
+    /// Current action bar page, 0 based (the scripts count from 1).
+    pub action_page: u8,
     pub game: SharedGameData,
     pub requests: Vec<Request>,
     /// `/addons ...` lines typed into chat, carried out by `addons::handle_commands`.
@@ -189,6 +193,7 @@ impl Default for HudData {
             start: Instant::now(),
             leaving: None,
             disconnected: false,
+            action_page: 0,
             game: SharedGameData::default(),
             requests: Vec::new(),
             addon_commands: Vec::new(),
@@ -413,6 +418,41 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
         "world_rect",
         lua.create_function(move |_, id: u32| {
             Ok(b.borrow().game.get().and_then(|g| g.world_rects.get(&id).map(|r| r.iter().map(|v| *v as f64).collect::<Vec<f64>>())))
+        })?,
+    )?;
+    // `X2Action:GetActionBarPage` / `SetActionBarPage`: the scripts' page API is 1 based, the
+    // native one 0 based; the main 12 slots follow the page, the two 6-slot sub bars do not.
+    let b = bridge.clone();
+    hud.raw_set(
+        "get_action_bar_page",
+        lua.create_function(move |_, ()| Ok(i64::from(b.borrow().action_page) + 1))?,
+    )?;
+    let b = bridge.clone();
+    hud.raw_set(
+        "action_slot",
+        lua.create_function(move |_, slot: i64| {
+            let display = usize::try_from(slot).ok().and_then(|slot| slot.checked_sub(1));
+            Ok(display
+                .and_then(|display| aa_net::state::ActionBar::display_slot_on(b.borrow().action_page, display))
+                .map(|slot| slot as i64 + 1))
+        })?,
+    )?;
+    let b = bridge.clone();
+    hud.raw_set(
+        "set_action_bar_page",
+        lua.create_function(move |lua, page: i64| {
+            if (1..=i64::from(aa_net::items::ACTION_PAGES)).contains(&page) {
+                let page0 = (page - 1) as u8;
+                {
+                    let mut d = b.borrow_mut();
+                    if d.action_page != page0 {
+                        d.action_page = page0;
+                        d.requests.push(Request::SetActionBarPage { page: page0 });
+                    }
+                }
+                aa_ui::lua::fire_ui_event(lua, "ACTION_BAR_PAGE_CHANGED", vec![Value::Integer(page)]);
+            }
+            Ok(page)
         })?,
     )?;
     let b = bridge.clone();
@@ -835,7 +875,8 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
     let own_faction = character.faction_id;
     let start = data.start;
     let game = data.game.clone();
-    let (new_panels, target_pos, target_radius) = panels::refresh(world, game.get(), own_faction, own_obj_id, start, &data.snapshot, data.pos);
+    let action_page = data.action_page;
+    let (new_panels, target_pos, target_radius) = panels::refresh(world, game.get(), own_faction, own_obj_id, start, &data.snapshot, data.pos, action_page);
     data.panels = new_panels;
     data.target_pos = target_pos;
     data.target_radius = target_radius;
@@ -901,7 +942,7 @@ pub fn handle_requests(
     mut net: MessageWriter<NetCommand>,
     mut next: ResMut<NextState<crate::Screen>>,
     credentials: Option<Res<crate::ingame::enter::Credentials>>,
-    bar: Res<aa_net::state::ActionBar>,
+    mut bar: ResMut<aa_net::state::ActionBar>,
     inventory: Res<aa_net::state::Inventory>,
     target: Res<aa_net::state::Target>,
     skills: Res<aa_net::state::Skills>,
@@ -1004,10 +1045,16 @@ pub fn handle_requests(
             Request::CancelLeave => {
                 net.write(NetCommand(Command::CancelLeave));
             }
+            Request::SetActionBarPage { page } => {
+                if bar.set_page(page) {
+                    bridge.0.borrow_mut().action_page = page;
+                }
+            }
             Request::UseAction { slot } => {
+                let Some(slot) = bar.display_slot(slot.saturating_sub(1)) else { continue };
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-                panels::use_slot(slot - 1, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
+                panels::use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
             }
             Request::UseBag { slot } => {
                 let data = bridge.0.borrow();
@@ -1253,6 +1300,38 @@ mod tests {
     }
 
     #[test]
+    fn page_requests_apply_and_action_slots_follow_the_page() {
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        bridge.borrow_mut().requests.push(Request::SetActionBarPage { page: 1 });
+        let mut bar = aa_net::state::ActionBar::default();
+        bar.slots = vec![aa_net::items::ActionSlot::default(); aa_net::items::ACTION_SLOTS];
+        bar.slots[48] = aa_net::items::ActionSlot { kind: aa_net::items::ActionKind::Spell, id: 18132 };
+        let handle = bridge.clone();
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge))
+            .insert_resource(bar)
+            .init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Target>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<aa_net::state::Buffs>()
+            .init_resource::<super::super::usable::InFlight>()
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_message::<crate::ingame::ground_target::SkillPressed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
+            .add_systems(Update, handle_requests);
+        app.update();
+        assert_eq!(app.world().resource::<aa_net::state::ActionBar>().page(), 1);
+        assert_eq!(handle.borrow().action_page, 1);
+        handle.borrow_mut().requests.push(Request::UseAction { slot: 1 });
+        app.update();
+        let pressed: Vec<_> = app.world_mut().resource_mut::<Messages<crate::ingame::ground_target::SkillPressed>>().drain().collect();
+        assert!(matches!(&pressed[..], [skill] if skill.skill == 18132), "{pressed:?}");
+    }
+
+    #[test]
     fn money_events_use_numeric_delta_and_decimal_delta_string() {
         let mut rt=UiRuntime::new("en_us",1280.0,720.0).unwrap();
         let bridge=Rc::new(RefCell::new(HudData::default()));
@@ -1272,6 +1351,33 @@ mod tests {
         { let mut d=bridge.borrow_mut(); d.snapshot.money=28; d.snapshot.bank_money=5; }
         push_changes(&rt,&bridge);
         rt.lua.load("assert(moneyEvents.PLAYER_MONEY[1]==-5 and moneyEvents.PLAYER_MONEY[2]=='-5'); assert(moneyEvents.PLAYER_BANK_MONEY[1]==5); assert(HUD.state.money=='28' and HUD.state.bank_money=='5')").exec().unwrap();
+    }
+
+    #[test]
+    fn action_bar_page_api_is_one_based_and_maps_the_main_bar() {
+        let mut rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        install(&mut rt, &bridge).unwrap();
+        mark_pushed(&bridge);
+        rt.lua.load(r#"
+            pageProbe=UIParent:CreateWidget('emptywidget','pageProbe','UIParent')
+            pageProbe:Show(true)
+            pageProbe:RegisterEvent('ACTION_BAR_PAGE_CHANGED')
+            pageEvents={}
+            pageProbe:SetHandler('OnEvent',function(self,event,page) pageEvents[#pageEvents+1]=page end)
+        "#).exec().unwrap();
+        assert_eq!(rt.lua.load("return X2Action:GetActionBarPage()").eval::<i64>().unwrap(), 1);
+        rt.lua.load(r#"
+            assert(X2Action:SetActionBarPage(3)==3)
+            assert(X2Action:GetActionBarPage()==3)
+            assert(HUD.action_slot(1)==61 and HUD.action_slot(12)==72)
+            assert(HUD.action_slot(13)==13 and HUD.action_slot(24)==24)
+            assert(X2Action:SetActionBarPage(5)==5)
+            assert(X2Action:GetActionBarPage()==3)
+        "#).exec().unwrap();
+        assert_eq!(bridge.borrow().action_page, 2);
+        assert_eq!(rt.lua.load("return pageEvents").eval::<Vec<i64>>().unwrap(), vec![3]);
+        assert_eq!(bridge.borrow().requests, vec![Request::SetActionBarPage { page: 2 }]);
     }
 
     #[test]

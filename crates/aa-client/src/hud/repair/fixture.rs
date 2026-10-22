@@ -45,7 +45,7 @@ pub(crate) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, Shared, std
         world.insert_resource(inventory.clone());
         let mut data = bridge.borrow_mut();
         data.snapshot.money = 1_000_000;
-        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
         super::refresh(&world, &mut data);
     }

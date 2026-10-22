@@ -20,7 +20,7 @@ pub(super) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared
         data.snapshot.name = "Inventory fixture".into();
         let mut world = World::new();
         world.insert_resource(inventory.clone());
-        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
     }
     api::push_changes(&rt, &bridge);
@@ -44,7 +44,7 @@ pub(crate) fn run() {
             let mut data = bridge.borrow_mut();
             let mut world = World::new();
             world.insert_resource(inventory);
-            data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+            data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
             data.panels.actions_known = true;
         }
         api::push_changes(&rt, &bridge);

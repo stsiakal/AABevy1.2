@@ -206,6 +206,12 @@ X2SiegeWeapon.CanSlaveEquipPickedItem = function(self, slot)
 end
 
 -- The slot widgets (action bars, skill window) --------------------------------------------------------------
+-- The 1-based page API: the main 12 slots follow the page, the two 6-slot sub bars stay at 13..24
+-- (`FUN_392c5a50`: pages 2..4 use global slots 48..83, the sub bars 12..23).
+local function actionSlotIndex(slotIdx)
+  local mapped = HUD.action_slot(slotIdx)
+  return mapped or slotIdx
+end
 -- A bound slot was dragged: the content of an action bar slot (unless the bar is locked: Shift unlocks it for a
 -- move), a skill of the skill window or an item of a slot bound to one is picked up.
 AAUI.PickupSlot = function(info)
@@ -214,7 +220,7 @@ AAUI.PickupSlot = function(info)
   if info.kind == "slot" and info.slotType == ISLOT_ACTION then
     local locked = IsActionBarLocked ~= nil and IsActionBarLocked() == ACTIONBAR_STATE.LOCK
     if locked and not HUD.shift_down() then return end
-    local s = HUD.actions[info.slotIdx]
+    local s = HUD.actions[actionSlotIndex(info.slotIdx)]
     if s == nil then return end
     X2Cursor:SetHeld({
       kind = "action", cursorInfo = s.kind == "skill" and "Spell" or "Item", slot = info.slotIdx, what = s.kind, id = s.id, icon = s.icon,

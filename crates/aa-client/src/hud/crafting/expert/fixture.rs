@@ -24,7 +24,7 @@ pub(super) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, Shared, std
         }
         let mut world = World::new();
         world.insert_resource(inventory.clone());
-        d.panels = crate::hud::panels::refresh(&world, d.game.get(), 0, 100, d.start, &d.snapshot, Vec3::ZERO).0;
+        d.panels = crate::hud::panels::refresh(&world, d.game.get(), 0, 100, d.start, &d.snapshot, Vec3::ZERO, 0).0;
         d.panels.actions_known = true;
         d.crafting.inventory = Some(inventory);
         d.crafting.actabilities.expanded_expert = Some(0);
