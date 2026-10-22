@@ -434,6 +434,8 @@ pub struct DrivenMount {
     pos: Vec3,
     facing: f32,
     vz: f32,
+    /// The ground speed (m/s, world x/y) the inertia carries: it follows the wanted one, never jumps to it.
+    velocity: Vec2,
     grounded: bool,
     swimming: bool,
     walking: bool,
@@ -450,6 +452,7 @@ impl DrivenMount {
             pos,
             facing,
             vz: 0.0,
+            velocity: Vec2::ZERO,
             grounded: true,
             swimming: false,
             walking: false,
@@ -478,6 +481,17 @@ impl DrivenMount {
         };
         let (f, r) = (forward(self.facing), right(self.facing));
         (f * local_dir.y + r * local_dir.x) * speed * mult
+    }
+
+    /// Carries the speed towards `target` (m/s): `game_inertia_accel` while it speeds up, `game_inertia` while it slows down
+    /// (an exponential approach; the semantics of the two values are inferred from Cry's player movement). Returns the speed.
+    fn smooth(&mut self, target: Vec2, dt: f32) -> Vec2 {
+        let rate = if target.length_squared() > self.velocity.length_squared() { self.body.accel } else { self.body.inertia };
+        self.velocity += (target - self.velocity) * (1.0 - (-rate * dt).exp());
+        if target == Vec2::ZERO && self.velocity.length_squared() < 0.0025 {
+            self.velocity = Vec2::ZERO;
+        }
+        self.velocity
     }
 
     /// The packet for the mate: `CSMoveUnit` with the mount object id, the same unit body the
@@ -930,7 +944,8 @@ pub fn drive_mount(
         drive.facing = approach_angle(drive.facing, orbit.yaw, MOUNT_ALIGN_RATE * dt);
     }
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let step = drive.step(local_dir, drive.walking != shift);
+    let wanted = drive.step(local_dir, drive.walking != shift);
+    let step = drive.smooth(wanted, dt);
     let old = drive.pos;
     let mut pos = old;
     if step != Vec2::ZERO {
@@ -992,7 +1007,8 @@ pub fn drive_mount(
     }
     let actual = if dt > 0.0 { Vec2::new(pos.x - old.x, pos.y - old.y) / dt } else { Vec2::ZERO };
     let velocity = Vec3::new(actual.x, actual.y, if drive.swimming || !drive.grounded { drive.vz } else { 0.0 });
-    let moving = local_dir != Vec2::ZERO && actual.length() > 0.05;
+    // a mount that slides to a stop (`game_inertia`) is still moving
+    let moving = (local_dir != Vec2::ZERO || drive.velocity != Vec2::ZERO) && actual.length() > 0.05;
     let airborne = !drive.grounded && !drive.swimming;
     drive.pos = pos;
     unit.pos = pos;
@@ -1085,7 +1101,7 @@ mod tests {
     use super::*;
 
     fn horse() -> MountMove {
-        MountMove { walk: 1.8, run: 9.0, radius: 1.0, height: 1.0, jump_height: 1.3, gravity: 30.0, turn: 360.0_f32.to_radians() }
+        MountMove { walk: 1.8, run: 9.0, radius: 1.0, height: 1.0, jump_height: 1.3, gravity: 30.0, turn: 360.0_f32.to_radians(), inertia: 4.0, accel: 11.0 }
     }
 
     #[test]
@@ -1106,6 +1122,26 @@ mod tests {
             }
             other => panic!("not a mate movement: {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_mount_speed_follows_the_wanted_one_with_the_inertia_of_its_actor_model() {
+        let mut drive = DrivenMount::new(Vec3::ZERO, 0.0, horse());
+        let run = Vec2::new(0.0, 9.0);
+        // 0.1 s after the key press the horse is at 1 - e^(-1.1) = 67 % of the run (accel 11), not at 100 %
+        let v = drive.smooth(run, 0.1);
+        assert!((v.y - 9.0 * (1.0 - (-1.1_f32).exp())).abs() < 1e-3, "{v:?}");
+        for _ in 0..30 {
+            drive.smooth(run, 0.1);
+        }
+        assert!((drive.velocity.y - 9.0).abs() < 0.01, "it gets there");
+        // letting go: inertia 4 slides it down slower than the 11 it sped up with
+        let v = drive.smooth(Vec2::ZERO, 0.1);
+        assert!((v.y - 9.0 * (-0.4_f32).exp()).abs() < 0.02, "{v:?}");
+        for _ in 0..40 {
+            drive.smooth(Vec2::ZERO, 0.1);
+        }
+        assert_eq!(drive.velocity, Vec2::ZERO, "and stops");
     }
 
     #[test]

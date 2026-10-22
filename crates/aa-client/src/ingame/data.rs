@@ -115,11 +115,16 @@ pub struct MountMove {
     pub gravity: f32,
     /// Radians per second (`actor_models.turn_speed` is degrees per second).
     pub turn: f32,
+    /// `actor_models.game_inertia`: how fast the speed falls to the wanted one (1/s). Inferred semantics: Cry's `inertia` is the
+    /// response while slowing down, `game_inertia_accel` while speeding up. A horse has 4 / 11, most actors 20 / 11.
+    pub inertia: f32,
+    /// `actor_models.game_inertia_accel` (1/s).
+    pub accel: f32,
 }
 
 impl Default for MountMove {
     fn default() -> Self {
-        Self { walk: 1.8, run: 5.4, radius: 0.6, height: 1.8, jump_height: 1.3, gravity: 25.0, turn: 360.0_f32.to_radians() }
+        Self { walk: 1.8, run: 5.4, radius: 0.6, height: 1.8, jump_height: 1.3, gravity: 25.0, turn: 360.0_f32.to_radians(), inertia: 20.0, accel: 11.0 }
     }
 }
 
@@ -427,7 +432,8 @@ impl Db {
             .conn
             .query_row(
                 "SELECT g.ai_move_speed_walk, g.ai_move_speed_run, a.radius, a.height, \
-                        a.game_jump_height, a.physics_living_gravity, a.turn_speed \
+                        a.game_jump_height, a.physics_living_gravity, a.turn_speed, \
+                        a.game_inertia, a.game_inertia_accel \
                  FROM models m \
                  JOIN actor_models a ON a.id = m.sub_id AND m.sub_type = 'ActorModel' \
                  JOIN game_stances g ON g.actor_model_id = a.id \
@@ -446,6 +452,8 @@ impl Db {
                         jump_height: n(4, d.jump_height).max(0.0),
                         gravity: n(5, d.gravity).max(1.0),
                         turn: if turn > 0.0 { turn.to_radians() } else { d.turn },
+                        inertia: n(7, d.inertia).max(0.1),
+                        accel: n(8, d.accel).max(0.1),
                     })
                 },
             )
