@@ -514,6 +514,7 @@ fn pick(ray: Ray3d, data: &HudData, doodads: &Doodads, units: &Units, own: u32) 
 }
 
 /// The name, owner, permission and progress the original `DRAW_DOODAD_TOOLTIP` shows for a house.
+#[derive(Clone, PartialEq)]
 struct HouseInfo {
     name: String,
     owner: String,
@@ -542,6 +543,11 @@ fn house_info(units: &Units, houses: &Houses, obj_id: u32) -> Option<HouseInfo> 
     })
 }
 
+/// The tooltip of the hovered house is up with other values than the server's current ones.
+fn house_tooltip_stale(shown: Option<&HouseInfo>, now: Option<&HouseInfo>) -> bool {
+    now.is_some() && shown != now
+}
+
 /// Finds the doodad in reach, shows / hides the bar, reads the keys, the right click and the pointer.
 #[allow(clippy::too_many_arguments)]
 fn track(
@@ -557,6 +563,7 @@ fn track(
     time: Res<Time>,
     mut script: ResMut<Scripted>,
     mut pressed_at: Local<Option<Vec2>>,
+    mut shown_house: Local<Option<HouseInfo>>,
 ) {
     let Some(rt) = rt else { return };
     let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
@@ -645,6 +652,9 @@ fn track(
         Some(Pick::House(id)) => house_info(&units, &houses, id),
         _ => None,
     };
+    // a tooltip that is up shows what the server says about the house now (a permission changed in the maintain window)
+    let hover_changed = hover_changed || house_tooltip_stale(shown_house.as_ref(), hover_house.as_ref());
+    *shown_house = hover_house.clone();
     drop(d);
     if coin && let Err(error) = rt.exec("@doodad_coin", "OpenCoinShop()") {
         warn!("doodad: coin shop dialog: {error}");
@@ -1007,6 +1017,19 @@ mod tests {
         assert_eq!(house_info(&units, &houses, 77).map(|h| h.permission), Some(1));
         houses.by_tl_id.get_mut(&13).unwrap().snapshot.permission = 3;
         assert_eq!(house_info(&units, &houses, 77).map(|h| h.permission), Some(4));
+    }
+
+    #[test]
+    fn a_shown_house_tooltip_is_redrawn_when_the_permission_changes() {
+        let (_data, units, mut houses) = house_game();
+        let before = house_info(&units, &houses, 77);
+        assert!(house_tooltip_stale(None, before.as_ref()), "a tooltip not drawn yet");
+        assert!(!house_tooltip_stale(before.as_ref(), before.as_ref()), "nothing changed");
+        // `SCHousePermissionChanged` lands in `Houses` while the pointer stays on the house
+        houses.by_tl_id.get_mut(&13).unwrap().snapshot.permission = 2;
+        let after = house_info(&units, &houses, 77);
+        assert!(house_tooltip_stale(before.as_ref(), after.as_ref()));
+        assert!(!house_tooltip_stale(after.as_ref(), None), "no house under the pointer: nothing to redraw");
     }
 
     #[test]

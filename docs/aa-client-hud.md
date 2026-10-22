@@ -2508,6 +2508,14 @@ default off), harvesting changes and the exact retail ground-arrow model (the ro
 
 ## Houses and farms (2026-10-21)
 
+Child doodads (2026-10-22): the server writes a doodad that has a `parent_obj_id` (a farm plot on its house) in the
+parent's frame (`Doodad.Write` sends `transform.local()`, the house scale divided out), so reading it as a world
+position put rice planted inside the farm about 20 km away. `aa_net::state::Doodads::local` keeps the announced
+transform and `resolve_parents` (run every frame by `doodad_visual::follow_parents`) rewrites `Doodad.pos/rotation` to
+world = parent position + parent yaw * (local * parent scale); a moving parent (ship, transfer) carries its children and
+their drawn entities. The hovered house's tooltip is redrawn whenever its values change (the maintain window's permission
+change shows at once). Attach points (bones) of a slave parent are not resolved: the doodad sits at the parent origin.
+
 Phase 4 of the farming/housing plan: a design item (`item_housings`) opens the same `PlacementSession` as planting,
 the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the received house follows
 `SCHouseBuildProgress`; the build-step skill is used on the house to finish it.
@@ -2551,8 +2559,12 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   skill (`Command::Target` + `UseSkill`), slot 2 (G) raises `HOUSE_INTERACTION_START` for the material window without
   a cast. Slot 2's icon is skill `15212` ("Check Construction Info", the housing-category skill with 6 m range;
   `11001` is the generic 4 m construction-info skill). `SCHouseBuildProgress` while the window is up refreshes the
-  selected snapshot and raises `HOUSE_STEP_INFO_UPDATED` (the 1.2 handler ignores its argument and redraws from
-  `X2House`); leaving the house's range/target raises `HOUSE_INTERACTION_END`. Hovering a house feeds the original
+  selected snapshot and raises `HOUSE_STEP_INFO_UPDATED("housing")` (the argument selects the house branch of
+  `UpdateStepInfo`; without it the shipyard branch ran and raised `totalActions nil`; the `X2House:GetShipyard*Progress`
+  getters now answer 0 as well); the 1.2 `HOUSE_INTERACTION_START` handler calls `UpdateHousingMaterialInfo` only when
+  `X2House:IsCastle()` is true, so `houses::open_material_window` calls it for a house under construction (title,
+  materials, progress and labor were empty before); when the last step is built the window is closed with
+  `HOUSE_INTERACTION_END`; leaving the house's range/target raises `HOUSE_INTERACTION_END`. Hovering a house feeds the original
   `DRAW_DOODAD_TOOLTIP` with its name, owner, permission and `{curCount,maxCount}` progress. House design ids are
   never looked up in the NPC table: design 267 collides with NPC 267 "Seagull". When the last action
   completes, the server's finished model (and bound doodads) arrive; the house is a normal selectable unit target

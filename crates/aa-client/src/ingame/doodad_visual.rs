@@ -58,7 +58,13 @@ pub fn plugin(app: &mut App) {
 
 /// A doodad that hangs on a unit (a plot on its house, a deck item on a ship) is announced in the parent's frame: put
 /// it at the parent's current place, so it is drawn, focused and reached where it stands, and moves with the parent.
-pub fn follow_parents(units: Res<aa_net::state::Units>, mut doodads: ResMut<Doodads>, views: Res<Views>, mut roots: Query<&mut Transform, With<RemoteDoodad>>) {
+pub fn follow_parents(
+    units: Option<Res<aa_net::state::Units>>,
+    doodads: Option<ResMut<Doodads>>,
+    views: Option<Res<Views>>,
+    mut roots: Query<&mut Transform, With<RemoteDoodad>>,
+) {
+    let (Some(units), Some(mut doodads), Some(views)) = (units, doodads, views) else { return };
     if doodads.local.is_empty() {
         return;
     }
