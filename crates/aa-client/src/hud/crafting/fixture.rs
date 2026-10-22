@@ -88,7 +88,7 @@ pub(crate) fn workbench(rt: &UiRuntime, bridge: &api::Shared) -> Result<u32, Box
         data.snapshot.labor_seq += 1;
         let mut world = World::new();
         world.insert_resource(data.crafting.inventory.clone().unwrap());
-        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
     }
     api::push_changes(rt, bridge);

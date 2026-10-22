@@ -144,7 +144,7 @@ fn native_folded_display_and_captured_instance_survive_without_optimistic_remova
     world.insert_resource(buffs.clone());
     {
         let mut data = state.borrow_mut();
-        data.panels = panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels_pushed = Some(data.panels.clone());
         refresh(&mut data, Some(&spawn), Some(&buffs));
         assert_eq!(

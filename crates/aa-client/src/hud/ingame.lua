@@ -393,6 +393,14 @@ end
 -- Action bars and bag -----------------------------------------------------------------------------------
 -- Slot widgets ask these hooks (AAUI.SlotContent ...); the lists come from aa-net. FALLBACK to the fake
 -- of the capture while the server has not sent the action bars / the bag yet.
+-- The 1-based page API: the main 12 slots follow the page, the two 6-slot sub bars stay at 13..24
+-- (`FUN_392c5a50`: pages 2..4 use global slots 48..83, the sub bars 12..23).
+local function actionSlotIndex(slotIdx)
+  local mapped = HUD.action_slot(slotIdx)
+  return mapped or slotIdx
+end
+X2Action.GetActionBarPage = function(self) return HUD.get_action_bar_page() end
+X2Action.SetActionBarPage = function(self, page) return HUD.set_action_bar_page(page) end
 local fakeSlotContent = AAUI.SlotContent
 local function slotContent(s)
   local c = { type = s.kind, id = s.id, icon = s.icon, grade = s.grade }
@@ -415,7 +423,7 @@ end
 AAUI.SlotContent = function(slotType, slotIdx)
   if slotType == ISLOT_ACTION then
     if not HUD.actions_known then return fakeSlotContent(slotType, slotIdx) end
-    local s = HUD.actions[slotIdx]
+    local s = HUD.actions[actionSlotIndex(slotIdx)]
     if s == nil then return nil end
     return slotContent(s)
   elseif slotType == ISLOT_BAG then

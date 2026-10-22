@@ -312,11 +312,19 @@ pub(super) fn apply_requests(rt: Option<NonSend<UiRuntime>>, inventory: Res<Inve
                 net.write(NetCommand(Command::DestroyItem { item_id: item.id, container: c, slot: slot as u8, count }));
             }
             Req::ActionSet { slot, action } => {
+                let Some(slot) = bar.display_slot(slot) else {
+                    debug!("hud: drag: action bar slot {slot} is off the bar");
+                    continue;
+                };
                 info!("hud: drag: action bar slot {slot} = {action:?}");
                 net.write(NetCommand(Command::SetActionSlot { slot: slot as u8, action: action.unwrap_or_default() }));
             }
             Req::ActionSwap { a, b } => {
                 let at = |i: usize| bar.slots.get(i).copied().unwrap_or_default();
+                let (Some(a), Some(b)) = (bar.display_slot(a), bar.display_slot(b)) else {
+                    debug!("hud: drag: action bar slots {a} and {b} are off the bar");
+                    continue;
+                };
                 info!("hud: drag: action bar slots {a} and {b} change places ({:?} / {:?})", at(a), at(b));
                 net.write(NetCommand(Command::SetActionSlot { slot: a as u8, action: at(b) }));
                 net.write(NetCommand(Command::SetActionSlot { slot: b as u8, action: at(a) }));
@@ -438,5 +446,28 @@ mod tests {
                 Req::ActionSet { slot: 1, action: None },
             ]
         );
+    }
+
+    #[test]
+    fn a_page_slot_sends_the_global_action_slot() {
+        let rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
+        let hud = rt.lua.create_table().unwrap();
+        register_functions(&rt.lua, &hud).unwrap();
+        rt.lua.globals().set("HUD", hud).unwrap();
+        rt.lua.load("HUD.drag_action_set(1, 'skill', 18132)").exec().unwrap();
+        let mut bar = ActionBar::default();
+        assert!(bar.set_page(1));
+        let mut app = App::new();
+        app.insert_non_send(rt)
+            .insert_resource(bar)
+            .init_resource::<Inventory>()
+            .add_message::<NetCommand>()
+            .add_systems(Update, apply_requests);
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|c| c.0).collect();
+        assert!(matches!(
+            &commands[..],
+            [Command::SetActionSlot { slot: 48, action }] if action.kind == ActionKind::Spell && action.id == 18132
+        ), "{commands:?}");
     }
 }

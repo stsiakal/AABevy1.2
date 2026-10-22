@@ -52,7 +52,7 @@ fn quotes_bind_received_items_and_all_repairs_exclude_the_bag() -> Result<(), Bo
     data.character_id = 47;
     let mut world = World::new();
     world.insert_resource(inventory.clone());
-    data.panels = super::super::panels::refresh(&world, Some(&game), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+    data.panels = super::super::panels::refresh(&world, Some(&game), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
     assert!(data.game.0.set(game).is_ok());
     request(&mut data, 1, None, true);
     let quote = data.repair.requests.pop().ok_or("no all-repair quote")?;
@@ -205,7 +205,7 @@ fn original_repair_buttons_physical_slots_costs_and_received_wear() -> Result<()
     let inventory = app.world().resource::<Inventory>();
     {
         let mut data = bridge.borrow_mut();
-        data.panels = super::super::panels::refresh(app.world(), data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = super::super::panels::refresh(app.world(), data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
     }
     assert!(matches!(&inventory.bag[7].as_ref().unwrap().detail, ItemDetail::Equip(d) if d.durability==maximum));
     super::super::api::push_changes(app.world().non_send::<UiRuntime>(), &bridge);

@@ -377,7 +377,7 @@ mod tests {
             let mut d = bridge.borrow_mut();
             let mut world = World::new();
             world.insert_resource(inventory.clone());
-            d.panels = super::super::panels::refresh(&world, d.game.get(), 0, 100, d.start, &d.snapshot, Vec3::ZERO).0;
+            d.panels = super::super::panels::refresh(&world, d.game.get(), 0, 100, d.start, &d.snapshot, Vec3::ZERO, 0).0;
             d.panels.actions_known = true;
         }
         super::super::api::push_changes(&rt, &bridge);

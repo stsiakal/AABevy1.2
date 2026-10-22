@@ -125,6 +125,8 @@ pub struct Panels {
     /// bars yet.
     pub actions: Vec<Option<SlotSnap>>,
     pub actions_known: bool,
+    /// Current action bar page, 0 based (the scripts' page API is 1 based).
+    pub action_page: u8,
     pub bag: Vec<Option<SlotSnap>>,
     pub bag_slots: u32,
     pub bank: Vec<Option<SlotSnap>>,
@@ -260,8 +262,8 @@ fn unit_race_gender(race_gender: u8) -> (u8, u8) {
 
 /// Compute the panels from aa-net's state. `own_faction` is the player's faction id, `me` and `pos` the player's numbers and
 /// game position (which action bar slots are dark depends on them); also returns the game position of the target.
-pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj_id: u32, start: Instant, me: &Snapshot, pos: Vec3) -> (Panels, Option<Vec3>, f32) {
-    let mut p = Panels::default();
+pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj_id: u32, start: Instant, me: &Snapshot, pos: Vec3, action_page: u8) -> (Panels, Option<Vec3>, f32) {
+    let mut p = Panels { action_page, ..Panels::default() };
     let skills = world.get_resource::<Skills>();
     let inventory = world.get_resource::<Inventory>();
     if let Some(bar) = world.get_resource::<ActionBar>() {
@@ -445,6 +447,10 @@ fn slots_table(lua: &Lua, slots: &[Option<SlotSnap>]) -> mlua::Result<Table> {
 /// what changed.
 pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua::Result<Changed> {
     let mut c = Changed::default();
+    if old.is_none_or(|o| o.action_page != new.action_page) {
+        hud.raw_set("action_page", i64::from(new.action_page) + 1)?;
+        c.slots = true;
+    }
     if old.is_none_or(|o| o.actions != new.actions || o.actions_known != new.actions_known) {
         hud.raw_set("actions", slots_table(lua, &new.actions)?)?;
         hud.raw_set("actions_known", new.actions_known)?;
@@ -594,12 +600,13 @@ pub fn action_keys(
     actions: Res<crate::settings::Actions>,
     focus: Res<HudKeyboardFocus>,
     bridge: NonSend<HudBridge>,
-    bar: Res<ActionBar>,
+    mut bar: ResMut<ActionBar>,
     inventory: Res<Inventory>,
     target: Res<Target>,
     skills: Res<Skills>,
     buffs: Res<Buffs>,
     flight: Res<InFlight>,
+    rt: Option<NonSend<aa_ui::UiRuntime>>,
     mut script: ResMut<super::chat::ScriptedKeys>,
     mut net: MessageWriter<SkillPressed>,
     mut plant: MessageWriter<PlantPressed>,
@@ -607,18 +614,38 @@ pub fn action_keys(
     mut failed: MessageWriter<UseFailed>,
 ) {
     if let Some(slot) = script.take_slot() {
-        let data = bridge.0.borrow();
-        let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-        use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
+        if let Some(slot) = bar.display_slot(slot.saturating_sub(1)) {
+            let data = bridge.0.borrow();
+            let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
+            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
+        }
     }
     if focus.0 {
         return;
     }
     for (action, slot, button) in actions.hotkeys() {
-        if !button && action == "action_bar_button" && (1..=58).contains(&slot) {
+        if button {
+            continue;
+        }
+        if action == "action_bar_page_prev" || action == "action_bar_page_next" {
+            let page = if action == "action_bar_page_prev" {
+                (bar.page() + aa_net::items::ACTION_PAGES - 1) % aa_net::items::ACTION_PAGES
+            } else {
+                (bar.page() + 1) % aa_net::items::ACTION_PAGES
+            };
+            if bar.set_page(page) {
+                bridge.0.borrow_mut().action_page = page;
+                if let Some(rt) = rt.as_ref() {
+                    rt.fire_event("ACTION_BAR_PAGE_CHANGED", (i64::from(page) + 1,));
+                }
+            }
+            continue;
+        }
+        if action == "action_bar_button" && (1..=58).contains(&slot) {
+            let Some(slot) = bar.display_slot(slot as usize - 1) else { continue };
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-            use_slot(slot as usize - 1, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
+            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
         }
     }
 }
@@ -627,6 +654,43 @@ pub fn action_keys(
 mod tests {
     use super::*;
     use aa_net::state::NativeCooldown;
+
+    #[test]
+    fn action_bar_page_keys_rotate_the_four_pages() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let bridge = HudBridge(Rc::new(RefCell::new(crate::hud::api::HudData::default())));
+        let mut actions = crate::settings::Actions::default();
+        actions.tap_for_test("action_bar_page_next");
+        let mut app = App::new();
+        app.insert_resource(actions)
+            .insert_resource(HudKeyboardFocus(false))
+            .insert_non_send(bridge)
+            .init_resource::<ActionBar>()
+            .init_resource::<Inventory>()
+            .init_resource::<Target>()
+            .init_resource::<Skills>()
+            .init_resource::<Buffs>()
+            .init_resource::<InFlight>()
+            .init_resource::<super::super::chat::ScriptedKeys>()
+            .add_message::<SkillPressed>()
+            .add_message::<PlantPressed>()
+            .add_message::<HousePressed>()
+            .add_message::<UseFailed>()
+            .add_systems(Update, action_keys);
+        app.update();
+        assert_eq!(app.world().resource::<ActionBar>().page(), 1);
+        let mut prev = crate::settings::Actions::default();
+        prev.tap_for_test("action_bar_page_prev");
+        app.world_mut().insert_resource(prev);
+        app.update();
+        assert_eq!(app.world().resource::<ActionBar>().page(), 0);
+        let mut prev = crate::settings::Actions::default();
+        prev.tap_for_test("action_bar_page_prev");
+        app.world_mut().insert_resource(prev);
+        app.update();
+        assert_eq!(app.world().resource::<ActionBar>().page(), 3);
+    }
 
     #[test]
     fn skill_sweep_keeps_the_winning_received_duration_including_zero() {

@@ -124,7 +124,7 @@ pub(super) fn fill(rt: &UiRuntime, state: &Shared, mode: &str, support: bool) ->
         data.character_id = 47;
         let mut world = World::new();
         world.insert_resource(inventory);
-        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = super::super::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
     }
     super::super::api::push_changes(rt, state);

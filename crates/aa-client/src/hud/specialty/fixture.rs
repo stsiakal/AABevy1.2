@@ -102,7 +102,7 @@ pub(super) fn prepare_quote(rt: &aa_ui::UiRuntime, state: &Shared, template: u32
         let mut data = state.borrow_mut();
         let mut world = World::new();
         world.insert_resource(inventory);
-        data.panels = crate::hud::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO).0;
+        data.panels = crate::hud::panels::refresh(&world, data.game.get(), 0, 100, data.start, &data.snapshot, Vec3::ZERO, 0).0;
         data.panels.actions_known = true;
     }
     crate::hud::api::push_changes(rt, state);
