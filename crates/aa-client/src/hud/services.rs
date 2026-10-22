@@ -756,4 +756,38 @@ mod tests {
     std::fs::remove_file(path)?;
     Ok(())
     }
+
+    /// The greeting window is wired once, but must still open on every talk (the second talk used
+    /// to return from `ShowNpcServiceChoice` because `wire` reported the already-wired window as a
+    /// failure).
+    #[test]
+    fn every_talk_shows_the_function_menu() -> Result<(), Box<dyn std::error::Error>> {
+        let lua = Lua::new();
+        lua.load(
+            r#"
+            HUD = { npc_choice = function()
+              return { { kind = "service", key = "store", label = "Shop" } }
+            end }
+            locale = { npcInteraction = { baseText = "Greetings!", interactions = { "", "", "", "Shop" } } }
+            npcInteraction = {
+              window = { shown = false, Show = function(self, on) self.shown = on end, SetHandler = function() end },
+              interactionButtons = {
+                { shown = false, Show = function(self, on) self.shown = on end, SetText = function() end, SetHandler = function() end },
+              },
+              message = { SetText = function() end, Show = function() end },
+              closeButton = { SetHandler = function() end },
+            }
+            "#,
+        )
+        .exec()?;
+        lua.load(include_str!("services.lua")).exec()?;
+        let visible = |lua: &Lua| lua.load("return npcInteraction.window.shown").eval::<bool>();
+        lua.load("ShowNpcServiceChoice()").exec()?;
+        assert!(visible(&lua)?, "the first talk shows the menu");
+        lua.load("HideNpcServiceChoice()").exec()?;
+        assert!(!visible(&lua)?);
+        lua.load("ShowNpcServiceChoice()").exec()?;
+        assert!(visible(&lua)?, "the next talk shows the menu again");
+        Ok(())
+    }
 }

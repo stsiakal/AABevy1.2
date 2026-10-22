@@ -10,7 +10,8 @@ local function npc()
 end
 
 local function wire(n)
-  if wired or not n or not n.window then return false end
+  if not n or not n.window then return false end
+  if wired then return true end
   wired = true
   if n.closeButton then
     n.closeButton:SetHandler("OnClick", function() HUD.npc_choice_close() end)
