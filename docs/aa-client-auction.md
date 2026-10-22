@@ -2,9 +2,14 @@
 
 The original window (`x2ui/auction`: Bid, List Item and Bid History tabs, unchanged Lua) runs on aa-net's auction
 protocol. Code: `crates/aa-client/src/hud/auction.rs` (the module, `X2Auction`, the events), tests in
-the `tests` module of the same file; the NPC service lives in `hud/store.rs` (`Tables::auctioneers`).
+`hud/auction/tests.rs`; the NPC service lives in `hud/store.rs` (`Tables::auctioneers`).
 
 ## Opening it
+
+Fork note: the fork's greeting/function menu (`hud/services.rs`) raises `NPC_INTERACTION_START("auction", ...)` itself after
+the player picks the auction; it hands the NPC to this module through `auction::open_service`. The module no longer opens the
+window on its own from the skill list.
+
 
 The 1.2 client has no auction key: you talk to an auctioneer. `dialog::begin_talk` sends `CSStartInteraction` to an NPC
 with a service (`stores.has_service`, now including `npcs.auctioneer`); the server answers `SCNpcInteractionSkillList`

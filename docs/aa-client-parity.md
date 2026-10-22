@@ -381,3 +381,13 @@ alias reach the live world list at266.3-346.9 FPS with zero script errors. All f
 inspected creation/rename aa-dev captures self-close without warnings/errors;
 ranges and the executable SHA256 are in aa-client-hud.md. No live in-game guild
 settlement is claimed.
+
+## Fork deviations from upstream (NickMesser/AAEmu)
+
+* **Owned mounts:** the fork keeps its reverse-engineered mount flow (`ingame/mount.rs`, `hud/pets/owned.rs`, `mount_anim`;
+  evidence in `docs/research/re-mounts.md`) instead of upstream's `LocalMount` / `Driven` / `Command::MoveUnit{movement}`
+  version: native mount-reason byte from the approach and seat rules, line-of-sight check, walk-to-the-mate controller,
+  mount skills, `CSChangeMateTarget`, get-on/get-off clips and PseudoSpeed gaits. Upstream's buff speed multiplier on the driven
+  mount (`Sprint::mount_speed_mul`) is merged into it. Offered upstream later as a pull request.
+* **NPC services:** the auction house opens through the fork's greeting menu (`hud/services.rs` -> `auction::open_service`), not
+  directly from the skill list.

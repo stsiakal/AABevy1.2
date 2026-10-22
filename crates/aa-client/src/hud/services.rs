@@ -442,7 +442,6 @@ pub(super) fn plugin(app: &mut App) {
         update
             .after(super::sync_hud)
             .after(super::dialog::handle_dialog)
-            .before(super::auction::update)
             .before(aa_ui::UiFrame)
             .run_if(super::hud_up)
             .run_if(in_state(Screen::InGame)),

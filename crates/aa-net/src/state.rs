@@ -164,7 +164,7 @@ impl Player {
                     true
                 });
             }
-            Event::UnitDetached { obj_id, .. } => {
+            Event::UnitDetached { obj_id, .. } | Event::Resurrected { obj_id, .. } => {
                 return self.spawn.as_mut().is_some_and(|spawn| {
                     if spawn.obj_id != *obj_id || spawn.unit.attached_to.is_none() { return false; }
                     spawn.unit.attached_to = None;
@@ -995,6 +995,9 @@ pub(crate) mod tests {
         assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, Some(Attachment { obj_id: 9, point: 1 }));
         assert!(!player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 1, reason: 1 }), "no change");
         assert!(player.apply(&Event::UnitDetached { obj_id: 5, reason: 9 }));
+        assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, None);
+        player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 2, reason: 1 });
+        assert!(player.apply(&Event::Resurrected { obj_id: 5, pos: Pos::default(), yaw: 0.0 }));
         assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, None);
     }
 
