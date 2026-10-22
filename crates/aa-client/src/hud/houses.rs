@@ -26,6 +26,9 @@ use crate::ingame::units::Views;
 
 /// The 1.2 tax certificate item (`Component::TaxCertificate` / `manager.rs TAX_CERTIFICATE`).
 pub const TAX_ITEM: u32 = 31891;
+/// The bound tax certificate (server `manager.rs` second `TAX_CERTIFICATE` id); the original
+/// `CountTaxItemInBag` (`FUN_39478cd0`) sums both stacks.
+pub const TAX_ITEM_BOUND: u32 = 31892;
 /// The server's `COPPER_PER_TAX_CERTIFICATE` (10,000 copper = 1 gold).
 pub const COPPER_PER_CERTIFICATE: i64 = 10_000;
 /// The house-specific "Check Construction Info" skill (`skills.category_id = 3`, the housing category, range 6 m).
@@ -51,8 +54,9 @@ pub struct HouseState {
     /// The wire permission (`HousePermission`: private 0, guild 1, public 2, family 3).
     pub permission: u8,
     pub allow_recover: bool,
-    /// The asking price in copper (0: not for sale) and the designated buyer.
+    /// The asking price in copper (0: not for sale) and the designated buyer (0: none).
     pub sell_price: i32,
+    pub sell_to_player_id: u32,
     pub sell_to_name: String,
     /// The last `SCHouseTaxInfo` for this house.
     pub tax: Option<HouseTaxInfo>,
@@ -65,6 +69,7 @@ impl HouseState {
             permission: snapshot.permission,
             allow_recover: snapshot.allow_recover,
             sell_price: snapshot.sell_price,
+            sell_to_player_id: snapshot.sell_to_player_id,
             sell_to_name: snapshot.sell_to_name.clone(),
             tax: None,
             tl_id: snapshot.tl_id,
@@ -88,6 +93,42 @@ impl HouseState {
     }
 }
 
+/// One placed decoration of a deco actability group (`GetDecoActabilityPoint` / `...ByType` rows).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DecoEntry {
+    pub name: String,
+    pub points: u32,
+}
+
+/// A deco actability group with at least one placed decoration on the selected house.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DecoGroup {
+    pub id: u32,
+    pub name: String,
+    pub count: u32,
+    pub points: u32,
+    pub entries: Vec<DecoEntry>,
+}
+
+/// One `housing_deco_limit_elems` row of the selected house template.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DecoLimitGroup {
+    pub id: u32,
+    pub name: String,
+    pub count: u32,
+    pub max: u32,
+}
+
+/// The deco counters the maintain window reads (`FUN_394796b0`/`394797c0`/`39479890`/`3947a040`/`3947a310`):
+/// house-parented doodads minus the template's built-ins, and the per-group used/max/points.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HouseDeco {
+    pub count: i64,
+    pub limit: i64,
+    pub groups: Vec<DecoGroup>,
+    pub limit_groups: Vec<DecoLimitGroup>,
+}
+
 /// What `X2House` answers between frames.
 #[derive(Clone, Debug, Default)]
 pub struct HouseView {
@@ -102,7 +143,68 @@ pub struct HouseView {
     pub material_house: Option<u32>,
     /// The maintain window (`ShowHousingMainTainWindow`) is up for this house unit.
     pub maintain_house: Option<u32>,
+    /// The furniture counters of [`Self::selected`], refreshed from the doodads in view.
+    pub deco: Option<HouseDeco>,
+    /// The house-parented doodad ids seen while the maintain window was open (to raise `HOUSE_DECO_UPDATED`).
+    pub deco_children: Option<std::collections::HashSet<u32>>,
     pub tax_item: u32,
+}
+
+/// Counts the selected house's decoration doodads the way the original getters do: every doodad
+/// parented to the house unit except the template's `housing_binding_doodads` built-ins. The deco
+/// groups and their points come from `housing_decorations` resolved by doodad and item template.
+fn deco_stats(
+    tables: &super::data::housing::Tables,
+    template: &super::data::housing::HousingTemplate,
+    obj_id: u32,
+    doodads: &aa_net::state::Doodads,
+) -> HouseDeco {
+    let builtins: std::collections::HashSet<u32> = template.binding_doodads.iter().copied().collect();
+    let mut count = 0i64;
+    let mut groups: Vec<DecoGroup> = Vec::new();
+    for doodad in doodads.by_id.values().filter(|d| d.parent_obj_id == obj_id) {
+        if builtins.contains(&doodad.template_id) {
+            continue;
+        }
+        count += 1;
+        let Some(decoration) = tables.decoration_for_item(doodad.template_id, doodad.item_template_id) else {
+            continue;
+        };
+        if decoration.deco_actability_group_id == 0 {
+            continue;
+        }
+        let index = match groups.iter().position(|g| g.id == decoration.deco_actability_group_id) {
+            Some(index) => index,
+            None => {
+                groups.push(DecoGroup {
+                    id: decoration.deco_actability_group_id,
+                    name: tables.deco_group_name(decoration.deco_actability_group_id).to_string(),
+                    ..Default::default()
+                });
+                groups.len() - 1
+            }
+        };
+        let group = &mut groups[index];
+        group.count += 1;
+        group.points += decoration.actability_up;
+        group.entries.push(DecoEntry { name: decoration.name.clone(), points: decoration.actability_up });
+    }
+    groups.sort_by_key(|g| g.id);
+    let limit_groups = tables
+        .deco_limit_elems(template.housing_deco_limit_id)
+        .map(|elem| DecoLimitGroup {
+            id: elem.deco_actability_group_id,
+            name: tables.deco_group_name(elem.deco_actability_group_id).to_string(),
+            count: groups.iter().find(|g| g.id == elem.deco_actability_group_id).map_or(0, |g| g.count),
+            max: elem.count,
+        })
+        .collect();
+    HouseDeco {
+        count,
+        limit: i64::from(template.deco_limit) - template.binding_doodads.len() as i64,
+        groups,
+        limit_groups,
+    }
 }
 
 /// The eight arguments `HOUSE_BUILD_INFO` -> `ShowBuildWindow(hType, bTax, hTax, heavyCnt, normalCnt, isHeavy,
@@ -156,6 +258,13 @@ pub fn refresh(world: &mut World, data: &mut HudData) {
     {
         data.house.selected = Some(HouseState::of_house(house));
     }
+    data.house.deco = (|| {
+        let selected = data.house.selected.as_ref()?;
+        let tables = &data.game.get()?.housing;
+        let template = tables.housings.get(&selected.template_id)?;
+        let doodads = world.get_resource::<aa_net::state::Doodads>()?;
+        Some(deco_stats(tables, template, selected.obj_id, doodads))
+    })();
 }
 
 /// `SCHouseBuildProgress` while the original material window is up: refresh [`HouseView::selected`] and let
@@ -258,7 +367,7 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         "CountTaxItemInBag",
         lua.create_function(move |_, _this: Table| {
             let d = b.borrow();
-            Ok(bag_count(&d.panels.bag, TAX_ITEM))
+            Ok(tax_item_count(&d.panels.bag))
         })?,
     )?;
 
@@ -393,6 +502,11 @@ pub(super) fn bag_count(bag: &[Option<SlotSnap>], template: u32) -> i64 {
         .filter(|slot| slot.id == template)
         .map(|slot| slot.count.max(0))
         .sum()
+}
+
+/// The original `CountTaxItemInBag` (`FUN_39478cd0`): both the normal and the bound certificate.
+pub(super) fn tax_item_count(bag: &[Option<SlotSnap>]) -> i64 {
+    bag_count(bag, TAX_ITEM) + bag_count(bag, TAX_ITEM_BOUND)
 }
 
 /// Opens the original build window when the tax quote answers the placement's request.
@@ -770,6 +884,90 @@ pub(super) mod tests {
         let slot = |id: u32, count: i64| SlotSnap { id, count, ..Default::default() };
         let bag = vec![Some(slot(TAX_ITEM, 4)), Some(slot(1, 9)), None, Some(slot(TAX_ITEM, 6))];
         assert_eq!(bag_count(&bag, TAX_ITEM), 10);
+        // `CountTaxItemInBag` (`FUN_39478cd0`) adds the bound certificate too.
+        let bag = vec![Some(slot(TAX_ITEM, 4)), Some(slot(TAX_ITEM_BOUND, 7)), None, Some(slot(TAX_ITEM_BOUND, 2))];
+        assert_eq!(tax_item_count(&bag), 13);
+    }
+
+    #[test]
+    fn the_furniture_count_excludes_the_template_built_ins_and_follows_the_deco_groups() {
+        use super::super::data::housing::{HousingDecoration, HousingDecoLimitElem, HousingTemplate};
+        let mut tables = super::super::data::housing::Tables::default();
+        tables.housings.insert(267, HousingTemplate::default());
+        let template = {
+            let template = tables.housings.get_mut(&267).unwrap();
+            template.deco_limit = 40;
+            template.housing_deco_limit_id = 10;
+            template.binding_doodads = vec![4001, 4002];
+            template.clone()
+        };
+        let deco = |id: u32, name: &str, doodad: u32, group: u32, points: u32| HousingDecoration {
+            id,
+            name: name.into(),
+            doodad_id: doodad,
+            deco_actability_group_id: group,
+            actability_up: points,
+            ..Default::default()
+        };
+        tables.decorations.insert(10, deco(10, "Pot", 5461, 5, 3));
+        tables.decorations.insert(11, deco(11, "Chest", 5462, 5, 4));
+        tables.item_housing_decorations.push(super::super::data::housing::ItemHousingDecoration {
+            id: 20,
+            item_id: 107,
+            design_id: 10,
+            restore: false,
+        });
+        tables.item_housing_decorations.push(super::super::data::housing::ItemHousingDecoration {
+            id: 21,
+            item_id: 108,
+            design_id: 11,
+            restore: false,
+        });
+        tables.deco_actability_groups.insert(5, "Storage".into());
+        tables.deco_limit_elems.push(HousingDecoLimitElem { id: 1, housing_deco_limit_id: 10, deco_actability_group_id: 5, count: 3 });
+        let doodad = |obj_id: u32, parent: u32, template: u32, item: u32| aa_net::model::Doodad {
+            obj_id,
+            template_id: template,
+            owner_obj_id: 0,
+            parent_obj_id: parent,
+            attach_point: 0,
+            pos: aa_net::Pos::new(0.0, 0.0, 0.0),
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: 1.0,
+            has_loot_item: false,
+            func_group_id: 0,
+            owner_id: 0,
+            ucc_id: 0,
+            item_template_id: item,
+            type2: 0,
+            time_left: 0,
+            plant_time: 0,
+            quest_glow: 0,
+            family: 0,
+            puzzle_group: 0,
+            owner_type: 0,
+            owner_db_id: 0,
+            data: 0,
+        };
+        let mut doodads = aa_net::state::Doodads::default();
+        for d in [
+            doodad(1, 16211, 4001, 0),
+            doodad(2, 16211, 5461, 107),
+            doodad(3, 16211, 5462, 108),
+            doodad(4, 999, 5461, 107),
+            doodad(5, 16211, 1, 0),
+        ] {
+            doodads.by_id.insert(d.obj_id, d);
+        }
+        let stats = deco_stats(&tables, &template, 16211, &doodads);
+        assert_eq!((stats.count, stats.limit), (3, 38), "two decorations and a farm plot, two built-ins, limit minus built-ins");
+        assert_eq!(stats.groups.len(), 1);
+        let group = &stats.groups[0];
+        assert_eq!((group.id, group.name.as_str(), group.count, group.points), (5, "Storage", 2, 7));
+        let mut entries: Vec<_> = group.entries.iter().map(|e| (e.name.as_str(), e.points)).collect();
+        entries.sort();
+        assert_eq!(entries, [("Chest", 4), ("Pot", 3)]);
+        assert_eq!(stats.limit_groups, vec![super::DecoLimitGroup { id: 5, name: "Storage".into(), count: 2, max: 3 }]);
     }
 
     #[test]

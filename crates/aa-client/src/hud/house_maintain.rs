@@ -86,6 +86,39 @@ pub(super) fn certificates_for(price: i64) -> i64 {
     ((price + COPPER_PER_APPRAISAL - 1) / COPPER_PER_APPRAISAL).max(1)
 }
 
+/// `CREATE_INVALID_NAME`, the error `FUN_3932be40` raises for a rejected house name (`0x150`).
+const INVALID_NAME_ERROR: i16 = 0x150;
+
+/// The name policy of `FUN_3932be40`: `XlIsValidName(name, 1)`, then lowercase an alphabetic first
+/// character (`XlIsAlpha`/`XlToLower` on the converted wide string).
+fn house_name(text: &str) -> Option<String> {
+    if !crate::login::name_policy::valid_bytes(text.as_bytes(), 1) {
+        return None;
+    }
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    let mut out = String::new();
+    if first.is_alphabetic() {
+        out.extend(first.to_lowercase().next());
+    } else {
+        out.push(first);
+    }
+    out.extend(chars);
+    Some(out)
+}
+
+/// `FUN_39428370(0x150)`: the original shows the error text when the house name is refused.
+fn show_invalid_name(lua: &Lua) {
+    let Some(key) = super::alerts::error_name(INVALID_NAME_ERROR) else { return };
+    if lua.app_data_ref::<aa_ui::lua::Ui>().is_none() {
+        return;
+    }
+    let Ok(locale) = lua.globals().get::<Table>("X2Locale") else { return };
+    let Ok(group) = lua.globals().get::<Value>("ERROR_MSG") else { return };
+    let Ok(message): Result<Value, _> = locale.call_method("LocalizeUiText", (group, key)) else { return };
+    aa_ui::lua::fire_ui_event(lua, "SYSMSG", vec![message]);
+}
+
 /// The `X2House` methods only the maintain window calls.
 pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     let x2: Table = lua.globals().get("X2House")?;
@@ -133,9 +166,15 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             let sellable = d.game.get().and_then(|g| g.housing.housings.get(&h.template_id)).is_none_or(|t| t.is_sellable);
             let price = i64::from(h.sell_price).max(0);
             let (gold, silver, copper) = split_price(price);
+            // `FUN_3947a4d0`: canBuy = onSale && (no designated buyer || buyer == me); targetName only then.
+            let designated = h.sell_to_player_id != 0;
+            let can_buy = price > 0 && (!designated || (d.character_id != 0 && h.sell_to_player_id == d.character_id));
             out.set("canSell", sellable && !h.under_construction())?;
             out.set("onSale", price > 0)?;
-            out.set("targetName", h.sell_to_name.clone())?;
+            out.set("canBuy", can_buy)?;
+            if designated {
+                out.set("targetName", h.sell_to_name.clone())?;
+            }
             out.set("price", price)?;
             out.set("gold", gold)?;
             out.set("silver", silver)?;
@@ -204,13 +243,126 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         })?,
     )?;
 
+    // `FUN_3932be40`: only the owner may rename; the name policy (`XlIsValidName` kind 1) refuses
+    // others with error 0x150, and an alphabetic first character is lowercased.
+    let b = bridge.clone();
+    x2.set(
+        "SetHouseName",
+        lua.create_function(move |lua, (_this, name): (Table, String)| {
+            let mut d = b.borrow_mut();
+            let Some(house) = d.house.selected.as_ref() else { return Ok(()) };
+            if house.owner_id == 0 || house.owner_id != d.character_id {
+                return Ok(());
+            }
+            let Some(name) = house_name(&name) else {
+                drop(d);
+                show_invalid_name(lua);
+                return Ok(());
+            };
+            let tl = house.tl_id;
+            info!("housing: rename house {tl} to {name:?}");
+            d.requests.push(Request::House(HouseCommand::ChangeName { tl, name }));
+            Ok(())
+        })?,
+    )?;
+
     x2.set("IsSiegePeriod", lua.create_function(move |_, _this: Table| Ok(false))?)?;
-    // The decoration counters: the server sends no counts, so the window hides its furniture line (the answers
-    // are nil, as for a house without a decoration limit).
-    x2.set("GetHouseDecoCount", lua.create_function(move |_, _this: Table| Ok(Value::Nil))?)?;
-    x2.set("GetActabilityDecoCount", lua.create_function(move |_, _this: Table| Ok(Value::Nil))?)?;
-    x2.set("GetDecoActabilityLimitGroup", lua.create_function(move |_, _this: Table| Ok(Value::Nil))?)?;
+
+    // `FUN_394796b0`: (placed doodads - built-ins, deco_limit - built-ins).
+    let b = bridge.clone();
+    x2.set(
+        "GetHouseDecoCount",
+        lua.create_function(move |_, _this: Table| {
+            let d = b.borrow();
+            Ok(match d.house.deco.as_ref() {
+                Some(deco) => (Value::Integer(deco.count), Value::Integer(deco.limit)),
+                None => (Value::Nil, Value::Nil),
+            })
+        })?,
+    )?;
+    // `FUN_394797c0`: the number of deco actability groups that have decorations.
+    let b = bridge.clone();
+    x2.set(
+        "GetActabilityDecoCount",
+        lua.create_function(move |_, _this: Table| {
+            let d = b.borrow();
+            Ok(d.house.deco.as_ref().map_or(Value::Nil, |deco| Value::Integer(deco.groups.len() as i64)))
+        })?,
+    )?;
+    // `FUN_39479890`: one group's name and points.
+    let b = bridge.clone();
+    x2.set(
+        "GetDecoActabilityPoint",
+        lua.create_function(move |lua, (_this, index): (Table, i64)| {
+            let d = b.borrow();
+            let group = (index >= 1)
+                .then(|| usize::try_from(index - 1).ok())
+                .flatten()
+                .and_then(|index| d.house.deco.as_ref()?.groups.get(index));
+            match group {
+                Some(group) => Ok(Value::Table(deco_point_table(lua, group)?)),
+                None => Ok(Value::Nil),
+            }
+        })?,
+    )?;
+    // `FUN_3947a040`: one group with its totals and every decoration that contributes to it.
+    let b = bridge.clone();
+    x2.set(
+        "GetDecoActabilityByType",
+        lua.create_function(move |lua, (_this, index): (Table, i64)| {
+            let d = b.borrow();
+            let group = (index >= 1)
+                .then(|| usize::try_from(index - 1).ok())
+                .flatten()
+                .and_then(|index| d.house.deco.as_ref()?.groups.get(index));
+            match group {
+                Some(group) => Ok(Value::Table(deco_type_table(lua, group)?)),
+                None => Ok(Value::Nil),
+            }
+        })?,
+    )?;
+    // `FUN_3947a310`: the template's per-group caps, with the house's current use.
+    let b = bridge.clone();
+    x2.set(
+        "GetDecoActabilityLimitGroup",
+        lua.create_function(move |lua, _this: Table| {
+            let d = b.borrow();
+            let Some(deco) = d.house.deco.as_ref().filter(|deco| !deco.limit_groups.is_empty()) else {
+                return Ok(Value::Nil);
+            };
+            let out = lua.create_table()?;
+            for (i, group) in deco.limit_groups.iter().enumerate() {
+                let row = lua.create_table()?;
+                row.set("name", group.name.clone())?;
+                row.set("arrangeCount", i64::from(group.count))?;
+                row.set("maxCount", i64::from(group.max))?;
+                out.raw_set(i + 1, row)?;
+            }
+            Ok(Value::Table(out))
+        })?,
+    )?;
     Ok(())
+}
+
+fn deco_point_table(lua: &Lua, group: &super::houses::DecoGroup) -> mlua::Result<Table> {
+    let out = lua.create_table()?;
+    out.set("name", group.name.clone())?;
+    out.set("decoPoint", i64::from(group.points))?;
+    Ok(out)
+}
+
+fn deco_type_table(lua: &Lua, group: &super::houses::DecoGroup) -> mlua::Result<Table> {
+    let out = lua.create_table()?;
+    out.set("type", i64::from(group.id))?;
+    out.set("totalPoint", i64::from(group.points))?;
+    out.set("totalDecoPoint", i64::from(group.points))?;
+    for (i, entry) in group.entries.iter().enumerate() {
+        let row = lua.create_table()?;
+        row.set("name", entry.name.clone())?;
+        row.set("decoPoint", i64::from(entry.points))?;
+        out.raw_set(i + 1, row)?;
+    }
+    Ok(out)
 }
 
 /// The eight `HOUSE_TAX_INFO` arguments `housing_manager.alb` hands to `UpdateMyHouseTaxInfo`: the dominion tax rate,
@@ -325,6 +477,48 @@ pub fn route_events(
     }
 }
 
+/// `HOUSE_DECO_UPDATED` (`FUN_39330270`): a doodad bonded to or unbound from the selected house changes the
+/// furniture counters; the event makes the manager script redraw them.
+pub fn track_deco(
+    doodads: Option<Res<aa_net::state::Doodads>>,
+    bridge: NonSend<HudBridge>,
+    rt: Option<NonSend<UiRuntime>>,
+) {
+    let Some(rt) = rt else { return };
+    let current = {
+        let d = bridge.0.borrow();
+        d.house.maintain_house.map(|obj| {
+            doodads
+                .as_ref()
+                .map(|doodads| {
+                    doodads
+                        .by_id
+                        .values()
+                        .filter(|d| d.parent_obj_id == obj)
+                        .map(|d| d.obj_id)
+                        .collect::<std::collections::HashSet<u32>>()
+                })
+                .unwrap_or_default()
+        })
+    };
+    let changed = {
+        let mut d = bridge.0.borrow_mut();
+        match (d.house.deco_children.take(), current) {
+            (Some(previous), Some(current)) => {
+                d.house.deco_children = Some(current.clone());
+                previous != current
+            }
+            (_, current) => {
+                d.house.deco_children = current;
+                false
+            }
+        }
+    };
+    if changed {
+        rt.fire_event("HOUSE_DECO_UPDATED", ());
+    }
+}
+
 /// Closes the maintain window's bookkeeping when the player closed it, and the window itself when the player walked
 /// away from the house (the original ends the interaction by distance).
 pub fn watch(bridge: NonSend<HudBridge>, units: Res<Units>, rt: Option<NonSend<UiRuntime>>) {
@@ -356,7 +550,7 @@ pub fn watch(bridge: NonSend<HudBridge>, units: Res<Units>, rt: Option<NonSend<U
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        (route_events, watch)
+        (route_events, track_deco, watch)
             .chain()
             .after(super::sync_hud)
             .before(super::api::handle_requests)
@@ -464,13 +658,25 @@ mod tests {
 
     #[test]
     fn the_sale_info_splits_the_price_and_counts_appraisal_certificates() {
-        let (lua, bridge) = lua_with(HouseState { sell_price: 123_456, sell_to_name: "Bob".into(), ..finished() });
+        let (lua, bridge) =
+            lua_with(HouseState { sell_price: 123_456, sell_to_player_id: 4, sell_to_name: "Bob".into(), ..finished() });
         bridge.borrow_mut().panels.bag = vec![Some(super::super::panels::SlotSnap { id: APPRAISAL_ITEM, count: 3, ..Default::default() })];
-        let (on_sale, price, gold, silver, copper, target): (bool, i64, i64, i64, i64, String) = lua
-            .load("local i = X2House:GetHouseSaleInfo() return i.onSale, i.price, i.gold, i.silver, i.copper, i.targetName")
+        let (on_sale, price, gold, silver, copper, target, can_buy): (bool, i64, i64, i64, i64, String, bool) = lua
+            .load("local i = X2House:GetHouseSaleInfo() return i.onSale, i.price, i.gold, i.silver, i.copper, i.targetName, i.canBuy")
             .eval()
             .unwrap();
-        assert_eq!((on_sale, price, gold, silver, copper, target.as_str()), (true, 123_456, 12, 34, 56, "Bob"));
+        assert_eq!((on_sale, price, gold, silver, copper, target.as_str(), can_buy), (true, 123_456, 12, 34, 56, "Bob", false));
+        // the designated buyer is the local player: Buy is enabled
+        bridge.borrow_mut().house.selected.as_mut().unwrap().sell_to_player_id = 9;
+        let (target, can_buy): (String, bool) =
+            lua.load("local i = X2House:GetHouseSaleInfo() return i.targetName, i.canBuy").eval().unwrap();
+        assert_eq!((target.as_str(), can_buy), ("Bob", true));
+        // no designated buyer: anybody may buy and the original omits targetName
+        bridge.borrow_mut().house.selected.as_mut().unwrap().sell_to_player_id = 0;
+        let (target, can_buy): (Value, bool) =
+            lua.load("local i = X2House:GetHouseSaleInfo() return i.targetName, i.canBuy").eval().unwrap();
+        assert!(matches!(target, Value::Nil));
+        assert!(can_buy);
         // 250 gold = 2,500,000 copper = 3 certificates
         let (has, need, kind): (i64, i64, i64) = lua
             .load("local i = X2House:GetHouseSaleItemInfo('250', '0', '0') return i.hasCount, i.needCount, i.itemType")
@@ -488,7 +694,76 @@ mod tests {
         let (lua, _bridge) = lua_with(finished());
         let (siege, deco): (bool, Value) = lua.load("return X2House:IsSiegePeriod(), X2House:GetHouseDecoCount()").eval().unwrap();
         assert!(!siege);
-        assert!(matches!(deco, Value::Nil));
+        assert!(matches!(deco, Value::Nil), "no table data yet: the furniture line stays hidden");
+    }
+
+    fn deco() -> super::super::houses::HouseDeco {
+        use super::super::houses::{DecoEntry, DecoGroup, DecoLimitGroup, HouseDeco};
+        HouseDeco {
+            count: 3,
+            limit: 38,
+            groups: vec![DecoGroup {
+                id: 5,
+                name: "Storage".into(),
+                count: 2,
+                points: 7,
+                entries: vec![
+                    DecoEntry { name: "Pot".into(), points: 3 },
+                    DecoEntry { name: "Chest".into(), points: 4 },
+                ],
+            }],
+            limit_groups: vec![DecoLimitGroup { id: 5, name: "Storage".into(), count: 2, max: 3 }],
+        }
+    }
+
+    #[test]
+    fn the_furniture_counters_and_deco_group_getters_answer_the_original_shapes() {
+        let (lua, bridge) = lua_with(finished());
+        bridge.borrow_mut().house.deco = Some(deco());
+        let (count, limit, groups): (i64, i64, i64) = lua
+            .load("local c, l = X2House:GetHouseDecoCount() return c, l, X2House:GetActabilityDecoCount()")
+            .eval()
+            .unwrap();
+        assert_eq!((count, limit, groups), (3, 38, 1));
+        let (name, points): (String, i64) =
+            lua.load("local p = X2House:GetDecoActabilityPoint(1) return p.name, p.decoPoint").eval().unwrap();
+        assert_eq!((name.as_str(), points), ("Storage", 7));
+        let (kind, total, total_deco, entry_name, entry_point): (i64, i64, i64, String, i64) = lua
+            .load(
+                "local t = X2House:GetDecoActabilityByType(1) return t.type, t.totalPoint, t.totalDecoPoint, t[1].name, t[1].decoPoint",
+            )
+            .eval()
+            .unwrap();
+        assert_eq!((kind, total, total_deco, entry_name.as_str(), entry_point), (5, 7, 7, "Pot", 3));
+        let (group_name, arrange, max): (String, i64, i64) = lua
+            .load("local g = X2House:GetDecoActabilityLimitGroup() return g[1].name, g[1].arrangeCount, g[1].maxCount")
+            .eval()
+            .unwrap();
+        assert_eq!((group_name.as_str(), arrange, max), ("Storage", 2, 3));
+        let (point, by_type): (Value, Value) =
+            lua.load("return X2House:GetDecoActabilityPoint(2), X2House:GetDecoActabilityByType(2)").eval().unwrap();
+        assert!(matches!((point, by_type), (Value::Nil, Value::Nil)));
+    }
+
+    #[test]
+    fn renaming_uses_the_owner_check_and_the_original_name_policy() {
+        assert_eq!(house_name("Bob").as_deref(), Some("bob"));
+        assert_eq!(house_name("Bobvilla").as_deref(), Some("bobvilla"));
+        assert_eq!(house_name("1bob").as_deref(), Some("1bob"));
+        assert_eq!(house_name("A"), None, "too short for name policy kind 1");
+        assert_eq!(house_name("Bad Name"), None, "kind 1 has no spaces");
+        let (lua, bridge) = lua_with(finished());
+        lua.load("X2House:SetHouseName('Bobvilla')").exec().unwrap();
+        assert_eq!(
+            bridge.borrow().requests,
+            vec![Request::House(HouseCommand::ChangeName { tl: 13, name: "bobvilla".into() })]
+        );
+        bridge.borrow_mut().requests.clear();
+        lua.load("X2House:SetHouseName('A')").exec().unwrap();
+        assert!(bridge.borrow().requests.is_empty(), "an invalid name sends nothing");
+        bridge.borrow_mut().character_id = 4;
+        lua.load("X2House:SetHouseName('Farm')").exec().unwrap();
+        assert!(bridge.borrow().requests.is_empty(), "only the owner may rename");
     }
 
     #[test]
@@ -598,6 +873,77 @@ mod tests {
         assert_eq!(errors(&rt), "");
         rt.fire_event("HOUSE_INTERACTION_END", ());
         assert!(!visible(&rt), "the interaction end closes the window");
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn doodad(obj_id: u32, parent_obj_id: u32) -> aa_net::model::Doodad {
+        aa_net::model::Doodad {
+            obj_id,
+            template_id: 5461,
+            owner_obj_id: 0,
+            parent_obj_id,
+            attach_point: 0,
+            pos: aa_net::Pos::new(2.0, 0.0, 0.0),
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: 1.0,
+            has_loot_item: false,
+            func_group_id: 0,
+            owner_id: 0,
+            ucc_id: 0,
+            item_template_id: 107,
+            type2: 0,
+            time_left: 0,
+            plant_time: 0,
+            quest_glow: 0,
+            family: 0,
+            puzzle_group: 0,
+            owner_type: 0,
+            owner_db_id: 0,
+            data: 0,
+        }
+    }
+
+    #[test]
+    fn a_doodad_bonded_to_or_unbound_from_the_open_house_fires_house_deco_updated() {
+        let Ok((rt, bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        rt.lua
+            .load(
+                r#"
+                SEEN = 0
+                local w = UIParent:CreateWidget("emptywidget", "deco_seen", "UIParent")
+                w:SetHandler("OnEvent", function() SEEN = SEEN + 1 end)
+                w:RegisterEvent("HOUSE_DECO_UPDATED")
+                "#,
+            )
+            .exec()
+            .unwrap();
+        bridge.borrow_mut().house.maintain_house = Some(16211);
+        let mut app = App::new();
+        app.insert_resource(aa_net::state::Doodads::default())
+            .insert_non_send(rt)
+            .insert_non_send(HudBridge(bridge.clone()))
+            .add_systems(Update, track_deco);
+        let seen = |app: &App| -> i64 {
+            app.world().non_send::<UiRuntime>().lua.load("return SEEN").eval().unwrap()
+        };
+        app.update();
+        assert_eq!(seen(&app), 0, "the first frame only remembers");
+        let add = |app: &mut App, doodad: aa_net::model::Doodad| {
+            app.world_mut().resource_mut::<aa_net::state::Doodads>().by_id.insert(doodad.obj_id, doodad);
+        };
+        add(&mut app, doodad(21, 16211));
+        app.update();
+        assert_eq!(seen(&app), 1, "bonded");
+        add(&mut app, doodad(22, 999));
+        app.update();
+        assert_eq!(seen(&app), 1, "another house's doodad does not count");
+        app.world_mut().resource_mut::<aa_net::state::Doodads>().by_id.remove(&21);
+        app.update();
+        assert_eq!(seen(&app), 2, "unbound");
+        let rt = app.world().non_send::<UiRuntime>();
+        assert!(rt.errors.is_empty(), "{:?}", rt.errors);
         let _ = std::fs::remove_file(path);
     }
 
