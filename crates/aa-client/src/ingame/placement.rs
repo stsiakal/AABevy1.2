@@ -641,6 +641,12 @@ pub fn check(
         }
         let d = Vec2::new(doodad.pos.x - spot.x, doodad.pos.y - spot.y).length();
         if d < plant.footprint + other {
+            // owner_type 3 is a doodad a house put down; it blocks like any other, but a refused spot inside one's
+            // own garden should name it
+            debug!(
+                "planting: spot blocked by doodad {} (template {}, owner_type {}) {d:.2} m away, footprints {} + {other}",
+                doodad.obj_id, doodad.template_id, doodad.owner_type, plant.footprint
+            );
             return Err(Invalid::Footprint);
         }
     }

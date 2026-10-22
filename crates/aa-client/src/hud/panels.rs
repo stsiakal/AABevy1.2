@@ -538,6 +538,7 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
                 None => inventory.find_by_id(action.id).map(|(_, _, it)| it),
             };
             let Some(item) = found else {
+                info!("hud: action slot {slot} wants item {:?}, none in the bag: {}", action.item_template_id(), super::usable::result_name(super::usable::code::NEED_REAGENT));
                 failed.write(UseFailed { skill: 0, result: super::usable::code::NEED_REAGENT, value: action.item_template_id().unwrap_or(0), server: false });
                 return;
             };
@@ -562,6 +563,8 @@ fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj
         return;
     }
     if let Some((skill, f)) = env.precheck_item(item.template_id) {
+        // a refused seed / sapling / house item would otherwise only raise an alert and leave no trace in the log
+        info!("hud: use of item {} (skill {skill}) refused before sending: {} (value {})", item.template_id, super::usable::result_name(f.result), f.value);
         failed.write(UseFailed { skill, result: f.result, value: f.value, server: false });
         return;
     }
