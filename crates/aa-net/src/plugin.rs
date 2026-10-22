@@ -134,6 +134,9 @@ macro_rules! net_state {
                         self.$field.set_changed();
                     }
                 )*
+                if !self.units.slave_local.is_empty() && !self.units.bypass_change_detection().resolve_children().is_empty() {
+                    self.units.set_changed();
+                }
                 // a part moved between the bag and the owned slave: the bag learns the item that came off it
                 if matches!(event, Event::ItemsChanged(_))
                     && let Some(own) = self.slaves.own.as_ref()

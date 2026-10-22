@@ -660,6 +660,7 @@ pub fn plugin(app: &mut App) {
         (
             receive_moves.before(move_units),
             (
+                follow_slave_parents,
                 super::vehicle::vehicle_seat,
                 super::mount::drive_mount,
                 super::vehicle::drive_vehicle,
@@ -680,6 +681,21 @@ pub fn plugin(app: &mut App) {
         )
             .run_if(super::world_screens),
     );
+}
+
+/// A child slave (a ship's cannon) is announced in its parent slave's frame ([`aa_net::state::Units::resolve_children`]
+/// places it from the last packet): follow the parent as it is drawn, so the cannon sails with the interpolated hull.
+fn follow_slave_parents(units: Res<Units>, views: Res<Views>, mut query: Query<(&mut RemoteUnit, &mut Transform)>) {
+    for (id, local) in &units.slave_local {
+        let (Some(parent), Some(child)) = (views.unit_entity(local.parent), views.unit_entity(*id)) else { continue };
+        let Ok((parent, _)) = query.get(parent) else { continue };
+        let (pos, facing, scale) = (parent.pos, parent.facing, parent.scale);
+        let Ok((mut unit, mut transform)) = query.get_mut(child) else { continue };
+        let (placed, yaw) = aa_net::state::slave_child_pose(aa_net::Pos::new(pos.x, pos.y, pos.z), facing, scale, local);
+        unit.pos = Vec3::new(placed.x, placed.y, placed.z);
+        unit.facing = yaw;
+        *transform = placement(unit.pos, yaw, unit.scale);
+    }
 }
 
 /// What the movement packet says, for the track.

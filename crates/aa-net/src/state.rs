@@ -186,10 +186,52 @@ resource! {
     /// Units in view, by object id (the local player is in [`Player`], not here).
     pub struct Units {
         pub by_id: HashMap<u32, Unit>,
+        /// A child slave (a ship's cannon) as announced: its position and heading in the parent slave's frame
+        /// (see [`Units::resolve_children`]).
+        pub slave_local: HashMap<u32, SlaveLocal>,
     }
 }
 
+/// The frame a child slave is announced in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SlaveLocal {
+    pub pos: Pos,
+    pub yaw: f32,
+    /// The parent slave's object id (the owner object of the child's unit state).
+    pub parent: u32,
+}
+
+/// A child slave's world place from its parent's: the parent's position plus the parent's heading applied to the local
+/// position (times the parent's scale), heading = parent heading + local.
+pub fn slave_child_pose(parent_pos: Pos, parent_yaw: f32, parent_scale: f32, local: &SlaveLocal) -> (Pos, f32) {
+    let (sin, cos) = parent_yaw.sin_cos();
+    let scale = if parent_scale > 0.0 { parent_scale } else { 1.0 };
+    let (lx, ly, lz) = (local.pos.x * scale, local.pos.y * scale, local.pos.z * scale);
+    (Pos::new(parent_pos.x + lx * cos - ly * sin, parent_pos.y + lx * sin + ly * cos, parent_pos.z + lz), parent_yaw + local.yaw)
+}
+
 impl Units {
+    /// Puts every child slave at its parent slave's current place. The server writes a child's transform in the
+    /// parent's frame (the ship's local axes; the attach point's own offset is not applied), so a moving ship carries its
+    /// cannons. A parent not in view leaves the child where it was. Returns the units that moved.
+    pub fn resolve_children(&mut self) -> Vec<u32> {
+        let mut moved = Vec::new();
+        for (id, local) in &self.slave_local {
+            let Some(parent) = self.by_id.get(&local.parent) else { continue };
+            if !matches!(parent.kind, crate::model::UnitKind::Slave { .. }) {
+                continue;
+            }
+            let (pos, yaw) = slave_child_pose(parent.pos, parent.rotation[2], parent.scale, local);
+            let Some(child) = self.by_id.get_mut(id) else { continue };
+            if child.pos != pos || child.rotation[2] != yaw {
+                child.pos = pos;
+                child.rotation[2] = yaw;
+                moved.push(*id);
+            }
+        }
+        moved
+    }
+
     pub fn clear_expedition(&mut self, expedition_id:u32)->bool {
         if expedition_id==0{return false;}
         let mut changed=false;
@@ -215,6 +257,15 @@ impl Units {
         match e {
             Event::UnitSpawned(u) => {
                 self.by_id.insert(u.obj_id, (**u).clone());
+                // a slave that hangs on another slave is announced in its parent's frame
+                match u.state_attachments.and_then(|a| a.first_obj_id).filter(|p| *p != 0) {
+                    Some(parent) if matches!(u.kind, crate::model::UnitKind::Slave { .. }) => {
+                        self.slave_local.insert(u.obj_id, SlaveLocal { pos: u.pos, yaw: u.rotation[2], parent });
+                    }
+                    _ => {
+                        self.slave_local.remove(&u.obj_id);
+                    }
+                }
             }
             Event::Expedition(receipt) => {
                 use crate::ExpeditionEvent as E;
@@ -274,6 +325,7 @@ impl Units {
             Event::UnitsRemoved(ids) => {
                 for id in ids {
                     self.by_id.remove(id);
+                    self.slave_local.remove(id);
                 }
             }
             Event::UnitPoints { obj_id, hp, mp } => {
@@ -325,6 +377,7 @@ impl Units {
                     return false;
                 }
                 self.by_id.clear();
+                self.slave_local.clear();
             }
             _ => return false,
         }
@@ -537,6 +590,7 @@ impl WorldState {
         self.characters.apply(e);
         self.player.apply(e);
         self.units.apply(e);
+        self.units.resolve_children();
         self.doodads.apply(e);
         self.doodads.resolve_parents(&self.units);
         self.status.apply(e);
@@ -623,6 +677,35 @@ pub(crate) mod tests {
             owner_db_id: 0,
             data: 0,
         }
+    }
+
+    #[test]
+    fn a_child_slave_is_placed_in_its_parent_slaves_frame_and_follows_it() {
+        use crate::model::{UnitKind, UnitStateAttachments};
+        let mut world = WorldState::default();
+        let mut ship = unit(7);
+        ship.kind = UnitKind::Slave { id: 1, tl_id: 1, template_id: 22, summoner_id: 9 };
+        ship.pos = Pos::new(1000.0, 2000.0, 100.0);
+        ship.rotation = [0.0, 0.0, std::f32::consts::FRAC_PI_2];
+        world.apply(&Event::UnitSpawned(Box::new(ship)));
+        let mut cannon = unit(8);
+        cannon.kind = UnitKind::Slave { id: 2, tl_id: 2, template_id: 10, summoner_id: 9 };
+        cannon.pos = Pos::new(2.0, 0.0, 1.0);
+        cannon.state_attachments = Some(UnitStateAttachments { first_point: 3, first_obj_id: Some(7), bonding_obj_id: None });
+        world.apply(&Event::UnitSpawned(Box::new(cannon)));
+        let close = |a: Pos, b: Pos| (a.x - b.x).abs() < 1e-3 && (a.y - b.y).abs() < 1e-3 && (a.z - b.z).abs() < 1e-3;
+        // a quarter turn to the left maps local +x onto world +y
+        assert!(close(world.units.by_id[&8].pos, Pos::new(1000.0, 2002.0, 101.0)), "{:?}", world.units.by_id[&8].pos);
+        assert!((world.units.by_id[&8].rotation[2] - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
+        // the ship sails on: the cannon goes along, and nothing moved reports nothing
+        world.units.by_id.get_mut(&7).unwrap().pos = Pos::new(1100.0, 2000.0, 100.0);
+        assert_eq!(world.units.resolve_children(), [8]);
+        assert!(close(world.units.by_id[&8].pos, Pos::new(1100.0, 2002.0, 101.0)));
+        assert!(world.units.resolve_children().is_empty());
+        // the ship itself is never a child
+        assert_eq!(world.units.slave_local.keys().copied().collect::<Vec<_>>(), [8]);
+        world.apply(&Event::UnitsRemoved(vec![8]));
+        assert!(world.units.slave_local.is_empty());
     }
 
     #[test]
