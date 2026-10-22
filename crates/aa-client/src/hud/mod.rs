@@ -549,7 +549,7 @@ impl Plugin for HudPlugin {
                     build_hud.run_if(hud_wanted),
                     session::route_session,
                     session::scripted_session.run_if(hud_up),
-                    (sync_hud, houses::sync_window, houses::route_build_progress, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, houses::right_click_build, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
+                    (sync_hud, houses::sync_window, houses::route_build_progress, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::tick_quest_left_time, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, houses::right_click_build, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
                     cameras::match_world_camera,
                     cameras::dev_fov,
                     addons::tick.after(sync_hud).before(aa_ui::UiFrame),
