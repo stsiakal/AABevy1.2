@@ -531,7 +531,7 @@ impl Session {
 
     /// `CSCreateHouse`: the build window's Build button. It uses the confirmed spot, not the live cursor
     /// validity: the pointer may be over the window and the preview locked when this is called.
-    pub fn create_house(&self) -> Option<HouseCommand> {
+    pub fn create_house(&self, auto_use_aa_point: bool) -> Option<HouseCommand> {
         if self.build_blocked().is_some() {
             return None;
         }
@@ -547,17 +547,65 @@ impl Session {
             item_id: self.item_id,
             money_amount: quote.total_tax_money_amount,
             ht: 0,
-            auto_use_aa_point: false,
+            auto_use_aa_point,
         })
     }
+}
+
+/// Minimum time between two `CSCreateHouse` sends (`DAT_3a167ea0`, 5000 ms in the original builder).
+pub const CREATE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Why the Build button sent nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreateRefusal {
+    /// The last create was sent less than [`CREATE_INTERVAL`] ago: whole seconds left (rounded up).
+    Wait(u64),
+    /// The session cannot build yet (no quote, not confirmed, ...).
+    Blocked(&'static str),
 }
 
 #[derive(Resource, Default)]
 pub struct Placement {
     pub session: Option<Session>,
+    /// When the last `CSCreateHouse` was sent (the 5 s rate limit).
+    pub last_create: Option<std::time::Instant>,
     /// Design of a house create that was sent and is waiting for the server's `SCMyHouse`; the ghost is
     /// already gone, so this keeps enough identity to close the original build window on the answer.
     pub pending_house: Option<u32>,
+}
+
+impl Placement {
+    /// The Build button: the `CSCreateHouse` of the active session, unless the 5 s limit holds it back. A send marks
+    /// the session done and starts the limit. `auto_use_aa_point` is the player's real setting.
+    pub fn send_create(&mut self, auto_use_aa_point: bool, now: std::time::Instant) -> Result<HouseCommand, CreateRefusal> {
+        let Some(session) = self.session.as_mut() else { return Err(CreateRefusal::Blocked("the active placement is gone")) };
+        if let Some(why) = session.build_blocked() {
+            return Err(CreateRefusal::Blocked(why));
+        }
+        if let Some(last) = self.last_create {
+            let left = CREATE_INTERVAL.saturating_sub(now.saturating_duration_since(last));
+            if !left.is_zero() {
+                return Err(CreateRefusal::Wait(left.as_millis().div_ceil(1000) as u64));
+            }
+        }
+        let request = session.create_house(auto_use_aa_point).ok_or(CreateRefusal::Blocked("the house cannot be built"))?;
+        session.done = true;
+        self.last_create = Some(now);
+        Ok(request)
+    }
+}
+
+/// The red message of a held-back `CSCreateHouse`: `CANNOT_LOCATE_DOODAD_NOW` with the seconds left.
+pub fn create_wait_notice(rt: Option<&aa_ui::UiRuntime>, seconds: u64) -> String {
+    match localized_error(rt, "CANNOT_LOCATE_DOODAD_NOW") {
+        Some(text) => text.replace("$1", &seconds.to_string()),
+        None => cooldown_message(seconds),
+    }
+}
+
+/// Raises the red top-centre message (the original `centermessage`).
+pub fn notify_text(rt: Option<&aa_ui::UiRuntime>, text: String) {
+    notify(rt, text);
 }
 
 #[derive(Component)]
@@ -2254,7 +2302,7 @@ mod tests {
         session.spot = Some(Vec3::new(1.0, 2.0, 3.0));
         session.window_open = false;
         session.yaw = wrap_angle(session.yaw + 0.5);
-        assert!(matches!(session.create_house(), Some(HouseCommand::CreateHouse { z_rot, .. }) if (z_rot - wrap_angle(3.0)).abs() < 1e-5));
+        assert!(matches!(session.create_house(false), Some(HouseCommand::CreateHouse { z_rot, .. }) if (z_rot - wrap_angle(3.0)).abs() < 1e-5));
         let seed = Session::new(1, plant(), 0.0);
         assert!(!seed.wheel_rotates(), "seeds never rotate, the wheel zooms");
     }
@@ -2484,7 +2532,7 @@ mod tests {
             session.tax_request(),
             Some(HouseCommand::ConstructHouseTax { design_id: 267, x: 1000.5, y: 2000.25, z: 100.0 })
         );
-        assert!(session.create_house().is_none(), "no quote yet");
+        assert!(session.create_house(false).is_none(), "no quote yet");
         session.quote = Some(ConstructHouseTax {
             design_id: 267,
             heavy_tax_house_count: 1,
@@ -2499,7 +2547,7 @@ mod tests {
         session.spot = Some(Vec3::new(1000.5, 2000.25, 100.0));
         session.invalid = Some(Invalid::NoGround);
         assert_eq!(
-            session.create_house(),
+            session.create_house(false),
             Some(HouseCommand::CreateHouse {
                 design_id: 267,
                 x: 1000.5,
@@ -2949,5 +2997,45 @@ mod tests {
         click(&mut app, MouseButton::Left);
         assert!(sent(&mut app).is_empty());
         assert!(!session_of(&app).locked(), "an invalid spot cannot be locked");
+    }
+
+    fn quoted_house() -> Session {
+        let mut session = Session::new(77, house_plantable(267, 4.0), 0.5);
+        session.spot = Some(Vec3::new(1.0, 2.0, 3.0));
+        session.invalid = None;
+        session.rotating = true;
+        session.quote_requested = true;
+        session.window_open = true;
+        session.quote = Some(ConstructHouseTax {
+            design_id: 267,
+            heavy_tax_house_count: 0,
+            normal_tax_house_count: 0,
+            is_heavy_tax_house: false,
+            base_tax_money_amount: 1,
+            deposit_tax_money_amount: 2,
+            total_tax_money_amount: 3,
+        });
+        session
+    }
+
+    #[test]
+    fn create_house_is_limited_to_one_send_per_five_seconds_with_a_countdown() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let mut placement = Placement { session: Some(quoted_house()), ..Default::default() };
+        let sent = placement.send_create(true, t0).expect("the first create goes out");
+        assert!(matches!(sent, HouseCommand::CreateHouse { auto_use_aa_point: true, .. }), "the real option is sent: {sent:?}");
+        assert!(placement.session.as_ref().unwrap().done);
+        // the server refused and the player builds again 1.2 s later
+        placement.session = Some(quoted_house());
+        assert_eq!(placement.send_create(false, t0 + Duration::from_millis(1200)), Err(CreateRefusal::Wait(4)));
+        assert!(!placement.session.as_ref().unwrap().done, "a held-back create does not consume the session");
+        assert_eq!(placement.send_create(false, t0 + Duration::from_millis(4999)), Err(CreateRefusal::Wait(1)));
+        let again = placement.send_create(false, t0 + CREATE_INTERVAL).expect("5 s later it goes out");
+        assert!(matches!(again, HouseCommand::CreateHouse { auto_use_aa_point: false, .. }));
+        assert_eq!(create_wait_notice(None, 3), "Can't place this for 3 second(s).");
+        // an unconfirmed session reports its own reason, not the countdown
+        placement.session = Some(Session::new(1, house_plantable(267, 4.0), 0.0));
+        assert!(matches!(placement.send_create(false, t0 + CREATE_INTERVAL), Err(CreateRefusal::Blocked(_))));
     }
 }

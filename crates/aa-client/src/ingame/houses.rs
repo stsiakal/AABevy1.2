@@ -365,7 +365,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_message::<NetEvent>()
-            .insert_resource(Placement { session: None, pending_house: Some(267) })
+            .insert_resource(Placement { session: None, pending_house: Some(267), ..Default::default() })
             .add_systems(Update, close_created_build);
         let answer = Event::Housing(HousingEvent::MyHouse(house(7, 989).snapshot));
         app.world_mut().write_message(NetEvent(answer));

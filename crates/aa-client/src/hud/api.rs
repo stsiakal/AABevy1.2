@@ -910,7 +910,7 @@ pub fn handle_requests(
     mut plant: MessageWriter<crate::ingame::placement::PlantPressed>,
     mut house: MessageWriter<crate::ingame::placement::HousePressed>,
     mut placement: Option<ResMut<crate::ingame::placement::Placement>>,
-    emotes: Option<Res<crate::ingame::emote::Emotes>>,
+    (emotes, rt): (Option<Res<crate::ingame::emote::Emotes>>, Option<NonSend<UiRuntime>>),
 ) {
     let requests = std::mem::take(&mut bridge.0.borrow_mut().requests);
     let selected = target.obj_id;
@@ -938,16 +938,17 @@ pub fn handle_requests(
                     warn!("housing: Build pressed but the Start Construction window is not open");
                     continue;
                 }
-                match session.create_house() {
-                    Some(request) => {
+                let auto = inventory.auto_use_aa_point();
+                match placement.send_create(auto, std::time::Instant::now()) {
+                    Ok(request) => {
                         info!("housing: build confirmed by the original build window");
                         net.write(NetCommand(Command::House(request)));
-                        session.done = true;
                     }
-                    None => warn!(
-                        "housing: Build cannot send CSCreateHouse: {}",
-                        session.build_blocked().unwrap_or("unknown reason")
-                    ),
+                    Err(crate::ingame::placement::CreateRefusal::Wait(seconds)) => {
+                        let text = crate::ingame::placement::create_wait_notice(rt.as_deref(), seconds);
+                        crate::ingame::placement::notify_text(rt.as_deref(), text);
+                    }
+                    Err(crate::ingame::placement::CreateRefusal::Blocked(why)) => warn!("housing: Build cannot send CSCreateHouse: {why}"),
                 }
             }
             Request::HouseCancel => {
