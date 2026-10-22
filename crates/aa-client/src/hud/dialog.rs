@@ -925,13 +925,13 @@ mod tests {
     fn the_quest_clock_publishes_whole_seconds_and_stops_under_one() {
         let q = timed(60_000, 1_000);
         let mut left = HashMap::from([(331, 5_000), (330, 0)]);
-        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_000), vec![(330, 60_000)]);
+        assert_eq!(tick_left_times(&mut left, std::slice::from_ref(&q), 1_000), vec![(330, 60_000)]);
         assert_eq!(left.get(&330), Some(&60_000));
         // the stale quest of another list goes
         assert!(!left.contains_key(&331));
         // the last published second, then the native timeout path (no event)
-        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_059), vec![(330, 1_000)]);
-        assert_eq!(tick_left_times(&mut left, &[q.clone()], 1_060), Vec::new());
+        assert_eq!(tick_left_times(&mut left, std::slice::from_ref(&q), 1_059), vec![(330, 1_000)]);
+        assert_eq!(tick_left_times(&mut left, std::slice::from_ref(&q), 1_060), Vec::new());
         assert_eq!(left.get(&330), Some(&0));
         assert_eq!(tick_left_times(&mut left, &[q], 1_061), Vec::new());
         assert_eq!(left.get(&330), Some(&-1_000));
