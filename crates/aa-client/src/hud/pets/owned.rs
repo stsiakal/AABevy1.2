@@ -189,6 +189,8 @@ pub(super) struct View {
     last_action_ms: Option<u64>,
     /// A mounted dismiss continues with `CSRemoveMate` after the server's detach.
     pending_dismiss: bool,
+    /// The mate whose target the client already set to its owner (native `FUN_3933b0f0` sends `CSChangeMateTarget` only on a change).
+    targeted: Option<(u32, u16, u32)>,
     requests: Vec<Request>,
 }
 
@@ -1077,6 +1079,20 @@ pub(super) fn commands(
 ) {
     let owner = player.spawn.as_ref().map_or(0, |p| p.character().id);
     let actual = current(mates, units, owner).map(|(unit, spawn)| (unit.obj_id, spawn.tl_id, spawn.id));
+    // The original points a summoned mate at its owner once (`FUN_3933c8f0` -> `FUN_3933b0f0`: `CSChangeMateTarget` with the player's
+    // object id, sent while the stored target differs).
+    if let (Some(identity), Some(spawn)) = (actual, player.spawn.as_ref())
+        && owner != 0
+        && data.pets.owned.targeted != Some(identity)
+    {
+        data.pets.owned.targeted = Some(identity);
+        let command = MateCommand::Target { tl_id: identity.1, target_obj_id: spawn.obj_id };
+        if command.validate().is_ok() {
+            net.write(NetCommand(Command::Mate(command)));
+        }
+    } else if actual.is_none() {
+        data.pets.owned.targeted = None;
+    }
     for request in std::mem::take(&mut data.pets.owned.requests) {
         if owner == 0 || owner != request.owner || data.character_id != owner {
             continue;
@@ -1099,6 +1115,11 @@ pub(super) fn commands(
             } else {
                 flow.begin(request.obj_id, *tl_id, *point);
             }
+            continue;
+        }
+        // A dismiss goes out when the `UnMountHorseController` ends (1 s after its start, the original model action).
+        if let (MateCommand::Dismiss { .. }, Some(flow)) = (&request.command, flow.as_deref_mut()) {
+            flow.start_unmount(10, Some(Command::Mate(request.command)));
             continue;
         }
         net.write(NetCommand(Command::Mate(request.command)));

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use aa_anim::pose::BoundClip;
 use aa_anim::{Animator, Cal, Character, ClipLibrary};
 use aa_net::model::{Attachment, Equipment, ModelParams, Movement, UnitKind, stance};
+use aa_net::skill::controller_kind;
 use aa_net::state::{Player, Units};
 use aa_net::{Command, Event, MoveCommand, MoveState, NetCommand, NetEvent, Pos};
 use aa_world::coords::bevy_to_cry;
@@ -207,9 +208,17 @@ pub fn tag_mates(mut commands: Commands, net: Res<Units>, db: Option<Res<Db>>, u
 /// The mounting in progress (the original `MountHorse Controller`): the HUD starts it with [`MountFlow::begin`] after its checks, the
 /// player walks to the mate while the controller runs ([`MountFlow::steer`], used by `control_player`), and
 /// [`drive_mount_flow`] sends `CSMountMate` once the player is within 3 m. Any movement input cancels it.
+///
+/// The original announces every controller to the server with `CSCreateSkillController`: the kind when it starts and kind 0 when it
+/// ends (measured: mount = `Create(8)`, `CSMountMate`, `Create(0)` 2 s later; see `docs/research/re-mounts.md`). The same goes for the
+/// `UnMountHorseController`, which a detach (reason 9: 500 ms, reason 10: 1000 ms) or an unmounted dismiss starts; a dismiss sends
+/// `CSRemoveMate` when that controller ends ([`MountFlow::start_unmount`]).
 #[derive(Resource, Default)]
 pub struct MountFlow {
     pending: Option<Flow>,
+    unmount: Option<Unmount>,
+    /// `CSCreateSkillController` kinds waiting to go out, in order.
+    announce: Vec<u8>,
 }
 
 struct Flow {
@@ -223,10 +232,45 @@ struct Flow {
     walk_to: Option<(Vec2, bool)>,
 }
 
+/// The `UnMountHorseController` in progress.
+struct Unmount {
+    seconds: f32,
+    started: Option<f32>,
+    /// The command the original continues with when the controller ends (the dismiss of a mate).
+    then: Option<Command>,
+}
+
 impl MountFlow {
     /// Starts the controller for the mate `mount` (a new request replaces the one in progress).
     pub fn begin(&mut self, mount: u32, tl_id: u16, point: u8) {
+        self.finish();
+        self.announce.push(controller_kind::MOUNT_HORSE);
         self.pending = Some(Flow { mount, tl_id, point, started: None, sent: None, walk_to: None });
+    }
+
+    /// Ends the mounting in progress and reports it.
+    fn finish(&mut self) {
+        if self.pending.take().is_some() {
+            self.announce.push(controller_kind::NONE);
+        }
+    }
+
+    /// Starts the `UnMountHorseController` for an unmount of `reason` (9 or 10; others have no controller here), optionally with the
+    /// command to send when it ends. A controller already running only takes the command.
+    pub fn start_unmount(&mut self, reason: u8, then: Option<Command>) {
+        if let Some(running) = self.unmount.as_mut() {
+            if then.is_some() {
+                running.then = then;
+            }
+            return;
+        }
+        let seconds = match reason {
+            9 => 0.5,
+            10 => 1.0,
+            _ => return,
+        };
+        self.announce.push(controller_kind::UNMOUNT_HORSE);
+        self.unmount = Some(Unmount { seconds, started: None, then });
     }
 
     /// Whether a mounting is in progress.
@@ -240,17 +284,42 @@ impl MountFlow {
     pub fn steer(&mut self, pos: Vec3, facing: &mut f32, input: bool) -> (bool, bool) {
         let Some(flow) = self.pending.as_mut() else { return (false, false) };
         if input {
-            self.pending = None;
+            self.finish();
             return (false, false);
         }
         let Some((to, slow)) = flow.walk_to else { return (false, false) };
         *facing = mount_anim::bearing(pos.truncate(), to);
         (true, slow)
     }
+
+    /// Runs the unmount controller clock: reports its end and returns the command it continues with.
+    fn tick_unmount(&mut self, now: f32) -> Option<Command> {
+        let unmount = self.unmount.as_mut()?;
+        let started = *unmount.started.get_or_insert(now);
+        if now - started < unmount.seconds {
+            return None;
+        }
+        self.announce.push(controller_kind::NONE);
+        self.unmount.take().and_then(|u| u.then)
+    }
+}
+
+/// Starts the `UnMountHorseController` when the local player is detached by an unmount (reasons 9 and 10).
+pub fn unmount_controller_on_detach(mut events: MessageReader<NetEvent>, player: Res<Player>, mut flow: ResMut<MountFlow>) {
+    let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
+    for NetEvent(event) in events.read() {
+        if let Event::UnitDetached { obj_id, reason } = event
+            && own != 0
+            && *obj_id == own
+        {
+            flow.start_unmount(*reason, None);
+        }
+    }
 }
 
 /// Runs the mount controller: stops it when it is over, and sends `CSMountMate` (reason by the geometry of that moment) as soon as
-/// the player is within 3 m of the mate.
+/// the player is within 3 m of the mate. Also sends the `CSCreateSkillController` reports and what an ending unmount controller
+/// continues with.
 pub fn drive_mount_flow(
     time: Res<Time>,
     mut flow: ResMut<MountFlow>,
@@ -259,17 +328,28 @@ pub fn drive_mount_flow(
     movers: Query<&Mover, With<LocalPlayer>>,
     mut out: MessageWriter<NetCommand>,
 ) {
+    drive_flow(&time, &mut flow, &net, &player, &movers, &mut out);
+    if let Some(then) = flow.tick_unmount(time.elapsed_secs()) {
+        out.write(NetCommand(then));
+    }
+    for sc_type in flow.announce.drain(..) {
+        out.write(NetCommand(Command::SkillController { sc_type, fall_damage_immune: false }));
+    }
+}
+
+fn drive_flow(time: &Time, flow: &mut MountFlow, net: &Units, player: &Player, movers: &Query<&Mover, With<LocalPlayer>>, out: &mut MessageWriter<NetCommand>) {
     let Some(pending) = flow.pending.as_mut() else { return };
     let now = time.elapsed_secs();
     let started = *pending.started.get_or_insert(now);
     let elapsed = now - started;
     let (Ok(mover), Some(mount)) = (movers.single(), net.by_id.get(&pending.mount)) else {
-        flow.pending = None;
+        flow.finish();
         return;
     };
     let attached = player.spawn.as_ref().is_some_and(|s| s.unit.attached_to.is_some());
-    if attached || mount.dead {
-        flow.pending = None;
+    // Once the request went out the controller runs on to its 2 s wait, mounted or not (measured on the original).
+    if (attached && pending.sent.is_none()) || mount.dead {
+        flow.finish();
         return;
     }
     let mount_pos = Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z);
@@ -290,7 +370,7 @@ pub fn drive_mount_flow(
             pending.sent = Some(elapsed);
         }
         mount_anim::Step::Wait => {}
-        mount_anim::Step::Stop => flow.pending = None,
+        mount_anim::Step::Stop => flow.finish(),
     }
 }
 

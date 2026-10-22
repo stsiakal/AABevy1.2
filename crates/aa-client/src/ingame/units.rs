@@ -677,6 +677,7 @@ pub fn plugin(app: &mut App) {
                 super::mount::record_attach_reasons,
                 super::mount::tag_mates,
                 super::mount::drive_mount_flow,
+                super::mount::unmount_controller_on_detach,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,
                 super::mount::start_stop_local_riding,
