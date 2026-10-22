@@ -379,6 +379,10 @@ pub struct Session {
     /// The left button was released after the session started: only then may a click confirm (the bag click that
     /// used the seed must not carry into the placement).
     left_armed: bool,
+    /// House only: the original builder's state 2 ("rotation"): the first click locked the spot, the wheel turns the
+    /// model and the next click asks for the tax quote. It stays set while the quote is pending and the popup is open,
+    /// so Cancel on the popup returns to it.
+    pub rotating: bool,
     /// House only: the tax quote asked from the server, its answer, and the original build window.
     pub quote_requested: bool,
     pub quote: Option<ConstructHouseTax>,
@@ -393,9 +397,10 @@ pub struct Session {
 }
 
 impl Session {
-    /// A house or farm whose spot the left click locked (the Start Construction popup is asked for or open).
+    /// A house or farm whose spot the first left click locked (rotation, or the Start Construction popup is asked for
+    /// or open).
     pub fn locked(&self) -> bool {
-        self.is_house() && (self.quote_requested || self.window_open)
+        self.is_house() && (self.rotating || self.quote_requested || self.window_open)
     }
 
     /// Retail: only after the click that locks a house / farm spot does the wheel turn the model (and then it is not the
@@ -415,6 +420,7 @@ impl Session {
             root: None,
             model_failed: false,
             left_armed: false,
+            rotating: false,
             quote_requested: false,
             quote: None,
             window_open: false,
@@ -877,7 +883,7 @@ fn track(
 /// A house preview stops following the pointer once confirmed (the Start Construction window is open) and
 /// whenever the pointer is over the HUD.
 fn house_locks_pointer(session: &Session, over_ui: bool) -> bool {
-    session.is_house() && (session.quote_requested || over_ui)
+    session.is_house() && (session.rotating || session.quote_requested || over_ui)
 }
 
 /// Puts the ghost root at the session's spot (the last valid one for a house over the UI).
@@ -1596,7 +1602,12 @@ fn input(
                 Some(text) => notify(rt.as_deref(), text),
                 None => info!("placement: not confirmed: {}", reason.text()),
             }
+        } else if session.is_house() && !session.rotating {
+            // retail `FUN_39332200`, state 1: the click locks the spot and starts the rotation (no quote yet)
+            info!("housing: spot locked, rotation (wheel turns the model, click again to continue)");
+            session.rotating = true;
         } else if session.is_house() {
+            // state 2: the click asks for the tax quote (`CSConstructHouseTax`); the popup opens on the reply
             if let Some(request) = session.tax_request() {
                 if let HouseCommand::ConstructHouseTax { design_id, x, y, z } = &request {
                     info!("housing: tax quote for design {design_id} at ({x:.2}, {y:.2}, {z:.2})");
@@ -2567,5 +2578,68 @@ mod tests {
         app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
         app.update();
         assert_eq!(app.world().resource::<Placement>().session.as_ref().unwrap().yaw, 0.0);
+    }
+
+    /// A house app for the input system: the real `input` system plus a recorder of the packets sent.
+    #[derive(Resource, Default)]
+    struct Sent(Vec<Command>);
+
+    fn collect_sent(mut events: MessageReader<NetCommand>, mut sent: ResMut<Sent>) {
+        sent.0.extend(events.read().map(|command| command.0.clone()));
+    }
+
+    fn house_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Sent>()
+            .init_resource::<Skills>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (input, collect_sent).chain());
+        app.insert_resource(Time::<()>::default());
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
+        app.update(); // arm the left button
+        app
+    }
+
+    fn click(app: &mut App, button: MouseButton) {
+        app.world_mut().resource_mut::<VirtualInput>().queue_click(button);
+        app.update();
+    }
+
+    fn sent(app: &mut App) -> Vec<Command> {
+        std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0)
+    }
+
+    fn session_of(app: &App) -> &Session {
+        app.world().resource::<Placement>().session.as_ref().unwrap()
+    }
+
+    /// Retail `FUN_39332200`: click 1 locks the spot and starts the rotation, click 2 asks for the quote.
+    #[test]
+    fn a_house_needs_two_clicks_the_second_asks_for_the_quote() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).rotating && !session_of(&app).quote_requested);
+        assert!(sent(&mut app).is_empty(), "click 1 sends nothing");
+        click(&mut app, MouseButton::Left);
+        let packets = sent(&mut app);
+        assert!(matches!(packets.as_slice(), [Command::House(HouseCommand::ConstructHouseTax { design_id: 267, .. })]), "{packets:?}");
+        assert!(session_of(&app).quote_requested);
+        // seeds and saplings never rotate: their one click still plants
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        seed.invalid = None;
+        app.insert_resource(Placement { session: Some(seed), ..Default::default() });
+        app.update();
+        click(&mut app, MouseButton::Left);
+        assert!(matches!(sent(&mut app).as_slice(), [Command::CreateDoodad(_)]));
     }
 }
