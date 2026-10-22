@@ -583,6 +583,8 @@ struct Visuals {
     cursor_mesh: Option<Handle<Mesh>>,
     cursor_good: Option<Handle<StandardMaterial>>,
     cursor_bad: Option<Handle<StandardMaterial>>,
+    cursor_rotation: Option<Handle<StandardMaterial>>,
+    cursor_zoom: Option<Handle<StandardMaterial>>,
     ring: RingParts,
     arrow: Option<Entity>,
 }
@@ -1452,6 +1454,9 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         };
         visuals.cursor_good = Some(materials.add(cursor_material(&good)));
         visuals.cursor_bad = Some(materials.add(cursor_material(&bad)));
+        // the builder's rotation and Ctrl-zoom cursors; a missing one falls back to the position cursor
+        visuals.cursor_rotation = dds_image("ui/cursor/housing_rotation.dds").map(|i| materials.add(cursor_material(&images.add(i))));
+        visuals.cursor_zoom = dds_image("ui/cursor/housing_zoom.dds").map(|i| materials.add(cursor_material(&images.add(i))));
         visuals.cursor_mesh = Some(meshes.add(Mesh::from(Rectangle::new(1.0, 1.0))));
     } else {
         warn!("planting: cannot read the housing cursor textures");
@@ -1473,6 +1478,33 @@ fn dds_image(path: &str) -> Option<Image> {
     Some(image)
 }
 
+/// Which of the builder's cursor images the placement shows (`FUN_39017410` -> `FUN_397a7b40`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CursorKind {
+    /// `housing_position.dds`
+    Position,
+    /// `housing_rotation.dds`: state 2.
+    Rotation,
+    /// `housing_zoom.dds`: Ctrl held (the wheel zooms the camera instead of turning the model).
+    Zoom,
+    /// `housing_invalid.dds`: the spot has an error.
+    Invalid,
+}
+
+/// The error image wins, then Ctrl's zoom, then the state's own (rotation after the lock click, else position). A seed
+/// or sapling keeps the position / invalid pair.
+fn cursor_kind(session: &Session, ctrl: bool) -> CursorKind {
+    if session.invalid.is_some() {
+        CursorKind::Invalid
+    } else if session.is_house() && ctrl {
+        CursorKind::Zoom
+    } else if session.locked() {
+        CursorKind::Rotation
+    } else {
+        CursorKind::Position
+    }
+}
+
 /// Hides the OS cursor while placing and draws the client's placement cursor at the pointer (the white crosshair
 /// `housing_position` / red cross `housing_invalid` of the 1.2 client).
 #[allow(clippy::too_many_arguments)]
@@ -1484,6 +1516,7 @@ fn cursor_icon(
     mut windows: Query<(Entity, &mut Window, &mut bevy::window::CursorOptions), With<bevy::window::PrimaryWindow>>,
     cameras: Query<(Entity, &Camera, &Projection), With<Camera3d>>,
     ui_cameras: Query<Entity, With<aa_ui::render::UiCamera>>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut icon: Query<(&mut Transform, &mut Visibility, &mut MeshMaterial3d<StandardMaterial>), With<PlacementCursorIcon>>,
 ) {
     let Ok((window_entity, window, mut cursor_options)) = windows.single_mut() else { return };
@@ -1580,7 +1613,14 @@ fn cursor_icon(
         }
         return;
     };
-    let Some(material) = (if placement.session.as_ref().is_some_and(|s| s.invalid.is_none()) { visuals.cursor_good.clone() } else { visuals.cursor_bad.clone() }) else { return };
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    let wanted = placement.session.as_ref().map_or(CursorKind::Position, |s| cursor_kind(s, ctrl));
+    let Some(material) = (match wanted {
+        CursorKind::Invalid => visuals.cursor_bad.clone(),
+        CursorKind::Zoom => visuals.cursor_zoom.clone().or_else(|| visuals.cursor_good.clone()),
+        CursorKind::Rotation => visuals.cursor_rotation.clone().or_else(|| visuals.cursor_good.clone()),
+        CursorKind::Position => visuals.cursor_good.clone(),
+    }) else { return };
     let Some(mesh) = visuals.cursor_mesh.clone() else { return };
     let size_px = 32.0;
     let view = camera.logical_viewport_size().unwrap_or(Vec2::new(1920.0, 1080.0));
@@ -2836,5 +2876,25 @@ mod tests {
             });
         app.update();
         assert_eq!(app.world().resource::<Mtl>().0.as_deref(), Some(INVALID_GHOST_MATERIAL));
+    }
+
+    #[test]
+    fn the_cursor_image_follows_the_builder_state() {
+        let mut house = Session::new(1, house_plantable(267, 4.0), 0.0);
+        house.invalid = None;
+        assert_eq!(cursor_kind(&house, false), CursorKind::Position);
+        house.rotating = true;
+        assert_eq!(cursor_kind(&house, false), CursorKind::Rotation);
+        assert_eq!(cursor_kind(&house, true), CursorKind::Zoom, "Ctrl held shows the zoom cursor");
+        house.invalid = Some(Invalid::Overlap);
+        assert_eq!(cursor_kind(&house, true), CursorKind::Invalid);
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.invalid = None;
+        assert_eq!(cursor_kind(&seed, true), CursorKind::Position);
+        if aa_cry::pak_available() {
+            for name in ["housing_rotation", "housing_zoom"] {
+                assert!(dds_image(&format!("ui/cursor/{name}.dds")).is_some(), "{name}.dds is in the 1.2 pak");
+            }
+        }
     }
 }
