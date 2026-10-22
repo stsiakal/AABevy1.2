@@ -530,7 +530,7 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
                 return;
             }
             // `ground_target::route` sends the command, or aims first when the skill takes a spot of the ground
-            net.write(SkillPressed { skill, item: None, target_obj_id, gcd: env.uses_gcd(skill) });
+            net.write(SkillPressed { skill, item: None, target_obj_id, gcd: env.uses_gcd(skill), water: false });
         }
         ActionKind::ItemType | ActionKind::ItemId => {
             let found = match action.item_template_id() {
@@ -568,6 +568,7 @@ fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj
         failed.write(UseFailed { skill, result: f.result, value: f.value, server: false });
         return;
     }
+    let water = env.game.is_some_and(|g| g.is_ship_summon(item.template_id));
     // a design item opens the house preview; a seed / sapling / livestock item the doodad preview
     if let Some(game) = env.game {
         if game.housing_design_for_item(item.template_id).is_some() {
@@ -579,7 +580,7 @@ fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj
             return;
         }
     }
-    net.write(SkillPressed { skill: skill_id, item: Some((item.id, item.template_id)), target_obj_id, gcd: env.uses_gcd(skill_id) });
+    net.write(SkillPressed { skill: skill_id, item: Some((item.id, item.template_id)), target_obj_id, gcd: env.uses_gcd(skill_id), water });
 }
 
 /// The action bar's number keys.

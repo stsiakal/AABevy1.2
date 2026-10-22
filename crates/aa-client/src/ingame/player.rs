@@ -307,7 +307,7 @@ pub(super) fn on_foot_attached(attached: Option<aa_net::model::Attachment>) -> b
 /// The candidate of a horizontal move: the walls slide the capsule ([`WorldCollision::slide`]), the terrain's climb limit
 /// keeps it off steep ground, and a brush or vegetation hull closing over the body keeps it out. `pos` is the feet and
 /// `step` the move of this frame; the result keeps `pos.z`. The map's edge keeps the feet where they are.
-fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
+pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
     if step == Vec2::ZERO {
         return pos;
     }
@@ -364,7 +364,7 @@ pub fn control_player(
     (keys, actions): (Res<ButtonInput<KeyCode>>, Res<crate::settings::Actions>),
     mouse: Res<ButtonInput<MouseButton>>,
     mut cameras: Query<&mut OrbitCamera>,
-    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>)>,
+    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>, Has<super::ship::DeckRide>)>,
     (net_player, stats): (Res<aa_net::state::Player>, Option<Res<aa_net::state::PlayerStats>>),
     terrain: Res<TerrainQuery>,
     collision: Res<WorldCollision>,
@@ -375,9 +375,13 @@ pub fn control_player(
     dev: Res<DevOptions>,
     typing: Option<Res<crate::hud::HudKeyboardFocus>>,
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
-    (mut trace, sprint, mut local_jump): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>),
+    (mut trace, sprint, mut local_jump, gliding): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>),
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride)) = player.single_mut() else { return };
+    // a glider flies the character: `glide::control_glide` moves it and sends the packets
+    if gliding.flying() && !dead {
+        return;
+    }
     // A rider sits where the mount's seat is (`mount::pose_local_riders`) and the server ignores its
     // own movement while attached; the get-off one-shot holds the on-foot controls until it ends.
     if !on_foot_control(&net_player) || dismounting {
@@ -385,6 +389,16 @@ pub fn control_player(
         *input_state = PlayerInput::default();
         mover.velocity = Vec3::ZERO;
         mover.vz = 0.0;
+        mover.swim = None;
+        state.autorun = AutoRun::default();
+        state.was_active = false;
+        return;
+    }
+    // `ship::deck_control` owns a character standing on a ship deck (the server has no walkable
+    // collision for the moving hull, so its frame keeps the character on the deck).
+    if deck_ride {
+        *input_state = PlayerInput::default();
+        mover.velocity = Vec3::ZERO;
         mover.swim = None;
         state.autorun = AutoRun::default();
         state.was_active = false;
@@ -701,6 +715,35 @@ pub struct SendState {
     wait: f32,
     /// Seconds left of the grace period after settling or a teleport in which a landing is not reported.
     grace: f32,
+}
+
+impl SendState {
+    /// The collision around the character is built (or the wait for it ran out): the first step happened.
+    pub(super) fn is_settled(&self) -> bool {
+        self.settled
+    }
+
+    /// The air time is a freefall ([`super::jump::freefall`]).
+    pub(super) fn freefall(&self) -> bool {
+        self.freefall
+    }
+
+    /// Time since the player appeared, for the scripted `--walk` keys: the glider's controller advances it while
+    /// [`control_player`] sleeps. Returns the new time.
+    pub(super) fn advance_clock(&mut self, dt: f32) -> f32 {
+        self.since_spawn += dt;
+        self.grace = (self.grace - dt).max(0.0);
+        self.since_spawn
+    }
+
+    /// A flight began or ended: the air time that follows is not a jump (`freefall` for a glider folded in the air, which falls on),
+    /// the movement packets start over and a landing is reported once.
+    pub(super) fn set_air(&mut self, freefall: bool) {
+        self.took_off = false;
+        self.freefall = freefall;
+        self.was_active = false;
+        self.since_sent = 0.0;
+    }
 }
 
 /// The movement keys held this frame (W, S, Q, E, A, D).
@@ -1172,7 +1215,9 @@ mod scripted_input_tests {
             .init_resource::<SendState>()
             .init_resource::<PlayerInput>()
             .init_resource::<LocalJump>()
+            .init_resource::<crate::ingame::glide::Gliding>()
             .init_resource::<VirtualInput>()
+            .init_resource::<aa_net::state::Player>()
             .init_resource::<crate::settings::Actions>()
             .init_resource::<crate::hud::HudPointerOverUi>()
             .init_resource::<DevOptions>()

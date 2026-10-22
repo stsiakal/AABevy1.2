@@ -210,9 +210,12 @@ pub enum Command {
     /// unit movement body; its rider follows through the server's attachment.
     MoveUnit { obj_id: u32, command: MoveCommand },
     /// Move a controlled slave (cart, car, tractor) with the native `VehicleMove` body (`CSMoveUnit`
-    /// type 2). `movement` must be a [`Movement::vehicle`]; the session fills its send time. Ships
-    /// will use the same writer once their body exists.
+    /// type 2). `movement` must be a [`Movement::vehicle`]; the session fills its send time.
     MoveVehicle { obj_id: u32, movement: Movement },
+    /// Steer a controlled ship with the native `ShipRequestMoveType` body (`CSMoveUnit` type 4,
+    /// throttle then steering). The server's ship physics owns the hull pose and broadcasts the
+    /// type 3 ship movement; the client never writes that body.
+    SteerShip { obj_id: u32, throttle: i8, steering: i8 },
     Chat { chat_type: i16, target: String, message: String },
     /// Put `action` into hotbar slot `slot` (0 based). The server does not echo it: the session
     /// reports `ActionSlotChanged` itself.
@@ -1082,6 +1085,7 @@ impl Session {
             Command::Move(m) => self.send_move(m).await,
             Command::MoveUnit { obj_id, command } => self.send_move_unit(obj_id, command).await,
             Command::MoveVehicle { obj_id, movement } => self.send_move_vehicle(obj_id, movement).await,
+            Command::SteerShip { obj_id, throttle, steering } => self.send_steer_ship(obj_id, throttle, steering).await,
             Command::Chat { chat_type, target, message } => {
                 self.send_game(game::ClientMsg::Chat { chat_type, target, message }).await;
             }
@@ -1616,6 +1620,16 @@ impl Session {
             tracing::debug!("ignoring MoveVehicle {obj_id}: not a valid vehicle in the world");
             return;
         }
+        movement.time = self.started.elapsed().as_millis() as u32;
+        self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
+    }
+
+    async fn send_steer_ship(&mut self, obj_id: u32, throttle: i8, steering: i8) {
+        if self.self_obj == 0 || self.phase != Phase::InWorld || obj_id == 0 || obj_id > 0xffffff {
+            tracing::debug!("ignoring SteerShip {obj_id}: not a valid ship in the world");
+            return;
+        }
+        let mut movement = Movement::ship_request(throttle, steering);
         movement.time = self.started.elapsed().as_millis() as u32;
         self.send_game(game::ClientMsg::Move { obj_id, movement }).await;
     }
@@ -4460,6 +4474,27 @@ mod tests {
         assert!((back.pos.x - 10.0).abs() < 1e-4 && (back.pos.y - 20.0).abs() < 1e-4);
         assert_eq!(back.velocity, [1024, -2048, 0]);
         assert_eq!(back.vehicle, movement.vehicle);
+    }
+
+    #[tokio::test]
+    async fn ship_request_names_the_slave_and_writes_the_two_helm_bytes() {
+        let (addr, stub) = game_stub_bytes(2).await;
+        let options = ClientOptions { first_ping_delay: Duration::from_secs(60), ..ClientOptions::default() };
+        let mut s = session_for(addr, options);
+        s.connect_world().await;
+        s.phase = Phase::InWorld;
+        s.self_obj = 7;
+        s.command(Command::SteerShip { obj_id: 0x445566, throttle: 127, steering: -64 }).await;
+        let frames = stub.await.unwrap();
+        assert_eq!(frames.len(), 2);
+        let frame = &frames[1];
+        assert_eq!(u16::from_le_bytes([frame[4], frame[5]]), cs::CSMoveUnitPacket);
+        assert_eq!(&frame[6..9], &[0x66, 0x55, 0x44]);
+        let back = Movement::read(&mut crate::wire::Reader::new(&frame[9..])).unwrap();
+        assert_eq!(back.move_type, 4);
+        assert_eq!(back.ship_request, Some((127, -64)));
+        assert_eq!(back.time, u32::from_le_bytes([frame[10], frame[11], frame[12], frame[13]]));
+        assert_eq!(&frame[9..], &[4, frame[10], frame[11], frame[12], frame[13], 0, 127, 0xc0]);
     }
 
     #[tokio::test]

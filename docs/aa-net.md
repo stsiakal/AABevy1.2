@@ -178,7 +178,10 @@ mate target. The object id and state still have to be nonzero/24-bit and the ses
 `MoveVehicle { obj_id, movement }` sends the native `MoveType` type-2 body for a controlled slave
 (cart/car/tractor); `movement` must be `Movement::vehicle(pos, yaw, time)` and the session fills the
 send time. `Movement` retains the full `VehicleMove` body (quaternion shadows, angular velocity,
-steering, wheel speeds) and its writer now emits it; ship type 3 still needs its own body.
+steering, wheel speeds) and its writer emits it. `SteerShip { obj_id, throttle, steering }`
+sends the native `ShipRequestMoveType` (`CSMoveUnit` type 4: two signed helm bytes after the common
+flags); `Movement::ship_request` writes it and `Movement::ship` writes the server's type-3
+`ShipMoveType`, which `read_typed` decodes into `Movement::ship` (steering, throttle, zone, stuck).
 `MoveCommand` is a plain struct of public fields with a `Default`; build it with `MoveCommand::new(pos, yaw)`,
 `MoveCommand::running(pos, yaw, speed_mps)` (velocity along the facing + full forward input),
 `MoveCommand::stopped(pos, yaw)`, `.with_state(..)`, `.landing(fall_speed_mps)` or struct update
@@ -1987,9 +1990,10 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   `sub_zones` table. The zone group follows the zone chat channel (Shout).
 * NPC names are empty on the wire (the client resolves them from the NPC template); `Unit.kind` has the
   template id. Slaves / transfers / shipyards only decode their core fields.
-* Movement: unit movements (ground, jump, fall with landing velocity) and the type-2 vehicle body
-  (`MoveVehicle`) are written; ships (type 3), ship requests, standing on / hanging from objects are read
-  (`Movement::read_typed`) but not written. The server does not echo our own movement back.
+* Movement: unit movements (ground, jump, fall with landing velocity), the type-2 vehicle body
+  (`MoveVehicle`) and the type-4 ship request (`SteerShip`) are written; type-3 ship bodies are read and
+  written, while standing-on/hanging-from support blocks are read but not written. The server does not
+  echo our own movement back.
 * Reconnect after a dropped game connection is not attempted (the session reports `Disconnected` and
   returns to idle).
 

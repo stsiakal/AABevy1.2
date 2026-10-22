@@ -9,7 +9,8 @@
 //! |---|---|---|
 //! | `6` Pos, `11` BallisticPos, `15` ArtilleryPos, `13` RelativePos | any but 1 | **ground reticle**: the decal follows the cursor, a left click casts at that spot (`CSStartSkill`, position target) |
 //! | `6` Pos | `1` source | **self position**: the area is centred on the caster, no reticle, cast at once with the caster's own position |
-//! | `0` self, `4`, `5` ... `12` SummonPos, `14` SourcePos, `7` Line | | not ground targeted: the plain unit/self cast (`Command::UseSkill`); the server's `initial_target` takes the caster's spot for these |
+//! | `12` SummonPos | 4 | **water reticle** only when the used item summons a ship (`GameData::is_ship_summon`): the spot is the water surface; a mount summon keeps the plain unit cast |
+//! | `0` self, `4`, `5` ... `14` SourcePos, `7` Line | | not ground targeted: the plain unit/self cast (`Command::UseSkill`); the server's `initial_target` takes the caster's spot for these |
 //!
 //! The reticle's size is `skills.target_area_radius` (`target_decal_radius` when a skill has one: seven rows do); the range is
 //! `min_range ..= max_range` (3D distance from the caster's feet less the body, as the server's `distance_to(.., include_z)`).
@@ -76,6 +77,8 @@ pub enum Mode {
     Ground,
     /// The area is centred on the caster: the caster's own spot, at once.
     SelfPos,
+    /// A ship summon (`target_type_id` 12, `SummonPos`): the spot must be on the water surface.
+    Water,
 }
 
 /// The `skills` row of a ground skill.
@@ -93,6 +96,9 @@ pub fn classify(target_type: i64, selection: i64) -> Option<Mode> {
     match (target_type, selection) {
         (6, 1) => Some(Mode::SelfPos),
         (6 | 11 | 13 | 15, _) => Some(Mode::Ground),
+        // `SummonPos` is also used by mounts; only a ship item asks for the water reticle
+        // (`SkillPressed::water`), so this mode alone does not force placement.
+        (12, _) => Some(Mode::Water),
         _ => None,
     }
 }
@@ -106,7 +112,7 @@ fn load_skills() -> Option<HashMap<u32, GroundSkill>> {
     let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
     let conn = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI).ok()?;
     let mut q = conn
-        .prepare("SELECT id, target_type_id, target_selection_id, target_area_radius, target_decal_radius, min_range, max_range FROM skills WHERE target_type_id IN (6, 11, 13, 15)")
+        .prepare("SELECT id, target_type_id, target_selection_id, target_area_radius, target_decal_radius, min_range, max_range FROM skills WHERE target_type_id IN (6, 11, 12, 13, 15)")
         .ok()?;
     let num = |r: &rusqlite::Row, i: usize| -> f32 {
         match r.get_ref(i) {
@@ -139,6 +145,8 @@ pub struct SkillPressed {
     /// The skill waits for the global cooldown: once sent, the next press of such a skill waits for the server's answer
     /// ([`InFlight`]).
     pub gcd: bool,
+    /// The item summons a ship: place the `SummonPos` target on the water surface.
+    pub water: bool,
 }
 
 impl SkillPressed {
@@ -308,6 +316,23 @@ pub(crate) fn spot_under(camera: &Camera, transform: &GlobalTransform, cursor: V
     None
 }
 
+/// The water surface over the point under the cursor (a ship summon is placed on the surface,
+/// not on the sea bed the ground ray hits).
+fn water_spot(ground: Option<Vec3>, water: Option<&WaterQuery>) -> Option<Vec3> {
+    let spot = ground?;
+    // Ask a metre above the hit so a shallow sea bed just below a volume's floor still answers.
+    let (surface, _) = water?.water_at(Vec3::new(spot.x, spot.y, spot.z + 1.0))?;
+    Some(Vec3::new(spot.x, spot.y, surface))
+}
+
+/// Whether `spot` is a valid target for `skill`: in range and, for a ship summon, on water.
+fn spot_ok(skill: &GroundSkill, from: Vec3, spot: Vec3, slack: f32, water: Option<&WaterQuery>) -> bool {
+    if skill.mode == Mode::Water && water.is_none_or(|w| w.water_at(spot).is_none()) {
+        return false;
+    }
+    in_range(skill, from, spot, slack)
+}
+
 /// Whether the caster at `from` reaches `spot`: the server's 3D distance less the body must lie within `min..=max` (`slack` over).
 fn in_range(skill: &GroundSkill, from: Vec3, spot: Vec3, slack: f32) -> bool {
     let d = (from.distance(spot) - BODY).max(0.0);
@@ -364,7 +389,7 @@ fn dev_script(
     while let Some(i) = script.press.iter().position(|(at, _)| *at <= t) {
         let (_, skill) = script.press.remove(i);
         info!("ground: scripted press of skill {skill} at {t:.1} s");
-        pressed.write(SkillPressed { skill, item: None, target_obj_id: 0, gcd: false });
+        pressed.write(SkillPressed { skill, item: None, target_obj_id: 0, gcd: false, water: false });
     }
     while let Some(i) = script.aim.iter().position(|(at, _)| *at <= t) {
         let (_, p) = script.aim.remove(i);
@@ -409,7 +434,7 @@ fn route(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     collision: Option<Res<WorldCollision>>,
-    (virtual_input, terrain): (Option<Res<crate::ingame::virtual_input::VirtualInput>>, Option<Res<TerrainQuery>>),
+    (virtual_input, terrain, water): (Option<Res<crate::ingame::virtual_input::VirtualInput>>, Option<Res<TerrainQuery>>, Option<Res<WaterQuery>>),
     target: Res<Target>,
     units: Res<Units>,
     mut player: Query<&mut Mover, With<LocalPlayer>>,
@@ -449,14 +474,28 @@ fn route(
             let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
             spot_under(camera, transform, cursor?, collision.as_deref(), terrain.as_deref())
         };
+        // A `SummonPos` skill is placed only when the used item summons a ship; a mount summon
+        // keeps the plain owner-relative cast.
+        if skill.mode == Mode::Water && !press.water {
+            net.write(NetCommand(press.plain()));
+            continue;
+        }
         // the same key again while aiming: cast where the cursor is
         let again = aiming.0.as_ref().is_some_and(|a| a.press.skill == press.skill && a.press.item == press.item);
         let key = !over_ui.0;
         if key && (again || smart_option(rt.as_deref(), &script)) {
-            let spot = spot_at_cursor().or_else(|| target.obj_id.and_then(|id| units.get(id)).map(|u| Vec3::new(u.pos.x, u.pos.y, u.pos.z)));
+            let ground = spot_at_cursor();
+            let spot = if skill.mode == Mode::Water {
+                water_spot(ground, water.as_deref())
+            } else {
+                ground
+            }
+            .or_else(|| target.obj_id.and_then(|id| units.get(id)).map(|u| Vec3::new(u.pos.x, u.pos.y, u.pos.z)));
             if let Some(spot) = spot {
-                if in_range(&skill, mover.pos, spot, SEND_SLACK) {
+                if spot_ok(&skill, mover.pos, spot, SEND_SLACK, water.as_deref()) {
                     cast_at(press, spot, &mut mover, &mut net, &mut flight);
+                } else if skill.mode == Mode::Water {
+                    info!("ground: ship summon at ({:.1}, {:.1}, {:.1}) is not on water or is out of range: not sent", spot.x, spot.y, spot.z);
                 } else {
                     info!("ground: skill {} is out of range of ({:.1}, {:.1}, {:.1}): not sent", press.skill, spot.x, spot.y, spot.z);
                 }
@@ -484,6 +523,7 @@ fn track_cursor(
     collision: Option<Res<WorldCollision>>,
     terrain: Option<Res<TerrainQuery>>,
     virtual_input: Option<Res<crate::ingame::virtual_input::VirtualInput>>,
+    water: Option<Res<WaterQuery>>,
     player: Query<&Mover, With<LocalPlayer>>,
     mut last: Local<Option<Vec3>>,
 ) {
@@ -493,9 +533,9 @@ fn track_cursor(
     };
     let (Ok(mover), Some((camera, transform))) = (player.single(), cameras.iter().find(|(c, _)| c.is_active)) else { return };
     let cursor = if over_ui.0 && script.cursor.is_none() { None } else { cursor_of(windows.single().ok(), &script, virtual_input.as_deref()) };
-    aim.spot = cursor
-        .and_then(|c| spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref()))
-        .map(|spot| (spot, in_range(&aim.skill, mover.pos, spot, 0.0)));
+    let ground = cursor.and_then(|c| spot_under(camera, transform, c, collision.as_deref(), terrain.as_deref()));
+    let spot = if aim.skill.mode == Mode::Water { water_spot(ground, water.as_deref()) } else { ground };
+    aim.spot = spot.map(|spot| (spot, spot_ok(&aim.skill, mover.pos, spot, 0.0, water.as_deref())));
     if let Some((spot, ok)) = aim.spot
         && last.is_none_or(|l| l.distance(spot) > 0.5)
     {
@@ -529,6 +569,7 @@ fn aim_input(
     mut player: Query<&mut Mover, With<LocalPlayer>>,
     mut net: MessageWriter<NetCommand>,
     mut flight: ResMut<InFlight>,
+    water: Option<Res<WaterQuery>>,
     mut pressed_at: Local<[Option<Vec2>; 2]>,
 ) {
     let (clicked, cancelled) = (std::mem::take(&mut script.clicked), std::mem::take(&mut script.cancelled));
@@ -573,7 +614,7 @@ fn aim_input(
     }
     let Ok(mut mover) = player.single_mut() else { return };
     match aim.spot {
-        Some((spot, ok)) if ok || in_range(&aim.skill, mover.pos, spot, SEND_SLACK) => {
+        Some((spot, ok)) if ok || spot_ok(&aim.skill, mover.pos, spot, SEND_SLACK, water.as_deref()) => {
             let press = aim.press;
             cast_at(&press, spot, &mut mover, &mut net, &mut flight);
             aiming.0 = None;
@@ -729,7 +770,8 @@ mod tests {
         assert_eq!(classify(11, 2), Some(Mode::Ground));
         assert_eq!(classify(15, 2), Some(Mode::Ground));
         assert_eq!(classify(6, 1), Some(Mode::SelfPos), "centred on the caster");
-        for plain in [(0, 1), (4, 2), (5, 2), (7, 4), (12, 4), (14, 2), (16, 2)] {
+        assert_eq!(classify(12, 4), Some(Mode::Water), "ship summon");
+        for plain in [(0, 1), (4, 2), (5, 2), (7, 4), (14, 2), (16, 2)] {
             assert_eq!(classify(plain.0, plain.1), None, "{plain:?}");
         }
     }
@@ -787,10 +829,10 @@ mod tests {
             .init_resource::<Sent>()
             .insert_resource(emotes)
             .add_systems(Update, (route, collect).chain());
-        app.world_mut().write_message(SkillPressed { skill: 14460, item: None, target_obj_id: 77, gcd: true });
+        app.world_mut().write_message(SkillPressed { skill: 14460, item: None, target_obj_id: 77, gcd: true, water: false });
         // a skill that is no emote, and an item whose skill is one: plain uses
-        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: true });
-        app.world_mut().write_message(SkillPressed { skill: 14460, item: Some((9, 3)), target_obj_id: 0, gcd: true });
+        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: true, water: false });
+        app.world_mut().write_message(SkillPressed { skill: 14460, item: Some((9, 3)), target_obj_id: 0, gcd: true, water: false });
         app.update();
         let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
         assert!(matches!(sent[0], Command::ExpressEmotion { emotion_id, target_obj_id: 77 } if emotion_id == clap), "{:?}", sent[0]);
@@ -817,10 +859,10 @@ mod tests {
             .add_systems(Update, (route, collect).chain());
         let pending = |app: &App| app.world().resource::<InFlight>().pending(&aa_net::state::Skills::default(), std::time::Instant::now());
         // a skill that ignores the global cooldown does not hold the others back
-        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: false });
+        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: false, water: false });
         app.update();
         assert!(!pending(&app));
-        app.world_mut().write_message(SkillPressed { skill: 11_002, item: None, target_obj_id: 5, gcd: true });
+        app.world_mut().write_message(SkillPressed { skill: 11_002, item: None, target_obj_id: 5, gcd: true, water: false });
         app.update();
         assert!(pending(&app));
         assert_eq!(app.world().resource::<Sent>().0.len(), 2);

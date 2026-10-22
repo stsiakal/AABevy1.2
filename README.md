@@ -80,7 +80,7 @@ This list is what works, not a parity claim: see [`docs/aa-client-parity.md`](do
 
 ## What's missing
 
-- **Transport:** owning and riding mounts, ships, vehicles and gliders.
+- **Transport:** owning and riding mounts, ships and vehicles. Gliders fly for the local player and are drawn on other players (`docs/aa-client-movement.md`, "Gliders").
 - **Housing:** building, placing and decorating, and farms.
 - **Auction house, in-game shop, territory, siege and nation:** aa-net has the auction protocol, but there's no window
   yet. The rest have no client side.

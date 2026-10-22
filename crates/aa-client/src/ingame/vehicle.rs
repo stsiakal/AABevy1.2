@@ -73,6 +73,8 @@ pub fn vehicle_seat(
     units: Res<Units>,
     slaves: Option<Res<Slaves>>,
     db: Option<Res<Db>>,
+    views: Option<Res<Views>>,
+    visuals: Query<&RemoteUnit>,
     mut out: MessageWriter<NetCommand>,
     mut handled: Local<Option<(u16, u32)>>,
     mut last: Local<f32>,
@@ -83,9 +85,17 @@ pub fn vehicle_seat(
     let riding_slave = attached.and_then(|a| units.get(a.obj_id)).filter(|u| matches!(u.kind, UnitKind::Slave { .. }));
     if let Some(slave) = riding_slave {
         let tl = match slave.kind { UnitKind::Slave { tl_id, .. } => tl_id, _ => return };
-        let pressed = actions.just_pressed("do_interaction_1", 0);
-        if pressed && now - *last > 0.5 {
+        let ship = db.as_deref().is_some_and(|db| db.is_ship(slave.model_id));
+        let leave = actions.just_pressed("do_interaction_1", 0);
+        let unsummon = ship && actions.just_pressed("do_interaction_2", 0);
+        if leave && now - *last > 0.5 {
             out.write(NetCommand(Command::Slave(SlaveCommand::Unbind { tl_id: tl })));
+            *handled = Some((tl, slave.obj_id));
+            *last = now;
+        } else if unsummon && now - *last > 0.5 {
+            // `CSDestroySlave` (the native destroy/recall slot): the server saves and removes
+            // the active slave; the summon item brings it back at the shoreline.
+            out.write(NetCommand(Command::Slave(SlaveCommand::Dismiss { tl_id: tl })));
             *handled = Some((tl, slave.obj_id));
             *last = now;
         }
@@ -95,6 +105,7 @@ pub fn vehicle_seat(
     if attached.is_some() {
         return;
     }
+    if actions.just_pressed("do_interaction_1", 0) { debug!("vehicle_seat: F pressed, attached {:?}, own slave {:?}", attached, slaves.as_deref().and_then(|s| s.own.as_ref()).map(|o| (o.obj_id, o.tl_id))); }
     let Some(own) = slaves.as_deref().and_then(|s| s.own.as_ref()) else { return };
     let Some(unit) = units.get(own.obj_id) else { return };
     let UnitKind::Slave { tl_id, .. } = unit.kind else { return };
@@ -102,20 +113,38 @@ pub fn vehicle_seat(
         return;
     }
     let Some(db) = db.as_deref() else { return };
-    if !db.is_land_vehicle(unit.model_id) {
+    let land = db.is_land_vehicle(unit.model_id);
+    let ship = db.is_ship(unit.model_id);
+    if !land && !ship {
         return;
     }
-    let near = Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= 30.0;
+    let range = if ship { 60.0 } else { 30.0 };
+    // `Units` keeps the announcement/spawn pose; the displayed hull is interpolated by
+    // `move_units` (`Views` -> `RemoteUnit`), so use that for the interaction range.
+    let here = views
+        .as_deref()
+        .and_then(|v| v.unit_entity(own.obj_id))
+        .and_then(|e| visuals.get(e).ok())
+        .map_or(unit.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
+    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= range;
     if !near {
         return;
     }
     let manual = actions.just_pressed("do_interaction_1", 0);
-    if *handled != Some((tl_id, own.obj_id)) {
-        out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
+    if ship && actions.just_pressed("do_interaction_2", 0) {
+        // Unsummon the visible ship from the dock (the native destroy/recall slot).
+        out.write(NetCommand(Command::Slave(SlaveCommand::Dismiss { tl_id })));
         *handled = Some((tl_id, own.obj_id));
         *last = now;
-    } else if manual && now - *last > 0.5 {
+        return;
+    }
+    // Land vehicles keep the one-shot auto-board the item's own client bind triggers. A ship is
+    // boarded with the interaction key: auto-boarding would pull a player who only stands on deck
+    // off it into the helm seat.
+    let unbound = *handled != Some((tl_id, own.obj_id));
+    if (land && unbound) || (manual && (unbound || now - *last > 0.5)) {
         out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
+        *handled = Some((tl_id, own.obj_id));
         *last = now;
     }
 }

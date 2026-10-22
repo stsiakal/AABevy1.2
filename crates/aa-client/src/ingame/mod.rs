@@ -46,6 +46,7 @@ mod doodad_visual;
 pub(crate) mod emote;
 pub(crate) mod enter;
 mod flow;
+pub(crate) mod glide;
 pub(crate) mod ground_target;
 pub(crate) mod houses;
 mod idle;
@@ -55,6 +56,7 @@ pub(crate) mod player;
 mod prepare;
 mod prewarm;
 mod remote;
+mod ship;
 mod skill_motion;
 mod sounds;
 mod stealth;
@@ -123,6 +125,7 @@ impl Plugin for InGamePlugin {
             .init_resource::<player::PlayerBuilt>()
             .init_resource::<anim::LocalJump>()
             .init_resource::<sprint::Sprint>()
+            .init_resource::<glide::Gliding>()
             .init_resource::<cam_fov::CamFov>()
             .init_resource::<warm::Warm>()
             .add_plugins(enter::plugin)
@@ -157,16 +160,25 @@ impl Plugin for InGamePlugin {
                         camera::orbit_input.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         player::follow_server,
                         sprint::drive_sprint.run_if(in_state(Screen::InGame)),
+                        glide::redirect_use_glider.run_if(in_state(Screen::InGame)),
+                        glide::request_deploy.run_if(in_state(Screen::InGame)),
+                        glide::track_flight.run_if(in_state(Screen::InGame)),
+                        glide::control_glide.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         player::control_player.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
+                        ship::deck_control.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         camera::follow_player,
                     )
                         .chain()
                         .after(crate::hud::HudInputReady),
                     (units::sync_views, units::move_units, units::cull_units).chain(),
+                    glide::track_remote_gliders.after(units::move_units).before(anim::drive_locomotion),
                     anim::drive_locomotion,
+                    glide::draw_remote_gliders.after(anim::drive_locomotion),
                     sprint::apply_blur.after(sprint::drive_sprint),
                     cam_fov::drive_cam_fov.after(camera::follow_player),
                     swim::drive_swim.after(anim::drive_locomotion),
+                    glide::drive_glide.after(anim::drive_locomotion),
+                    glide::show_glider,
                     player::dev_hide_part,
                     weapons::attach_carried,
                     warm::update,
@@ -246,6 +258,7 @@ fn leave_game(
     commands.insert_resource(warm::Warm::default());
     // a logout mid-Dash or mid-jump must not carry its state (the end-of-Dash FOV fade) into the next world
     commands.insert_resource(sprint::Sprint::default());
+    commands.insert_resource(glide::Gliding::default());
     commands.insert_resource(cam_fov::CamFov::default());
     commands.insert_resource(anim::LocalJump::default());
     // the HUD made the UI cameras agree with the world camera (HDR, no MSAA, `hud::cameras`): the login stage camera

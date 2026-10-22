@@ -326,6 +326,9 @@ impl ItemDetail {
             6 | 7 => skip_detail(r, 16, detail_type)?,
             8 => skip_detail(r, 8, detail_type)?,
             9 => skip_detail(r, 4, detail_type)?,
+            // Slave equipment (a ship cannon, 12 bytes) and a location item (24 bytes), as the server writes them (`detail_body_len`).
+            10 => skip_detail(r, 12, detail_type)?,
+            11 => skip_detail(r, 24, detail_type)?,
             other => return Err(WireError::Invalid(format!("unsupported item detail type {other}"))),
         })
     }
@@ -1308,6 +1311,10 @@ pub struct Movement {
     /// The vehicle body (move type 2): raw quaternion shadows, angular velocity, steering and wheel
     /// speeds. `None` for the other kinds.
     pub vehicle: Option<VehicleMove>,
+    /// The ship body (move type 3): the server's authoritative hull pose and smoothed helm values.
+    pub ship: Option<ShipMove>,
+    /// The driver's ship request (move type 4): `(throttle, steering)`, both `i8`.
+    pub ship_request: Option<(i8, i8)>,
 }
 
 /// `VehicleMove` (cars, carts, tractors): the native body after position and velocity.
@@ -1320,6 +1327,23 @@ pub struct VehicleMove {
     pub steering: f32,
     /// `WheelAngVel`, prefixed on the wire by a `u8` count.
     pub wheel_speeds: Vec<f32>,
+}
+
+/// `ShipMoveType` (move type 3): the authoritative ship hull pose and the physics-smoothed helm
+/// values. The client reads it from `SCUnitMovements`; the server expects the driver's input as a
+/// type 4 request instead.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ShipMove {
+    /// Quaternion components (x, z, y) scaled by `1 / 0.00003052`, as the native writer stores them.
+    pub rotation: [i16; 3],
+    pub angular_velocity: [f32; 3],
+    /// Smoothed rudder value (`-127 ..= 127`).
+    pub steering: i8,
+    /// Smoothed throttle value (`-127 ..= 127`).
+    pub throttle: i8,
+    pub zone_id: u16,
+    /// The physics reports the hull stuck on ground.
+    pub stuck: bool,
 }
 
 /// What a unit stands on or hangs from, as a unit movement reports it. While it stands on something, the movement's `pos` is
@@ -1357,6 +1381,8 @@ impl Movement {
             support: None,
             vehicle_yaw: None,
             vehicle: None,
+            ship: None,
+            ship_request: None,
         }
     }
 
@@ -1382,6 +1408,58 @@ impl Movement {
             support: None,
             vehicle_yaw: Some(yaw),
             vehicle: Some(VehicleMove { rotation: [0, 0, z], ..VehicleMove::default() }),
+            ship: None,
+            ship_request: None,
+        }
+    }
+
+    /// A ship movement (`MoveTypeEnum::Ship`, 3) at `pos` facing `yaw` radians. This is the body
+    /// the server writes; a client sends [`Self::ship_request`] instead.
+    pub fn ship(pos: Pos, yaw: f32, time: u32) -> Self {
+        const SCALE: f32 = 0.000_030_52;
+        let z = ((yaw * 0.5).sin() / SCALE).round().clamp(-32767.0, 32767.0) as i16;
+        Self {
+            move_type: 3,
+            time,
+            flags: move_flags::MOVING,
+            pos,
+            velocity: [0; 3],
+            direction: 0,
+            tilt: [0; 2],
+            delta_movement: [0; 3],
+            stance: stance::RELAXED,
+            alertness: 0,
+            actor_flags: actor_flags::STANDING_ON_SOLID,
+            fall_vel: 0,
+            support: None,
+            vehicle_yaw: Some(yaw),
+            vehicle: None,
+            ship: Some(ShipMove { rotation: [0, 0, z], ..ShipMove::default() }),
+            ship_request: None,
+        }
+    }
+
+    /// The helmsman's ship request (`MoveTypeEnum::ShipRequest`, 4): `CSMoveUnit` type 4 carries
+    /// only the two signed bytes after the common flags.
+    pub fn ship_request(throttle: i8, steering: i8) -> Self {
+        Self {
+            move_type: 4,
+            time: 0,
+            flags: 0,
+            pos: Pos::default(),
+            velocity: [0; 3],
+            direction: 0,
+            tilt: [0; 2],
+            delta_movement: [0; 3],
+            stance: 0,
+            alertness: 0,
+            actor_flags: 0,
+            fall_vel: 0,
+            support: None,
+            vehicle_yaw: None,
+            vehicle: None,
+            ship: None,
+            ship_request: Some((throttle, steering)),
         }
     }
 
@@ -1397,6 +1475,11 @@ impl Movement {
         w.u8(self.move_type).u32(self.time).u8(self.flags);
         if self.flags & move_flags::HAS_SC_TYPE_AND_PHASE != 0 {
             w.u32(0).u8(0);
+        }
+        if self.move_type == 4 {
+            let (throttle, steering) = self.ship_request.unwrap_or_default();
+            w.i8(throttle).i8(steering);
+            return;
         }
         if self.move_type == 2 {
             let body = self.vehicle.clone().unwrap_or_default();
@@ -1415,6 +1498,24 @@ impl Movement {
             for speed in &body.wheel_speeds {
                 w.f32(*speed);
             }
+            return;
+        }
+        if self.move_type == 3 {
+            let body = self.ship.unwrap_or_default();
+            w.position(self.pos)
+                .i16(self.velocity[0])
+                .i16(self.velocity[1])
+                .i16(self.velocity[2])
+                .i16(body.rotation[0])
+                .i16(body.rotation[1])
+                .i16(body.rotation[2])
+                .f32(body.angular_velocity[0])
+                .f32(body.angular_velocity[1])
+                .f32(body.angular_velocity[2])
+                .i8(body.steering)
+                .i8(body.throttle)
+                .u16(body.zone_id)
+                .bool(body.stuck);
             return;
         }
         w.position(self.pos)
@@ -1465,10 +1566,14 @@ impl Movement {
             support: None,
             vehicle_yaw: None,
             vehicle: None,
+            ship: None,
+            ship_request: None,
         };
         if move_type == 4 {
             // Ship request (throttle, steering): no position.
-            r.skip(2)?;
+            let throttle = r.i8()?;
+            let steering = r.i8()?;
+            m.ship_request = Some((throttle, steering));
             return Ok(m);
         }
         m.pos = r.position()?;
@@ -1497,7 +1602,11 @@ impl Movement {
                     }
                     m.vehicle = Some(VehicleMove { rotation, angular_velocity, steering, wheel_speeds });
                 } else {
-                    r.skip(1 + 1 + 2 + 1)?;
+                    let steering = r.i8()?;
+                    let throttle = r.i8()?;
+                    let zone_id = r.u16()?;
+                    let stuck = r.bool()?;
+                    m.ship = Some(ShipMove { rotation, angular_velocity, steering, throttle, zone_id, stuck });
                 }
             }
             _ => {
@@ -2179,6 +2288,36 @@ mod tests {
         assert_eq!((c.chat_type, c.sender.as_str(), c.message.as_str()), (1, "Bob", "hello"));
         assert_eq!((c.sub_type, c.channel_faction), (7, 0));
         assert_eq!((c.sender_obj_id, c.sender_id, c.sender_race), (0x102, 77, 1));
+    }
+
+    #[test]
+    fn ship_body_and_helm_request_roundtrip() {
+        let mut ship = Movement::ship(Pos::new(10.0, 20.0, 3.0), 0.5, 42);
+        let body = ship.ship.as_mut().unwrap();
+        let rotation = body.rotation;
+        *body = ShipMove {
+            rotation,
+            angular_velocity: [0.1, -0.2, 0.3],
+            steering: -64,
+            throttle: 127,
+            zone_id: 12,
+            stuck: true,
+        };
+        let mut w = Writer::new();
+        ship.write(&mut w);
+        let bytes = w.finish();
+        let back = Movement::read(&mut Reader::new(&bytes)).unwrap();
+        assert_eq!(back.move_type, 3);
+        assert_eq!(back.ship, ship.ship);
+        assert!((back.pos.x - 10.0).abs() < 1e-4 && (back.yaw() - 0.5).abs() < 1e-3);
+
+        let request = Movement::ship_request(127, -64);
+        let mut w = Writer::new();
+        request.write(&mut w);
+        let bytes = w.finish();
+        assert_eq!(bytes, [4, 0, 0, 0, 0, 0, 127, 0xc0]);
+        let back = Movement::read(&mut Reader::new(&bytes)).unwrap();
+        assert_eq!(back.ship_request, Some((127, -64)));
     }
 }
 

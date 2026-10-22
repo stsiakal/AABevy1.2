@@ -684,7 +684,7 @@ exe could not be decompiled here):
 | 6 Pos / selection 1 (source) | detonations, Stomp, Nuclear Bomb ... (28 rows) | **self position**: the area is centred on the caster, cast at once with the caster's own spot, no reticle |
 | 0 self (+ area radius, `target_angle`) | Freezing Earth 10151 (r 8) | not ground targeted in 1.2: plain self cast, the area is round the caster. The **front cone** is `skills.target_angle` (180 for Meteor Strike): the server fails the cast with `skill_outof_angle` unless the spot lies in front of the caster, so the caster is turned first |
 | 4 hostile | Crippling Mire 10201, Earthen Grip 14376 | unit targeted in 1.2 (they only became ground skills later): plain `UseSkill` on the target |
-| 12 SummonPos, 14 SourcePos, 7 Line | mount/pet summons, Throw Dagger, Spray | plain cast; the server's `initial_target` takes the caster for these |
+| 12 SummonPos, 14 SourcePos, 7 Line | mount/pet summons, Throw Dagger, Spray | plain cast; the server's `initial_target` takes the caster for these. A ship-summon item (item template in `item_summon_slaves` whose slave model is a `ShipModel`) is the exception: `SkillPressed.water` gives it the water-surface reticle (`ingame/ground_target.rs`) |
 
 Healing circles do not exist as ground skills in the 1.2 data (no player skill with a ground type heals).
 

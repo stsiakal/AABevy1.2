@@ -16,7 +16,7 @@ use aa_ui::UiRuntime;
 use bevy::prelude::*;
 use mlua::{Lua, Table, Value};
 use rusqlite::Connection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Skill {
@@ -34,6 +34,10 @@ pub(super) struct Tables {
     pub(super) skill_rows: HashMap<u32, Skill>,
     /// Vehicle body by slave template (`vehicle_models.velocity`, `angVel`).
     pub(super) speeds: HashMap<u32, (f32, f32)>,
+    /// Slave templates whose model is a land `VehicleModel` (the only ones with a gear panel).
+    pub(super) land: HashSet<u32>,
+    /// Slave templates whose model is a `ShipModel`.
+    pub(super) ships: HashSet<u32>,
 }
 
 impl Tables {
@@ -84,6 +88,34 @@ impl Tables {
             let turn = any_int(row, 2)? as f32;
             out.speeds.insert(slave, (speed.max(0.1), turn.abs().max(0.05)));
         }
+        let mut query = conn.prepare(
+            "SELECT s.id FROM slaves s JOIN models m ON m.id = s.model_id AND m.sub_type = 'VehicleModel'",
+        )?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            out.land.insert(any_int(row, 0)? as u32);
+        }
+        let mut query = conn.prepare(
+            "SELECT s.id FROM slaves s JOIN models m ON m.id = s.model_id AND m.sub_type = 'ShipModel'",
+        )?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            out.ships.insert(any_int(row, 0)? as u32);
+        }
+        // Ships use `ship_models` (the server floats the hull); the mode bar shows the same
+        // authored speed/turn values in the slave information frame (`slave_info.alb:77-90`).
+        let mut query = conn.prepare(
+            "SELECT s.id, h.velocity, h.steer_vel FROM slaves s \
+             JOIN models m ON m.id = s.model_id AND m.sub_type = 'ShipModel' \
+             JOIN ship_models h ON h.id = m.sub_id",
+        )?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            let slave = any_int(row, 0)? as u32;
+            let speed = any_int(row, 1)? as f32;
+            let turn = any_int(row, 2)? as f32;
+            out.speeds.insert(slave, (speed.max(0.1), turn.abs().max(0.05)));
+        }
         Ok(out)
     }
 }
@@ -102,6 +134,10 @@ pub(super) struct Current {
     pub pos: Vec3,
     pub speed: f32,
     pub turn: f32,
+    /// A land `VehicleModel`: the information panel's gear/brake panel applies.
+    pub land: bool,
+    /// A `ShipModel`: the mode bar shows its `slave_mount_skills` without a player-seat filter.
+    pub ship: bool,
 }
 
 #[derive(Default)]
@@ -140,6 +176,8 @@ fn current(world: &World, data: &HudData) -> Option<Current> {
         pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
         speed,
         turn,
+        land: data.game.get().is_some_and(|g| g.vehicles.land.contains(&template_id)),
+        ship: data.game.get().is_some_and(|g| g.vehicles.ships.contains(&template_id)),
     })
 }
 
@@ -168,11 +206,14 @@ fn displayed<'a>(game: &'a GameData, slave: &'a Current) -> impl Iterator<Item =
         .flatten()
         .filter_map(move |id| {
             let skill = game.vehicles.skill_rows.get(id)?;
-            (slave.point.is_some()
-                && (skill.first_seat.is_none()
-                    || skill.first_seat == Some(u32::from(context))
-                    || (context == 1 && skill.first_seat == Some(1))))
-                .then_some((*id, skill))
+            // A ship's mode actions are its mount skills (spyglass, sails, charge): their
+            // `mount_attached_skills` rows name equipment attach points (80 telescope, 1 helm),
+            // not the player's seat, so only the land-vehicle driver seat filter applies.
+            let seat_ok = slave.ship
+                || skill.first_seat.is_none()
+                || skill.first_seat == Some(u32::from(context))
+                || (context == 1 && skill.first_seat == Some(1));
+            (slave.point.is_some() && seat_ok).then_some((*id, skill))
         })
 }
 
@@ -261,7 +302,15 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         lua.create_function(move |lua, _: Value| {
             let data = state.borrow();
             let Some(v) = &data.vehicles.current else { return Ok(None) };
+            // `slave_info.alb:39-75` reads gear/handbrake/tractionCtrl; a ship has no gear panel
+            // (the native getter answers nil there, and the script returns).
+            if !v.land {
+                return Ok(None);
+            }
             let out = lua.create_table()?;
+            out.set("gear", 0)?;
+            out.set("handbrake", false)?;
+            out.set("tractionCtrl", false)?;
             out.set("speed", v.speed)?;
             out.set("turnSpeed", v.turn)?;
             Ok(Some(out))
@@ -438,6 +487,8 @@ mod tests {
             pos: Vec3::new(10.0, 20.0, 30.0),
             speed: 4.0,
             turn: 0.4,
+            land: true,
+            ship: false,
         });
         data
     }
@@ -455,6 +506,19 @@ mod tests {
         ));
         data.vehicles.current.as_mut().unwrap().point = Some(2);
         assert!(use_action(&data, 1, 0, None).is_none(), "driver-only skill on the passenger seat");
+    }
+
+    #[test]
+    fn ship_mount_skills_ignore_the_land_driver_seat_filter() {
+        let skill = Skill { combat: 17649, first_seat: Some(80), target_type: 0, target_selection: 1 };
+        let mut data = data_with(75, Some(1), skill, 122);
+        data.vehicles.current.as_mut().unwrap().land = false;
+        assert!(use_action(&data, 1, 0, None).is_none(), "land filter hides an equipment-point row");
+        data.vehicles.current.as_mut().unwrap().ship = true;
+        assert!(matches!(
+            use_action(&data, 1, 0, None),
+            Some(Command::UseMateSkill { skill_id: 17649, mate_obj_id: 500, mount_skill_id: 122, target_obj_id: 500 })
+        ));
     }
 
     #[test]
