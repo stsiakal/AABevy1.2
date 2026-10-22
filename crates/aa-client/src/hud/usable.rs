@@ -43,6 +43,7 @@ pub mod code {
     pub const TARGET_ALIVE: u8 = 6;
     pub const ON_CASTING: u8 = 7;
     pub const COOLDOWN_TIME: u8 = 8;
+    pub const NOT_NOW: u8 = 44;
     pub const NO_TARGET: u8 = 9;
     pub const LACK_MANA: u8 = 11;
     pub const TOO_CLOSE_RANGE: u8 = 14;
@@ -154,6 +155,8 @@ pub struct SkillRules {
     /// Starting it ends a channel (the others wait for it).
     stop_channeling: bool,
     or_reqs: bool,
+    /// A glider skill (`link_backpack_type_id` 2: Use Glider, Fold Glider): the only kind a gliding character may use.
+    glider: bool,
     reqs: Vec<Req>,
 }
 
@@ -166,6 +169,9 @@ struct BuffFlags {
     silence: bool,
     crippled: bool,
     blank_minded: bool,
+    /// A gliding buff: only the glider's own skills can be used while it lasts ("while gliding only glider skills can be used,
+    /// and landing or being attacked ends it": the description of the glider skills).
+    gliding: bool,
 }
 
 /// A weapon's reach and kind (`item_weapons` -> `holdables`).
@@ -201,7 +207,7 @@ impl Rules {
         {
             let mut q = conn.prepare(
                 "SELECT id, mana_cost, mana_level_md, ability_id, consume_lp, target_type_id, source_alive, source_dead, target_alive, target_dead, source_stun, \
-                 min_range, max_range, weapon_slot_for_range_id, damage_type_id, stop_channeling_on_start_skill, or_unit_reqs FROM skills",
+                 min_range, max_range, weapon_slot_for_range_id, damage_type_id, stop_channeling_on_start_skill, or_unit_reqs, link_backpack_type_id FROM skills",
             )?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
@@ -225,13 +231,14 @@ impl Rules {
                         damage_type: any_int(r, 14)?.clamp(0, 255) as u8,
                         stop_channeling: any_flag(r, 15)?,
                         or_reqs: any_flag(r, 16)?,
+                        glider: any_int(r, 17).unwrap_or(0) == 2,
                         reqs: reqs.remove(&id).unwrap_or_default(),
                     },
                 );
             }
         }
         {
-            let mut q = conn.prepare("SELECT id, stun, sleep, knock_down, silence, crippled, blank_minded FROM buffs")?;
+            let mut q = conn.prepare("SELECT id, stun, sleep, knock_down, silence, crippled, blank_minded, gliding FROM buffs")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let flags = BuffFlags {
@@ -241,8 +248,9 @@ impl Rules {
                     silence: any_flag(r, 4)?,
                     crippled: any_flag(r, 5)?,
                     blank_minded: any_flag(r, 6)?,
+                    gliding: any_flag(r, 7)?,
                 };
-                if flags.stun || flags.sleep || flags.knock_down || flags.silence || flags.crippled || flags.blank_minded {
+                if flags.stun || flags.sleep || flags.knock_down || flags.silence || flags.crippled || flags.blank_minded || flags.gliding {
                     rules.buffs.insert(any_int(r, 0)? as u32, flags);
                 }
             }
@@ -453,6 +461,11 @@ impl Env<'_> {
         skills.casting_of(skills.obj_id).is_some_and(|c| c.skill_id == skill && (in_cast(c) || in_channel(c)))
     }
 
+    /// A gliding buff is on the player.
+    fn gliding(&self) -> bool {
+        self.rules().is_some_and(|rules| self.buffs.iter().any(|b| rules.buffs.get(&b.buff.buff_id).is_some_and(|f| f.gliding)))
+    }
+
     fn buff_restriction(&self, r: &SkillRules) -> Option<Fail> {
         let rules = self.rules()?;
         for b in self.buffs {
@@ -541,6 +554,10 @@ impl Env<'_> {
         }
         if dead {
             return None;
+        }
+        // a glider's pilot uses the glider's skills only
+        if self.gliding() && !r.glider {
+            return Some(fail(code::NOT_NOW));
         }
         self.requirements(r)
             .or_else(|| self.buff_restriction(r))
@@ -734,6 +751,25 @@ mod tests {
         assert_eq!(with(&[13]).1, Some(fail(code::CANNOT_CAST_IN_STUN)));
         // a buff without restrictions does nothing
         assert_eq!(with(&[99]), (None, None, None));
+    }
+
+    /// "While gliding only the glider's own skills can be used" (the glider skills' description): every other slot goes dark.
+    #[test]
+    fn a_gliding_pilot_uses_only_glider_skills() {
+        let fold = SkillRules { glider: true, target_type: 0, source_alive: true, ..SkillRules::default() };
+        let mut rules = Rules::default().with_skill(1, melee()).with_skill(17657, fold);
+        rules.buffs.insert(2098, BuffFlags { gliding: true, ..Default::default() });
+        let g = game(rules);
+        let me = me();
+        let rat = target(100, "hostile");
+        let with = |ids: &[u32]| {
+            let buffs: Vec<BuffEntry> = ids.iter().map(|id| entry(*id)).collect();
+            let e = Env { buffs: &buffs, ..env(&g, &me, Some(&rat), 2.0) };
+            (e.why_not(1, 0.0), e.why_not(17657, 0.0))
+        };
+        assert_eq!(with(&[]), (None, None));
+        assert_eq!(with(&[2098]), (Some(fail(code::NOT_NOW)), None));
+        assert_eq!(with(&[99]), (None, None), "a buff that is no glider changes nothing");
     }
 
     #[test]

@@ -297,7 +297,7 @@ pub(super) fn floor_at(terrain: &TerrainQuery, collision: &WorldCollision, pos: 
 /// The candidate of a horizontal move: the walls slide the capsule ([`WorldCollision::slide`]), the terrain's climb limit
 /// keeps it off steep ground, and a brush or vegetation hull closing over the body keeps it out. `pos` is the feet and
 /// `step` the move of this frame; the result keeps `pos.z`. The map's edge keeps the feet where they are.
-fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
+pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
     if step == Vec2::ZERO {
         return pos;
     }
@@ -365,9 +365,13 @@ pub fn control_player(
     dev: Res<DevOptions>,
     typing: Option<Res<crate::hud::HudKeyboardFocus>>,
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
-    (mut trace, sprint, mut local_jump): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>),
+    (mut trace, sprint, mut local_jump, gliding): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>),
 ) {
     let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving)) = player.single_mut() else { return };
+    // a glider flies the character: `glide::control_glide` moves it and sends the packets
+    if gliding.flying() && !dead {
+        return;
+    }
     // a skill moves the character (a charge, a back step, a knockback): `skill_motion::drive_local` plays it and sends the packets
     if skill_moving && !dead {
         *input_state = PlayerInput::default();
@@ -679,6 +683,35 @@ pub struct SendState {
     wait: f32,
     /// Seconds left of the grace period after settling or a teleport in which a landing is not reported.
     grace: f32,
+}
+
+impl SendState {
+    /// The collision around the character is built (or the wait for it ran out): the first step happened.
+    pub(super) fn is_settled(&self) -> bool {
+        self.settled
+    }
+
+    /// The air time is a freefall ([`super::jump::freefall`]).
+    pub(super) fn freefall(&self) -> bool {
+        self.freefall
+    }
+
+    /// Time since the player appeared, for the scripted `--walk` keys: the glider's controller advances it while
+    /// [`control_player`] sleeps. Returns the new time.
+    pub(super) fn advance_clock(&mut self, dt: f32) -> f32 {
+        self.since_spawn += dt;
+        self.grace = (self.grace - dt).max(0.0);
+        self.since_spawn
+    }
+
+    /// A flight began or ended: the air time that follows is not a jump (`freefall` for a glider folded in the air, which falls on),
+    /// the movement packets start over and a landing is reported once.
+    pub(super) fn set_air(&mut self, freefall: bool) {
+        self.took_off = false;
+        self.freefall = freefall;
+        self.was_active = false;
+        self.since_sent = 0.0;
+    }
 }
 
 /// The movement keys held this frame (W, S, Q, E, A, D).
@@ -1150,6 +1183,7 @@ mod scripted_input_tests {
             .init_resource::<SendState>()
             .init_resource::<PlayerInput>()
             .init_resource::<LocalJump>()
+            .init_resource::<crate::ingame::glide::Gliding>()
             .init_resource::<VirtualInput>()
             .init_resource::<crate::settings::Actions>()
             .init_resource::<crate::hud::HudPointerOverUi>()

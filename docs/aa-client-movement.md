@@ -88,6 +88,16 @@ as the player instead of waiting for cells around a different saved spawn.
 * Packets: stance `SWIM` (2), no ground flag (`MoveState::Fall`), the velocity with its vertical part, `delta_movement` `[right, forward, up]`, one packet at
   once when swimming starts or stops, and one per 0.1 s while moving, diving or bobbing.
 
+## Gliders (`glide.rs`)
+
+A buff with the `gliding` flag (55 rows; Fly Glider 1957, Feathered Dragon 2097, Ezi's 2098, Moonshadow 3583 ...) flies the local player: `track_flight` starts the flight when the own buff list holds one, `control_glide` moves the character (and `player::control_player` sleeps), `drive_glide` plays the character's `fist_ac_gliding_*` clips, `show_glider` draws the glider model (`item_backpacks.asset_id`, a `.chr`/`.cdf`, with its own `.cal` clips `start`, `loop`, `front` ...) and hides the stowed one. The flight ends when the buff goes (landing is the server's `remove_on_land`, fired by the landing flags; being hit, or the Fold Glider skill 17657 which dispels it).
+
+* **Deploy:** use the glider item or the action bar's Use Glider (14901 is forwarded as the equipped glider's use skill), or, with option 56 (`glider_start_with_double_jump`, taken as on) a second press of jump in the air in a freefall or 3 m over the ground.
+* **Numbers** (`GlideParams`, read from `sub_3925A430` of the 10.x `x2game`): move speeds slow / normal / fast, fall speeds slow / normal / fast, turn rate (`gliding_rotate_speed` degrees a second), `startup_time` / `startup_speed` (the opening holds that speed), `smooth_time`, lifts, `land_height`, `sliding_time`. W flies at the fast pair, S at the slow pair; A / D turn; Space lifts (`lift_count` times, `lift_speed` for `lift_duration / lift_count`). Within `land_height` of the ground the glider slides for `sliding_time` and then lands.
+* **Packets:** stance `FLY` (8), no ground flag (airborne for the server), velocity with its vertical part, one per 0.1 s; the landing is one `Ground` packet with the descent speed (far under the 20 m/s fall damage threshold, so a glide costs no health).
+* **Skills:** while a gliding buff is on, only skills with `link_backpack_type_id` 2 can be used (the glider skills' description); the others go dark (`NOT_NOW`, `hud/usable.rs`).
+* **Unverified:** the key mapping, the smoothing, the lift timing and the option's default are reconstructions from the data columns and the 10.x code (see the module documentation); there was no retail capture. Not done: other players' gliders (they run in the air), the mouse steering cvars `gliding_mouse_ad` / `gliding_mouse_ws`, the tumbling clips, the glider's sound and particle items, glider transform offsets.
+
 ## Camera
 
 The zoom is 1.2's `camera::update_distance` (`zoom_notch`, `approach_distance`, `start_distance` in `camera.rs`):

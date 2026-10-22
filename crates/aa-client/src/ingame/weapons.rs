@@ -368,6 +368,10 @@ pub fn attach_carried(mut commands: Commands, mut cry: CryAssets, characters: Qu
                 _ => commands.spawn((Name::new("weapon"), Transform::default(), Visibility::default())).add_children(&parts).id(),
             };
             commands.entity(model).insert((item.transform, ChildOf(bone)));
+            // the stowed backpack or glider goes out of sight while a glider is opened (`glide::show_glider`)
+            if item.grip == Grip::Pack {
+                commands.entity(model).insert(super::glide::StowedPack);
+            }
             // an instrument is only there while it is played, a shield while the sword is out
             if matches!(item.grip, Grip::Instrument(_) | Grip::Shield) || item.hide_sheathed {
                 commands.entity(model).insert(Visibility::Hidden);

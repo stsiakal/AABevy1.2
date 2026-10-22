@@ -30,9 +30,19 @@ struct Lookups {
     npc_scale: HashMap<u32, f32>,
     weapons: HashMap<u32, Option<Weapon>>,
     backpacks: HashMap<u32, Option<Weapon>>,
+    gliders: HashMap<u32, Option<GliderItem>>,
     anim_actions: HashMap<u32, Option<String>>,
     anim_action_tools: HashMap<u32, [Option<Tool>; 2]>,
     mount_poses: HashMap<u32, u32>,
+}
+
+/// What the glider backpack item `item` is for the flight: its use skill and the model it flies with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GliderItem {
+    /// `items.use_skill_id`: the skill that puts the glider's buff on the wearer.
+    pub use_skill: u32,
+    /// The flying model (`item_backpacks.asset_id`: a `.chr` or `.cdf`), as a pak path.
+    pub model: Option<String>,
 }
 
 /// How a growing doodad phase scales (`doodad_func_growths`): from `start_scale` to `end_scale` over `delay_ms`.
@@ -188,6 +198,7 @@ impl Db {
                 npc_scale: HashMap::new(),
                 weapons: HashMap::new(),
                 backpacks: HashMap::new(),
+                gliders: HashMap::new(),
                 anim_actions: HashMap::new(),
                 anim_action_tools: HashMap::new(),
                 mount_poses: HashMap::new(),
@@ -365,6 +376,24 @@ impl Db {
             .ok();
         l.backpacks.insert(item_id, backpack.clone());
         backpack
+    }
+
+    /// The glider a backpack item is (`backpack_type_id` 2): its use skill and flying model; `None` for other items.
+    pub fn glider(&self, item_id: u32) -> Option<GliderItem> {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(g) = l.gliders.get(&item_id) {
+            return g.clone();
+        }
+        let glider = l
+            .conn
+            .query_row(
+                "SELECT i.use_skill_id, ia.path FROM item_backpacks b JOIN items i ON i.id = b.item_id LEFT JOIN item_assets ia ON ia.id = b.asset_id                  WHERE b.item_id = ?1 AND b.backpack_type_id = 2",
+                params![item_id],
+                |r| Ok(GliderItem { use_skill: r.get::<_, Option<i64>>(0)?.unwrap_or(0).max(0) as u32, model: r.get::<_, Option<String>>(1)?.map(|p| norm(&p)) }),
+            )
+            .ok();
+        l.gliders.insert(item_id, glider.clone());
+        glider
     }
 
     /// The model a doodad template is drawn with (`doodad_almighties.model`: `cgf://`, `vegetation://`, `cga://` or
