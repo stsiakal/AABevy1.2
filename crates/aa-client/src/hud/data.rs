@@ -112,6 +112,9 @@ pub struct NpcInfo {
     pub template: i64,
     pub faction_id: i64,
     pub show_name_tag: bool,
+    /// `npcs.aggression` (`'t'`/`'f'`): an aggressive hostile NPC attacks on sight (red name plate), a passive
+    /// one (the Angry Rat) only fights back (orange). Rows without the column count as aggressive.
+    pub aggression: bool,
 }
 
 /// A quest objective area (`worlds/*/level_design/zone/*/client/quest_sign_sphere.g`): a circle
@@ -652,7 +655,7 @@ impl GameData {
             }
         }
         {
-            let mut q = conn.prepare("SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id FROM npcs")?;
+            let mut q = conn.prepare("SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id, aggression FROM npcs")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id: u32 = r.get(0)?;
@@ -666,6 +669,7 @@ impl GameData {
                         faction_id: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
                         show_name_tag: r.get::<_, Option<String>>(6)?.as_deref() != Some("f"),
                         template: r.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                        aggression: r.get::<_, Option<String>>(8)?.as_deref() != Some("f"),
                     },
                 );
             }

@@ -87,6 +87,7 @@ pub(super) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, Shared, Inv
             unit_type: "character",
             detail: "character",
             relation: "friendly",
+            combat_relation: "friendly",
             ..default()
         });
         assert!(d.game.0.set(game).is_ok());

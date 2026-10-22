@@ -140,7 +140,8 @@ X2Unit.GetCombatRelationshipStr = function(self, unit)
   if isPlayer(unit) then return "friendly" end
   local t = U(unit)
   if t == nil then return nil end
-  if t.relation == "hostile" or t.relation == "neutral" or t.relation == "friendly" then return t.relation end
+  local r = t.combat_relation or t.relation
+  if r == "hostile" or r == "neutral" or r == "friendly" then return r end
   return 0
 end
 -- Native39442960 /394bb977: the original target popup excludes hostile1;

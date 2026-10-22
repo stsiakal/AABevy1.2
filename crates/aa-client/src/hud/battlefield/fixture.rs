@@ -24,6 +24,7 @@ pub(super) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, Shared, std
             unit_type: "npc",
             detail: "npc",
             relation: "friendly",
+            combat_relation: "friendly",
             ..default()
         });
     }

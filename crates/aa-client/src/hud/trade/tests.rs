@@ -62,6 +62,7 @@ fn target_request_uses_native_faction_categories_and_actual_character_identity()
             obj_id: 200,
             unit_type: "character",
             relation: "neutral",
+            combat_relation: "neutral",
             ..default()
         });
     }

@@ -35,6 +35,7 @@ pub(super) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared
             unit_type: "character",
             detail: "character",
             relation: "neutral",
+            combat_relation: "neutral",
             ..default()
         });
         d.pvp.announce(100, true, true);

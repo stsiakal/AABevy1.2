@@ -167,11 +167,15 @@ fn srgb(c: (u8, u8, u8)) -> Color {
     Color::srgb_u8(c.0, c.1, c.2)
 }
 
-/// Bar and name colours by how the unit stands to the player.
-fn colors(relation: &str) -> ((u8, u8, u8), (u8, u8, u8)) {
+/// Bar and name colours by how the unit stands to the player (`passive`: a hostile that does not attack on sight).
+/// The target frame's bar rows of `ui/common/hud.dds` give the palette: hostile red (154, 39, 39), neutral orange
+/// (156, 76, 23), friendly green (64, 127, 38); see `docs/research/re-unit-colors.md`.
+fn colors(relation: &str, passive: bool) -> ((u8, u8, u8), (u8, u8, u8)) {
     match relation {
-        // the Angry Rat of reference/ingame/combat_*: name (238, 107, 35), bar fill (146, 66, 21)
-        "hostile" => ((146, 66, 21), (238, 107, 35)),
+        // the Angry Rat (aggression 'f') of reference/ingame/combat_*: name (238, 107, 35), bar fill (146, 66, 21)
+        "hostile" if passive => ((146, 66, 21), (238, 107, 35)),
+        // aggressive: the red row scaled like the orange one (name = bar * 1.63)
+        "hostile" => ((154, 39, 39), (251, 64, 64)),
         "friendly" => ((70, 126, 31), (115, 210, 51)),
         _ => ((155, 131, 0), (255, 216, 0)),
     }
@@ -190,6 +194,18 @@ fn unit_faction(game: Option<&super::data::GameData>, u: &aa_net::Unit) -> u32 {
         Some(n) if n.faction_id != 0 => n.faction_id as u32,
         _ => u.faction_id,
     }
+}
+
+/// Whether a unit is a hostile that only fights back: an NPC whose template has `aggression` off.
+pub(super) fn is_passive(game: Option<&super::data::GameData>, u: &aa_net::Unit) -> bool {
+    npc_of(game, u).is_some_and(|n| !n.aggression)
+}
+
+/// The relation string the original's `X2Unit:GetCombatRelationshipStr` gives the target frame (hostile red, neutral
+/// orange, friendly green bar): the faction relation, with a passive hostile NPC counted as neutral.
+pub(super) fn combat_relation_of(game: Option<&super::data::GameData>, own_faction: u32, u: &aa_net::Unit) -> &'static str {
+    let relation = game.map_or("neutral", |g| g.relation(own_faction, unit_faction(game, u)));
+    if relation == "hostile" && is_passive(game, u) { "neutral" } else { relation }
 }
 
 /// How a unit stands to the player (`"friendly"`, `"neutral"`, `"hostile"`): the plate's colours and the target ring's.
@@ -354,6 +370,7 @@ pub fn update_plates(
         let own_plate = w.id == own;
         // name, bar, colours
         let is_character = own_plate || w.unit.is_some_and(|u| matches!(u.kind, UnitKind::Character { .. }));
+        let mut passive = false;
         let (name, fraction, bar, relation, scale, net_pos) = if own_plate {
             let snap = &data.snapshot;
             (spawn.name().to_string(), (snap.hp as f32 / snap.max_hp.max(1) as f32).clamp(0.0, 1.0), true, "friendly", 1.0, None)
@@ -368,6 +385,7 @@ pub fn update_plates(
                 continue;
             }
             let relation = relation_of(game, spawn.character().faction_id, u);
+            passive = is_passive(game, u);
             let faction = unit_faction(game, u);
             if !state.plates.contains_key(&w.id) {
                 debug!("hud: plate {} {:?}: faction {} (unit {}) own {} -> {}, entity {:?}", w.id, name, faction, u.faction_id, spawn.character().faction_id, relation, state.entities.get(&w.id));
@@ -434,7 +452,7 @@ pub fn update_plates(
         // to the plate camera's space: origin in the middle, y up; whole pixels keep the bar crisp
         let x = (screen.x - viewport.x / 2.0).round();
         let y = (viewport.y / 2.0 - screen.y).round();
-        let (bar_color, text_color) = if dead { ((60, 64, 60), (149, 149, 149)) } else { colors(relation) };
+        let (bar_color, text_color) = if dead { ((60, 64, 60), (149, 149, 149)) } else { colors(relation, passive) };
         seen.push(w.id);
 
         // a plate whose entities went away with the last game
@@ -658,7 +676,7 @@ pub fn plugin(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_plate_line, npc_of, plate_line, unit_faction};
+    use super::{colors, combat_relation_of, is_passive, is_plate_line, npc_of, plate_line, unit_faction};
     use aa_net::model::UnitKind;
     use crate::hud::data::{GameData, NpcInfo};
 
@@ -722,5 +740,37 @@ mod tests {
         assert!(is_plate_line("Titletest", "", "Titletest"));
         assert!(!is_plate_line("Autumn's Petal Titletest", "", "Titletest"));
         assert!(!is_plate_line("Titletest", "Autumn's Petal", "Titletest"));
+    }
+
+    #[test]
+    fn aggression_splits_red_from_orange() {
+        let mut game = GameData::default();
+        game.npcs.insert(7701, NpcInfo { name: "Four Fingers Bladeslinger".into(), faction_id: 115, aggression: true, ..Default::default() });
+        game.npcs.insert(10004, NpcInfo { name: "Angry Rat".into(), faction_id: 115, aggression: false, ..Default::default() });
+        let bladeslinger = unit(UnitKind::Npc { template_id: 7701, owner_id: 0 }, 0);
+        let rat = unit(UnitKind::Npc { template_id: 10004, owner_id: 0 }, 0);
+        assert!(!is_passive(Some(&game), &bladeslinger) && is_passive(Some(&game), &rat));
+        // the real capture's rat: name (238, 107, 35), bar (146, 66, 21); the aggressive one takes the red row
+        assert_eq!(colors("hostile", true), ((146, 66, 21), (238, 107, 35)));
+        assert_eq!(colors("hostile", false).0, (154, 39, 39));
+        assert_eq!(colors("friendly", false).0, (70, 126, 31));
+        // a player or a housing unit is never passive
+        assert!(!is_passive(Some(&game), &unit(UnitKind::Character { char_id: 1 }, 0)));
+    }
+
+    #[test]
+    fn combat_relation_is_neutral_only_for_a_passive_hostile() {
+        let mut game = GameData::default();
+        game.npcs.insert(1, NpcInfo { faction_id: 115, aggression: true, ..Default::default() });
+        game.npcs.insert(2, NpcInfo { faction_id: 115, aggression: false, ..Default::default() });
+        // faction 101 (own) hostile to 115, through two root-less factions
+        for f in [101u32, 115] {
+            game.factions.insert(f, String::new());
+        }
+        game.relations.insert((101, 115), 1);
+        let aggressive = unit(UnitKind::Npc { template_id: 1, owner_id: 0 }, 0);
+        let passive = unit(UnitKind::Npc { template_id: 2, owner_id: 0 }, 0);
+        assert_eq!(combat_relation_of(Some(&game), 101, &aggressive), "hostile");
+        assert_eq!(combat_relation_of(Some(&game), 101, &passive), "neutral");
     }
 }

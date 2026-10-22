@@ -106,6 +106,9 @@ pub struct TargetSnap {
     pub faction_name: String,
     /// `"friendly"`, `"neutral"` or `"hostile"` towards the player.
     pub relation: &'static str,
+    /// What `X2Unit:GetCombatRelationshipStr` returns (the target frame's bar row): `relation`, with a passive hostile
+    /// NPC as `"neutral"` (orange); see `plates::combat_relation_of`.
+    pub combat_relation: &'static str,
     pub grade: &'static str,
     pub race: u8,
     pub gender: u8,
@@ -347,6 +350,7 @@ pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj
             detail,
             faction_name: game.and_then(|g| g.factions.get(&faction).cloned()).unwrap_or_default(),
             relation: game.map_or("neutral", |g| g.relation(own_faction, faction)),
+            combat_relation: super::plates::combat_relation_of(game, own_faction, u),
             grade: GameData::grade_name(npc.map_or(1, |n| n.grade)),
             race,
             gender,
@@ -487,6 +491,7 @@ pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua:
                 x.raw_set("npc_type", t.npc_type)?;
                 x.raw_set("faction", t.faction_name.as_str())?;
                 x.raw_set("relation", t.relation)?;
+                x.raw_set("combat_relation", t.combat_relation)?;
                 x.raw_set("grade", t.grade)?;
                 x.raw_set("race", i64::from(t.race))?;
                 x.raw_set("gender", i64::from(t.gender))?;
