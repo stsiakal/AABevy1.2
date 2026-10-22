@@ -245,7 +245,7 @@ local function roadAreas(out, r)
     if index ~= nil and index >= 1 and index <= 9 then
       if r.level == 3 then
         local cr = a.city and a.city == r.zone and cities[a.city]
-        if cr ~= nil and cr[3] > 0 then
+        if cr and cr[3] > 0 then
           local u, v = onRoadImage(3, r.zone, "", (a.x - cr[1]) / cr[3], 1 - (a.y - cr[2]) / cr[4])
           if inside(u, v) then addArea(out, 3, a.city, a, cr, u, v, index) end
         end
@@ -272,7 +272,7 @@ local function roadMarkers(r)
       local u, v
       if r.level == 3 then
         local cr = ic.city and ic.city == r.zone and cities[ic.city]
-        if cr ~= nil and cr[3] > 0 then
+        if cr and cr[3] > 0 then
           u, v = onRoadImage(3, r.zone, "", (ic.x - cr[1]) / cr[3], 1 - (ic.y - cr[2]) / cr[4])
         end
       elseif ic.zone == r.zone then

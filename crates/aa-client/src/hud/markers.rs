@@ -653,6 +653,68 @@ mod tests {
         assert_eq!((coords.raw_get::<f32>(1).unwrap(), coords.raw_get::<f32>(2).unwrap()), (240.0, 0.0), "the grey 1 cell");
     }
 
+    /// A city map shows the icons of that city only: an icon of another city is skipped, not indexed as a boolean.
+    #[test]
+    fn road_map_icon_of_another_city_is_skipped() {
+        let lua = Lua::new();
+        lua.load(
+            r#"
+            HUD = {
+              state = { zone_group = 5, zone_rect = { 11925, 13266, 4810.2446, 2882 }, zone_key_name = "w_solzreed" },
+              map_icons = { { x = 14000, y = 14000, kind = "npc_store_bank", tip = "", zone = 5, city = 3 } },
+              map_icons_version = 1, map_quest_areas = {}, map_quest_areas_version = 1,
+              map_zone_rects = { [5] = { 11925, 13266, 4810.2446, 2882 } },
+              map_city_rects = { [3] = { 13800, 13800, 1000, 1000 } },
+              map_dots = function() end,
+            }
+            X2Map = {}
+            X2 = {}
+            X2Quest = { GetActiveQuestListCount = function() return 0 end }
+            HUD_ROAD_FRAMES = {}
+            locale = { map = { getSymbolText = function() return nil end } }
+            AAUI = { RoadMap = function() return { level = 3, zone = 5 } end }
+            "#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(include_str!("markers.lua")).set_name("@markers.lua").exec().unwrap();
+        let markers: Table = lua.load("return AAUI.RoadMap().markers").eval().unwrap();
+        assert_eq!(markers.raw_len(), 0, "an icon of city 3 is not on the map of city 5");
+    }
+
+    /// The same for a quest area of another city.
+    #[test]
+    fn road_map_area_of_another_city_is_skipped() {
+        let lua = Lua::new();
+        lua.load(
+            r#"
+            HUD = {
+              state = { zone_group = 5, zone_rect = { 11925, 13266, 4810.2446, 2882 }, zone_key_name = "w_solzreed" },
+              map_icons = {}, map_icons_version = 1,
+              map_quest_areas = { { qtype = 269, x = 14000, y = 14000, radius = 30, zone = 5, city = 3 } },
+              map_quest_areas_version = 1,
+              map_zone_rects = { [5] = { 11925, 13266, 4810.2446, 2882 } },
+              map_city_rects = { [3] = { 13800, 13800, 1000, 1000 } },
+              map_dots = function() end,
+            }
+            X2Map = {}
+            X2 = {}
+            X2Quest = {
+              GetActiveQuestListCount = function() return 1 end,
+              GetActiveQuestType = function(_, i) return i == 1 and 269 or nil end,
+            }
+            HUD_ROAD_FRAMES = {}
+            locale = { map = { getSymbolText = function() return nil end } }
+            AAUI = { RoadMap = function() return { level = 3, zone = 5 } end }
+            "#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(include_str!("markers.lua")).set_name("@markers.lua").exec().unwrap();
+        let markers: Table = lua.load("return AAUI.RoadMap().markers").eval().unwrap();
+        assert_eq!(markers.raw_len(), 0, "an area of city 3 is not on the map of city 5");
+    }
+
     /// Only the active quest's progress components get their circles: not its report step, not another quest.
     #[test]
     fn areas_follow_the_active_progress_components() {
