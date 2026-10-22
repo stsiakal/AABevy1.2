@@ -10,7 +10,8 @@
 //!
 //! Overlays are ordinary `game_pak`-format files loaded after the base pak. Later overlays win on
 //! the same normalised name, so an overlay can replace or add individual files without copying
-//! the multi-gigabyte stock pak.
+//! the multi-gigabyte stock pak. Set `AA_PAK_OVERLAYS=off` (or pass `--no-overlays`) to ignore
+//! both the overlay folder and the environment list.
 //!
 //! ```no_run
 //! let pak = aa_pak::Pak::global();
@@ -63,6 +64,7 @@ impl Pak {
     /// The process-wide pak (`AA_PAK` or [`DEFAULT_PAK`]). Overlays come from the `overlays`
     /// folder next to it and from `AA_PAK_OVERLAYS` (`;`-separated), in that order. Panics if the
     /// base pak cannot be opened; a missing or invalid overlay is reported and skipped.
+    /// `AA_PAK_OVERLAYS=off` or `--no-overlays` disables both sources.
     pub fn global() -> &'static Pak {
         static PAK: OnceLock<Pak> = OnceLock::new();
         PAK.get_or_init(|| {
@@ -195,12 +197,18 @@ impl Pak {
 
 /// Overlays configured for the process-wide pak: `overlays/*.pak` next to the base pak (sorted
 /// by file name), then `AA_PAK_OVERLAYS` entries (`;`-separated) last as the highest priority.
+/// `AA_PAK_OVERLAYS=off` (case-insensitive) or `--no-overlays` disables both sources.
 fn global_overlays(base: &str) -> Vec<PathBuf> {
     let env = std::env::var("AA_PAK_OVERLAYS").ok();
-    overlays_for(base, env.as_deref())
+    let no_overlays = std::env::args().any(|a| a == "--no-overlays");
+    overlays_for(base, env.as_deref(), no_overlays)
 }
 
-fn overlays_for(base: &str, env: Option<&str>) -> Vec<PathBuf> {
+fn overlays_for(base: &str, env: Option<&str>, no_overlays: bool) -> Vec<PathBuf> {
+    if no_overlays || env.is_some_and(|v| v.trim().eq_ignore_ascii_case("off")) {
+        tracing::info!("aa-pak: overlays off");
+        return Vec::new();
+    }
     let mut overlays = Vec::new();
     if let Some(dir) = Path::new(base).parent() {
         let dir = dir.join("overlays");
@@ -431,10 +439,28 @@ mod tests {
         let env = format!("{}; {} ;;", z.display(), y.display());
         let base = base.to_str().unwrap();
         assert_eq!(
-            overlays_for(base, Some(&env)),
-            [folder.join("a.PAK"), folder.join("b.pak"), z, y]
+            overlays_for(base, Some(&env), false),
+            [folder.join("a.PAK"), folder.join("b.pak"), z.clone(), y.clone()]
         );
-        assert_eq!(overlays_for(base, None), [folder.join("a.PAK"), folder.join("b.pak")]);
+        assert_eq!(
+            overlays_for(base, None, false),
+            [folder.join("a.PAK"), folder.join("b.pak")]
+        );
+
+        // `off` (any case, surrounding spaces) disables the folder too.
+        assert!(overlays_for(base, Some("off"), false).is_empty());
+        assert!(overlays_for(base, Some(" OFF "), false).is_empty());
+        assert!(overlays_for(base, Some(&env), true).is_empty());
+        assert!(overlays_for(base, None, true).is_empty());
+        // only the exact word is special
+        assert_eq!(
+            overlays_for(base, Some("off.pak"), false),
+            [folder.join("a.PAK"), folder.join("b.pak"), PathBuf::from("off.pak")]
+        );
+        assert_eq!(
+            overlays_for(base, Some(&format!("{env};off")), false),
+            [folder.join("a.PAK"), folder.join("b.pak"), z, y, PathBuf::from("off")]
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

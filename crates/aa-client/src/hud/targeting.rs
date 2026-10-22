@@ -170,3 +170,52 @@ pub fn escape_key(
     }
 }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ingame::virtual_input::{inject, VirtualInput};
+    use bevy::input::InputPlugin;
+
+    /// A scripted `key escape` is a real Escape edge: the binding/input path (`settings::update_input`
+    /// and `ButtonInput<KeyCode>`) sees it, and the open original window closes.
+    #[test]
+    fn a_scripted_escape_closes_the_open_window() -> Result<(), Box<dyn std::error::Error>> {
+        let rt = aa_ui::UiRuntime::new("en_us", 1280.0, 720.0)?;
+        rt.lua
+            .load(
+                r#"
+            testWindow = UIParent:CreateWidget("window", "testEscape", "UIParent")
+            testWindow:SetExtent(200, 100)
+            testWindow:SetCloseOnEscape(true)
+            testWindow:Show(true)
+            hidden = 0
+            testWindow:SetHandler("OnHide", function() hidden = hidden + 1 end)
+            "#,
+            )
+            .set_name("@script_escape_test")
+            .exec()?;
+        let mut app = App::new();
+        app.add_plugins(InputPlugin)
+            .insert_resource(Time::<()>::default())
+            .init_resource::<VirtualInput>()
+            .init_resource::<crate::settings::Actions>()
+            .init_resource::<HudKeyboardFocus>()
+            .init_resource::<HudPointerOverUi>()
+            .init_resource::<super::super::chat::ScriptedKeys>()
+            .init_resource::<Target>()
+            .add_message::<NetCommand>()
+            .insert_non_send(crate::hud::api::HudBridge::default())
+            .insert_non_send(rt)
+            .add_systems(PreUpdate, inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (crate::settings::update_input, escape_key).chain());
+        app.world_mut().resource_mut::<VirtualInput>().tap_name("escape");
+        app.update();
+        let rt = app.world().non_send::<aa_ui::UiRuntime>();
+        let visible: bool = rt.lua.load("return testWindow:IsVisible()").eval()?;
+        let hidden: i64 = rt.lua.load("return hidden").eval()?;
+        assert!(!visible, "Escape closed the window");
+        assert_eq!(hidden, 1, "its OnHide ran once");
+        Ok(())
+    }
+}

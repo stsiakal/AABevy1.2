@@ -26,9 +26,9 @@ use bevy::prelude::*;
 
 use crate::Screen;
 use crate::hud::script_api::{self, HudBridge, ScriptedKeys, ScriptedSession};
-use crate::ingame::DevOptions;
 use crate::ingame::camera::OrbitCamera;
 use crate::ingame::player::{LocalPlayer, Mover};
+use crate::ingame::virtual_input::{self, VirtualInput};
 use parse::{Cmd, Cond, CondKind, Line, Spec};
 
 /// A pick the script made, waiting for the system that consumes the mouse's pick, and the result of the last talk.
@@ -109,7 +109,7 @@ enum Active {
     WaitFor { cond: Cond, deadline: f32 },
     Target { obj_id: u32, deadline: f32 },
     Interact { npc: u32, deadline: f32 },
-    Cast { skill: u32, deadline: f32 },
+    Cast { skill: u32, deadline: f32, turned: bool },
     Fight { skill: Option<u32>, slot: usize, target: u32, next: f32, deadline: f32, casts: u32, duels: usize },
     Loot { deadline: f32, sent: bool, must: bool },
     Shot { path: String, deadline: f32 },
@@ -143,6 +143,8 @@ struct Runner {
     disconnected: Option<String>,
     quitting: bool,
     last_cast: Option<(u32, u8, u32)>,
+    /// The last own `SkillFired` or `PlotEvent`: an instant skill (no cast time) never sends `SkillStarted`.
+    last_fired: Option<u32>,
     loot_seen: bool,
     quest_started: Vec<u32>,
     target_hp0: BTreeMap<u32, i32>,
@@ -173,6 +175,7 @@ impl Runner {
             disconnected: None,
             quitting: false,
             last_cast: None,
+            last_fired: None,
             loot_seen: false,
             quest_started: Vec::new(),
             target_hp0: BTreeMap::new(),
@@ -270,7 +273,6 @@ struct Ctx<'w, 's> {
     skills: Res<'w, aa_net::state::Skills>,
     bridge: NonSend<'w, HudBridge>,
     rt: Option<NonSend<'w, aa_ui::UiRuntime>>,
-    dev: ResMut<'w, DevOptions>,
     keys: ResMut<'w, ScriptedKeys>,
     session: ResMut<'w, ScriptedSession>,
     pick: ResMut<'w, ScriptPick>,
@@ -285,6 +287,7 @@ struct Ctx<'w, 's> {
     houses: Res<'w, aa_net::Houses>,
     housing_areas: Option<Res<'w, crate::ingame::houses::HousingAreas>>,
     virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
+    ui_pointer: Option<ResMut<'w, aa_ui::UiVirtualPointer>>,
     terrain: Option<Res<'w, aa_world::TerrainQuery>>,
     collision: Option<Res<'w, aa_world::WorldCollision>>,
     water: Option<Res<'w, aa_world::WaterQuery>>,
@@ -440,6 +443,31 @@ fn say(r: &Runner, text: &str) {
     println!("SCRIPT [{:6.1}s] line {}: {text}", r.t0.elapsed().as_secs_f32(), r.current_no());
 }
 
+/// The original action bar's key for slot N (1 based: `1` ... `9`, `0` for the tenth).
+fn action_slot_key(slot: usize) -> KeyCode {
+    match slot % 10 {
+        1 => KeyCode::Digit1,
+        2 => KeyCode::Digit2,
+        3 => KeyCode::Digit3,
+        4 => KeyCode::Digit4,
+        5 => KeyCode::Digit5,
+        6 => KeyCode::Digit6,
+        7 => KeyCode::Digit7,
+        8 => KeyCode::Digit8,
+        9 => KeyCode::Digit9,
+        _ => KeyCode::Digit0,
+    }
+}
+
+/// `key NAME` through the real bindings, including the script's `slotN` (action bar slot N).
+fn tap_key(input: &mut VirtualInput, name: &str) -> bool {
+    if let Some(slot) = name.strip_prefix("slot").and_then(|n| n.parse::<usize>().ok()) {
+        input.tap(action_slot_key(slot));
+        return true;
+    }
+    input.tap_name(name)
+}
+
 #[allow(clippy::too_many_lines)]
 fn run_script(mut r: ResMut<Runner>, mut ctx: Ctx, mut events: MessageReader<NetEvent>) {
     let now = ctx.time.elapsed_secs();
@@ -464,6 +492,9 @@ fn run_script(mut r: ResMut<Runner>, mut ctx: Ctx, mut events: MessageReader<Net
             Event::ServerError { code } => *r.server_errors.entry(*code).or_default() += 1,
             Event::Disconnected { message } => r.disconnected = Some(message.clone()),
             Event::SkillStarted(s) if s.caster.obj_id == own => r.last_cast = Some((s.skill_id, s.result, s.cast_ms)),
+            Event::SkillFired(s) if s.caster.obj_id == own => r.last_fired = Some(s.skill_id),
+            // a plot-only skill (Triple Slash, Charge ...) answers with its plot steps, not with SkillStarted / SkillFired
+            Event::PlotEvent(p) if p.caster_obj_id == own => r.last_fired = Some(p.skill_id),
             Event::LootItemTook { .. } | Event::LootBag { .. } | Event::LootItemFailed { .. } => r.loot_seen = true,
             Event::QuestStarted(q) => r.quest_started.push(q.template_id),
             _ => {}
@@ -795,12 +826,12 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             if let Some((hp, _)) = c.unit_hp(target) {
                 r.target_hp0.entry(target).or_insert(hp);
             }
-            r.last_cast = None;
+            (r.last_cast, r.last_fired) = (None, None);
             c.net.write(NetCommand(Command::UseSkill { skill_id: *skill, target_obj_id: target }));
-            Some(Active::Cast { skill: *skill, deadline: now + 5.0 })
+            Some(Active::Cast { skill: *skill, deadline: now + 5.0, turned: false })
         }
         Cmd::CastSlot(n) => {
-            c.keys.push_now(&format!("slot{n}"), false);
+            c.virtual_input.tap(action_slot_key(*n));
             Some(Active::Wait { until: now + 1.0 })
         }
         Cmd::Fight { skill, slot, spec, secs } => {
@@ -835,9 +866,9 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                 return None;
             };
             say(r, &format!("doodad #{} (template {}) {:.1} m away: skill {skill}", f.obj_id, f.template, c.me().map_or(0.0, |m| m.distance(f.pos))));
-            r.last_cast = None;
+            (r.last_cast, r.last_fired) = (None, None);
             c.net.write(NetCommand(Command::UseDoodadSkill { skill_id: *skill, doodad_obj_id: f.obj_id }));
-            Some(Active::Cast { skill: *skill, deadline: now + 5.0 })
+            Some(Active::Cast { skill: *skill, deadline: now + 5.0, turned: false })
         }
         Cmd::Accept(q) => {
             let facts = script_api::facts(&c.bridge);
@@ -876,19 +907,41 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Wait { until: now + 0.5 })
         }
         Cmd::Key(k) => {
-            let escape = matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc");
-            // while aiming, Escape belongs to the placement (retail opens no Menu); with the tax window open it
-            // belongs to the original Lua window (Cancel), so only then does it reach the HUD
-            let placing_escape = escape && c.placement.session.as_ref().is_some_and(|s| !s.window_open);
-            if placing_escape {
-                c.virtual_input.queue_key_name(k);
-            } else {
-                c.keys.push_now(k, false);
+            if !tap_key(&mut c.virtual_input, k) {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
             }
             Some(Active::Wait { until: now + 0.3 })
         }
+        Cmd::KeyDown(k) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.key_down(key);
+            Some(Active::Wait { until: now + 0.1 })
+        }
+        Cmd::KeyUp(k) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.key_up(key);
+            Some(Active::Wait { until: now + 0.1 })
+        }
+        Cmd::Hold(k, secs) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.hold(key, *secs);
+            Some(Active::Wait { until: now + 0.1 })
+        }
         Cmd::Cursor(x, y) => {
             c.virtual_input.set_cursor(*x, *y);
+            if let Some(pointer) = c.ui_pointer.as_mut() {
+                pointer.pos = None;
+            }
             say(r, &format!("virtual cursor {x} {y}"));
             Some(Active::Wait { until: now + 0.2 })
         }
@@ -1033,18 +1086,18 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
         Active::Wait { until } => (now < until).then_some(Active::Wait { until }),
         Active::Walk { goal, radius, start, deadline, mut best, mut best_t } => {
             let Some(me) = c.me() else {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 r.fail("the player is gone".into());
                 return None;
             };
             let Some(to) = goal_pos(c, &goal) else {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 r.fail("the unit walked to is gone".into());
                 return None;
             };
             let dist = me.truncate().distance(to);
             if dist <= radius {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 say(r, &format!("arrived at ({:.1}, {:.1}) after {:.1} s", me.x, me.y, now - start));
                 return None;
             }
@@ -1053,7 +1106,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
                 best_t = now;
             }
             if now > deadline || now - best_t > 8.0 {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 let why = if now > deadline { "timed out" } else { "stuck (no progress for 8 s)" };
                 r.fail(format!("walk {why} at ({:.1}, {:.1}, {:.1}), {dist:.1} m from ({:.1}, {:.1})", me.x, me.y, me.z, to.x, to.y));
                 return None;
@@ -1064,7 +1117,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
             for mut o in &mut c.cameras {
                 o.yaw = yaw;
             }
-            c.dev.script_keys = "W".into();
+            c.virtual_input.key_down(KeyCode::KeyW);
             Some(Active::Walk { goal, radius, start, deadline, best, best_t })
         }
         Active::Await { event, deadline, must } => {
@@ -1126,8 +1179,14 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
             }
             Some(Active::Interact { npc, deadline })
         }
-        Active::Cast { skill, deadline } => {
+        Active::Cast { skill, deadline, turned } => {
             if let Some((id, result, cast_ms)) = r.last_cast {
+                // not facing the target: the combat code turns the player and asks once more, as the real client does
+                if result == aa_net::skill::result::OUTOF_ANGLE && !turned {
+                    say(r, &format!("skill {id}: out of angle, the client turns and asks again"));
+                    r.last_cast = None;
+                    return Some(Active::Cast { skill, deadline, turned: true });
+                }
                 if result != 0 {
                     r.fail(format!("the server refused skill {id}: result {result}"));
                     return None;
@@ -1135,11 +1194,15 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
                 say(r, &format!("skill {skill} started (cast {cast_ms} ms)"));
                 return Some(Active::Wait { until: now + cast_ms as f32 / 1000.0 + 0.6 });
             }
+            if r.last_fired == Some(skill) {
+                say(r, &format!("skill {skill} fired (instant or plot)"));
+                return Some(Active::Wait { until: now + 0.6 });
+            }
             if now > deadline {
-                r.fail(format!("skill {skill}: no SkillStarted from the server in 5 s"));
+                r.fail(format!("skill {skill}: no SkillStarted, SkillFired or PlotEvent from the server in 5 s"));
                 return None;
             }
-            Some(Active::Cast { skill, deadline })
+            Some(Active::Cast { skill, deadline, turned })
         }
         Active::Fight { skill, slot, target, mut next, deadline, mut casts, duels } => {
             let dead = c.units.get(target).is_none_or(|u| u.dead);
@@ -1162,7 +1225,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
                     Some(s) => {
                         c.net.write(NetCommand(Command::UseSkill { skill_id: s, target_obj_id: target }));
                     }
-                    None => c.keys.push_now(&format!("slot{slot}"), false),
+                    None => c.virtual_input.tap(action_slot_key(slot)),
                 }
                 casts += 1;
                 next = now + 1.5;
@@ -1173,7 +1236,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
             let facts = script_api::facts(&c.bridge);
             if !sent {
                 if facts.loot_nearest.is_some() {
-                    c.keys.push_now("f", false);
+                    c.virtual_input.tap(KeyCode::KeyF);
                     return Some(Active::Loot { deadline: now + 6.0, sent: true, must });
                 }
                 if now > deadline {

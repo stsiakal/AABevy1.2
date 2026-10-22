@@ -60,7 +60,7 @@ Distance is from the player; `hostile` / `friendly` use the nameplate relation.
 | `face DEG` | heading in degrees (0 north, counter-clockwise) |
 | `target SPEC` | `CSChangeTarget`, waits for the server's `TargetChanged` |
 | `click SPEC` | the left click: the scripted pick goes through `hud::targeting::click_target` |
-| `cast SKILL [SPEC]` | `CSStartSkill` on the spec (default: current target, else self); waits for `SkillStarted`, fails when refused; `cast slot N` presses action bar slot N |
+| `cast SKILL [SPEC]` | `CSStartSkill` on the spec (default: current target, else self); waits for `SkillStarted` (a skill with a cast time), `SkillFired` (an instant one) or the first own `PlotEvent` (a plot-only one: Triple Slash, Charge), fails when refused; an `OUTOF_ANGLE` refusal waits once more while the combat code turns the player and asks again; `cast slot N` presses action bar slot N |
 | `interact [SPEC]` | the right click on an NPC (default `friendly`): the scripted pick goes through `hud::dialog::talk_input` (reach 6 m, hostile or dead NPCs are refused as for the mouse); waits until the talk began |
 | `interact doodad SPEC SKILL` | `CSStartSkill` with a doodad target (the client has no doodad click yet) |
 | `plant ITEM DX DY [YAW]` | plant an `item_spawn_doodads` item `DX`/`DY` metres from the player (same use range, ground and footprint checks as the ghost; `YAW` in radians, default the player's facing), then `CSCreateDoodad` and waits for `DoodadsCreated` (alias of aa-net `DoodadsSpawned`) |
@@ -71,10 +71,13 @@ Distance is from the player; `hostile` / `friendly` use the nameplate relation.
 | `loot [SPEC]` | waits until a corpse with loot is in reach, presses F (loot all), waits for the server's answer |
 | `chat TEXT`, `gm CMD`, `tp X Y Z` | say-chat; a GM command (`/CMD`); `/move X Y Z` |
 | `open ACTION` | a key binding action (`toggle_bag`, `toggle_character`, ...) |
-| `key NAME`, `close`, `type TEXT` | a scripted key (`enter`, `escape`, `tab`, `slotN`, `f`, `g`, ...), Escape, typed text; `key`/`close` also queue the key for placement |
-| `cursor X Y` | the virtual pointer at window pixels, or a fraction of the window when both values are 0..=1 (`cursor 0.5 0.6`); placement uses it instead of the OS cursor, including `--offscreen-shot` |
-| `click left` / `click right` | a virtual mouse click for placement (confirm / cancel); the OS mouse is untouched |
-| `wheel STEPS [alt\|shift\|ctrl]` | a virtual wheel notch for placement rotation (same mapping as the real wheel; `ctrl` leaves it to the camera) |
+| `key NAME` (`tap`), `close` | press and release a real key through the original `hotkey.g` bindings (`enter`, `escape`, `tab`, `slotN`, `f`, `g`, `number1`, ...); `close` is `key escape` |
+| `keydown NAME` / `keyup NAME` (`press` / `release`) | hold and release a key through the same bindings, for keys the script keeps down across commands |
+| `hold NAME S` | press the key and release it after S seconds (`hold w 3` walks forward for 3 s) |
+| `type TEXT` | typed text (the chat input), not key bindings |
+| `cursor X Y` | the virtual pointer at window pixels, or a fraction of the window when both values are 0..=1 (`cursor 0.5 0.6`); the client's window cursor moves there too, so HUD clicks, placement and the camera ray use it, including `--offscreen-shot` |
+| `click left` / `click right` | a real left/right mouse button press and release at the virtual cursor (placement confirm / cancel, HUD, right-click on a house); the OS mouse is untouched |
+| `wheel STEPS [alt\|shift\|ctrl]` | a real wheel event with those modifiers held for its frame (placement rotation, camera zoom, chat scroll; `ctrl` leaves it to the camera) |
 | `uiclick X Y`, `uirclick X Y`, `uihover X Y` | `--hud-click` at a physical pixel |
 | `lua CODE` | run Lua in the UI state (an error fails) |
 | `await EVENT [S]`, `tryawait EVENT [S]` | wait for a client event (default 60 s / 10 s); `await` fails on timeout. EVENT is the `aa_net::Event` variant name; nested ones as `Interaction.SkillList`; matched by prefix, case-insensitive. Events that arrive before the `await` stay queued |
@@ -95,11 +98,29 @@ prompt, `lua X2Unit:ChallengeTargetToDuel()` challenges the target.
 ## How the scripted click reaches the game
 
 `ScriptPick` (in `script/mod.rs`) is a resource the pick systems read before they ray-cast the cursor:
-`click_target` takes `take_left()` and sends `CSChangeTarget`; `talk_input` takes `take_right()` and goes on exactly
+`click SPEC` takes `take_left()` and sends `CSChangeTarget`; `interact SPEC` takes `take_right()` and goes on exactly
 as after a ray hit (range, hostile, dead checks, `CSInteractNPC`, the quest dialog). `talk_input` reports the result
-(`ScriptPick::talked`) so `interact` knows the talk began. The runner holds `W` through `DevOptions::script_keys`
-(the same hook as `--walk`) and turns the camera (`OrbitCamera::yaw`), so the real movement code, collision and the
-movement packets run.
+(`ScriptPick::talked`) so `interact` knows the talk began. Those are semantic picks, not mouse events.
+
+## Scripted keys, clicks and the wheel are real input
+
+`key`, `keydown`, `keyup`, `hold`, `click left|right`, `cursor` and `wheel` write the `VirtualInput` resource
+(`crates/aa-client/src/ingame/virtual_input.rs`). Its `inject` system runs in `PreUpdate` **before**
+`bevy::input::InputSystems`: it writes the same `KeyboardInput` / `MouseButtonInput` / `MouseWheel` messages winit
+would and sets the primary window's cursor. Bevy updates `ButtonInput<KeyCode>`, `ButtonInput<MouseButton>` and
+`AccumulatedMouseScroll` from them in the same frame, `settings::update_input` resolves the original `hotkey.g`
+bindings into `Actions`, and everything downstream sees the input exactly like a physical device:
+
+* the on-foot controller (`moveforward`, `jump`, Shift, the mouse buttons) and the camera;
+* the mount (`drive_mount`) and vehicle drivers, which read the same `Actions` and `ButtonInput` state;
+* the dynamic action bar (`do_interaction_1..4`, F/G/H/J) and the action-bar slots (`1` ... `0`);
+* Escape (`targeting::escape_key`, the placement), `Tab`, the window hotkeys and the HUD's own keyboard/mouse input.
+
+`key f` is a tap: the press and the release are in the same injected frame, so `just_pressed` fires once.
+`hold w 3` presses now and releases three seconds later; `keydown` / `keyup` leave the timing to the script. A
+scripted `walk` is a thin wrapper over this: it holds `W` (`VirtualInput::key_down`) while it turns the camera
+(`OrbitCamera::yaw`), so the real movement, collision and movement packets run, and releases it when it arrives or
+fails. `clear_edges` (a new placement) releases any keys the script still held.
 
 ## Known limits
 
