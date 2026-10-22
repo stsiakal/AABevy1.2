@@ -5,7 +5,7 @@
 use aa_net::model::{Movement, UnitKind};
 use aa_net::slave_control::SlaveCommand;
 use aa_net::state::{Player, Slaves, Units};
-use aa_net::{Command, NetCommand};
+use aa_net::{Command, Event, NetCommand, NetEvent};
 use aa_world::{TerrainQuery, WorldCollision};
 use bevy::prelude::*;
 
@@ -77,10 +77,10 @@ pub(super) fn nearest_cannon(player: Vec3, cannons: impl IntoIterator<Item = (u1
         .map(|(tl, _)| tl)
 }
 
-/// Binds the newly summoned own slave once it is visible and sends `CSDiscardSlave` when the
-/// player presses the primary interaction key while driving. `CSBindSlave`/`CSDiscardSlave` are the
-/// native seat controls; the original client has no separate Lua "board" button (the target popup
-/// only offers rename), so the vehicle item's own client bind is the trigger.
+/// Seat controls. A land vehicle (the Farm Wagon) is boarded only through the target interaction
+/// (`FUN_393be280 -> FUN_39362f50`, `docs/research/re-wagons.md` 3): the interaction key with the
+/// slave targeted, after [`board_refusal`]; nothing binds after `SCSlaveCreated`. A ship is boarded
+/// with the key while near the own summoned hull. The key again sends `CSDiscardSlave`.
 #[allow(clippy::too_many_arguments)]
 pub fn vehicle_seat(
     time: Res<Time>,
@@ -92,7 +92,9 @@ pub fn vehicle_seat(
     views: Option<Res<Views>>,
     visuals: Query<&RemoteUnit>,
     mover: Query<&super::player::Mover, With<super::player::LocalPlayer>>,
+    target: Option<Res<aa_net::state::Target>>,
     mut out: MessageWriter<NetCommand>,
+    mut refused: MessageWriter<NetEvent>,
     mut handled: Local<Option<(u16, u32)>>,
     mut last: Local<f32>,
 ) {
@@ -148,7 +150,39 @@ pub fn vehicle_seat(
             return;
         }
     }
-    if actions.just_pressed("do_interaction_1", 0) { debug!("vehicle_seat: F pressed, attached {:?}, own slave {:?}", attached, slaves.as_deref().and_then(|s| s.own.as_ref()).map(|o| (o.obj_id, o.tl_id))); }
+    // Land vehicle: the interaction key with the slave as the target (the original's only bind path).
+    if actions.just_pressed("do_interaction_1", 0)
+        && now - *last > 0.5
+        && let Some(db) = db.as_deref()
+        && let Some(slave) = target.as_deref().and_then(|t| t.unit(&units))
+        && let UnitKind::Slave { tl_id, summoner_id, .. } = slave.kind
+        && db.is_land_vehicle(slave.model_id)
+    {
+        let me = mover.single().map_or_else(|_| Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z), |m| m.pos);
+        let at = views
+            .as_deref()
+            .and_then(|v| v.unit_entity(slave.obj_id))
+            .and_then(|e| visuals.get(e).ok())
+            .map_or(Vec3::new(slave.pos.x, slave.pos.y, slave.pos.z), |v| v.pos);
+        let char_id = match spawn.unit.kind {
+            UnitKind::Character { char_id } => char_id,
+            _ => 0,
+        };
+        let occupied = units.by_id.values().any(|u| u.attached_to.is_some_and(|a| a.obj_id == slave.obj_id));
+        let check = BoardCheck { player_dead: spawn.unit.dead, player_attached: attached.is_some(), slave_dead: slave.dead, occupied, distance: me.distance(at), owner: summoner_id == char_id };
+        match board_refusal(&check) {
+            None => {
+                out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
+            }
+            Some(refusal) => {
+                debug!("vehicle_seat: boarding slave {tl_id} refused: {refusal:?}");
+                refused.write(NetEvent(Event::ServerError { code: refusal.error_code() }));
+            }
+        }
+        *last = now;
+        return;
+    }
+    // A ship: the key binds the own summoned hull near the player (a ship is not a target interaction here).
     let Some(own) = slaves.as_deref().and_then(|s| s.own.as_ref()) else { return };
     let Some(unit) = units.get(own.obj_id) else { return };
     let UnitKind::Slave { tl_id, .. } = unit.kind else { return };
@@ -156,12 +190,9 @@ pub fn vehicle_seat(
         return;
     }
     let Some(db) = db.as_deref() else { return };
-    let land = db.is_land_vehicle(unit.model_id);
-    let ship = db.is_ship(unit.model_id);
-    if !land && !ship {
+    if !db.is_ship(unit.model_id) {
         return;
     }
-    let range = if ship { 60.0 } else { 30.0 };
     // `Units` keeps the announcement/spawn pose; the displayed hull is interpolated by
     // `move_units` (`Views` -> `RemoteUnit`), so use that for the interaction range.
     let here = views
@@ -169,26 +200,84 @@ pub fn vehicle_seat(
         .and_then(|v| v.unit_entity(own.obj_id))
         .and_then(|e| visuals.get(e).ok())
         .map_or(unit.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
-    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= range;
+    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= 60.0;
     if !near {
         return;
     }
-    let manual = actions.just_pressed("do_interaction_1", 0);
-    if ship && actions.just_pressed("do_interaction_2", 0) {
+    if actions.just_pressed("do_interaction_2", 0) {
         // Unsummon the visible ship from the dock (the native destroy/recall slot).
         out.write(NetCommand(Command::Slave(SlaveCommand::Dismiss { tl_id })));
         *handled = Some((tl_id, own.obj_id));
         *last = now;
         return;
     }
-    // Land vehicles keep the one-shot auto-board the item's own client bind triggers. A ship is
-    // boarded with the interaction key: auto-boarding would pull a player who only stands on deck
-    // off it into the helm seat.
     let unbound = *handled != Some((tl_id, own.obj_id));
-    if (land && unbound) || (manual && (unbound || now - *last > 0.5)) {
+    if actions.just_pressed("do_interaction_1", 0) && (unbound || now - *last > 0.5) {
         out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
         *handled = Some((tl_id, own.obj_id));
         *last = now;
+    }
+}
+
+/// How far the player may stand from a slave and still board it (metres). The original's squared
+/// range `DAT_39ac79fc` is not in the dump (open question in `re-wagons.md`); the interaction range
+/// of the other units is used until it is captured.
+pub(super) const BOARD_RANGE: f32 = 10.0;
+
+/// What the boarding precheck looks at (`FUN_39346290`).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BoardCheck {
+    pub player_dead: bool,
+    pub player_attached: bool,
+    pub slave_dead: bool,
+    /// Somebody already sits in the slave's seat.
+    pub occupied: bool,
+    pub distance: f32,
+    /// The player summoned the slave.
+    pub owner: bool,
+}
+
+/// Why the original refuses `CSBindSlave` before sending it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BoardRefusal {
+    PlayerDead,
+    SlaveDead,
+    AlreadyBound,
+    TooFar,
+    Occupied,
+    NotOwner,
+}
+
+impl BoardRefusal {
+    /// The `ErrorMessageType` whose text the original prints (`hud/error_names.txt`).
+    pub(super) fn error_code(self) -> i16 {
+        match self {
+            Self::PlayerDead => 332,  // CANT_DO_WHILE_YOU_DEAD
+            Self::SlaveDead => 324,   // SLAVE_CANNOT_BIND_WHILE_IS_DEAD
+            Self::AlreadyBound => 19, // precheck code 0x13
+            Self::TooFar => 154,      // TOO_FAR_AWAY (0x9a)
+            Self::Occupied => 97,     // SLAVE_ALREADY_HAS_MASTER
+            Self::NotOwner => 96,     // SLAVE_CANNOT_BIND
+        }
+    }
+}
+
+/// The original's boarding prechecks, in its order (dead, busy/already bound, range, occupied, owner).
+pub(super) fn board_refusal(c: &BoardCheck) -> Option<BoardRefusal> {
+    if c.slave_dead {
+        Some(BoardRefusal::SlaveDead)
+    } else if c.player_dead {
+        Some(BoardRefusal::PlayerDead)
+    } else if c.player_attached {
+        Some(BoardRefusal::AlreadyBound)
+    } else if c.distance > BOARD_RANGE {
+        Some(BoardRefusal::TooFar)
+    } else if c.occupied {
+        Some(BoardRefusal::Occupied)
+    } else if !c.owner {
+        Some(BoardRefusal::NotOwner)
+    } else {
+        None
     }
 }
 
@@ -379,22 +468,22 @@ mod flow_tests {
         PlayerSpawn { obj_id: 100, state, unit: unit(100, UnitKind::Character { char_id: 47 }) }
     }
 
-    #[test]
-    fn own_visible_slave_is_bound_once() {
+    /// The Farm Wagon (obj 500, tl 7) summoned by character 47; `targeted` selects it.
+    fn wagon_app(targeted: bool) -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .insert_resource(Player { spawn: Some(spawn()) })
             .insert_resource(crate::settings::Actions::default())
             .add_message::<NetEvent>()
             .add_message::<NetCommand>()
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs(1)))
             .add_systems(Update, vehicle_seat);
         let mut units = Units::default();
         let mut slave = unit(500, UnitKind::Slave { id: 9, tl_id: 7, template_id: 60, summoner_id: 47 });
         slave.model_id = 1008; // tractor (VehicleModel)
         units.by_id.insert(500, slave);
         app.insert_resource(units);
-        let db = Db::open().expect("the server database");
-        app.insert_resource(db);
+        app.insert_resource(Db::open().expect("the server database"));
         let mut slaves = Slaves::default();
         slaves.apply(&Event::PlayerSpawn(Box::new(spawn())));
         slaves.apply(&Event::Slave(SlaveEvent::Created(SlaveCreated {
@@ -406,15 +495,77 @@ mod flow_tests {
             creator_name: "Tractor".into(),
         })));
         app.insert_resource(slaves);
-        let drain = |app: &mut App| app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
-        app.update();
-        assert!(matches!(drain(&mut app).as_slice(), [Command::Slave(SlaveCommand::Bind { tl_id: 7 })]));
-        app.update();
-        assert!(drain(&mut app).is_empty(), "the same visible slave is not re-bound every frame");
-        // A seated player is not offered a second bind.
-        app.world_mut().resource_mut::<Player>().spawn.as_mut().unwrap().unit.attached_to = Some(Attachment { obj_id: 500, point: 1 });
-        app.update();
-        assert!(drain(&mut app).is_empty());
+        let mut target = aa_net::state::Target::default();
+        target.obj_id = targeted.then_some(500);
+        app.insert_resource(target);
+        for _ in 0..3 {
+            app.update();
+        }
+        app
+    }
+
+    fn errors(app: &mut App) -> Vec<i16> {
+        app.world_mut()
+            .resource_mut::<Messages<NetEvent>>()
+            .drain()
+            .filter_map(|e| if let Event::ServerError { code } = e.0 { Some(code) } else { None })
+            .collect()
+    }
+
+    #[test]
+    fn a_summoned_land_vehicle_is_never_bound_without_the_interaction() {
+        let mut app = wagon_app(true);
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!(sent(&mut app).is_empty(), "SCSlaveCreated and proximity bind nothing");
+        // not targeted: the key does nothing either
+        let mut app = wagon_app(false);
+        assert!(press(&mut app).is_empty());
+    }
+
+    #[test]
+    fn the_interaction_key_on_the_targeted_wagon_binds_after_the_prechecks() {
+        let mut app = wagon_app(true);
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Bind { tl_id: 7 })]));
+        assert!(errors(&mut app).is_empty());
+        // seated already: refused (0x13), nothing sent
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Player>().spawn.as_mut().unwrap().unit.attached_to = Some(Attachment { obj_id: 999, point: 1 });
+        assert!(!press(&mut app).iter().any(|c| matches!(c, Command::Slave(SlaveCommand::Bind { .. }))));
+        // dead wagon
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().dead = true;
+        assert!(press(&mut app).is_empty());
+        assert_eq!(errors(&mut app), vec![324]);
+        // somebody else's wagon
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().kind = UnitKind::Slave { id: 9, tl_id: 7, template_id: 60, summoner_id: 48 };
+        assert!(press(&mut app).is_empty());
+        assert_eq!(errors(&mut app), vec![96]);
+        // too far
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(50.0, 0.0, 0.0);
+        assert!(press(&mut app).is_empty());
+        assert_eq!(errors(&mut app), vec![154]);
+        // seat taken
+        let mut app = wagon_app(true);
+        let mut rider = unit(700, UnitKind::Character { char_id: 5 });
+        rider.attached_to = Some(Attachment { obj_id: 500, point: 1 });
+        app.world_mut().resource_mut::<Units>().by_id.insert(700, rider);
+        assert!(press(&mut app).is_empty());
+        assert_eq!(errors(&mut app), vec![97]);
+    }
+
+    #[test]
+    fn board_refusals_follow_the_originals_order() {
+        let ok = BoardCheck { player_dead: false, player_attached: false, slave_dead: false, occupied: false, distance: 3.0, owner: true };
+        assert_eq!(board_refusal(&ok), None);
+        assert_eq!(board_refusal(&BoardCheck { slave_dead: true, player_dead: true, ..ok }), Some(BoardRefusal::SlaveDead));
+        assert_eq!(board_refusal(&BoardCheck { player_dead: true, ..ok }), Some(BoardRefusal::PlayerDead));
+        assert_eq!(board_refusal(&BoardCheck { distance: BOARD_RANGE + 0.1, owner: false, ..ok }), Some(BoardRefusal::TooFar));
+        assert_eq!(board_refusal(&BoardCheck { occupied: true, owner: false, ..ok }), Some(BoardRefusal::Occupied));
+        assert_eq!(board_refusal(&BoardCheck { owner: false, ..ok }), Some(BoardRefusal::NotOwner));
     }
 
     /// The shared deck: the owned ship (obj 500, tl 7, template 22) and a cannon child (obj 600, tl 8, template 10).
