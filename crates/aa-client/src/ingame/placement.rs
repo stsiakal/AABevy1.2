@@ -95,6 +95,9 @@ pub struct Plantable {
     /// The template's phases include a `DoodadFuncWaterVolume`: it must be placed on water.
     pub requires_water: bool,
     pub grounding: Grounding,
+    /// A house or farm design's model is a prefab of several brushes (wall, roof, floor and their decorations): the
+    /// pieces of the finished building, each at its place. Empty for a doodad and for a single-model design.
+    pub parts: Vec<super::data::ShipPart>,
     /// A design item (`item_housings`): the placement is a house plot, not a doodad.
     pub house: Option<HouseDesign>,
 }
@@ -136,6 +139,11 @@ pub struct Catalog {
     area_groups: HashMap<u32, u32>,
     /// `housing_groups.id` -> the categories its `housing_group_categories` rows allow.
     group_categories: HashMap<u32, HashSet<u32>>,
+}
+
+/// The ground-point offset of a housing design: none (see the design loader for why `housings.auto_z_offset_*` is left out).
+fn house_grounding(_auto_z: bool, _offset: Vec3) -> Grounding {
+    Grounding::default()
 }
 
 impl Catalog {
@@ -197,6 +205,7 @@ impl Catalog {
                     footprint: radius,
                     requires_water: water,
                     grounding: Grounding::default(),
+                    parts: Vec::new(),
                     house: None,
                 });
             }
@@ -252,7 +261,12 @@ impl Catalog {
                     model: db.and_then(|db| db.actor_model_file(model_id)),
                     footprint: garden,
                     requires_water: false,
-                    grounding: Grounding { auto_z, offset: Vec3::new(ox, oy, oz) },
+                    // a house's `auto_z_offset` (z +1 m on almost every design) is NOT lifted into the spot: the design's model
+                    // origin is its ground contact (floor brush at z 0, the stone base meets the ground; the owner's retail
+                    // capture shows it standing on the ground) and the server stores the sent z for the finished house, so a
+                    // +1 m spot floated the ghost and would raise the house
+                    grounding: house_grounding(auto_z, Vec3::new(ox, oy, oz)),
+                    parts: db.map(|db| db.housing_parts(model_id)).unwrap_or_default(),
                     house: Some(house),
                 });
             }
@@ -282,6 +296,12 @@ impl Catalog {
             }
         }
         Some(catalog)
+    }
+
+    /// The placement of a housing design (its item's template), for the offline renders and tests.
+    #[allow(dead_code)]
+    pub fn plantable_for_design(&self, design: u32) -> Option<&Plantable> {
+        self.by_item.values().find(|p| p.house.as_ref().is_some_and(|h| h.design == design))
     }
 
     pub fn plantable(&self, item: u32) -> Option<&Plantable> {
@@ -1032,13 +1052,10 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
     if let Some(root) = session.root {
         if session.ghost_invalid != want_invalid
             && let Some(old) = session.ghost_model.take()
-            && let Some(path) = session.plant.model.clone()
         {
             let options = ghost_options(want_invalid);
-            if let Ok(loaded) = cry.load_model(&path, &options) {
+            if let Some((model, _)) = spawn_ghost_model(commands, cry, &session.plant, &options, root) {
                 commands.entity(old).despawn();
-                let model = spawn_loaded(commands, &path, &loaded, &options);
-                commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
                 session.ghost_model = Some(model);
                 session.ghost_invalid = want_invalid;
             } else {
@@ -1050,31 +1067,53 @@ fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Sess
     if session.model_failed {
         return None;
     }
-    let Some(path) = session.plant.model.clone() else {
+    if session.plant.model.is_none() && session.plant.parts.is_empty() {
         session.model_failed = true;
         warn!("planting: doodad {} has no model to ghost", session.plant.doodad);
         return None;
-    };
-    let options = ghost_options(want_invalid);
-    let loaded = match cry.load_model(&path, &options) {
-        Ok(loaded) => loaded,
-        Err(e) => {
-            session.model_failed = true;
-            warn!("planting: cannot load ghost model {path}: {e}");
-            return None;
-        }
-    };
+    }
     let root = commands
         .spawn((Name::new("planting ghost"), Ghost, Transform::IDENTITY, Visibility::Visible))
         .id();
-    let model = spawn_loaded(commands, &path, &loaded, &options);
-    commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+    let options = ghost_options(want_invalid);
+    let Some((model, parts)) = spawn_ghost_model(commands, cry, &session.plant, &options, root) else {
+        commands.entity(root).despawn();
+        session.model_failed = true;
+        warn!("planting: cannot load the ghost model of {:?}", session.plant.model);
+        return None;
+    };
     session.ghost_model = Some(model);
     session.ghost_invalid = want_invalid;
-    let parts: usize = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
-    info!("planting: ghost {path} loaded ({parts} parts)");
+    info!("planting: ghost {:?} loaded ({parts} parts)", session.plant.model);
     session.root = Some(root);
     Some(root)
+}
+
+/// The ghost's model under `root`: every brush of the design's prefab at its place (a house is wall, roof and floor), or
+/// the single model file. Returns the entity and the number of drawn parts, `None` when nothing loads.
+fn spawn_ghost_model(commands: &mut Commands, cry: &mut CryAssets, plant: &Plantable, options: &ModelOptions, root: Entity) -> Option<(Entity, usize)> {
+    if !plant.parts.is_empty() {
+        let holder = commands.spawn((Name::new("ghost model"), Transform::IDENTITY, Visibility::Visible, ChildOf(root))).id();
+        let mut drawn = 0;
+        for part in &plant.parts {
+            let Ok(loaded) = cry.load_model(&part.path, options) else { continue };
+            drawn += loaded.parts.iter().map(|(_, parts)| parts.len()).sum::<usize>();
+            let model = spawn_loaded(commands, &part.path, &loaded, options);
+            commands
+                .entity(model)
+                .insert((super::units::ship_part_transform(part), ChildOf(holder), Visibility::Visible, NoFrustumCulling));
+        }
+        if drawn > 0 {
+            return Some((holder, drawn));
+        }
+        commands.entity(holder).despawn();
+    }
+    let path = plant.model.as_deref()?;
+    let loaded = cry.load_model(path, options).ok()?;
+    let drawn = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
+    let model = spawn_loaded(commands, path, &loaded, options);
+    commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+    Some((model, drawn))
 }
 
 /// The petals of a ring that touch a placed doodad (the mixed red / yellow ring), when any does.
@@ -2021,6 +2060,7 @@ mod tests {
             footprint: 0.5,
             requires_water: false,
             grounding: Grounding::default(),
+            parts: Vec::new(),
             house: None,
         }
     }
@@ -2038,6 +2078,25 @@ mod tests {
         assert_eq!((p.doodad, p.start_group), (2246, 4366));
         assert_eq!(c.footprint(2246), 0.5);
         assert_eq!(c.plantable(1), None);
+    }
+
+    /// The ghost of a house or farm design is the design's whole prefab (wall, roof, floor, decorations), not one wall
+    /// piece, and it stands on the ground point (the Thatched Farmhouse's `auto_z_offset_z` of 1 m is not lifted into it).
+    #[test]
+    fn a_design_ghost_is_the_whole_prefab_on_the_ground() {
+        let Some(db) = Db::open() else { return };
+        let Some(catalog) = Catalog::load(&db) else { return };
+        for (design, min_parts) in [(171, 3), (267, 1), (89, 1), (172, 3)] {
+            let plant = catalog.plantable_for_design(design).unwrap_or_else(|| panic!("design {design}"));
+            assert!(plant.parts.len() >= min_parts, "design {design}: {} parts", plant.parts.len());
+            let distinct: HashSet<&str> = plant.parts.iter().map(|p| p.path.as_str()).collect();
+            assert!(distinct.len() >= min_parts, "design {design} draws {distinct:?}");
+            let hit = Vec3::new(100.0, 200.0, 10.0);
+            assert_eq!(grounded(hit, 10.0, None, plant), hit, "design {design} sits on the ground point, no lift");
+        }
+        let farmhouse = catalog.plantable_for_design(171).unwrap();
+        assert!(farmhouse.parts.iter().any(|p| p.path.ends_with("housing_s_roof03.cgf")), "the roof is part of the ghost");
+        assert!(farmhouse.parts.iter().any(|p| p.path.ends_with("housing_s_floor03.cgf")), "so is the floor");
     }
 
     #[test]
@@ -2265,6 +2324,7 @@ mod tests {
             footprint: radius,
             requires_water: false,
             grounding: Grounding::default(),
+            parts: Vec::new(),
             house: Some(HouseDesign {
                 design,
                 name: "Scarecrow Garden".into(),

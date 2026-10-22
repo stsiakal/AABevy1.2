@@ -354,6 +354,35 @@ impl Db {
         file
     }
 
+    /// The brushes of a housing prefab model (a design's finished house or farm, a construction step): every `Brush` of
+    /// every state-1 (alive) element of `prefab_elements` (a house is the wall, roof and floor prefabs, each with its
+    /// decorations), each at its place in the prefab. The `models` row's first element alone is only one piece. Empty
+    /// for a model that is no housing prefab.
+    pub fn housing_parts(&self, model_id: u32) -> Vec<ShipPart> {
+        let l = self.lookups.lock().unwrap();
+        let is_housing: bool = l
+            .conn
+            .query_row(
+                "SELECT 1 FROM models WHERE id = ?1 AND sub_type = 'PrefabModel' AND (id IN (SELECT main_model_id FROM housings) OR id IN (SELECT model_id FROM housing_build_steps))",
+                params![model_id],
+                |_| Ok(()),
+            )
+            .is_ok();
+        if !is_housing {
+            return Vec::new();
+        }
+        let Ok(mut q) = l.conn.prepare(
+            "SELECT e.file_path FROM models m JOIN prefab_elements e ON e.prefab_model_id = m.sub_id AND m.sub_type = 'PrefabModel'              WHERE m.id = ?1 AND e.state_id = (SELECT MIN(e2.state_id) FROM prefab_elements e2 WHERE e2.prefab_model_id = m.sub_id) ORDER BY e.id",
+        ) else {
+            return Vec::new();
+        };
+        let paths: Vec<String> = q
+            .query_map(params![model_id], |r| r.get::<_, Option<String>>(0))
+            .map(|rows| rows.flatten().flatten().map(|p| p.trim().to_string()).collect())
+            .unwrap_or_default();
+        paths.iter().flat_map(|p| prefab_brushes(p)).collect()
+    }
+
     /// The brushes a ship model is drawn from (hull, rudder, cannons, cargo), empty for a model that is not a ship.
     pub fn ship_parts(&self, model_id: u32) -> Vec<ShipPart> {
         let l = self.lookups.lock().unwrap();
@@ -1261,6 +1290,21 @@ mod tests {
         assert!((g.scale_at(0.0, g.total_ms(0.0, false)) - 1.0).abs() < 1e-6);
         // no delay to fall back on: it is over
         assert_eq!(DoodadGrowth { delay_ms: 0, start_scale: 0.5, end_scale: 0.9 }.scale_at(0.0, 0.0), 0.9);
+    }
+
+    /// A housing prefab is every brush it lists, each at its own place: the finished Thatched Farmhouse (model 1082) is the
+    /// wall, roof and floor prefabs, not the single first brush of the first element.
+    #[test]
+    fn a_house_model_is_every_brush_of_its_alive_state() {
+        let Some(db) = Db::open() else { return };
+        let parts = db.housing_parts(1082);
+        let has = |name: &str| parts.iter().any(|p| p.path.ends_with(name));
+        assert!(has("housing_s_wall01.cgf") && has("housing_s_roof03.cgf") && has("housing_s_floor03.cgf"), "{parts:?}");
+        assert!(parts.len() >= 3);
+        // the farm designs (scarecrow gardens) are prefabs too; a plain creature model is not a housing prefab
+        assert!(!db.housing_parts(987).is_empty());
+        assert!(!db.housing_parts(1253).is_empty());
+        assert!(db.housing_parts(129).is_empty() && db.housing_parts(0).is_empty());
     }
 
     fn test_db() -> Option<Db> {

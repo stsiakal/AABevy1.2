@@ -61,6 +61,16 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
 ## 2. Ghost model, tint, validation
 
 * Ghost: temp housing object `"temp housing"` built from the design's main model (`FUN_3932fb20`), `FUN_393301a0` "chging builder house".
+* **Ghost model = the whole building [R data, I original].** `housings.main_model_id` is a `PrefabModel` (Thatched Farmhouse: model 1082,
+  prefab 530). Its `prefab_elements` list the pieces per state: state 1 (alive) = `housing_big.xml/nuia_housing_small3.nuia_small_wall01`
+  + `..._roof01` + `..._floor01`; each prefab holds `Brush` objects (`housing_s_wall01` + `_in`, `housing_s_roof03`, `housing_s_floor03`,
+  plus ivy / sweet potato / pumpkin decorations) at their own `Pos`/`Rotate`/`Scale`. The Bevy ghost used the first brush of the first
+  element only (one wall: "3 parts", floating, no floor / roof). `Db::housing_parts` now returns every brush of the lowest state's
+  elements and the ghost spawns them all (`placement::spawn_ghost_model`); finished houses and construction steps (`prepare_unit`) use the
+  same list. Farm designs (scarecrow gardens, 89 / 267) are one-brush prefabs and unchanged. Render: `examples/ghost_farmhouse.rs`.
+* **Ground.** The model origin is its ground contact (floor brush at z 0). `housings.auto_z_offset_z` is +1 m on almost every house
+  design (+1.5 on the halls, +4 m y on the mansions); lifting the spot by it floated the ghost, so houses use no ground offset
+  (`house_grounding`). **[?]** what the original does with the field (probably a ground-probe origin); the server stores the sent z.
 * **Tint:** only the invalid state. `FUN_39334460`: if `error != 0` the ghost material is overridden with
   **`materials/special/housing_build_invalid`** (`FUN_39327b50(mat)`), else the override is cleared (0 = the normal model, untinted).
   A debug-flag text `Builder Error : <key>` (gate `FUN_394d0b90`) is printed only when the debug level is on. **[R]**
