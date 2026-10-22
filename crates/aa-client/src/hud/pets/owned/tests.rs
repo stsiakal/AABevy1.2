@@ -197,7 +197,10 @@ fn original_pet_mount_dismiss_and_action_bar_controls() -> Result<(), Box<dyn st
         .add_systems(Update, super::super::update);
     let drain = |app: &mut App| app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
     app.update();
-    assert!(drain(&mut app).is_empty());
+    // The summoned mate is pointed at its owner once, like the original (`CSChangeMateTarget`), and nothing else goes out.
+    assert!(matches!(drain(&mut app).as_slice(), [Command::Mate(MateCommand::Target { .. })]));
+    app.update();
+    assert!(drain(&mut app).is_empty(), "the target is sent once per mate");
     // The speed getter is the last received movement speed (3,4 m/s -> 5 m/s).
     app.world_mut()
         .resource_mut::<Units>()
@@ -463,7 +466,7 @@ fn mounting_starts_the_walk_controller_instead_of_sending_at_once() -> Result<()
     let runtime = app.world().non_send::<UiRuntime>();
     super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_MOUNT]")?;
     app.update();
-    let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+    let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).filter(|c| !matches!(c, Command::Mate(MateCommand::Target { .. }))).collect::<Vec<_>>();
     assert!(sent.is_empty(), "CSMountMate waits for the controller: {sent:?}");
     assert!(app.world().resource::<crate::ingame::mount::MountFlow>().active());
     Ok(())
