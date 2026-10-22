@@ -75,6 +75,7 @@ pub mod slave_control;
 pub mod state;
 pub mod stream;
 pub mod trade;
+pub mod transfer;
 pub mod unit_msg;
 pub mod ui_data;
 pub mod wire;
@@ -112,6 +113,7 @@ pub use party::{LootingRule, Party, PartyCommand, PartyEvent, PartyInvite, Party
 pub use repair::{Repair, RepairCommand, RepairEvent, RepairReport, RepairedItem};
 pub use trade::{Trade, TradeCommand, TradeEvent, TradeFailure, TradeOffer};
 pub use slave::{SlaveCreated, SlaveEquipmentChange, SlaveEscape, SlaveEvent, SlavePositionInfo, Slaves};
+pub use transfer::TransferCommand;
 pub use slave_control::{SlaveCommand, SlaveEquipmentRequest, SlaveItemLocation, SlaveSpawnRequest};
 pub use wire::Pos;
 pub use ui_data::{UiData, UiDataCommand, UiDataEvent, UiDataResponse};

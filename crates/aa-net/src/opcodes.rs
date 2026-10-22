@@ -142,6 +142,7 @@ opcodes! {
         CSSendChatMessagePacket = 0x063,
         CSInteractNPCPacket = 0x065,
         CSInteractNPCEndPacket = 0x066,
+        CSBoardingTransferPacket = 0x067,
         CSStartInteractionPacket = 0x068,
         CSReplyImprisonOrTrialPacket = 0x06f,
         CSNaviOpenBountyPacket=0xea,

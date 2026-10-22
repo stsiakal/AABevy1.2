@@ -105,6 +105,7 @@ mod trade;
 mod trial;
 mod usable;
 mod slave_equipment;
+mod transfer;
 mod vehicles;
 
 #[allow(dead_code)]
@@ -459,6 +460,7 @@ impl Plugin for HudPlugin {
         services::plugin(app);
         pets::plugin(app);
         vehicles::plugin(app);
+        transfer::plugin(app);
         loot::plugin(app);
         dialog::plugin(app);
         ring::plugin(app);

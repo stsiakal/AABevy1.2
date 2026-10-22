@@ -305,8 +305,13 @@ writers and the client readers. [R]
 
 1. **Transfers are absent.** Original: `CSBoardingTransfer` 0x67 (board at first free point 2..7, leave
    with 0), bar on 0x64/0x65, server type-5 pose, zone `transfer_path.xml`, `transfers.wait_time` and
-   per-leg waits. Bevy has no boarding, entity or path loader; only `aa-ui/src/lua/stubs.rs:1943`. Fix:
-   add the packet/bar/attach flow and a route layer; read XML `Type` as `transfers.id`.
+   per-leg waits. Bevy had no boarding, entity or path loader; only `aa-ui/src/lua/stubs.rs:1943`. **Done**
+   (`fe37759`; packet/pose in `c0e7eec`): `CSBoardingTransfer` boards the targeted transfer at the first
+   free point 2..7 and `X2.UnBoardingTransfer` leaves with 0; the original bar shows/hides on the local
+   seat (`TRANSFER_BOARDING`/`TRANSFER_UNBOARDING`); riders use the transfer's model-space seats; every
+   zone's `transfer_path.xml` of the current world is loaded (`Type` is `transfers.id`) with
+   `transfer_paths` per-leg waits and `transfers.wait_time` fallbacks; transfer prefabs spawn all their
+   brush/AnimObject parts; and the server's type-5 `TransferMoveType` is decoded and displayed.
 2. **Ship parts are not equipment-driven.** Original: hull brushes + slot doodads
    (`slave_doodad_bindings`, `item_slave_equipments.doodad_id`) swapped by `SCUnitEquipmentsChanged`.
    Bevy draws every prefab brush unconditionally (`ingame/units.rs:651-659`, `ingame/data.rs:1049-1059`)

@@ -1315,6 +1315,8 @@ pub struct Movement {
     pub ship: Option<ShipMove>,
     /// The driver's ship request (move type 4): `(throttle, steering)`, both `i8`.
     pub ship_request: Option<(i8, i8)>,
+    /// The server's transfer pose (move type 5): a carriage, ferry or airship on its route.
+    pub transfer: Option<TransferMove>,
 }
 
 /// `VehicleMove` (cars, carts, tractors): the native body after position and velocity.
@@ -1344,6 +1346,25 @@ pub struct ShipMove {
     pub zone_id: u16,
     /// The physics reports the hull stuck on ground.
     pub stuck: bool,
+}
+
+/// `TransferMoveType` (move type 5): the authoritative pose of a carriage, ferry or airship on its
+/// route. Only the server writes it; the client draws the pose as it is (no integrator).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TransferMove {
+    /// Velocity in m/s: the native body carries the three axes as shorts scaled by 50.
+    pub velocity: [f32; 3],
+    /// Quaternion components (x, y, z) as the native writer stores them; the scalar is rebuilt.
+    pub rotation: [i16; 3],
+    pub angular_velocity: [f32; 3],
+    /// Native steering value; the server keeps the current route index here.
+    pub steering: i32,
+    /// Index of the route point the transfer is heading to.
+    pub path_point_index: i32,
+    /// Route speed (m/s).
+    pub speed: f32,
+    /// The transfer follows its route backwards.
+    pub reverse: bool,
 }
 
 /// What a unit stands on or hangs from, as a unit movement reports it. While it stands on something, the movement's `pos` is
@@ -1383,6 +1404,7 @@ impl Movement {
             vehicle: None,
             ship: None,
             ship_request: None,
+            transfer: None,
         }
     }
 
@@ -1410,6 +1432,7 @@ impl Movement {
             vehicle: Some(VehicleMove { rotation: [0, 0, z], ..VehicleMove::default() }),
             ship: None,
             ship_request: None,
+            transfer: None,
         }
     }
 
@@ -1436,6 +1459,7 @@ impl Movement {
             vehicle: None,
             ship: Some(ShipMove { rotation: [0, 0, z], ..ShipMove::default() }),
             ship_request: None,
+            transfer: None,
         }
     }
 
@@ -1460,6 +1484,34 @@ impl Movement {
             vehicle: None,
             ship: None,
             ship_request: Some((throttle, steering)),
+            transfer: None,
+        }
+    }
+
+    /// A transfer pose (`MoveTypeEnum::Transfer`, 5) at `pos` facing `yaw` radians. This is the body
+    /// the server writes; the client only reads it.
+    pub fn transfer(pos: Pos, yaw: f32, time: u32, path_point_index: i32, speed: f32, reverse: bool) -> Self {
+        const SCALE: f32 = 0.000_030_52;
+        let z = ((yaw * 0.5).sin() / SCALE).round().clamp(-32767.0, 32767.0) as i16;
+        Self {
+            move_type: 5,
+            time,
+            flags: move_flags::MOVING,
+            pos,
+            velocity: [0; 3],
+            direction: 0,
+            tilt: [0; 2],
+            delta_movement: [0; 3],
+            stance: stance::RELAXED,
+            alertness: 0,
+            actor_flags: actor_flags::STANDING_ON_SOLID,
+            fall_vel: 0,
+            support: None,
+            vehicle_yaw: Some(yaw),
+            vehicle: None,
+            ship: None,
+            ship_request: None,
+            transfer: Some(TransferMove { rotation: [0, 0, z], path_point_index, speed, reverse, ..TransferMove::default() }),
         }
     }
 
@@ -1497,6 +1549,25 @@ impl Movement {
             for speed in &body.wheel_speeds {
                 w.f32(*speed);
             }
+            return;
+        }
+        if self.move_type == 5 {
+            let body = self.transfer.unwrap_or_default();
+            let short = |v: f32| (v * 0.02 * 32767.0).round().clamp(-32767.0, 32767.0) as i16;
+            w.position(self.pos)
+                .i16(short(body.velocity[0]))
+                .i16(short(body.velocity[1]))
+                .i16(short(body.velocity[2]))
+                .i16(body.rotation[0])
+                .i16(body.rotation[1])
+                .i16(body.rotation[2])
+                .f32(body.angular_velocity[0])
+                .f32(body.angular_velocity[1])
+                .f32(body.angular_velocity[2])
+                .i32(body.steering)
+                .i32(body.path_point_index)
+                .f32(body.speed)
+                .bool(body.reverse);
             return;
         }
         if self.move_type == 3 {
@@ -1580,6 +1651,7 @@ impl Movement {
             vehicle: None,
             ship: None,
             ship_request: None,
+            transfer: None,
         };
         if move_type == 4 {
             // Ship request (throttle, steering): no position.
@@ -1592,9 +1664,19 @@ impl Movement {
         if move_type == 5 {
             // Transfer: velocity / 50 as shorts, rotation quaternion (x, y, z as shorts), angular velocity, steering, path point,
             // speed, reverse.
-            m.velocity = [r.i16()?, r.i16()?, r.i16()?].map(|v| (f32::from(v) / 32767.0 * 50.0 * 1024.0).clamp(-32767.0, 32767.0) as i16);
-            m.vehicle_yaw = Some(quat_yaw(short_quat(r)?));
-            r.skip(12 + 4 + 4 + 4 + 1)?;
+            let velocity = [r.i16()?, r.i16()?, r.i16()?].map(|v| f32::from(v) * (1.0 / 32767.0) * 50.0);
+            m.velocity = velocity.map(|v| (v * 1024.0).clamp(-32767.0, 32767.0) as i16);
+            let rotation = [r.i16()?, r.i16()?, r.i16()?];
+            m.vehicle_yaw = Some(quat_yaw(quat_from_shorts(rotation)));
+            m.transfer = Some(TransferMove {
+                velocity,
+                rotation,
+                angular_velocity: [r.f32()?, r.f32()?, r.f32()?],
+                steering: r.i32()?,
+                path_point_index: r.i32()?,
+                speed: r.f32()?,
+                reverse: r.bool()?,
+            });
             return Ok(m);
         }
         m.velocity = [r.i16()?, r.i16()?, r.i16()?];
@@ -1652,11 +1734,6 @@ impl Movement {
         }
         Ok(m)
     }
-}
-
-/// A rotation quaternion from three shorts (x, y, z; the scalar is rebuilt as the server does).
-fn short_quat(r: &mut Reader) -> Result<[f32; 4]> {
-    Ok(quat_from_shorts([r.i16()?, r.i16()?, r.i16()?]))
 }
 
 fn quat_from_shorts(rotation: [i16; 3]) -> [f32; 4] {

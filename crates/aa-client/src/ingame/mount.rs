@@ -72,6 +72,12 @@ fn mounted_driver(attached: Option<Attachment>) -> Option<u32> {
     attached.filter(|a| a.point == 1).map(|a| a.obj_id)
 }
 
+/// A seat given in the model's own space: a slave (a vehicle, a ship) or a transfer (a carriage,
+/// ferry or airship). A mate's seat is its bone, not a model-space point.
+fn model_space_seat(kind: &UnitKind) -> bool {
+    matches!(kind, UnitKind::Slave { .. } | UnitKind::Transfer { .. })
+}
+
 /// What the rider plays (the `Horse_Driver*` states of `player_full_body.xml`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Ride {
@@ -627,7 +633,7 @@ pub fn start_stop_riding(
             (Some(a), None) => {
                 // wait for the animator (a unit far away has none) and the mount's data
                 let (Some(db), Some(character), Some(animator), Some(mount)) = (db.as_deref(), character, animator, net.by_id.get(&a.obj_id)) else { continue };
-                let vehicle = matches!(mount.kind, UnitKind::Slave { .. });
+                let vehicle = model_space_seat(&mount.kind);
                 let side = if vehicle { None } else { reasons.side(unit.obj_id, a.obj_id) };
                 let clis = if vehicle {
                     vehicle_rider_clips(character, animator, &clips)
@@ -773,7 +779,7 @@ pub fn start_stop_local_riding(
                 else {
                     continue;
                 };
-                let vehicle = matches!(mount.kind, UnitKind::Slave { .. });
+                let vehicle = model_space_seat(&mount.kind);
                 let side = if vehicle { None } else { reasons.side(spawn.obj_id, a.obj_id) };
                 let clis = if vehicle {
                     vehicle_rider_clips(character, animator, &clips)
@@ -1184,6 +1190,16 @@ mod tests {
     }
 
     use super::*;
+
+    /// Transfers seat their passengers in the model space like a slave does; a mate uses its seat bone.
+    #[test]
+    fn transfers_use_a_model_space_seat_like_slaves() {
+        assert!(model_space_seat(&UnitKind::Slave { id: 1, tl_id: 2, template_id: 3, summoner_id: 4 }));
+        assert!(model_space_seat(&UnitKind::Transfer { tl_id: 2, template_id: 6 }));
+        assert!(!model_space_seat(&UnitKind::Character { char_id: 1 }));
+        assert!(!model_space_seat(&UnitKind::Mate { tl_id: 1, template_id: 2, owner_id: 3 }));
+        assert!(!model_space_seat(&UnitKind::Housing { tl_id: 1, template_id: 2, build_step: 0 }));
+    }
 
     fn horse() -> MountMove {
         MountMove { walk: 1.8, run: 9.0, radius: 1.0, height: 1.0, jump_height: 1.3, gravity: 30.0, turn: 360.0_f32.to_radians(), inertia: 4.0, accel: 11.0 }

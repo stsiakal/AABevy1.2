@@ -125,6 +125,8 @@ pub struct HudData {
     pub(super) crafting: super::crafting::View,
     pub(super) pets: super::pets::View,
     pub(super) vehicles: super::vehicles::View,
+    /// The transfer bar's boarded transfer and the leave button (`transfer.rs`).
+    pub(super) transfer: super::transfer::View,
     /// The casts the cast bars show (`cast.rs`).
     pub casts: super::cast::Casts,
     /// The loot window's rows and what it asked for (`loot.rs`).
@@ -214,6 +216,7 @@ impl Default for HudData {
             crafting: Default::default(),
             pets: Default::default(),
             vehicles: Default::default(),
+            transfer: Default::default(),
             casts: Default::default(),
             loot: Default::default(),
             dialog: Default::default(),
@@ -358,6 +361,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::crafting::install(lua, bridge)?;
     super::pets::install(lua, bridge)?;
     super::vehicles::install(lua, bridge)?;
+    super::transfer::install(lua, bridge)?;
     super::family::install(lua, bridge)?;
     super::farm::install(lua, bridge)?;
     super::houses::install(lua, bridge)?;

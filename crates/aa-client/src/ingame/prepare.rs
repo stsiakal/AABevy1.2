@@ -86,6 +86,19 @@ pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Uni
             return UnitBuild::Ship { parts, models };
         }
     }
+    if matches!(unit.kind, UnitKind::Transfer { .. }) {
+        // Carriages, airships and ferries are `VehicleModel`s: a prefab body plus its animated objects
+        // (an airship's wings and propellers), not the single first model the creature path picks.
+        let parts = db.transfer_parts(unit.model_id);
+        if !parts.is_empty() {
+            let mut paths = parts.iter().map(|p| p.path.as_str()).collect::<Vec<_>>();
+            paths.sort_unstable();
+            paths.dedup();
+            let options = ModelOptions::default();
+            let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
+            return UnitBuild::Ship { parts, models };
+        }
+    }
     if !unit.is_character() {
         let parts = db.housing_parts(unit.model_id);
         if !parts.is_empty() {

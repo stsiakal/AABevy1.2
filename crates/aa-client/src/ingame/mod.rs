@@ -66,6 +66,7 @@ mod stealth;
 mod swim;
 pub(crate) mod teleport;
 mod tools;
+pub(crate) mod transfer;
 mod trace;
 pub(crate) mod units;
 pub(crate) mod virtual_input;
@@ -147,6 +148,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(flow::plugin)
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)
+            .add_plugins(transfer::plugin)
             .add_plugins(virtual_input::plugin)
             .add_plugins(doodad_visual::plugin)
             .add_plugins(world_switch::plugin)

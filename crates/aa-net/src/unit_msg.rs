@@ -243,6 +243,17 @@ mod tests {
         assert!(r.is_empty());
         // 1000 / 32767 * 50 m/s
         assert!((f32::from(m.velocity[0]) / 1024.0 - 1000.0 / 32767.0 * 50.0).abs() < 0.01);
+        let body = m.transfer.expect("a transfer body");
+        assert!((body.velocity[0] - 1000.0 / 32767.0 * 50.0).abs() < 1e-5);
+        assert_eq!(body.rotation, [0, -12345, 23170]);
+        assert_eq!(body.angular_velocity, [0.25, -0.5, 8.0]);
+        assert_eq!((body.steering, body.path_point_index, body.speed, body.reverse), (-1, 17, 5.5, true));
+        // the body is written back exactly as the server's TransferData.Write does (after the type byte)
+        let mut w = Writer::new();
+        m.write(&mut w);
+        let mut expected = vec![5];
+        expected.extend_from_slice(&bytes);
+        assert_eq!(w.finish(), expected);
         // a ship request has no position at all: throttle, steering
         let mut w = Writer::new();
         w.u32(2).u8(0).i8(-1).i8(1);
