@@ -594,18 +594,7 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
             }
             let _t = aa_cry::prof::scope("unit.spawn_ship");
             let root = commands.spawn((transform, Visibility::default())).id();
-            let options = ModelOptions::default();
-            for part in parts {
-                let Ok(loaded) = cry.load_model(&part.path, &options) else { continue };
-                let model = spawn_loaded(commands, &part.path, &loaded, &options);
-                // cry space (x right, y forward, z up) to Bevy; the scale axes swap like the position's
-                let local = Transform {
-                    translation: cry_to_bevy(part.pos),
-                    rotation: cry_rot_to_bevy(part.rot),
-                    scale: Vec3::new(part.scale.x, part.scale.z, part.scale.y),
-                };
-                commands.entity(model).insert((local, ChildOf(root)));
-            }
+            spawn_ship_parts(commands, cry, &parts, root);
             root
         }
         UnitBuild::Effects(effects) => {
@@ -643,6 +632,24 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
         }
     });
     Ok(entity)
+}
+
+/// The local transform of a ship brush under the ship root. The loaded model's own root already carries `CRY_TO_BEVY` (the
+/// mesh is in cry space), so the brush's cry rotation `q` becomes `cry_rot_to_bevy(q) * CRY_TO_BEVY` and its scale stays on
+/// the mesh's cry axes. Replacing the root's transform with the brush's alone left the hull in cry space: standing on its
+/// bow, a tall wall at the waterline.
+pub fn ship_part_transform(part: &super::data::ShipPart) -> Transform {
+    Transform { translation: cry_to_bevy(part.pos), rotation: cry_rot_to_bevy(part.rot) * aa_cry::CRY_TO_BEVY, scale: part.scale }
+}
+
+/// Spawns the brushes of a ship's prefab (hull, rudder, cannons, cargo) under `root`.
+pub fn spawn_ship_parts(commands: &mut Commands, cry: &mut CryAssets, parts: &[super::data::ShipPart], root: Entity) {
+    let options = ModelOptions::default();
+    for part in parts {
+        let Ok(loaded) = cry.load_model(&part.path, &options) else { continue };
+        let model = spawn_loaded(commands, &part.path, &loaded, &options);
+        commands.entity(model).insert((ship_part_transform(part), ChildOf(root)));
+    }
 }
 
 fn unit_hash(v: u32) -> u32 {
@@ -982,5 +989,30 @@ pub fn cull_units(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod ship_tests {
+    use super::*;
+    use crate::ingame::data::ShipPart;
+
+    fn part(pos: Vec3, rot: Quat, scale: Vec3) -> ShipPart {
+        ShipPart { name: "p".into(), path: "a/b.cgf".into(), pos, rot, scale }
+    }
+
+    /// The brush transform replaces the model root's `CRY_TO_BEVY`, so it must contain it: a hull mesh point at the cry bow
+    /// (+y) / up (+z) ends on the Bevy -Z / +Y axes, not lying along Y as when the cry rotation was dropped.
+    #[test]
+    fn a_ship_brush_keeps_the_cry_to_bevy_turn_of_its_model() {
+        let t = ship_part_transform(&part(Vec3::new(1.0, 2.0, 3.0), Quat::IDENTITY, Vec3::ONE));
+        assert!((t.rotation * Vec3::Y - Vec3::NEG_Z).length() < 1e-5);
+        assert!((t.rotation * Vec3::Z - Vec3::Y).length() < 1e-5);
+        assert_eq!(t.translation, Vec3::new(1.0, 3.0, -2.0));
+        // a quarter turn about cry up: the bow (+y) goes to cry -x = Bevy -X
+        let t = ship_part_transform(&part(Vec3::ZERO, Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), Vec3::ONE));
+        assert!((t.rotation * Vec3::Y - Vec3::NEG_X).length() < 1e-5, "{:?}", t.rotation * Vec3::Y);
+        // scale stays on the mesh's own (cry) axes
+        assert_eq!(ship_part_transform(&part(Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 2.0, 3.0))).scale, Vec3::new(1.0, 2.0, 3.0));
     }
 }
