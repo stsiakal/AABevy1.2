@@ -2538,9 +2538,20 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   `housing_area.xml` shape that contains the spot, `ingame/houses.rs`). The white / pink crosshair is the same
   `housing_position.dds` / `housing_invalid.dds`; when the cursor is over the UI or no ground the house ghost stays
   at its last valid spot (the retail capture shows this; plants hide instead). The ghost stops following the pointer
-  as soon as the placement is confirmed for the tax window, so the spot and yaw are locked while the window is open;
-  Cancel returns to free placement. A pointer over the HUD neither moves nor re-validates the preview. Wheel / Alt /
-  Shift / Ctrl rotate as for plants (before the lock).
+  as soon as the left click confirms it for the tax window, so the spot is locked while the window is open; Cancel
+  returns to free placement. A pointer over the HUD neither moves nor re-validates the preview. Retail wheel rule
+  (owner-confirmed, houses and farms alike, no fixed-orientation farms): the model starts facing the player (the
+  retail first yaw, the camera heading); before the click the wheel zooms the camera; after the click (the Start
+  Construction popup is up, before Build) the wheel rotates the MODEL (Shift 15 degrees, Alt 1, Ctrl keeps the zoom)
+  and does not zoom, while the dot border stays axis-aligned (`plot_dot_quads` with yaw 0). The confirmed yaw is the
+  `CSCreateHouse` `z_rot`. Seeds and saplings never rotate; the wheel zooms the camera while planting
+  (`Session::wheel_rotates` is `locked()`, read by `ingame/camera.rs`).
+* **Finished house / farm interaction**: the dynamic action bar (`hud/doodad.rs` `find_focus`) now also shows for a
+  finished house in reach: F (`do_interaction_1`, icon of skill 15212) opens the maintain / info window; on the
+  character's OWN house that has a workbench doodad on it (a farm's `DoodadFuncCraftPack` bundle list, e.g. doodad 973
+  for design 267, 5767 for 89), G (`do_interaction_2`, generic craft icon) opens the original crafting window
+  with that doodad's craft list (`crafting::open_bench` + `CRAFTING_START`). On somebody else's farm only F. The
+  doodad's own info use (skill 15212) is not offered separately. Right click keeps opening the info window.
 * **Validity** (`check_house`): inside a `housing_area.xml` polygon whose `value1` is a `housing_areas` row, not
   overlapping another received house as an axis-aligned square of half extent `garden_radius` + the other's
   `garden_radius` (the server's `validate_house`), on land, and not on the player. The server remains authoritative.
