@@ -46,6 +46,7 @@ mod doodad_visual;
 pub(crate) mod emote;
 pub(crate) mod enter;
 mod flow;
+pub mod helm;
 pub(crate) mod glide;
 pub(crate) mod ground_target;
 pub(crate) mod houses;
@@ -140,6 +141,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(stealth::plugin)
             .add_plugins(tools::plugin)
             .add_plugins(wheels::plugin)
+            .add_plugins(helm::plugin)
             .add_plugins(flow::plugin)
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)

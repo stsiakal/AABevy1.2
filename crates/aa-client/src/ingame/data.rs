@@ -461,6 +461,24 @@ impl Db {
         out
     }
 
+    /// Where the attach point `point` (`model_attach_point_strings`, `$cannon0`) of a slave model is, in the body's frame: the
+    /// helper of that name in the model's prefab (`vehicle_models.normal`). The server announces a child doodad (the Farm
+    /// Wagon's cargo crates) at the parent's origin; the client puts it on the point.
+    pub fn slave_attach_offset(&self, model_id: u32, point: u8) -> Option<Vec3> {
+        let l = self.lookups.lock().unwrap();
+        let helper: String = l.conn.query_row("SELECT prefab FROM model_attach_point_strings WHERE id = ?1", params![point], |r| r.get(0)).ok()?;
+        let prefab: String = l
+            .conn
+            .query_row(
+                "SELECT v.normal FROM models m JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' WHERE m.id = ?1",
+                params![model_id],
+                |r| r.get(0),
+            )
+            .ok()?;
+        drop(l);
+        prefab_helper_pos(&prefab, helper.trim_start_matches('$'))
+    }
+
     /// The wheel models of a land vehicle (`vehicle_models.wheel` for the bones `wheel0..9`, `wheel2` for `wheel_type20..9`):
     /// pak paths of `.cgf` files (the columns are model paths, not counts).
     pub fn vehicle_wheel_models(&self, model_id: u32) -> VehicleWheelModels {
@@ -1019,6 +1037,25 @@ fn prefab_model_file(path: &str) -> Option<String> {
     model.ends_with(".cgf").then_some(model)
 }
 
+/// The `Pos` of the helper object `name` (a `Comment` such as `cannon0`) in the prefab element `prefab://<file>/<element>`
+/// (cry coordinates, in the frame of the prefab's body).
+fn prefab_helper_pos(path: &str, helper: &str) -> Option<Vec3> {
+    let rest = path.strip_prefix("prefab://")?;
+    let (file, name) = rest.rsplit_once('/')?;
+    let xml = aa_pak::Pak::global().read_string(&norm(file)).ok()?;
+    helper_pos_in(&xml, name, helper)
+}
+
+fn helper_pos_in(xml: &str, prefab: &str, helper: &str) -> Option<Vec3> {
+    let from = xml.find(&format!("<Prefab Name=\"{prefab}\""))?;
+    let tail = &xml[from..];
+    let tail = &tail[..tail.find("</Prefab>").unwrap_or(tail.len())];
+    let at = tail.find(&format!(" Name=\"{helper}\" Pos=\""))? + format!(" Name=\"{helper}\" Pos=\"").len();
+    let raw = &tail[at..at + tail[at..].find('"')?];
+    let v: Vec<f32> = raw.split(',').filter_map(|c| c.trim().parse().ok()).collect();
+    (v.len() == 3).then(|| Vec3::new(v[0], v[1], v[2]))
+}
+
 /// `slave_attach_points.json` seats of the 1.2 ships (model id -> driver and passenger). The
 /// server reads the same file; a ship without an authored second seat uses a point behind the
 /// helm on the same deck.
@@ -1134,6 +1171,28 @@ mod tests {
         let Some(db) = Db::open() else { return };
         let file = db.actor_model_file(1008).expect("the Farm Wagon body");
         assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
+    }
+
+    /// The cargo crates of the Farm Wagon hang on `$cannon0..3` (attach points 9..12): the helpers of the prefab.
+    #[test]
+    fn the_wagons_cargo_points_come_from_its_prefab() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let p = db.slave_attach_offset(1008, 9).expect("$cannon0");
+        assert!((p - Vec3::new(-0.6295166, -1.9423828, 1.1413727)).length() < 1e-4, "{p:?}");
+        let p = db.slave_attach_offset(1008, 12).expect("$cannon3");
+        assert!((p - Vec3::new(0.6338501, -1.9420166, 1.1414185)).length() < 1e-4, "{p:?}");
+        assert_eq!(db.slave_attach_offset(1008, 200), None);
+    }
+
+    #[test]
+    fn a_prefab_helper_position_is_read_from_the_named_prefab_only() {
+        let xml = r#"<PrefabsLibrary><Prefab Name="a.x"><Objects><Object Type="Comment" Id="{1}" Name="cannon0" Pos="1,2,3" /></Objects></Prefab><Prefab Name="a.y"><Objects><Object Type="Comment" Id="{2}" Name="cannon0" Pos="4,5,6" /></Objects></Prefab></PrefabsLibrary>"#;
+        assert_eq!(helper_pos_in(xml, "a.y", "cannon0"), Some(Vec3::new(4.0, 5.0, 6.0)));
+        assert_eq!(helper_pos_in(xml, "a.x", "cannon0"), Some(Vec3::new(1.0, 2.0, 3.0)));
+        assert_eq!(helper_pos_in(xml, "a.x", "cannon9"), None);
     }
 
     /// `vehicle_models.wheel` is a model path: the Farm Wagon sends one wheel speed per wheel bone (4), not the 2 the

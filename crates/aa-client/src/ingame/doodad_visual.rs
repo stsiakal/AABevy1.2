@@ -62,13 +62,17 @@ pub fn follow_parents(
     units: Option<Res<aa_net::state::Units>>,
     doodads: Option<ResMut<Doodads>>,
     views: Option<Res<Views>>,
+    db: Option<Res<Db>>,
     mut roots: Query<&mut Transform, With<RemoteDoodad>>,
 ) {
     let (Some(units), Some(mut doodads), Some(views)) = (units, doodads, views) else { return };
     if doodads.local.is_empty() {
         return;
     }
-    let moved = doodads.bypass_change_detection().resolve_parents(&units);
+    let mut moved = doodads.bypass_change_detection().resolve_parents(&units);
+    // a doodad on an attach point is placed again every frame: its entity may have been spawned after the pose settled
+    let attached: Vec<u32> = doodads.local.keys().copied().filter(|id| doodads.by_id.get(id).is_some_and(|d| d.attach_point != 0) && !moved.contains(id)).collect();
+    moved.extend(attached);
     if moved.is_empty() {
         return;
     }
@@ -77,9 +81,25 @@ pub fn follow_parents(
         let (Some(entity), Some(doodad)) = (views.doodad_entity(id), doodads.by_id.get(&id)) else { continue };
         let Ok(mut transform) = roots.get_mut(entity) else { continue };
         let [x, y, z, w] = doodad.rotation;
-        transform.translation = cry_to_bevy(Vec3::new(doodad.pos.x, doodad.pos.y, doodad.pos.z));
+        let mut pos = Vec3::new(doodad.pos.x, doodad.pos.y, doodad.pos.z);
+        // a doodad on an attach point of its slave (the Farm Wagon's cargo crates on `$cannon0..3`): the server announces it
+        // at the slave's origin, the point's place in the body is rotated by the slave's heading
+        if doodad.attach_point != 0
+            && let (Some(db), Some(parent)) = (db.as_deref(), units.by_id.get(&doodad.parent_obj_id))
+            && let Some(offset) = db.slave_attach_offset(parent.model_id, doodad.attach_point)
+        {
+            pos += attach_world_offset(offset, parent.rotation[2], parent.scale);
+        }
+        transform.translation = cry_to_bevy(pos);
         transform.rotation = cry_rot_to_bevy(Quat::from_xyzw(x, y, z, w).normalize());
     }
+}
+
+/// An attach point's body-frame `offset` as a world offset for a parent facing `yaw` (the rotation `resolve_parents` uses).
+pub fn attach_world_offset(offset: Vec3, yaw: f32, scale: f32) -> Vec3 {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let (sin, cos) = yaw.sin_cos();
+    Vec3::new(offset.x * cos - offset.y * sin, offset.x * sin + offset.y * cos, offset.z) * scale
 }
 
 /// `SCDoodadPhaseChanged`: the new phase's growth from the announced `time_left` at once, its model when it differs
@@ -173,4 +193,19 @@ fn swap_model(commands: &mut Commands, cry: &mut CryAssets, root: Entity, path: 
     let model = spawn_loaded(commands, path, &loaded, &options);
     commands.entity(model).insert(ChildOf(root));
     Some(model)
+}
+
+#[cfg(test)]
+mod attach_tests {
+    use super::*;
+
+    #[test]
+    fn an_attach_point_turns_with_the_parents_heading() {
+        let offset = Vec3::new(-0.63, -1.94, 1.14);
+        assert!(attach_world_offset(offset, 0.0, 1.0).abs_diff_eq(offset, 1e-6));
+        // a quarter turn to the left: forward (+y) becomes -x, right (+x) becomes +y
+        let turned = attach_world_offset(offset, std::f32::consts::FRAC_PI_2, 1.0);
+        assert!(turned.abs_diff_eq(Vec3::new(1.94, -0.63, 1.14), 1e-5), "{turned:?}");
+        assert!(attach_world_offset(offset, 0.0, 2.0).abs_diff_eq(offset * 2.0, 1e-6));
+    }
 }

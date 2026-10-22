@@ -316,7 +316,7 @@ pub fn take_stats() -> (u32, u64) {
     (UPDATED.swap(0, Ordering::Relaxed), NANOS.swap(0, Ordering::Relaxed))
 }
 
-pub(crate) fn animate(time: Res<Time>, mut animators: Query<(&mut Animator, Option<&mut RopeSim>)>, mut transforms: Query<&mut Transform>) {
+pub fn animate(time: Res<Time>, mut animators: Query<(&mut Animator, Option<&mut RopeSim>)>, mut transforms: Query<&mut Transform>) {
     let started = Instant::now();
     let dt = time.delta_secs();
     // sample the poses of the characters that are due (in parallel: a crowd is hundreds of bones each)
