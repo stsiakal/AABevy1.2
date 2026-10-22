@@ -105,6 +105,7 @@ pub fn vehicle_seat(
     if attached.is_some() {
         return;
     }
+    if actions.just_pressed("do_interaction_1", 0) { debug!("vehicle_seat: F pressed, attached {:?}, own slave {:?}", attached, slaves.as_deref().and_then(|s| s.own.as_ref()).map(|o| (o.obj_id, o.tl_id))); }
     let Some(own) = slaves.as_deref().and_then(|s| s.own.as_ref()) else { return };
     let Some(unit) = units.get(own.obj_id) else { return };
     let UnitKind::Slave { tl_id, .. } = unit.kind else { return };

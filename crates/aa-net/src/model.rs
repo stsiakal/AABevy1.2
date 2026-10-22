@@ -326,6 +326,9 @@ impl ItemDetail {
             6 | 7 => skip_detail(r, 16, detail_type)?,
             8 => skip_detail(r, 8, detail_type)?,
             9 => skip_detail(r, 4, detail_type)?,
+            // Slave equipment (a ship cannon, 12 bytes) and a location item (24 bytes), as the server writes them (`detail_body_len`).
+            10 => skip_detail(r, 12, detail_type)?,
+            11 => skip_detail(r, 24, detail_type)?,
             other => return Err(WireError::Invalid(format!("unsupported item detail type {other}"))),
         })
     }
