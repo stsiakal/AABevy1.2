@@ -758,6 +758,7 @@ fn execute(
     bridge: NonSend<HudBridge>,
     doodads: Res<Doodads>,
     mut out: MessageWriter<NetCommand>,
+    mut failed: MessageWriter<super::alerts::UseFailed>,
 ) {
     let mut d = bridge.0.borrow_mut();
     let execute = std::mem::take(&mut d.doodad.execute);
@@ -772,6 +773,14 @@ fn execute(
         if let Some(state) = &f.house {
             if i == 1 {
                 if let Some(&skill_id) = f.skills.first() {
+                    // the original refuses a cast it knows will fail (material or labor short) instead of asking the server
+                    if let Some(game) = d.game.get()
+                        && let Some((result, value)) = super::houses::build_shortfall(game, state.template_id, skill_id, &d.panels.bag, d.snapshot.labor)
+                    {
+                        info!("housing: build step skill {skill_id} refused by the client check: result {result} item {value}");
+                        failed.write(super::alerts::UseFailed { skill: skill_id, result, value, server: false });
+                        continue;
+                    }
                     commands.push((f.obj_id, Command::Target { obj_id: f.obj_id }));
                     commands.push((f.obj_id, Command::UseSkill { skill_id, target_obj_id: f.obj_id }));
                     opened = Some((f.obj_id, state.clone()));
@@ -882,6 +891,8 @@ pub(super) fn plugin(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use aa_net::housing::{House, HouseSnapshot};
     use crate::hud::data::GameData;
 
@@ -937,6 +948,8 @@ mod tests {
         template.build_steps.push(Default::default());
         template.build_steps[0].skill_id = 18553;
         template.build_steps[0].num_actions = 1;
+        template.build_steps[0].consume_item = 8337;
+        template.build_steps[0].consume_count = 1;
         let mut data = HudData::default();
         data.game.0.set(game).ok().expect("one load");
         data.pos = Vec3::ZERO;
@@ -1027,6 +1040,39 @@ mod tests {
             assert!(matches!(fire(super::lua_permission(wire)), Value::Nil), "wire permission {wire}");
         }
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_build_key_is_refused_while_the_material_is_missing() {
+        let (mut data, units, houses) = house_game();
+        data.doodad.focus = find_focus(&data, &Doodads::default(), &units, &houses);
+        data.doodad.execute.push(1);
+        let bridge = Rc::new(RefCell::new(data));
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge.clone()))
+            .insert_resource(Doodads::default())
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_systems(Update, execute);
+        app.update();
+        let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+        assert!(sent.is_empty(), "nothing goes to the server: {sent:?}");
+        let alerts = app.world_mut().resource_mut::<Messages<super::super::alerts::UseFailed>>().drain().collect::<Vec<_>>();
+        assert_eq!(alerts.len(), 1, "{alerts:?}");
+        assert_eq!((alerts[0].skill, alerts[0].result, alerts[0].value, alerts[0].server), (18553, super::super::usable::code::NEED_REAGENT, 8337, false));
+        // with the lumber in the bag the cast goes out as before
+        {
+            let mut d = bridge.borrow_mut();
+            d.panels.bag = vec![Some(super::super::panels::SlotSnap { id: 8337, count: 1, ..Default::default() })];
+            d.doodad.execute.push(1);
+        }
+        app.update();
+        let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+        assert!(matches!(
+            sent.as_slice(),
+            [Command::Target { obj_id: 77 }, Command::UseSkill { skill_id: 18553, target_obj_id: 77 }]
+        ), "{sent:?}");
+        assert!(app.world_mut().resource_mut::<Messages<super::super::alerts::UseFailed>>().drain().next().is_none());
     }
 
     #[test]
@@ -1159,6 +1205,7 @@ mod tests {
             .insert_non_send(HudBridge(bridge.clone()))
             .insert_resource(Doodads::default())
             .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
             .add_systems(Update, execute);
         super::super::expansion::fixture::click(app.world().non_send::<UiRuntime>(), "COIN_DIALOG.btnOk")?;
         app.update();

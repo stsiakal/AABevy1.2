@@ -316,6 +316,23 @@ fn steps_table(lua: &Lua, game: &super::data::GameData, housing_id: u32) -> mlua
     Ok(out)
 }
 
+/// Why the build step skill `skill_id` of `template_id` cannot be cast: the material it consumes
+/// (`skill_effects.consume_item_id`, a soft check on the server) is short in the bag, or the labor (`skills.consume_lp`)
+/// is. The result is a `SkillResult` code and the item the refusal text names, like the original `CanUseSkill`.
+pub(super) fn build_shortfall(
+    game: &super::data::GameData,
+    template_id: u32,
+    skill_id: u32,
+    bag: &[Option<SlotSnap>],
+    labor: i32,
+) -> Option<(u8, u32)> {
+    let step = game.housing.housings.get(&template_id)?.build_steps.iter().find(|s| s.skill_id == skill_id)?;
+    if step.consume_item != 0 && bag_count(bag, step.consume_item) < i64::from(step.consume_count.max(1)) {
+        return Some((super::usable::code::NEED_REAGENT, step.consume_item));
+    }
+    (i64::from(step.labor) > i64::from(labor)).then_some((super::usable::code::NEED_LABOR_POWER, 0))
+}
+
 fn bag_count(bag: &[Option<SlotSnap>], template: u32) -> i64 {
     bag.iter()
         .flatten()
@@ -787,6 +804,31 @@ mod tests {
         bridge.borrow().game.0.set(game).ok().expect("one load");
         let (_, always): (i64, bool) = lua.load("return X2House:GetHousePermission()").eval().unwrap();
         assert!(always);
+    }
+
+    #[test]
+    fn a_build_step_is_refused_when_the_material_or_the_labor_is_short() {
+        let mut game = super::super::data::GameData::default();
+        game.housing.housings.insert(267, Default::default());
+        let template = game.housing.housings.get_mut(&267).unwrap();
+        template.build_steps.push(Default::default());
+        template.build_steps[0].skill_id = 18553;
+        template.build_steps[0].consume_item = 8337;
+        template.build_steps[0].consume_count = 2;
+        template.build_steps[0].labor = 10;
+        let slot = |id: u32, count: i64| SlotSnap { id, count, ..Default::default() };
+        use super::super::usable::code::{NEED_LABOR_POWER, NEED_REAGENT};
+        // no lumber, one of two, then enough in two stacks
+        assert_eq!(build_shortfall(&game, 267, 18553, &[], 50), Some((NEED_REAGENT, 8337)));
+        assert_eq!(build_shortfall(&game, 267, 18553, &[Some(slot(8337, 1))], 50), Some((NEED_REAGENT, 8337)));
+        let enough = [Some(slot(8337, 1)), None, Some(slot(8337, 1))];
+        assert_eq!(build_shortfall(&game, 267, 18553, &enough, 50), None);
+        // the labor is checked after the material
+        assert_eq!(build_shortfall(&game, 267, 18553, &enough, 9), Some((NEED_LABOR_POWER, 0)));
+        assert_eq!(build_shortfall(&game, 267, 18553, &enough, 10), None);
+        // a skill that is no build step of the house is not this check's business
+        assert_eq!(build_shortfall(&game, 267, 1, &[], 0), None);
+        assert_eq!(build_shortfall(&game, 1, 18553, &[], 0), None);
     }
 
     #[test]
