@@ -100,7 +100,16 @@ pub struct HouseDesign {
     /// `housings.garden_radius`: the half extent of the axis-aligned plot square (m).
     pub garden_radius: f32,
     pub heavy_tax: bool,
+    /// A farm (`housings.category_id` in [`FARM_CATEGORIES`]): its orientation is fixed, the wheel does not turn it.
+    pub fixed_orientation: bool,
 }
+
+/// `housings.category_id` of the scarecrow gardens / farms (16: straw-hat scarecrow, 17: pumpkin scarecrows, 18:
+/// thatched farm). The 1.2 data has no rotation flag; these are the designs the owner confirmed cannot be turned.
+pub const FARM_CATEGORIES: [i64; 3] = [16, 17, 18];
+
+/// The yaw a fixed-orientation design is placed (and sent) with.
+pub const FIXED_YAW: f32 = 0.0;
 
 /// The offset fields a placement template may carry. The 1.2 server database has none on doodads (only `housings`),
 /// so plants keep the defaults; the maths is here for the house placement of a later phase.
@@ -195,7 +204,7 @@ impl Catalog {
                      i.use_skill_id, s.cooldown_time, s.cooldown_tag_id, \
                      CASE WHEN h.auto_z IN ('t', 'T', 1) THEN 1 ELSE 0 END, \
                      h.auto_z_offset_x, h.auto_z_offset_y, h.auto_z_offset_z, \
-                     CASE WHEN h.heavy_tax IN ('t', 'T', 1) THEN 1 ELSE 0 END \
+                     CASE WHEN h.heavy_tax IN ('t', 'T', 1) THEN 1 ELSE 0 END, h.category_id \
                      FROM item_housings ih JOIN housings h ON h.id = ih.design_id \
                      LEFT JOIN items i ON i.id = ih.item_id \
                      LEFT JOIN skills s ON s.id = i.use_skill_id \
@@ -222,7 +231,9 @@ impl Catalog {
                     r.get::<_, Option<f64>>(11).unwrap_or_default().unwrap_or(0.0) as f32,
                 );
                 let heavy_tax: bool = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0) != 0;
-                let house = HouseDesign { design, name: name.clone(), garden_radius: garden, heavy_tax };
+                let category: i64 = r.get::<_, Option<i64>>(13).unwrap_or_default().unwrap_or(0);
+                let fixed_orientation = FARM_CATEGORIES.contains(&category);
+                let house = HouseDesign { design, name: name.clone(), garden_radius: garden, heavy_tax, fixed_orientation };
                 catalog.houses.insert(design, house.clone());
                 catalog.by_item.entry(item).or_insert(Plantable {
                     item,
@@ -357,7 +368,19 @@ pub struct Session {
 }
 
 impl Session {
+    /// The wheel turns the ghost (and so is not the camera's): not for a fixed-orientation farm, not once the
+    /// placement is locked for the tax window.
+    pub fn rotatable(&self) -> bool {
+        !self.plant.house.as_ref().is_some_and(|h| h.fixed_orientation)
+    }
+
+    /// The wheel is spent on rotating the ghost this frame, so the camera must not zoom with it.
+    pub fn wheel_rotates(&self) -> bool {
+        self.rotatable() && !self.quote_requested && !self.window_open
+    }
+
     pub fn new(item_id: u64, plant: Plantable, yaw: f32) -> Session {
+        let yaw = if plant.house.as_ref().is_some_and(|h| h.fixed_orientation) { FIXED_YAW } else { yaw };
         Session {
             item_id,
             plant,
@@ -1506,8 +1529,8 @@ fn input(
     for ev in wheel.read() {
         turn += wheel_turn(shift, alt, ctrl, ev.y);
     }
-    // the confirmed house's yaw is part of the locked placement
-    if turn != 0.0 && !session.quote_requested {
+    // the confirmed house's yaw is part of the locked placement; a farm's orientation is fixed
+    if turn != 0.0 && !session.quote_requested && session.rotatable() {
         session.yaw = wrap_angle(session.yaw + turn);
     }
     let right_click = mouse.just_pressed(MouseButton::Right);
@@ -1977,6 +2000,7 @@ mod tests {
                 name: "Scarecrow Garden".into(),
                 garden_radius: radius,
                 heavy_tax: true,
+                fixed_orientation: false,
             }),
         }
     }
@@ -1985,6 +2009,21 @@ mod tests {
         let mut c = Catalog::default();
         c.insert(house_plantable(267, 4.0));
         c
+    }
+
+    #[test]
+    fn a_fixed_orientation_farm_ignores_the_initial_yaw_and_the_wheel() {
+        let mut fixed = house_plantable(267, 4.0);
+        fixed.house.as_mut().unwrap().fixed_orientation = true;
+        let session = Session::new(1, fixed, 2.5);
+        assert_eq!(session.yaw, FIXED_YAW, "a fixed design starts (and is sent) with its fixed yaw");
+        assert!(!session.rotatable() && !session.wheel_rotates(), "the wheel stays the camera's");
+        let free = Session::new(1, house_plantable(267, 4.0), 2.5);
+        assert_eq!(free.yaw, 2.5);
+        assert!(free.rotatable() && free.wheel_rotates(), "a rotatable design takes the wheel from the zoom");
+        let mut locked = Session::new(1, house_plantable(267, 4.0), 2.5);
+        locked.quote_requested = true;
+        assert!(!locked.wheel_rotates(), "a locked placement no longer rotates, the camera may zoom");
     }
 
     #[test]
@@ -2002,14 +2041,14 @@ mod tests {
                  CREATE TABLE skills (id INT, max_range REAL, cooldown_time INT, cooldown_tag_id INT);
                  CREATE TABLE localized_texts (tbl_name TEXT, idx INT, tbl_column_name TEXT, en_us TEXT);
                  CREATE TABLE item_housings (id INT, item_id INT, design_id INT);
-                 CREATE TABLE housings (id INT, name TEXT, main_model_id INT, garden_radius REAL, heavy_tax NUM,
+                 CREATE TABLE housings (id INT, name TEXT, category_id INT, main_model_id INT, garden_radius REAL, heavy_tax NUM,
                      auto_z NUM, auto_z_offset_x REAL, auto_z_offset_y REAL, auto_z_offset_z REAL);
                  CREATE TABLE housing_areas (id INT, name TEXT, housing_group_id INT, comments TEXT);
                  INSERT INTO items VALUES (15596, 17496);
                  INSERT INTO skills VALUES (17496, 0.0, 0, 0);
                  INSERT INTO localized_texts VALUES ('housings', 267, 'name', 'Scarecrow Garden');
                  INSERT INTO item_housings VALUES (58, 15596, 267);
-                 INSERT INTO housings VALUES (267, 'Korean', 987, 4.0, 't', 't', 0.0, 0.0, 0.0);
+                 INSERT INTO housings VALUES (267, 'Korean', 16, 987, 4.0, 't', 't', 0.0, 0.0, 0.0);
                  INSERT INTO housing_areas VALUES (128, 'gwe_housing', 1, '');",
             )
             .unwrap();
@@ -2020,6 +2059,7 @@ mod tests {
         assert_eq!((house.design, house.garden_radius), (267, 4.0));
         assert_eq!(house.name, "Scarecrow Garden");
         assert!(house.heavy_tax);
+        assert!(house.fixed_orientation, "category 16 is a scarecrow farm");
         assert_eq!(catalog.house_radius(267), 4.0);
         assert!(catalog.area_known(128) && !catalog.area_known(129));
         assert_eq!(plant.doodad, 0);

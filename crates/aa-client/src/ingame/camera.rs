@@ -271,6 +271,7 @@ pub fn orbit_input(
     player: Query<&Mover, With<LocalPlayer>>,
     // the last fixed view's offset, which Page Down / Page Up step from (`input::g_fixed_view_yaw`)
     mut kept: Local<f32>,
+    placement: Option<Res<super::placement::Placement>>,
 ) {
     let Ok(mut orbit) = cameras.single_mut() else { return };
     // the fixed views: the yaw is set at once relative to the character's heading
@@ -300,7 +301,9 @@ pub fn orbit_input(
         orbit.pitch = (orbit.pitch - motion.delta.y * MOUSE_SENSITIVITY).clamp(-1.3, 1.45);
     }
     // a whole notch is one step of 1.2's zoom; the fractions a touchpad sends add up to notches
-    if !over_ui {
+    // the wheel that turns a placement ghost (planting, a rotatable house) is not also the zoom
+    let turning_ghost = placement.as_ref().and_then(|p| p.session.as_ref()).is_some_and(|s| s.wheel_rotates());
+    if !over_ui && !turning_ghost {
         *notches += actions.zoom_lines();
     }
     while notches.abs() >= 1.0 {
