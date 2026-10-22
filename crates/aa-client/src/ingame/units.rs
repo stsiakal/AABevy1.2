@@ -166,6 +166,12 @@ struct View {
 }
 
 impl Views {
+    /// A drawn unit, for the tests of the systems that look its entity up.
+    #[cfg(test)]
+    pub(super) fn insert_unit_for_test(&mut self, obj_id: u32, entity: Entity) {
+        self.units.insert(obj_id, View { entity: Some(entity), ..default() });
+    }
+
     /// The entity drawing the unit `obj_id`, when it is drawn.
     pub fn unit_entity(&self, obj_id: u32) -> Option<Entity> {
         self.units.get(&obj_id).and_then(|v| v.entity)

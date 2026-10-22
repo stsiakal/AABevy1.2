@@ -98,6 +98,7 @@ pub fn vehicle_seat(
     db: Option<Res<Db>>,
     views: Option<Res<Views>>,
     visuals: Query<&RemoteUnit>,
+    driven: Query<&DrivenSlave>,
     mover: Query<&super::player::Mover, With<super::player::LocalPlayer>>,
     target: Option<Res<aa_net::state::Target>>,
     mut out: MessageWriter<NetCommand>,
@@ -114,7 +115,12 @@ pub fn vehicle_seat(
         let ship = db.as_deref().is_some_and(|db| db.is_ship(slave.model_id));
         let leave = actions.just_pressed("do_interaction_1", 0);
         let unsummon = ship && actions.just_pressed("do_interaction_2", 0);
-        if leave && now - *last > 0.5 {
+        // the driver of a vehicle that is moving too fast cannot get off (`FUN_39345aa0`: speed squared above 25)
+        let speed = views.as_deref().and_then(|v| v.unit_entity(slave.obj_id)).and_then(|e| driven.get(e).ok()).map_or(0.0, |d| d.speed);
+        if leave && now - *last > 0.5 && unbind_refused(speed) {
+            refused.write(NetEvent(Event::ServerError { code: UNBIND_TOO_FAST_ERROR }));
+            *last = now;
+        } else if leave && now - *last > 0.5 {
             out.write(NetCommand(Command::Slave(SlaveCommand::Unbind { tl_id: tl })));
             *handled = Some((tl, slave.obj_id));
             *last = now;
@@ -224,6 +230,17 @@ pub fn vehicle_seat(
         *handled = Some((tl_id, own.obj_id));
         *last = now;
     }
+}
+
+/// The vehicle speed (m/s) above which the original refuses `CSDiscardSlave` (`DAT_3999f85c = 25.0`, the speed squared).
+pub(super) const UNBIND_MAX_SPEED: f32 = 5.0;
+
+/// `SLAVE_SHUT_OFF_TO_UNBIND` (system message `0x67`): "The vehicle must come to a complete stop before anyone can disembark."
+pub(super) const UNBIND_TOO_FAST_ERROR: i16 = 103;
+
+/// Whether getting off at `speed` (m/s) is refused.
+pub(super) fn unbind_refused(speed: f32) -> bool {
+    speed * speed > UNBIND_MAX_SPEED * UNBIND_MAX_SPEED
 }
 
 /// How far the player may stand from a slave and still board it (metres). The original's squared
@@ -570,6 +587,35 @@ mod flow_tests {
         app.world_mut().resource_mut::<Units>().by_id.insert(700, rider);
         assert!(press(&mut app).is_empty());
         assert_eq!(errors(&mut app), vec![97]);
+    }
+
+    #[test]
+    fn getting_off_is_refused_above_five_metres_per_second() {
+        assert!(!unbind_refused(0.0) && !unbind_refused(4.0) && !unbind_refused(-5.0) && !unbind_refused(5.0));
+        assert!(unbind_refused(5.1) && unbind_refused(-15.0));
+    }
+
+    #[test]
+    fn the_key_does_not_unbind_a_fast_driver_but_tells_why() {
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Player>().spawn.as_mut().unwrap().unit.attached_to = Some(Attachment { obj_id: 500, point: 1 });
+        // a driven body that goes 15 m/s on the slave's visual
+        let body = VehicleBody { speed: 15.0, turn: 1.0, wheels: 4 };
+        let mut drive = DrivenSlave::new(Vec3::ZERO, 0.0, body);
+        drive.speed = 15.0;
+        let entity = app.world_mut().spawn((RemoteUnit::test_character(500), drive)).id();
+        let mut views = Views::default();
+        views.insert_unit_for_test(500, entity);
+        app.insert_resource(views);
+        app.update();
+        assert!(press(&mut app).is_empty(), "no CSDiscardSlave");
+        assert_eq!(errors(&mut app), vec![UNBIND_TOO_FAST_ERROR]);
+        // slow enough: it leaves
+        app.world_mut().get_mut::<DrivenSlave>(entity).unwrap().speed = 4.0;
+        for _ in 0..2 {
+            app.update();
+        }
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Unbind { tl_id: 7 })]));
     }
 
     #[test]
