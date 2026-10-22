@@ -1872,6 +1872,13 @@ separate full-item transaction contract. Slave info/equipment Lua uses **X2Siege
 (`GetMountedSiegeWeaponInfo`, `GetVehicleInfo`, `GetSlaveEquipSlotInfo`,
 `PickEquipSlotOfSlave`, `UninstallEquipSlotOfSlave`); this is not an invented X2Slave API.
 Lane slave repair requests are logging-only stubs, and slave target has no
+
+Slave equipment moves (`CSChangeSlaveEquipment`): the server answers with `SCItemTaskSuccess` `ItemMove` tasks whose
+slave end is container `0xF2` (`items::container::EQUIPMENT_SLAVE`) and then `SCUnitEquipmentsChanged`. `Inventory`
+does not hold a slave's parts, so `Inventory::apply_slave_moves` (run by the net state after the generic apply, with the
+owned slave unit's equipment as it was before the move) fills the bag slot with the part that came off the slave
+(unequip, or the part a swap takes off). `Units::slave_local` / `resolve_children` place a child slave (a ship's cannon)
+from its parent slave's frame like `Doodads::resolve_parents` does for doodads.
 registered 1.2 opcode. Slave created/removed/despawn/bound/my-slave/escape packets and
 owned-slave state remain subsequent bounded work.
 

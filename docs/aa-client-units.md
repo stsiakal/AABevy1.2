@@ -166,8 +166,13 @@ hull (`galleon_body.cgf`), rudder, cannons, cargo and shields, each at the prefa
 is matched case-insensitively; 512 `galleon02`, 1386 and 1402, the sunken wrecks, name prefabs the
 1.2 pak does not contain and stay undrawn). `actor_model_file` returns the hull brush for them. The
 sails of the larger ships are separate slave doodads the server binds, not part of the prefab. A
-ship has no skeleton, so it never plays a swim or idle clip. Creatures and mounts that are not driven
-swim in water deeper than 1.3 m with `fist_ba_idle_swim` / `fist_mo_swim_f` when their `.cal` has them
+ship has no skeleton, so it never plays a swim or idle clip. The brush transform is the world's: `Rotate` is
+`w,x,y,z`, positions and rotations go through `cry_to_bevy` / `cry_rot_to_bevy`, scale axes `(x, z, y)` (tested against
+the dummies' conversion). The hull body spans z -5.8 .. 41.8 and y -17 .. 28.5 around the root (the galleon's main
+deck is at z 2.5, the poop and helm chair at 6.3), and the server puts the summoned hull's root 7 m in front of its
+owner, so a swimmer at the summon spot is inside the hull volume (seeing the deck from below). Creatures, mounts and
+remote player characters that are not driven
+swim in water deeper than 1.3 m (and not above the surface: a unit on a deck never swims) with `fist_ba_idle_swim` / `fist_mo_swim_f` when their `.cal` has them
 (`Motion::swimming`); a driven mount does the same while its `DrivenMount` swims.
 
 `vehicle_seat` binds an owned visible ship with the interaction key (no land-vehicle auto-board:
@@ -187,12 +192,25 @@ remote riders sit on the authored seat (`mount::seat_world`); the seat is a poin
 space (the Eznan Cutter's driver seat, z 6.2, is the deck beside the prefab's helm chair at z 6.3, tested),
 so a seated player stands at the hull root plus that offset; a root far above the water (the cutter
 summoned in a pond was at about z 145 over water at 127) is the server hull's position, not a seat error. A character who is not attached but
-stands inside the hull box is `DeckRide`: `ship_deck_control` walks it in the ship frame, clamps it
-to `ship_models.mass_box_size_x/y`, follows the interpolated hull, and reports the resulting world
-position 10 times a second. The server's `bind_slave_by_tl` always requests the driver point, so a
+stands on the hull is `DeckRide`: `board_deck` takes the floor under its feet from `Db::ship_floor` (the upward-facing
+triangles of the hull body brush in the ship's frame, 1 m cell buckets; `ShipFloor::height(x, y, max_z)` is the highest
+surface not above `max_z`) and `deck_control` walks it in the ship frame: a step up to 0.6 m or down to 4 m is walkable,
+a rail or the edge stops the walk, so the main deck and the poop are at their own heights and the player stays inside
+the hull; a model without a readable hull keeps the old box (`ship_models.mass_box_size_x/y`, the helm's height). It
+follows the interpolated hull and reports the resulting world position 10 times a second. The cargo, cannons and
+rigging brushes are not floors. The server's `bind_slave_by_tl` always requests the driver point, so a
 second attached passenger seat is not reachable through this lane; deck standing is the passenger
 path. Slave equipment/cannon items exist in the database (`item_slave_equipments`) but the server's
 `CSChangeSlaveEquipment` handler is a log-only stub, so no cannon spawning/firing path is sent.
+
+A cannon (child slave, e.g. slave 10 on ship 22) is announced in its parent ship's frame (`-4.3, 2.2, 4.4`): `Units` keeps
+`slave_local` for a slave whose unit state names another slave as its owner object and `resolve_children` puts it at the
+parent's position plus the parent's heading applied to the local position (`slave_child_pose`); `follow_slave_parents`
+repeats that every frame from the interpolated hull, so the cannon sails with the ship and the cannon bind range
+(`CANNON_REACH` 4.5 m) uses its real place. The attach point's own offset is not applied. A Trade Pack Storage chest of a
+ship (`doodad::TRADE_PACK_STORAGE_SKILL`) is only the F key's / the bar's use for a worn trade pack or a right clicked
+chest, so F near an owned ship boards it; the dynamic action bar ignores its buttons while a ground skill is aimed
+(`Aiming::active`).
 
 ## Env switches (dev)
 

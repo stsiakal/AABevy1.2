@@ -871,7 +871,7 @@ impl ShipFloor {
             let Some(mesh) = model.nodes[node].mesh.and_then(|m| model.meshes.get(m)) else { continue };
             let to_model = model.world_transform(node);
             let at = |i: u32| mesh.positions.get(i as usize).map(|p| place(to_model.transform_point3(*p)));
-            for tri in mesh.indices.chunks_exact(3) {
+            for tri in mesh.indices.as_chunks::<3>().0 {
                 if let (Some(a), Some(b), Some(c)) = (at(tri[0]), at(tri[1]), at(tri[2])) {
                     tris.push([a, b, c]);
                 }
@@ -1115,6 +1115,22 @@ mod tests {
         let parts = db.ship_parts(393);
         assert!(parts.len() > 5 && parts.iter().any(|p| p.path.ends_with("galleon_rudder.cgf")), "{} parts", parts.len());
         assert!(parts.iter().all(|p| aa_pak::Pak::global().exists(&p.path)), "a part is missing from the pak");
+    }
+
+    /// `Rotate="w,x,y,z"` and the cry -> Bevy conversion of a brush are the ones the world's dummies and effects use: a quarter turn
+    /// about up turns the bow (+y) to the left (-x) in both spaces, and the position and scale axes follow `(x, z, -y)` / `(x, z, y)`.
+    #[test]
+    fn a_prefab_brush_transform_converts_like_the_rest_of_the_client() {
+        let xml = r#"<Prefab Name="p"><Object Type="Brush" Name="b" Prefab="a/b.cgf" Pos="1,2,3" Rotate="0.70710678,0,0,0.70710678" Scale="1,2,3"/></Prefab>"#;
+        let parts = parse_prefab_brushes(xml);
+        assert_eq!(parts.len(), 1);
+        let part = &parts[0];
+        let bow = part.rot * Vec3::Y;
+        assert!((bow - Vec3::NEG_X).length() < 1e-5, "{bow:?}");
+        let bevy_bow = aa_world::coords::cry_rot_to_bevy(part.rot) * aa_world::coords::cry_to_bevy(Vec3::Y);
+        assert!((bevy_bow - aa_world::coords::cry_to_bevy(Vec3::NEG_X)).length() < 1e-5, "{bevy_bow:?}");
+        assert_eq!(aa_world::coords::cry_to_bevy(part.pos), Vec3::new(1.0, 3.0, -2.0));
+        assert_eq!(part.scale, Vec3::new(1.0, 2.0, 3.0));
     }
 
     #[test]
