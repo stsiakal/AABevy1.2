@@ -167,8 +167,11 @@ is matched case-insensitively; 512 `galleon02`, 1386 and 1402, the sunken wrecks
 1.2 pak does not contain and stay undrawn). `actor_model_file` returns the hull brush for them. The
 sails of the larger ships are separate slave doodads the server binds, not part of the prefab. A
 ship has no skeleton, so it never plays a swim or idle clip. The brush transform is the world's: `Rotate` is
-`w,x,y,z`, positions and rotations go through `cry_to_bevy` / `cry_rot_to_bevy`, scale axes `(x, z, y)` (tested against
-the dummies' conversion). The hull body spans z -5.8 .. 41.8 and y -17 .. 28.5 around the root (the galleon's main
+`w,x,y,z`, the position goes through `cry_to_bevy` and the rotation through `cry_rot_to_bevy(q) * CRY_TO_BEVY`: the loaded
+model's root carries `CRY_TO_BEVY` (its mesh is in cry space) and the brush transform replaces it, so it must contain it (a
+brush transform without it drew every hull standing on its bow); the scale stays on the mesh's cry axes
+(`ship_part_transform`, tested; `cargo run -p aa-client --example ship_hull` with `--offscreen-shot` renders a ship's brushes,
+`SHIP_MODEL`, `SHIP_VIEW`, `SHIP_OLD=1` for the old transform). The hull body spans z -5.8 .. 41.8 and y -17 .. 28.5 around the root (the galleon's main
 deck is at z 2.5, the poop and helm chair at 6.3), and the server puts the summoned hull's root 7 m in front of its
 owner, so a swimmer at the summon spot is inside the hull volume (seeing the deck from below). Creatures, mounts and
 remote player characters that are not driven
