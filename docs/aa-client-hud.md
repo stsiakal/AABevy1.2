@@ -1631,6 +1631,11 @@ owned slave). `X2SiegeWeapon` exposes the native driver/mounted/speed/turn/disca
 `DiscardSiegeWeapon` queues the exact `CSDiscardSlave`. `SLAVE_SPAWN`, `MODE_ACTIONS_UPDATE` and
 `SIEGEWEAPON_UNBOUND` follow the received owned creation and seat transitions. The summon item stays
 the existing item-caster path, so its 5 s cast bar and server errors are the general item paths.
+The same bar is the ship mode bar: a `ShipModel` shows its `slave_mount_skills` rows without the
+land-vehicle driver-seat filter (ship `mount_attached_skills` name telescope/helm equipment points),
+and `X2SiegeWeapon:GetVehicleInfo` returns `nil` for a ship: `slave_info.alb:39-42` takes that
+native nil path (no gear/brake panel), while `GetSiegeWeaponSpeed`/`TurnSpeed` still answer for the
+speed lines (`slave_info.alb:77-90`).
 
 Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
 target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,

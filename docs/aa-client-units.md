@@ -134,7 +134,7 @@ speeds); aa-net's `Movement` now has a generic vehicle writer and reader. The se
 `apply_unit_move`/`vehicle_move` accepts the owned slave, moves it and broadcasts to observers; the
 seated player is positioned by `pose_local_riders` at the vehicle root + 1.1 m (the authored seat
 bone is not mapped yet), so the camera follows the vehicle. Jump/fall are not sent because the
-native vehicle body has no such fields; ships use a different body and remain later work.
+native vehicle body has no such fields; ships use the separate type-3/4 bodies (below).
 
 The original mode action bar (`hud/mode_action_bar/mode_action.alb`) is bounded by
 `X2Unit:GetModeActionsCount()` and establishes `ISLOT_MODE_ACTION` slots. `hud/vehicles.rs` loads
@@ -144,7 +144,39 @@ object id — the same mount-caster contract the server's `mount_authority` acce
 The slave bar is the original mode bar; no invented window. Validation: `ingame::vehicle` checks the
 mate-object vehicle packet/velocity and the one-shot visible slave bind; `hud::vehicles` checks seat
 filtering and self/hostile/position mode skills; aa-net checks the exact type-2 body and session
-send. Full client suite 423 passed / 39 ignored, aa-net library 634 passed.
+send. Full client suite 427 passed / 39 ignored, aa-net library 636 passed.
+
+## Ships (`ship.rs`)
+
+The four 1.2 ship families (rowboat, clipper, merchant ship, fishing boat) use the same slave
+lifecycle as vehicles: `item_summon_slaves` maps the summon item's `use_skill_id` (15802,
+`target_type_id` 12 `SummonPos`) to a slave whose `models.sub_type` is `ShipModel`. The HUD marks
+those item templates (`GameData::is_ship_summon`), so `ground_target` turns the cursor into the
+water-surface reticle only for them; `WaterQuery` supplies the surface height over the sea bed the
+ray hits, and a dry or out-of-range spot is not sent. The server currently places a summoned slave
+in front of its owner (`slaves::create_from_skill` drops the cast position), so the chosen shoreline
+point is validated by the client but not used by this lane.
+
+`vehicle_seat` binds an owned visible ship with the interaction key (no land-vehicle auto-board:
+that would pull a character who only stands on deck into the helm); `CSDiscardSlave` leaves and
+`CSDestroySlave` (`SlaveCommand::Dismiss`, secondary interaction key) is the explicit unsummon.
+Reusing the summon item is the recall (the server saves and removes the active slave, then creates
+it anew). Driver input is the native `ShipRequestMoveType`: `Command::SteerShip` writes
+`CSMoveUnit` type 4 with throttle/steering in the server's signed 127 range
+(`ship_physics.rs`), and the server's physics owns the hull pose and its type-3 broadcasts, which
+`Movement::read_typed` now decodes (`Movement::ship` also has a type-3 writer for completeness).
+Space stops/anchors the helm while seated; there is no separate 1.2 anchor skill in
+`slave_mount_skills`.
+
+`move_units` interpolates the hull; `seat`s come from the server's `slave_attach_points.json`
+(rowboat point 1 has yaw 180; merchant/fishing helm points are at 1.56 m / 6.15 m), so local and
+remote riders sit on the authored seat (`mount::seat_world`). A character who is not attached but
+stands inside the hull box is `DeckRide`: `ship_deck_control` walks it in the ship frame, clamps it
+to `ship_models.mass_box_size_x/y`, follows the interpolated hull, and reports the resulting world
+position 10 times a second. The server's `bind_slave_by_tl` always requests the driver point, so a
+second attached passenger seat is not reachable through this lane; deck standing is the passenger
+path. Slave equipment/cannon items exist in the database (`item_slave_equipments`) but the server's
+`CSChangeSlaveEquipment` handler is a log-only stub, so no cannon spawning/firing path is sent.
 
 ## Env switches (dev)
 
@@ -160,9 +192,12 @@ send. Full client suite 423 passed / 39 ignored, aa-net library 634 passed.
 * Mount and rider placement (the seat-bone offset) is unverified against the real client; the exact native seat/get-on
   reason for every mount kind and underwater mount motion remain open. Mounted locomotion, mount skills and the get-off clip
   now exist (see Mounts).
-* Land vehicles: the authored seat/bone offset and full suspension roll/pitch are not mapped (the client uses
-  root +1.1 m and a level yaw-only quaternion); ship steering/sails/cannons and the type-3 writer remain open.
-  `SCUnitMovements` entries are all read as unit movements (the real client takes the type from the object).
+* Land vehicles: full suspension roll/pitch are not mapped (the client keeps a level yaw-only quaternion).
+  Ships: the server drops the `SummonPos` target and always puts a summoned ship in front of its owner; its
+  `bind_slave_by_tl` always requests the driver seat (no attached passenger path), and cannon equipment is a
+  log-only stub. Ship deck walking is client-side frame following, not server support movement; the deck box
+  comes from `ship_models`, not a walkable hull collision mesh. `SCUnitMovements` entries are all read as unit
+  movements (the real client takes the type from the object).
 * Units beyond 140 m are not drawn.
 
 ## Authored NPC facial playback (2026-10-18)

@@ -71,6 +71,8 @@ fn tuning() -> (bool, f32) {
 #[derive(Component)]
 pub struct RemoteUnit {
     pub obj_id: u32,
+    /// The server's model id (`Unit.model_id`), for hull/seat lookups.
+    pub model_id: u32,
     /// The buffered reports and the playback clock.
     track: Track,
     /// Displayed position / facing (game coordinates, radians).
@@ -89,7 +91,7 @@ impl RemoteUnit {
     /// A drawn player character with nothing else, for the tests of the systems that read `obj_id` and `is_character`.
     #[cfg(test)]
     pub(super) fn test_character(obj_id: u32) -> RemoteUnit {
-        RemoteUnit { obj_id, track: Track::new(Vec3::ZERO, 0.0), pos: Vec3::ZERO, facing: 0.0, scale: 1.0, character: true, combat: false, casting: false }
+        RemoteUnit { obj_id, model_id: 0, track: Track::new(Vec3::ZERO, 0.0), pos: Vec3::ZERO, facing: 0.0, scale: 1.0, character: true, combat: false, casting: false }
     }
 
     pub(super) fn scale(&self) -> f32 {
@@ -601,6 +603,7 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
         Name::new(format!("unit {} {}", unit.obj_id, unit.name)),
         RemoteUnit {
             obj_id: unit.obj_id,
+            model_id: unit.model_id,
             track: Track::new(pos, unit.yaw()),
             pos,
             facing: unit.yaw(),
@@ -637,6 +640,8 @@ pub fn plugin(app: &mut App) {
                 super::vehicle::vehicle_seat,
                 super::mount::drive_mount,
                 super::vehicle::drive_vehicle,
+                super::ship::drive_ship,
+                super::ship::board_deck,
                 super::mount::fake_mount,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,
@@ -749,6 +754,7 @@ const GROUND_SNAP: f32 = 1.0;
 pub fn move_units(
     time: Res<Time>,
     terrain: Res<TerrainQuery>,
+    db: Option<Res<Db>>,
     mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>, Without<super::vehicle::DrivenSlave>)>,
     timers: Option<Res<aa_world::profile::Timers>>,
     mut smoothness: Local<Smoothness>,
@@ -763,10 +769,12 @@ pub fn move_units(
         let before = unit.pos;
         let pose = unit.track.sample(dt);
         let mut pos = pose.pos;
-        // on the ground: the terrain under it (the server's height differs by a few centimetres from our mesh)
+        // on the ground: the terrain under it (the server's height differs by a few centimetres from our mesh).
+        // A ship floats at the water surface; snapping its hull to the sea bed would sink it in shallow water.
+        let floating = db.as_deref().is_some_and(|db| db.is_ship(unit.model_id));
         let ground = terrain.ground_at(pos.x, pos.y).map(|ground| ground.height);
         let airborne = pose.airborne && ground.is_none_or(|g| pos.z - g > 0.25);
-        if !airborne && let Some(g) = ground.filter(|g| (pos.z - g).abs() < GROUND_SNAP) {
+        if !floating && !airborne && let Some(g) = ground.filter(|g| (pos.z - g).abs() < GROUND_SNAP) {
             pos.z = g;
         }
         unit.pos = pos;
@@ -813,7 +821,7 @@ mod lifecycle_tests {
         let pos = Vec3::new(3.0, 4.0, 5.0);
         let mut track = Track::new(pos, 1.0);
         track.push(0.0, Report { pos: pos + Vec3::X, yaw: 1.0, server_ms: 100, airborne: false, combat: true });
-        let entity = app.world_mut().spawn(RemoteUnit { obj_id: 7, track, pos, facing: 1.0, scale: 1.0, character: true, combat: true, casting: false }).id();
+        let entity = app.world_mut().spawn(RemoteUnit { obj_id: 7, model_id: 1, track, pos, facing: 1.0, scale: 1.0, character: true, combat: true, casting: false }).id();
         app.world_mut().resource_mut::<Views>().units.insert(7, View { entity: Some(entity), ..View::default() });
         app.world_mut().write_message(NetEvent(Event::UnitDeath { obj_id: 7 }));
         app.update();

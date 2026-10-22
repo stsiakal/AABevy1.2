@@ -56,6 +56,7 @@ pub(crate) mod player;
 mod prepare;
 mod prewarm;
 mod remote;
+mod ship;
 mod skill_motion;
 mod sounds;
 mod stealth;
@@ -164,6 +165,7 @@ impl Plugin for InGamePlugin {
                         glide::track_flight.run_if(in_state(Screen::InGame)),
                         glide::control_glide.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         player::control_player.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
+                        ship::deck_control.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         camera::follow_player,
                     )
                         .chain()

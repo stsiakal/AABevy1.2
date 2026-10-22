@@ -364,7 +364,7 @@ pub fn control_player(
     (keys, actions): (Res<ButtonInput<KeyCode>>, Res<crate::settings::Actions>),
     mouse: Res<ButtonInput<MouseButton>>,
     mut cameras: Query<&mut OrbitCamera>,
-    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>)>,
+    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&ActorParams>, Has<super::combat::Dead>, Has<super::skill_motion::SkillMove>, Has<super::mount::Dismounting>, Has<super::ship::DeckRide>)>,
     (net_player, stats): (Res<aa_net::state::Player>, Option<Res<aa_net::state::PlayerStats>>),
     terrain: Res<TerrainQuery>,
     collision: Res<WorldCollision>,
@@ -377,7 +377,7 @@ pub fn control_player(
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     (mut trace, sprint, mut local_jump, gliding): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>),
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride)) = player.single_mut() else { return };
     // a glider flies the character: `glide::control_glide` moves it and sends the packets
     if gliding.flying() && !dead {
         return;
@@ -389,6 +389,16 @@ pub fn control_player(
         *input_state = PlayerInput::default();
         mover.velocity = Vec3::ZERO;
         mover.vz = 0.0;
+        mover.swim = None;
+        state.autorun = AutoRun::default();
+        state.was_active = false;
+        return;
+    }
+    // `ship::deck_control` owns a character standing on a ship deck (the server has no walkable
+    // collision for the moving hull, so its frame keeps the character on the deck).
+    if deck_ride {
+        *input_state = PlayerInput::default();
+        mover.velocity = Vec3::ZERO;
         mover.swim = None;
         state.autorun = AutoRun::default();
         state.was_active = false;
@@ -1207,6 +1217,7 @@ mod scripted_input_tests {
             .init_resource::<LocalJump>()
             .init_resource::<crate::ingame::glide::Gliding>()
             .init_resource::<VirtualInput>()
+            .init_resource::<aa_net::state::Player>()
             .init_resource::<crate::settings::Actions>()
             .init_resource::<crate::hud::HudPointerOverUi>()
             .init_resource::<DevOptions>()

@@ -6,7 +6,7 @@
 //! icons of skills, items, buffs, NPC templates, zones, factions, the exp table) is read once by a
 //! background thread at start-up ([`GameData::load_in_background`]) and queried from memory.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use bevy::prelude::*;
@@ -331,6 +331,8 @@ pub struct GameData {
     pub(super) crafting: super::crafting::Tables,
     pub(super) pets: super::pets::Tables,
     pub(super) vehicles: super::vehicles::Tables,
+    /// Item templates whose summon slave is a `ShipModel` (the water-placement cast).
+    pub(super) ship_summon_items: HashSet<u32>,
     pub(super) radar: super::radar::Tables,
     pub(super) battlefield: super::battlefield::Tables,
     pub(super) native_buffs: HashMap<u32,aa_net::state::NativeBuffRule>,
@@ -770,6 +772,14 @@ impl GameData {
         data.crafting = super::crafting::Tables::load(&conn)?;
         data.pets = super::pets::Tables::load(&conn)?;
         data.vehicles = super::vehicles::Tables::load(&conn)?;
+        data.ship_summon_items = {
+            let mut q = conn.prepare(
+                "SELECT DISTINCT iss.item_id FROM item_summon_slaves iss \
+                 JOIN slaves s ON s.id = iss.slave_id \
+                 JOIN models m ON m.id = s.model_id AND m.sub_type = 'ShipModel'",
+            )?;
+            q.query_map([], |r| r.get::<_, u32>(0))?.collect::<rusqlite::Result<HashSet<_>>>()?
+        };
         data.radar = super::radar::Tables::load(&conn)?;
         data.battlefield = super::battlefield::Tables::load(&conn)?;
         data.expedition = super::expedition::Tables::load(&conn)?;
@@ -783,6 +793,12 @@ impl GameData {
         data.load_sub_zone_shapes();
         data.load_quest_areas();
         Ok(data)
+    }
+
+    /// Whether using `item_template_id` summons a ship: the cast is placed on the water surface
+    /// (the server's `SummonPos` target) rather than at the owner's feet.
+    pub fn is_ship_summon(&self, item_template_id: u32) -> bool {
+        self.ship_summon_items.contains(&item_template_id)
     }
 
     /// Reads the sub zone polygons of `main_world` from the pak (about 90 small files).

@@ -37,6 +37,9 @@ struct Lookups {
     mount_moves: HashMap<u32, MountMove>,
     vehicle_bodies: HashMap<u32, VehicleBody>,
     land_vehicles: HashMap<u32, bool>,
+    ship_bodies: HashMap<u32, ShipBody>,
+    ships: HashMap<u32, bool>,
+    seats: HashMap<(u32, u8), Seat>,
 }
 
 /// A land vehicle/slave body from `vehicle_models` (the row `models.sub_id` names when the model
@@ -54,6 +57,43 @@ pub struct VehicleBody {
 impl Default for VehicleBody {
     fn default() -> Self {
         Self { speed: 8.0, turn: 1.0, wheels: 2 }
+    }
+}
+
+/// A ship hull from `ship_models` (the row `models.sub_id` names when the model is a
+/// `ShipModel`). The server owns the hull physics; these numbers are the authored top speed,
+/// reverse speed, rudder rate and the hull box used to keep a standing passenger on deck.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipBody {
+    /// `ship_models.velocity` (m/s).
+    pub speed: f32,
+    /// `ship_models.reverse_velocity` (m/s).
+    pub reverse: f32,
+    /// `ship_models.steer_vel`.
+    pub turn: f32,
+    /// Half extents of the hull box in model space: x lateral, y fore/aft.
+    pub half: [f32; 2],
+    /// Driver deck height above the hull root (`slave_attach_points.json` point 1 Z).
+    pub deck: f32,
+}
+
+impl Default for ShipBody {
+    fn default() -> Self {
+        Self { speed: 13.0, reverse: 5.0, turn: 1.0, half: [3.0, 10.0], deck: 1.5 }
+    }
+}
+
+/// A seat in a slave's model space (`slave_attach_points.json`): x lateral, y fore/aft, z up,
+/// and the attachment yaw offset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Seat {
+    pub local: [f32; 3],
+    pub yaw: f32,
+}
+
+impl Default for Seat {
+    fn default() -> Self {
+        Self { local: [0.0, 0.0, 1.1], yaw: 0.0 }
     }
 }
 
@@ -246,6 +286,9 @@ impl Db {
                 mount_moves: HashMap::new(),
                 vehicle_bodies: HashMap::new(),
                 land_vehicles: HashMap::new(),
+                ship_bodies: HashMap::new(),
+                ships: HashMap::new(),
+                seats: HashMap::new(),
             })),
         })
     }
@@ -422,8 +465,69 @@ impl Db {
         out
     }
 
+    /// The `ship_models` row a slave model draws (`models.sub_type = 'ShipModel'`).
+    pub fn ship_body(&self, model_id: u32) -> ShipBody {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.ship_bodies.get(&model_id) {
+            return *v;
+        }
+        let d = ShipBody::default();
+        let mut out = l
+            .conn
+            .query_row(
+                "SELECT h.velocity, h.reverse_velocity, h.steer_vel, h.mass_box_size_x, h.mass_box_size_y \
+                 FROM models m JOIN ship_models h ON h.id = m.sub_id AND m.sub_type = 'ShipModel' \
+                 WHERE m.id = ?1 LIMIT 1",
+                params![model_id],
+                |r| {
+                    let n = |i: usize, default: f32| -> f32 {
+                        r.get::<_, Option<f64>>(i).ok().flatten().map_or(default, |v| v as f32)
+                    };
+                    Ok(ShipBody {
+                        speed: n(0, d.speed).max(0.1),
+                        reverse: n(1, d.reverse).abs().max(0.1),
+                        turn: n(2, d.turn).abs().max(0.05),
+                        half: [(n(3, d.half[0] * 2.0) * 0.5).max(0.5), (n(4, d.half[1] * 2.0) * 0.5).max(1.0)],
+                        deck: d.deck,
+                    })
+                },
+            )
+            .unwrap_or(d);
+        out.deck = ship_seat(model_id, 1).local[2];
+        l.ship_bodies.insert(model_id, out);
+        out
+    }
+
+    /// The seat of a slave model at an attach point. Ships use the authored point from
+    /// `slave_attach_points.json` (the server data the client's UI is built from); land vehicles
+    /// keep the native root seat until their model attach oracle exists.
+    pub fn seat(&self, model_id: u32, point: u8) -> Seat {
+        let seat_point = if point <= 1 { 1 } else { 2 };
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(s) = l.seats.get(&(model_id, seat_point)) {
+            return *s;
+        }
+        let out = ship_seat(model_id, seat_point);
+        l.seats.insert((model_id, seat_point), out);
+        out
+    }
+
+    /// Whether a slave model is a `ShipModel` rather than a land vehicle / siege model.
+    pub fn is_ship(&self, model_id: u32) -> bool {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.ships.get(&model_id) {
+            return *v;
+        }
+        let out = l
+            .conn
+            .query_row("SELECT 1 FROM models WHERE id = ?1 AND sub_type = 'ShipModel'", params![model_id], |_| Ok(()))
+            .is_ok();
+        l.ships.insert(model_id, out);
+        out
+    }
+
     /// Whether a slave model is a land vehicle (`models.sub_type = 'VehicleModel'`) rather than a
-    /// ship/siege model. Used to keep the vehicle auto-bind off ships until their flow exists.
+    /// ship/siege model.
     pub fn is_land_vehicle(&self, model_id: u32) -> bool {
         let mut l = self.lookups.lock().unwrap();
         if let Some(v) = l.land_vehicles.get(&model_id) {
@@ -688,6 +792,29 @@ fn prefab_model_file(path: &str) -> Option<String> {
     model.ends_with(".cgf").then_some(model)
 }
 
+/// `slave_attach_points.json` seats of the 1.2 ships (model id -> driver and passenger). The
+/// server reads the same file; a ship without an authored second seat uses a point behind the
+/// helm on the same deck.
+fn ship_seat(model_id: u32, point: u8) -> Seat {
+    let (driver, passenger) = match model_id {
+        129 => ([0.0, -0.055_639_5, 1.377_99], [0.0, -1.778_73, 0.930_638]),
+        1288 => ([0.0, 0.405_178, 1.409_84], [0.0, -1.5, 1.0]),
+        128 => ([0.0, -2.9, 1.043_76], [0.0, -4.0, 1.0]),
+        1205 => ([-0.004_175_19, -6.540_26, 1.558_67], [-0.004, -7.6, 1.6]),
+        1383 | 1384 => ([0.000_815_43, -4.696_58, 6.151_29], [0.0, -5.8, 6.2]),
+        1249 => ([0.0, -12.510_9, 5.880_29], [0.0, -13.6, 5.9]),
+        393 | 523 => ([0.0, -14.696_7, 6.208_24], [0.0, -15.8, 6.2]),
+        1287 => ([0.0, 0.405_178, 1.409_84], [0.0, -1.5, 1.0]),
+        _ => ([0.0, 0.0, 1.1], [0.0, -1.5, 1.1]),
+    };
+    let (local, yaw) = if point <= 1 {
+        (driver, if matches!(model_id, 129 | 1288 | 1287) { std::f32::consts::PI } else { 0.0 })
+    } else {
+        (passenger, 0.0)
+    };
+    Seat { local, yaw }
+}
+
 /// Lower case with `/` separators, as the pak wants paths.
 pub fn norm(p: &str) -> String {
     p.replace('\\', "/").to_ascii_lowercase()
@@ -843,5 +970,20 @@ mod tests {
         let g = db.doodad_growth(4403).expect("rice phase 4403 grows");
         assert_eq!((g.delay_ms, g.start_scale, g.end_scale), (9_288_000, 0.75, 1.0));
         assert!(db.doodad_growth(10155).is_none());
+    }
+
+    #[test]
+    fn ship_rows_expose_the_authored_speed_and_seat() {
+        let Some(db) = Db::open() else { return };
+        let rowboat = db.ship_body(129);
+        assert!(db.is_ship(129) && !db.is_land_vehicle(129));
+        assert!((rowboat.speed - 6.4).abs() < 0.1, "{rowboat:?}");
+        assert!(rowboat.half[0] > 0.0 && rowboat.half[1] > 0.0);
+        let driver = db.seat(129, 1);
+        assert!(driver.local[2] > 1.3 && driver.yaw.abs() > 3.0);
+        assert!(db.seat(129, 2).local[2] < driver.local[2]);
+        let merchant = db.ship_body(1205);
+        assert!((merchant.speed - 13.0).abs() < 0.1, "{merchant:?}");
+        assert!(merchant.deck > 1.5);
     }
 }
