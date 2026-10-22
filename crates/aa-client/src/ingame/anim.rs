@@ -77,7 +77,7 @@ fn files() -> &'static std::sync::Mutex<std::collections::HashMap<usize, Arc<str
     FILES.get_or_init(Default::default)
 }
 
-fn remember_file(clip: &BoundClip, path: &str) {
+pub(super) fn remember_file(clip: &BoundClip, path: &str) {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path).to_ascii_lowercase();
     files().lock().unwrap_or_else(|e| e.into_inner()).entry(Arc::as_ptr(&clip.clip) as usize).or_insert_with(|| Arc::from(name.as_str()));
 }
@@ -337,6 +337,9 @@ pub struct Motion {
     /// The PseudoSpeed the movement request carries when it is known (the mount the local player drives: 0 without input, 0.4 with
     /// the walk toggle, 1.0, 1.5 under auto-move). Without it the value is guessed from the ground speed (remote units).
     pub request: Option<f32>,
+    /// Hanging on a ladder or rope: 1.2's `isOnLadder` animation input (`FUN_39136dc0:50`); the climb
+    /// clips are played by [`super::ladder::drive_ladder`] and locomotion stands down.
+    pub on_ladder: bool,
 }
 
 /// The clips of a model and what it is currently playing.
@@ -436,6 +439,11 @@ pub fn drive_locomotion(
             if loco.jump.phase.is_some() {
                 loco.jump.interrupted(motion.airborne);
             }
+            continue;
+        }
+        // 1.2's `isOnLadder`: `super::ladder::drive_ladder` plays the climb clips
+        if motion.on_ladder {
+            loco.jump = JumpTrack::default();
             continue;
         }
         let stance = drawn.and_then(|d| d.stance(now)).map(|out| Stance::of(out, wield.copied().unwrap_or_default()));

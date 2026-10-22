@@ -261,7 +261,7 @@ pub fn deck_control(
     mover.velocity = Vec3::ZERO;
     mover.swim = None;
     *transform = placement(world, facing, 1.0);
-    *motion = Motion { speed: if fwd != 0.0 || strafe != 0.0 { RUN_SPEED } else { 0.0 }, local_dir: Vec2::Y, airborne: false, swimming: false, auto: false, request: None };
+    *motion = Motion { speed: if fwd != 0.0 || strafe != 0.0 { RUN_SPEED } else { 0.0 }, local_dir: Vec2::Y, airborne: false, swimming: false, auto: false, request: None, on_ladder: false };
     deck.since_sent += dt;
     let moved = world.distance(deck.last) > 0.02 || !deck.sent;
     if moved && deck.since_sent >= 0.1 {

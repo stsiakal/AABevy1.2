@@ -1259,9 +1259,9 @@ pub mod actor_flags {
     pub const STANDING_ON_SOLID: u8 = 0x04;
     /// In the air after a jump.
     pub const JUMPING: u8 = 0x10;
-    /// Standing on a ship, vehicle or doodad; a block naming the object follows (not modelled).
+    /// Standing on a ship, vehicle or doodad: a block with the object's flags, part and world frame follows.
     pub const STANDING_ON_OBJECT: u8 = 0x20;
-    /// Hanging from an object; climb data follows (not modelled).
+    /// Hanging from an object (a ladder, a rope): the object id and 32-bit climb data follow.
     pub const HANGING_FROM_OBJECT: u8 = 0x40;
     /// A `u16` fall velocity follows.
     pub const FALL_VELOCITY: u8 = 0x80;
@@ -1348,7 +1348,7 @@ pub struct ShipMove {
 
 /// What a unit stands on or hangs from, as a unit movement reports it. While it stands on something, the movement's `pos` is
 /// relative to that object and [`MoveSupport::world`] is where the unit really is.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MoveSupport {
     /// Object id (`gcId`).
     pub obj_id: u32,
@@ -1470,8 +1470,7 @@ impl Movement {
 
     /// Body after the object id: type byte and `MoveType.Write`.
     pub fn write(&self, w: &mut Writer) {
-        // The supporting-object and climbing blocks are not modelled: never announce them.
-        let af = self.actor_flags & !(actor_flags::STANDING_ON_OBJECT | actor_flags::HANGING_FROM_OBJECT);
+        let af = self.actor_flags;
         w.u8(self.move_type).u32(self.time).u8(self.flags);
         if self.flags & move_flags::HAS_SC_TYPE_AND_PHASE != 0 {
             w.u32(0).u8(0);
@@ -1533,6 +1532,19 @@ impl Movement {
             .u8(af);
         if af & actor_flags::FALL_VELOCITY != 0 {
             w.u16(self.fall_vel);
+        }
+        // The supporting-object and hanging blocks, in `UnitMove.Read` order: the object's flags,
+        // part and world frame; then the object id (for either flag); then the climb data.
+        if af & (actor_flags::STANDING_ON_OBJECT | actor_flags::HANGING_FROM_OBJECT) != 0 {
+            let support = self.support.unwrap_or_default();
+            if af & actor_flags::STANDING_ON_OBJECT != 0 {
+                let (pos, rotation) = support.world.unwrap_or_default();
+                w.u8(support.kind).u16(support.part).position(pos).i8(rotation[0]).i8(rotation[1]).i8(rotation[2]);
+            }
+            w.u32(support.obj_id);
+            if af & actor_flags::HANGING_FROM_OBJECT != 0 {
+                w.u32(support.climb.unwrap_or(0));
+            }
         }
     }
 
@@ -2241,14 +2253,60 @@ mod tests {
         assert_eq!((back.alertness, back.fall_vel), (2, 0x1234));
         assert_eq!(back.actor_flags, 0x84);
 
-        // The fall velocity block is only written when its flag is set, and the object / climb
-        // blocks (not modelled) are never announced.
-        m.actor_flags = actor_flags::STANDING_ON_OBJECT | actor_flags::HANGING_FROM_OBJECT | actor_flags::JUMPING;
+        // Without either object flag the support blocks are absent.
+        m.actor_flags = actor_flags::JUMPING;
+        m.support = Some(MoveSupport { obj_id: 9, climb: Some(5), ..MoveSupport::default() });
         let mut w = Writer::new();
         m.write(&mut w);
         let bytes = w.finish();
         assert_eq!(*bytes.last().unwrap(), actor_flags::JUMPING);
         assert_eq!(Movement::read(&mut Reader::new(&bytes)).unwrap().fall_vel, 0);
+    }
+
+    /// `UnitMove.Read` / `MoveType.Write` (aaemu-game `models/movement.rs`): after the actor flags
+    /// and `fallVel`, the gc block for 0x20 (flags u8, part u16, world position + 3 rotation bytes),
+    /// the gc id u32 for 0x60 and the climb data u32 for 0x40.
+    #[test]
+    fn movement_writes_the_support_and_climb_blocks_byte_exactly() {
+        let mut m = Movement::unit(Pos::new(10.0, 20.0, 30.0), 0.0, 5);
+        m.actor_flags = actor_flags::STANDING_ON_OBJECT | actor_flags::HANGING_FROM_OBJECT;
+        m.support = Some(MoveSupport {
+            obj_id: 0x1234_5678,
+            kind: 4,
+            part: 0x0102,
+            world: Some((Pos::new(1.0, 2.0, -100.0), [1, 2, 3])),
+            climb: Some(0x9abc_def0),
+        });
+        let mut w = Writer::new();
+        m.write(&mut w);
+        let bytes = w.finish();
+        // type + time + flags = 6 bytes, then the 24-byte control block.
+        let tail = &bytes[6 + 24..];
+        assert_eq!(tail[0], 4);
+        assert_eq!(&tail[1..3], &0x0102u16.to_le_bytes());
+        assert_eq!(&tail[3..12], &[0, 2, 0, 0, 4, 0, 0, 0, 0]); // x 1 m, y 2 m, z -100 m
+        assert_eq!(&tail[12..15], &[1, 2, 3]);
+        assert_eq!(&tail[15..19], &0x1234_5678u32.to_le_bytes());
+        assert_eq!(&tail[19..23], &0x9abc_def0u32.to_le_bytes());
+        assert_eq!(tail.len(), 23);
+
+        let back = Movement::read(&mut Reader::new(&bytes)).unwrap();
+        assert_eq!(back.support, m.support);
+        assert_eq!(back.actor_flags, m.actor_flags);
+    }
+
+    #[test]
+    fn a_hanging_unit_writes_only_the_gc_id_and_climb_data() {
+        let mut m = Movement::unit(Pos::new(0.0, 0.0, -100.0), 0.0, 1);
+        m.actor_flags = actor_flags::HANGING_FROM_OBJECT;
+        m.support = Some(MoveSupport { obj_id: 0x00ab_cdef, climb: Some(0x0000_0123), ..MoveSupport::default() });
+        let mut w = Writer::new();
+        m.write(&mut w);
+        let bytes = w.finish();
+        let tail = &bytes[6 + 24..];
+        assert_eq!(tail, [0xef, 0xcd, 0xab, 0x00, 0x23, 0x01, 0x00, 0x00]);
+        let back = Movement::read(&mut Reader::new(&bytes)).unwrap();
+        assert_eq!(back.support.unwrap().climb, Some(0x123));
     }
 
     #[test]
