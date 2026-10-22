@@ -73,13 +73,17 @@ pub fn pointer_over_ui(
 }
 
 /// The client's window key bindings.
-pub fn hotkeys(actions: Res<crate::settings::Actions>, focus: Res<HudKeyboardFocus>, rt: Option<NonSend<UiRuntime>>) {
+pub fn hotkeys(actions: Res<crate::settings::Actions>, focus: Res<HudKeyboardFocus>, rt: Option<NonSend<UiRuntime>>, bridge: Option<NonSend<super::api::HudBridge>>) {
     let Some(rt) = rt else { return };
     if focus.0 || rt.keyboard_captured() {
         return;
     }
     for (action, index, button) in actions.hotkeys() {
-        if button {
+        if action == super::vehicles::INFO_KEY {
+            if let Some(bridge) = &bridge {
+                super::vehicles::info_key(&rt, &bridge.0);
+            }
+        } else if button {
             if let Ok(Some(value)) = rt.lua.globals().get::<Option<mlua::Value>>(action)
                 && let Some(id) = aa_ui::lua::value_id(&rt.lua, &value)
             {

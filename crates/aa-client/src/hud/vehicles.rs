@@ -442,6 +442,17 @@ pub(super) fn use_action(data: &HudData, index: usize, target_obj_id: u32, targe
     }
 }
 
+/// The key binding `builtin_vehicle_info` ("Open Pet Details"): the only thing that fires `SHOW_SLAVE_INFO` in the original
+/// (stub `0x392043d0`), which `mode_action.alb` answers by toggling the Summon Info window. Boarding does not open it, and
+/// the script hides it again whenever the mode bar has no skills (`MODE_ACTIONS_UPDATE`). Nothing happens without a slave.
+pub(super) const INFO_KEY: &str = "builtin_vehicle_info";
+
+pub(super) fn info_key(rt: &UiRuntime, bridge: &Shared) {
+    if bridge.borrow().vehicles.current.is_some() {
+        rt.fire_event("SHOW_SLAVE_INFO", ());
+    }
+}
+
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     let (old, next) = {
         let mut data = bridge.borrow_mut();
@@ -459,13 +470,6 @@ pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     }
     if old.as_ref().is_some_and(|v| v.point.is_some()) && next.as_ref().is_none_or(|v| v.point.is_none()) {
         rt.fire_event("SIEGEWEAPON_UNBOUND", ());
-    }
-    // The Summon Info window opens when the player boards (the native trigger of `SHOW_SLAVE_INFO` is
-    // not in the scripts; `mode_action.alb` hides the window again when the bar has no skills).
-    let boarded = next.as_ref().is_some_and(|v| v.point.is_some() && !v.cannon)
-        && old.as_ref().is_none_or(|v| v.point.is_none() || v.obj_id != next.as_ref().map_or(0, |n| n.obj_id));
-    if boarded && rt.lua.load("return slaveInfoFrame ~= nil and not slaveInfoFrame:IsVisible()").eval::<bool>().unwrap_or(false) {
-        rt.fire_event("SHOW_SLAVE_INFO", ());
     }
     match (&old, &next) {
         (Some(o), Some(n)) if o.obj_id == n.obj_id => {

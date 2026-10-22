@@ -115,15 +115,19 @@ fn original_summon_info_window_runs_and_its_slots_follow_the_worn_parts() {
         let mut data = bridge.borrow_mut();
         data.vehicles.current = Some(ship(&[(3, item(CANNON, 40)), (4, item(CANNON, 41))]));
     }
-    // boarding: the mode bar gets skills, the information window opens (SHOW_SLAVE_INFO)
+    // boarding: the mode bar gets skills; the information window does NOT open (only the Open Pet Details key does)
     vehicles::push(&rt, &bridge);
+    assert!(rt.errors.is_empty(), "{:?}", rt.errors);
+    let closed: bool = rt.lua.load("return not slaveInfoFrame:IsVisible()").eval().unwrap();
+    assert!(closed, "boarding leaves the Summon Info window closed");
+    vehicles::info_key(&rt, &bridge);
     assert!(rt.errors.is_empty(), "{:?}", rt.errors);
     let ok: bool = rt
         .lua
         .load(
             r#"
             local f = slaveInfoFrame
-      assert(f:IsVisible(), 'summon info window opens on boarding')
+      assert(f:IsVisible(), 'summon info window opens with the key')
       assert(f.customizingType == 4, 'customizing type ' .. tostring(f.customizingType))
       local info = X2SiegeWeapon:GetMountedSiegeWeaponInfo()
       assert(info.kind == 'small_sailing_ship', tostring(info.kind)); assert(info.desc_name ~= '', 'desc'); assert(info.name == 'Test Ship', 'name')
@@ -175,6 +179,29 @@ fn original_summon_info_window_runs_and_its_slots_follow_the_worn_parts() {
     vehicles::push(&rt, &bridge);
     let hidden: bool = rt.lua.load("return not slaveInfoFrame:IsVisible()").eval().unwrap();
     assert!(hidden);
+}
+
+#[test]
+fn the_info_key_needs_a_slave_and_the_bar_without_skills_hides_the_window_again() {
+    let (rt, bridge) = runtime();
+    let visible = |rt: &UiRuntime| -> bool { rt.lua.load("return slaveInfoFrame:IsVisible()").eval().unwrap() };
+    // no slave: the key does nothing
+    vehicles::info_key(&rt, &bridge);
+    assert!(!visible(&rt));
+    bridge.borrow_mut().vehicles.current = Some(ship(&[]));
+    vehicles::push(&rt, &bridge);
+    vehicles::info_key(&rt, &bridge);
+    assert!(visible(&rt), "the key opens it on a slave");
+    // another slave whose mode bar has no skills: MODE_ACTIONS_UPDATE hides the window (`mode_action.alb`, count 0)
+    {
+        let mut data = bridge.borrow_mut();
+        let current = data.vehicles.current.as_mut().unwrap();
+        current.obj_id = 501;
+        current.template = 0;
+    }
+    vehicles::push(&rt, &bridge);
+    assert!(rt.errors.is_empty(), "{:?}", rt.errors);
+    assert!(!visible(&rt), "no skills on the bar: the window hides");
 }
 
 #[test]
