@@ -26,9 +26,9 @@ use bevy::prelude::*;
 
 use crate::Screen;
 use crate::hud::script_api::{self, HudBridge, ScriptedKeys, ScriptedSession};
-use crate::ingame::DevOptions;
 use crate::ingame::camera::OrbitCamera;
 use crate::ingame::player::{LocalPlayer, Mover};
+use crate::ingame::virtual_input::{self, VirtualInput};
 use parse::{Cmd, Cond, CondKind, Line, Spec};
 
 /// A pick the script made, waiting for the system that consumes the mouse's pick, and the result of the last talk.
@@ -273,7 +273,6 @@ struct Ctx<'w, 's> {
     skills: Res<'w, aa_net::state::Skills>,
     bridge: NonSend<'w, HudBridge>,
     rt: Option<NonSend<'w, aa_ui::UiRuntime>>,
-    dev: ResMut<'w, DevOptions>,
     keys: ResMut<'w, ScriptedKeys>,
     session: ResMut<'w, ScriptedSession>,
     pick: ResMut<'w, ScriptPick>,
@@ -288,6 +287,7 @@ struct Ctx<'w, 's> {
     houses: Res<'w, aa_net::Houses>,
     housing_areas: Option<Res<'w, crate::ingame::houses::HousingAreas>>,
     virtual_input: ResMut<'w, crate::ingame::virtual_input::VirtualInput>,
+    ui_pointer: Option<ResMut<'w, aa_ui::UiVirtualPointer>>,
     terrain: Option<Res<'w, aa_world::TerrainQuery>>,
     collision: Option<Res<'w, aa_world::WorldCollision>>,
     water: Option<Res<'w, aa_world::WaterQuery>>,
@@ -441,6 +441,31 @@ fn eval(r: &Runner, c: &Cond, ctx: &Ctx) -> (bool, String) {
 
 fn say(r: &Runner, text: &str) {
     println!("SCRIPT [{:6.1}s] line {}: {text}", r.t0.elapsed().as_secs_f32(), r.current_no());
+}
+
+/// The original action bar's key for slot N (1 based: `1` ... `9`, `0` for the tenth).
+fn action_slot_key(slot: usize) -> KeyCode {
+    match slot % 10 {
+        1 => KeyCode::Digit1,
+        2 => KeyCode::Digit2,
+        3 => KeyCode::Digit3,
+        4 => KeyCode::Digit4,
+        5 => KeyCode::Digit5,
+        6 => KeyCode::Digit6,
+        7 => KeyCode::Digit7,
+        8 => KeyCode::Digit8,
+        9 => KeyCode::Digit9,
+        _ => KeyCode::Digit0,
+    }
+}
+
+/// `key NAME` through the real bindings, including the script's `slotN` (action bar slot N).
+fn tap_key(input: &mut VirtualInput, name: &str) -> bool {
+    if let Some(slot) = name.strip_prefix("slot").and_then(|n| n.parse::<usize>().ok()) {
+        input.tap(action_slot_key(slot));
+        return true;
+    }
+    input.tap_name(name)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -806,7 +831,7 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Cast { skill: *skill, deadline: now + 5.0, turned: false })
         }
         Cmd::CastSlot(n) => {
-            c.keys.push_now(&format!("slot{n}"), false);
+            c.virtual_input.tap(action_slot_key(*n));
             Some(Active::Wait { until: now + 1.0 })
         }
         Cmd::Fight { skill, slot, spec, secs } => {
@@ -882,19 +907,41 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
             Some(Active::Wait { until: now + 0.5 })
         }
         Cmd::Key(k) => {
-            let escape = matches!(k.to_ascii_lowercase().as_str(), "escape" | "esc");
-            // while aiming, Escape belongs to the placement (retail opens no Menu); with the tax window open it
-            // belongs to the original Lua window (Cancel), so only then does it reach the HUD
-            let placing_escape = escape && c.placement.session.as_ref().is_some_and(|s| !s.window_open);
-            if placing_escape {
-                c.virtual_input.queue_key_name(k);
-            } else {
-                c.keys.push_now(k, false);
+            if !tap_key(&mut c.virtual_input, k) {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
             }
             Some(Active::Wait { until: now + 0.3 })
         }
+        Cmd::KeyDown(k) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.key_down(key);
+            Some(Active::Wait { until: now + 0.1 })
+        }
+        Cmd::KeyUp(k) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.key_up(key);
+            Some(Active::Wait { until: now + 0.1 })
+        }
+        Cmd::Hold(k, secs) => {
+            let Some(key) = virtual_input::key_code(k) else {
+                r.fail(format!("unknown key '{k}'"));
+                return None;
+            };
+            c.virtual_input.hold(key, *secs);
+            Some(Active::Wait { until: now + 0.1 })
+        }
         Cmd::Cursor(x, y) => {
             c.virtual_input.set_cursor(*x, *y);
+            if let Some(pointer) = c.ui_pointer.as_mut() {
+                pointer.pos = None;
+            }
             say(r, &format!("virtual cursor {x} {y}"));
             Some(Active::Wait { until: now + 0.2 })
         }
@@ -1039,18 +1086,18 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
         Active::Wait { until } => (now < until).then_some(Active::Wait { until }),
         Active::Walk { goal, radius, start, deadline, mut best, mut best_t } => {
             let Some(me) = c.me() else {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 r.fail("the player is gone".into());
                 return None;
             };
             let Some(to) = goal_pos(c, &goal) else {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 r.fail("the unit walked to is gone".into());
                 return None;
             };
             let dist = me.truncate().distance(to);
             if dist <= radius {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 say(r, &format!("arrived at ({:.1}, {:.1}) after {:.1} s", me.x, me.y, now - start));
                 return None;
             }
@@ -1059,7 +1106,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
                 best_t = now;
             }
             if now > deadline || now - best_t > 8.0 {
-                c.dev.script_keys.clear();
+                c.virtual_input.key_up(KeyCode::KeyW);
                 let why = if now > deadline { "timed out" } else { "stuck (no progress for 8 s)" };
                 r.fail(format!("walk {why} at ({:.1}, {:.1}, {:.1}), {dist:.1} m from ({:.1}, {:.1})", me.x, me.y, me.z, to.x, to.y));
                 return None;
@@ -1070,7 +1117,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
             for mut o in &mut c.cameras {
                 o.yaw = yaw;
             }
-            c.dev.script_keys = "W".into();
+            c.virtual_input.key_down(KeyCode::KeyW);
             Some(Active::Walk { goal, radius, start, deadline, best, best_t })
         }
         Active::Await { event, deadline, must } => {
@@ -1178,7 +1225,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
                     Some(s) => {
                         c.net.write(NetCommand(Command::UseSkill { skill_id: s, target_obj_id: target }));
                     }
-                    None => c.keys.push_now(&format!("slot{slot}"), false),
+                    None => c.virtual_input.tap(action_slot_key(slot)),
                 }
                 casts += 1;
                 next = now + 1.5;
@@ -1189,7 +1236,7 @@ fn tick(r: &mut Runner, c: &mut Ctx, active: Active, now: f32) -> Option<Active>
             let facts = script_api::facts(&c.bridge);
             if !sent {
                 if facts.loot_nearest.is_some() {
-                    c.keys.push_now("f", false);
+                    c.virtual_input.tap(KeyCode::KeyF);
                     return Some(Active::Loot { deadline: now + 6.0, sent: true, must });
                 }
                 if now > deadline {

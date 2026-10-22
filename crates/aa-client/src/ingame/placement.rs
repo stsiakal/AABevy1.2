@@ -1474,7 +1474,6 @@ fn input(
     focus: Option<Res<HudKeyboardFocus>>,
     mut placement: ResMut<Placement>,
     visuals: Res<Visuals>,
-    mut virtual_input: ResMut<VirtualInput>,
     skills: Res<Skills>,
     rt: Option<NonSend<aa_ui::UiRuntime>>,
     mut net: MessageWriter<NetCommand>,
@@ -1491,10 +1490,10 @@ fn input(
         end_session(&mut commands, &mut placement, &visuals);
         return;
     }
-    let virtual_click = virtual_input.take_click();
-    let virtual_keys = virtual_input.take_keys();
-    let virtual_wheels = virtual_input.take_wheels();
-    let mut cancel = keys.just_pressed(KeyCode::Escape) || virtual_keys.contains(&KeyCode::Escape);
+    // Scripted input reaches this point as real `KeyboardInput` / `MouseButtonInput` / `MouseWheel`
+    // (`ingame::virtual_input::inject`), so the buttons, the modifiers and the wheel below are the
+    // same for the script and the physical devices.
+    let mut cancel = keys.just_pressed(KeyCode::Escape);
     if cancel {
         keys.clear_just_pressed(KeyCode::Escape);
     }
@@ -1503,28 +1502,21 @@ fn input(
         keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
         keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
     );
-    let mut real_wheel = 0.0;
+    let mut turn = 0.0;
     for ev in wheel.read() {
-        real_wheel += wheel_turn(shift, alt, ctrl, ev.y);
-    }
-    let mut turn = real_wheel;
-    if !virtual_wheels.is_empty() {
-        turn = 0.0;
-        for w in &virtual_wheels {
-            turn += wheel_turn(w.shift, w.alt, w.ctrl, w.steps);
-        }
+        turn += wheel_turn(shift, alt, ctrl, ev.y);
     }
     // the confirmed house's yaw is part of the locked placement
     if turn != 0.0 && !session.quote_requested {
         session.yaw = wrap_angle(session.yaw + turn);
     }
-    let right_click = mouse.just_pressed(MouseButton::Right) || virtual_click == Some(MouseButton::Right);
+    let right_click = mouse.just_pressed(MouseButton::Right);
     if right_click {
         mouse.clear_just_pressed(MouseButton::Right);
         cancel = true;
     }
-    let left_down = mouse.pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
-    let left_just = mouse.just_pressed(MouseButton::Left) || virtual_click == Some(MouseButton::Left);
+    let left_down = mouse.pressed(MouseButton::Left);
+    let left_just = mouse.just_pressed(MouseButton::Left);
     if left_just && !over_ui {
         mouse.clear_just_pressed(MouseButton::Left);
     }
@@ -2379,17 +2371,17 @@ mod tests {
             sent.0.extend(events.read().map(|command| command.0.clone()));
         }
         let mut app = App::new();
-        app.add_message::<NetCommand>()
-            .add_message::<bevy::input::mouse::MouseWheel>()
+        app.add_plugins(bevy::input::InputPlugin)
+            .add_message::<NetCommand>()
             .init_resource::<VirtualInput>()
             .init_resource::<Visuals>()
             .init_resource::<Sent>()
             .init_resource::<Skills>()
             .insert_resource(HudPointerOverUi::default())
             .insert_resource(HudKeyboardFocus::default())
-            .insert_resource(ButtonInput::<MouseButton>::default())
-            .insert_resource(ButtonInput::<KeyCode>::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
             .add_systems(Update, (input, collect).chain());
+        app.insert_resource(Time::<()>::default());
         let mut session = Session::new(77, plant(), 0.0);
         session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
         session.invalid = None;

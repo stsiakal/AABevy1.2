@@ -152,7 +152,14 @@ pub enum Cmd {
     /// `true`: `loot` (fails when there is nothing to take); `tryloot` only reports it.
     Loot(Spec, bool),
     Open(String),
+    /// A tap: press and release through the real key bindings.
     Key(String),
+    /// Hold a key until `KeyUp` (or the end of the run).
+    KeyDown(String),
+    /// Release a key held by `KeyDown` or `Hold`.
+    KeyUp(String),
+    /// Press a key and release it after this many seconds.
+    Hold(String, f32),
     Type(String),
     HudClick(f32, f32, bool),
     HudHover(f32, f32),
@@ -335,7 +342,13 @@ pub fn parse_line(line: &str) -> Result<Option<Cmd>, String> {
         "loot" | "tryloot" => Cmd::Loot(spec(a, 0, Spec::Corpse)?, name == "loot"),
         "open" | "toggle" => Cmd::Open(a.first().ok_or("missing hotkey action (toggle_bag, toggle_character, ...)")?.to_string()),
         "close" | "escape" => Cmd::Key("escape".into()),
-        "key" => Cmd::Key(a.first().ok_or("missing key name (enter, escape, tab, slotN, f, g ...)")?.to_ascii_lowercase()),
+        "key" | "tap" => Cmd::Key(a.first().ok_or("missing key name (enter, escape, tab, slotN, f, g ...)")?.to_ascii_lowercase()),
+        "keydown" | "press" => Cmd::KeyDown(a.first().ok_or("missing key name")?.to_ascii_lowercase()),
+        "keyup" | "release" => Cmd::KeyUp(a.first().ok_or("missing key name")?.to_ascii_lowercase()),
+        "hold" => Cmd::Hold(
+            a.first().ok_or("hold needs a key name and seconds (hold w 3)")?.to_ascii_lowercase(),
+            num(a.get(1), "seconds")?,
+        ),
         "type" => Cmd::Type(rest(text, 1)),
         "hudclick" | "uiclick" => Cmd::HudClick(num(a.first(), "x")?, num(a.get(1), "y")?, false),
         "hudrclick" | "uirclick" => Cmd::HudClick(num(a.first(), "x")?, num(a.get(1), "y")?, true),
@@ -427,6 +440,17 @@ mod tests {
         assert_eq!(lines[6].cmd, Cmd::Wheel { steps: 1.0, shift: false, alt: true, ctrl: true });
         assert!(parse("cursor 0.5", "s").is_err());
         assert!(parse("wheel", "s").is_err());
+    }
+
+    #[test]
+    fn parses_the_key_press_hold_and_release_commands() {
+        let lines = parse("key f\nhold w 3\nkeydown shift\nkeyup shift\n", "t").unwrap();
+        assert_eq!(lines[0].cmd, Cmd::Key("f".into()));
+        assert_eq!(lines[1].cmd, Cmd::Hold("w".into(), 3.0));
+        assert_eq!(lines[2].cmd, Cmd::KeyDown("shift".into()));
+        assert_eq!(lines[3].cmd, Cmd::KeyUp("shift".into()));
+        assert!(parse("hold w", "s").is_err());
+        assert!(parse("keydown", "s").is_err());
     }
 
     #[test]

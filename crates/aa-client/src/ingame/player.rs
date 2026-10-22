@@ -1124,3 +1124,56 @@ mod movement_rules_tests {
         assert_eq!(air_step(0.0, -10.0, 7.5, 0.016, 4.0).1, -4.0);
     }
 }
+
+#[cfg(test)]
+mod scripted_input_tests {
+    use super::*;
+    use crate::ingame::virtual_input::{inject, VirtualInput};
+    use bevy::input::InputPlugin;
+
+    /// `hold w` through the bindings drives the on-foot controller: the same `moveforward` action
+    /// `control_player` reads from a physical W moves the local character.
+    #[test]
+    fn a_scripted_hold_w_moves_the_on_foot_player() {
+        if !aa_world::pak_available() {
+            return;
+        }
+        let terrain = TerrainQuery::new("main_world");
+        let collision = WorldCollision::new("main_world", terrain.clone());
+        let water = WaterQuery::new("main_world");
+        let mut app = App::new();
+        app.add_plugins(InputPlugin)
+            .insert_resource(Time::<()>::default())
+            .insert_resource(terrain)
+            .insert_resource(collision)
+            .insert_resource(water)
+            .init_resource::<SendState>()
+            .init_resource::<PlayerInput>()
+            .init_resource::<LocalJump>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<crate::settings::Actions>()
+            .init_resource::<crate::hud::HudPointerOverUi>()
+            .init_resource::<DevOptions>()
+            .insert_non_send(crate::hud::api::HudBridge::default())
+            .add_message::<NetCommand>()
+            .add_systems(PreUpdate, inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (crate::settings::update_input, control_player).chain());
+        // the solid main_world point the collision tests use
+        let start = Vec3::new(21188.25, 9030.5, 498.16614);
+        app.world_mut().spawn((
+            LocalPlayer { obj_id: 1 },
+            Mover { pos: start, facing: 0.0, vz: 0.0, grounded: true, velocity: Vec3::ZERO, swim: None, wading: 0.0 },
+            Transform::default(),
+            Motion::default(),
+        ));
+        app.world_mut().spawn(OrbitCamera::default());
+        app.world_mut().resource_mut::<SendState>().settled = true;
+        app.world_mut().resource_mut::<VirtualInput>().hold(KeyCode::KeyW, 1.0);
+        for _ in 0..12 {
+            app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_millis(33));
+            app.update();
+        }
+        let moved = app.world_mut().query::<&Mover>().single(app.world()).expect("player").pos;
+        assert!(moved.truncate().distance(start.truncate()) > 1.0, "held W moved the player from {start} to {moved}");
+    }
+}
