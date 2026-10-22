@@ -65,6 +65,7 @@ fn setup(mut commands: Commands, mut cry: CryAssets, clips: Res<ClipLibrary>) {
     commands.spawn((Camera3d::default(), Projection::Perspective(PerspectiveProjection { fov: 50f32.to_radians(), ..default() }), Transform::from_translation(eye).looking_at(at, up)));
 }
 
+#[allow(clippy::type_complexity)]
 fn dress(mut commands: Commands, mut cry: CryAssets, bodies: Query<(Entity, &Animator), (Without<VehicleWheels>, Without<Wheel>)>, mut once: Local<Option<ingame::data::Db>>) {
     let db = once.get_or_insert_with(|| ingame::data::Db::open().expect("game database"));
     for (entity, animator) in &bodies {

@@ -1657,11 +1657,33 @@ rules as the server (`item_slave_equipments`, `allow_to_equip_slaves`, `allow_to
 Events: `SLAVE_UNIT_EQUIPMENT_CHANGED(slot, slot)` per changed slot, `UPDATE_SLAVE_EQUIPMENT_SLOT`
 when the pointer picks up / drops something, `UNIT_NAME_CHANGED(obj)` on a rename.
 
-How the window opens is not in the scripts (`SHOW_SLAVE_INFO` is native; the tooltip text
-`showSlaveInfo` belongs to a native button). Here it opens (toggle semantics of
-`mode_action.alb:162-165`) when the player boards the slave; `mode_action.alb` hides it when the bar
-has no skills and `SIEGEWEAPON_UNBOUND` hides it on leaving. There is no 1.2 weight, ramming or
-customize UI; only Type, Classification, Move and Turn speed plus the grid.
+How the window opens is not in the scripts (`SHOW_SLAVE_INFO` is native). The 1.2 client fires it from
+exactly one place, the key binding "Open Pet Details" (`builtin_vehicle_info`, stub `0x392043d0`;
+`docs/research/re-wagons.md` 5), so boarding does **not** open it. Here the `builtin_vehicle_info`
+binding (`hud::vehicles::INFO_KEY`, handled by `hud::input::hotkeys`) fires `SHOW_SLAVE_INFO` while the
+player has a slave (toggle semantics of `mode_action.alb:162-165`); `mode_action.alb` hides it again
+whenever `MODE_ACTIONS_UPDATE` finds no skill on the bar and `SIEGEWEAPON_UNBOUND` hides it on leaving.
+The 1.2 default bindings have no default key for it; it is bound in the key settings. There is no 1.2
+weight, ramming or customize UI; only Type, Classification, Move and Turn speed plus the grid.
+
+### Farm Wagon and land vehicles (2026-10-22, `docs/research/re-wagons.md`)
+
+* Boarding: `CSBindSlave` is sent only by the interaction key (`do_interaction_1`) with the land vehicle
+  targeted, after the original's prechecks (`ingame::vehicle::board_refusal`: dead slave 324, dead or
+  busy player, already seated 19, range 154, seat taken 97, not the summoner 96); a refusal prints the
+  `SCErrorMsg` text through the usual `SYSMSG` path. Nothing binds after `SCSlaveCreated`. The range
+  (`BOARD_RANGE`, 10 m) is a stand-in: the original's constant is not in the dump.
+* Getting off: `CSDiscardSlave` is refused above 5 m/s (`SLAVE_SHUT_OFF_TO_UNBIND`, code 103).
+* Wheels (`ingame/wheels.rs`): `wheelN` bones take `vehicle_models.wheel`, `wheel_typeN` bones take
+  `wheel2`; each wheel rolls by distance / its own radius (half its model's extent). The wheel
+  entries of `VehicleMove` are the wheel bones of the body (4 for the wagon), each the angular speed
+  `speed / radius`.
+* Steering gear (`ingame/helm.rs`): the helm cgf (`<body>_hlems.cgf`) sits between the grip bones,
+  `Bone_spindle` turns by the smoothed rate of turn (full lock 0.5 rad, inferred).
+* Cargo crates: child doodads (`doodad 3446`) are placed on the prefab helper of their attach point
+  (`$cannon0..3`, `Db::slave_attach_offset`) in the parent's frame; the loaded-pack model comes from
+  the normal doodad phase change.
+* Example: `cargo run -p aa-client --example wagon -- --offscreen-shot shots/wagon.png --mute`.
 
 ### Manning a ship cannon (2026-10-22)
 

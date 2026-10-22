@@ -306,7 +306,7 @@ pub(super) fn board_refusal(c: &BoardCheck) -> Option<BoardRefusal> {
 }
 
 /// Drives the slave whose driver seat holds the local player.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn drive_vehicle(
     time: Res<Time>,
     actions: Res<crate::settings::Actions>,

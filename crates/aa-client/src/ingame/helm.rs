@@ -111,10 +111,7 @@ fn steer(time: Res<Time>, mut vehicles: Query<(&RemoteUnit, &mut Steering)>, mut
         if steering.spindle == Entity::PLACEHOLDER {
             continue;
         }
-        let delta = steering.last_facing.map_or(0.0, |last| {
-            let d = (unit.facing - last + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-            d
-        });
+        let delta = steering.last_facing.map_or(0.0, |last| (unit.facing - last + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI);
         steering.last_facing = Some(unit.facing);
         if dt > 0.0 {
             let target = steering_target(delta, dt, steering.turn);
