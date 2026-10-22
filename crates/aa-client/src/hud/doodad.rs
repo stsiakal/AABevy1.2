@@ -603,6 +603,19 @@ fn house_tooltip_stale(shown: Option<&HouseInfo>, now: Option<&HouseInfo>) -> bo
     now.is_some() && shown != now
 }
 
+/// Whether F belongs to a vehicle: the player sits on a slave (F leaves it) or a land vehicle is within the pick's reach in
+/// front (F boards it). Such a vehicle's cargo crates (skill 15307) do not claim the key.
+fn vehicle_owns_key(player: &aa_net::model::Unit, units: &Units, pos: Vec3, yaw: f32, land: impl Fn(u32) -> bool) -> bool {
+    use aa_net::model::UnitKind;
+    player.attached_to.is_some_and(|a| units.get(a.obj_id).is_some_and(|u| matches!(u.kind, UnitKind::Slave { .. })))
+        || crate::ingame::vehicle::pick_land_vehicle(
+            pos,
+            yaw,
+            units.iter().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && land(u.model_id)).map(|u| (u.obj_id, to_vec(u.pos))),
+        )
+        .is_some()
+}
+
 /// Finds the doodad in reach, shows / hides the bar, reads the keys, the right click and the pointer.
 #[allow(clippy::too_many_arguments)]
 fn track(
@@ -612,6 +625,7 @@ fn track(
     units: Res<Units>,
     houses: Res<Houses>,
     player: Res<aa_net::state::Player>,
+    db: Option<Res<crate::ingame::data::Db>>,
     actions: Res<crate::settings::Actions>,
     focus_kb: Res<HudKeyboardFocus>,
     pointer: Pointer,
@@ -634,7 +648,12 @@ fn track(
     // the bar
     let wanted = focus.as_ref().map(|f| (f.obj_id, f.skills.clone(), f.house.is_some()));
     let directing = d.dialog.directing;
-    d.doodad.claims_key = focus.as_ref().is_some_and(|f| {
+    // F belongs to the vehicle: seated on a slave it leaves, a land vehicle in front boards (`ingame::vehicle::vehicle_seat`);
+    // the wagon's cargo crates (skill 15307) must not take it (the original sends no storage cast there, live)
+    let vehicle_key = player.spawn.as_ref().is_some_and(|s| {
+        vehicle_owns_key(&s.unit, &units, d.pos, d.yaw, |model| db.as_deref().is_some_and(|db| db.is_land_vehicle(model)))
+    });
+    d.doodad.claims_key = !vehicle_key && focus.as_ref().is_some_and(|f| {
         !units.iter().any(|u| u.obj_id != own && !u.dead && matches!(u.kind, aa_net::model::UnitKind::Npc { .. }) && d.pos.distance(to_vec(u.pos)) < f.dist)
     });
     d.doodad.focus = focus;
@@ -1478,6 +1497,27 @@ mod tests {
         data.doodad.preferred = Some(7);
         assert!(usable_without_pack(&data, 7, &[TRADE_PACK_STORAGE_SKILL]), "picked with the right click");
         assert!(!usable_without_pack(&HudData::default(), 8, &[TRADE_PACK_STORAGE_SKILL]));
+    }
+
+    #[test]
+    fn the_wagon_in_front_or_under_the_player_keeps_f_from_the_cargo_crates() {
+        use aa_net::model::{Attachment, UnitKind};
+        let wagon = |pos: aa_net::Pos| {
+            let mut u = crate::ingame::vehicle::flow_tests::unit(500, UnitKind::Slave { id: 9, tl_id: 7, template_id: 60, summoner_id: 47 });
+            u.pos = pos;
+            u.model_id = 1008;
+            u
+        };
+        let player = crate::ingame::vehicle::flow_tests::unit(100, UnitKind::Character { char_id: 47 });
+        let mut units = Units::default();
+        units.by_id.insert(500, wagon(aa_net::Pos::new(0.0, 3.0, 0.0)));
+        assert!(vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, |m| m == 1008), "boarding takes F");
+        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, std::f32::consts::PI, |m| m == 1008), "behind the player");
+        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, |_| false), "not a land vehicle (a ship's chest keeps its rule)");
+        let mut seated = player.clone();
+        seated.attached_to = Some(Attachment { obj_id: 500, point: 1 });
+        units.by_id.insert(500, wagon(aa_net::Pos::new(50.0, 0.0, 0.0)));
+        assert!(vehicle_owns_key(&seated, &units, Vec3::ZERO, 0.0, |_| false), "leaving takes F");
     }
 
     #[test]

@@ -163,20 +163,31 @@ pub fn vehicle_seat(
             return;
         }
     }
-    // Land vehicle: the interaction key with the slave as the target (the original's only bind path).
+    // Land vehicle: the interaction key boards the targeted one; with nothing targeted the original picks the vehicle in
+    // front within reach, targets it (`CSChangeTarget`) and then binds (live, `docs/research/re-wagons.md` 3).
+    let me = mover.single().map_or_else(|_| Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z), |m| m.pos);
+    let facing = mover.single().map_or_else(|_| spawn.yaw(), |m| m.facing);
+    let visual_pos = |u: &aa_net::model::Unit| {
+        views.as_deref().and_then(|v| v.unit_entity(u.obj_id)).and_then(|e| visuals.get(e).ok()).map_or(Vec3::new(u.pos.x, u.pos.y, u.pos.z), |v| v.pos)
+    };
     if actions.just_pressed("do_interaction_1", 0)
         && now - *last > 0.5
         && let Some(db) = db.as_deref()
-        && let Some(slave) = target.as_deref().and_then(|t| t.unit(&units))
-        && let UnitKind::Slave { tl_id, summoner_id, .. } = slave.kind
-        && db.is_land_vehicle(slave.model_id)
-    {
-        let me = mover.single().map_or_else(|_| Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z), |m| m.pos);
-        let at = views
+        && let Some((slave, picked)) = target
             .as_deref()
-            .and_then(|v| v.unit_entity(slave.obj_id))
-            .and_then(|e| visuals.get(e).ok())
-            .map_or(Vec3::new(slave.pos.x, slave.pos.y, slave.pos.z), |v| v.pos);
+            .and_then(|t| t.unit(&units))
+            .filter(|s| matches!(s.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(s.model_id))
+            .map(|s| (s, false))
+            .or_else(|| {
+                let id = pick_land_vehicle(me, facing, units.by_id.values().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(u.model_id)).map(|u| (u.obj_id, visual_pos(u))))?;
+                units.get(id).map(|s| (s, true))
+            })
+        && let UnitKind::Slave { tl_id, summoner_id, .. } = slave.kind
+    {
+        let at = visual_pos(slave);
+        if picked {
+            out.write(NetCommand(Command::Target { obj_id: slave.obj_id }));
+        }
         let char_id = match spawn.unit.kind {
             UnitKind::Character { char_id } => char_id,
             _ => 0,
@@ -230,6 +241,29 @@ pub fn vehicle_seat(
         *handled = Some((tl_id, own.obj_id));
         *last = now;
     }
+}
+
+/// How far the interaction key reaches for a land vehicle when nothing is targeted (metres), measured live: the original
+/// boards a Farm Wagon with F from about 4 m, facing it.
+pub(crate) const PICK_RANGE: f32 = 4.0;
+/// The forward cone of that pick: the cosine of its half angle (60 degrees; a stand-in, the live measurement only says "facing").
+pub(crate) const PICK_COS: f32 = 0.5;
+
+/// The land vehicle the interaction key picks without a target: the nearest of `candidates` (`obj_id`, position) within
+/// [`PICK_RANGE`] of `me` and in front of `facing` (radians, 0 = north).
+pub(crate) fn pick_land_vehicle(me: Vec3, facing: f32, candidates: impl IntoIterator<Item = (u32, Vec3)>) -> Option<u32> {
+    let forward = forward(facing);
+    candidates
+        .into_iter()
+        .filter_map(|(id, at)| {
+            let distance = me.distance(at);
+            let toward = (at - me).truncate();
+            // standing on top of it counts as facing it
+            let ahead = toward.length() < 1.0 || forward.dot(toward.normalize_or_zero()) >= PICK_COS;
+            (distance <= PICK_RANGE && ahead).then_some((id, distance))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
 }
 
 /// The vehicle speed (m/s) above which the original refuses `CSDiscardSlave` (`DAT_3999f85c = 25.0`, the speed squared).
@@ -445,7 +479,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod flow_tests {
+pub(crate) mod flow_tests {
     use super::*;
     use aa_net::model::{Attachment, CharacterState, Equipment, ModelParams, UnitKind};
     use aa_net::session::PlayerSpawn;
@@ -454,7 +488,7 @@ mod flow_tests {
     use aa_net::state::Player;
     use aa_net::Pos;
 
-    fn unit(obj_id: u32, kind: UnitKind) -> aa_net::model::Unit {
+    pub(crate) fn unit(obj_id: u32, kind: UnitKind) -> aa_net::model::Unit {
         aa_net::model::Unit {
             obj_id,
             name: format!("u{obj_id}"),
@@ -551,9 +585,48 @@ mod flow_tests {
             app.update();
         }
         assert!(sent(&mut app).is_empty(), "SCSlaveCreated and proximity bind nothing");
-        // not targeted: the key does nothing either
+        // not targeted and out of the pick's reach: the key does nothing either
         let mut app = wagon_app(false);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 8.0, 0.0);
         assert!(press(&mut app).is_empty());
+    }
+
+    #[test]
+    fn untargeted_f_picks_the_wagon_in_front_targets_it_and_binds() {
+        // live, original: CSChangeTarget(wagon) then CSBindSlave, nothing else (no CSStartSkill 15307)
+        let mut app = wagon_app(false);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 3.0, 0.0);
+        assert!(matches!(
+            press(&mut app).as_slice(),
+            [Command::Target { obj_id: 500 }, Command::Slave(SlaveCommand::Bind { tl_id: 7 })]
+        ));
+        // behind the player (facing north): not picked
+        let mut app = wagon_app(false);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, -3.0, 0.0);
+        assert!(press(&mut app).is_empty());
+        // beyond 4 m: not picked
+        let mut app = wagon_app(false);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 4.5, 0.0);
+        assert!(press(&mut app).is_empty());
+        // already targeted: no CSChangeTarget, only the bind
+        let mut app = wagon_app(true);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 3.0, 0.0);
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Bind { tl_id: 7 })]));
+    }
+
+    #[test]
+    fn the_pick_takes_the_nearest_vehicle_in_the_forward_cone() {
+        let me = Vec3::ZERO;
+        let near_left = (1, Vec3::new(-3.9, 0.5, 0.0)); // 83 degrees off: outside the cone
+        let ahead = (2, Vec3::new(0.0, 3.5, 0.0));
+        let nearer_ahead = (3, Vec3::new(0.5, 2.0, 0.0));
+        assert_eq!(pick_land_vehicle(me, 0.0, [near_left, ahead, nearer_ahead]), Some(3));
+        assert_eq!(pick_land_vehicle(me, 0.0, [near_left]), None);
+        // facing east (-pi/2 turns left of north is west; +pi/2 is east in this convention: forward = (-sin, cos))
+        assert_eq!(pick_land_vehicle(me, -std::f32::consts::FRAC_PI_2, [(4, Vec3::new(3.0, 0.0, 0.0))]), Some(4));
+        assert_eq!(pick_land_vehicle(me, 0.0, [(5, Vec3::new(3.0, 0.0, 0.0))]), None);
+        // standing on it counts as facing it
+        assert_eq!(pick_land_vehicle(me, 0.0, [(6, Vec3::new(0.0, -0.5, 0.0))]), Some(6));
     }
 
     #[test]
