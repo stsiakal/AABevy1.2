@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use crate::login::{AccountInfo, WorldList, WorldQueue};
 use crate::model::{Attachment, Character, Doodad, Unit};
 use crate::session::{Event, Phase, PlayerSpawn};
+use crate::wire::Pos;
 
 macro_rules! resource {
     ($(#[$m:meta])* pub struct $name:ident $body:tt) => {
@@ -351,7 +352,30 @@ resource! {
     /// Doodads in view, by object id.
     pub struct Doodads {
         pub by_id: HashMap<u32, Doodad>,
+        /// The transform as announced of the doodads that hang on a parent unit (a house, a slave, a transfer): the
+        /// server sends those in the parent's frame. `by_id` holds their world transform once
+        /// [`Doodads::resolve_parents`] has seen the parent.
+        pub local: HashMap<u32, DoodadLocal>,
     }
+}
+
+/// A child doodad's announced transform, relative to its parent unit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DoodadLocal {
+    pub pos: Pos,
+    /// Rotation quaternion `[x, y, z, w]`.
+    pub rotation: [f32; 4],
+}
+
+/// `a * b` of two `[x, y, z, w]` quaternions.
+fn quat_mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    let ([ax, ay, az, aw], [bx, by, bz, bw]) = (a, b);
+    [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
 }
 
 impl Doodads {
@@ -360,11 +384,18 @@ impl Doodads {
             Event::DoodadsSpawned(v) => {
                 for d in v {
                     self.by_id.insert(d.obj_id, d.clone());
+                    // `Doodad.Write` sends the parent's frame for a doodad with a parent
+                    if d.parent_obj_id > 0 {
+                        self.local.insert(d.obj_id, DoodadLocal { pos: d.pos, rotation: d.rotation });
+                    } else {
+                        self.local.remove(&d.obj_id);
+                    }
                 }
             }
             Event::DoodadsRemoved(ids) => {
                 for id in ids {
                     self.by_id.remove(id);
+                    self.local.remove(id);
                 }
             }
             Event::DoodadPhaseChanged { obj_id, func_group_id, time_left, puzzle_group, item_template_id } => {
@@ -387,10 +418,34 @@ impl Doodads {
                     return false;
                 }
                 self.by_id.clear();
+                self.local.clear();
             }
             _ => return false,
         }
         true
+    }
+
+    /// Puts every child doodad at its parent's current place: world = parent position + parent yaw * (local * parent
+    /// scale), rotation = parent yaw * local. The server writes a child's transform in the parent's frame (a farm
+    /// plot hangs on its house, the house scale divided out), so a parent that moves (a ship) carries its children.
+    /// A parent not in view leaves the child where it was. Returns the doodads that moved.
+    pub fn resolve_parents(&mut self, units: &Units) -> Vec<u32> {
+        let mut moved = Vec::new();
+        for (id, local) in &self.local {
+            let Some(doodad) = self.by_id.get_mut(id) else { continue };
+            let Some(parent) = units.by_id.get(&doodad.parent_obj_id) else { continue };
+            let yaw = parent.rotation[2];
+            let (sin, cos) = yaw.sin_cos();
+            let scale = if parent.scale > 0.0 { parent.scale } else { 1.0 };
+            let (lx, ly, lz) = (local.pos.x * scale, local.pos.y * scale, local.pos.z * scale);
+            let pos = Pos::new(parent.pos.x + lx * cos - ly * sin, parent.pos.y + lx * sin + ly * cos, parent.pos.z + lz);
+            let rotation = quat_mul([0.0, 0.0, (yaw / 2.0).sin(), (yaw / 2.0).cos()], local.rotation);
+            if doodad.pos != pos || doodad.rotation != rotation {
+                (doodad.pos, doodad.rotation) = (pos, rotation);
+                moved.push(*id);
+            }
+        }
+        moved
     }
 }
 
@@ -483,6 +538,7 @@ impl WorldState {
         self.player.apply(e);
         self.units.apply(e);
         self.doodads.apply(e);
+        self.doodads.resolve_parents(&self.units);
         self.status.apply(e);
         self.stats.apply(e);
         self.buffs.apply(e);
@@ -567,6 +623,41 @@ pub(crate) mod tests {
             owner_db_id: 0,
             data: 0,
         }
+    }
+
+    #[test]
+    fn a_child_doodad_is_placed_in_its_parents_frame_and_follows_the_parent() {
+        let mut world = WorldState::default();
+        let mut child = doodad_fixture(20);
+        child.parent_obj_id = 7;
+        child.pos = Pos::new(2.0, 0.0, 1.0);
+        // the child arrives before its parent: it keeps the announced values until the parent is known
+        world.apply(&Event::DoodadsSpawned(vec![child.clone()]));
+        assert_eq!(world.doodads.by_id[&20].pos, Pos::new(2.0, 0.0, 1.0));
+        let mut house = unit(7);
+        house.pos = Pos::new(1000.0, 2000.0, 50.0);
+        house.rotation = [0.0, 0.0, std::f32::consts::FRAC_PI_2];
+        world.apply(&Event::UnitSpawned(Box::new(house)));
+        let close = |a: Pos, b: Pos| (a.x - b.x).abs() < 1e-3 && (a.y - b.y).abs() < 1e-3 && (a.z - b.z).abs() < 1e-3;
+        // a quarter turn to the left maps local +x onto world +y
+        assert!(close(world.doodads.by_id[&20].pos, Pos::new(1000.0, 2002.0, 51.0)), "{:?}", world.doodads.by_id[&20].pos);
+        let q = world.doodads.by_id[&20].rotation;
+        assert!((q[2] - (std::f32::consts::FRAC_PI_4).sin()).abs() < 1e-4 && (q[3] - (std::f32::consts::FRAC_PI_4).cos()).abs() < 1e-4);
+        // the house scale multiplies the (scale-free) local offset
+        world.units.by_id.get_mut(&7).unwrap().scale = 2.0;
+        assert_eq!(world.doodads.resolve_parents(&world.units), [20]);
+        assert!(close(world.doodads.by_id[&20].pos, Pos::new(1000.0, 2004.0, 52.0)));
+        // the parent moves (a ship): the child goes along; nothing moved -> nothing reported
+        world.units.by_id.get_mut(&7).unwrap().pos = Pos::new(1100.0, 2000.0, 50.0);
+        assert_eq!(world.doodads.resolve_parents(&world.units), [20]);
+        assert!(world.doodads.resolve_parents(&world.units).is_empty());
+        // a doodad without a parent is never touched, and a removed child forgets its local transform
+        let mut free = doodad_fixture(21);
+        free.pos = Pos::new(5.0, 6.0, 7.0);
+        world.apply(&Event::DoodadsSpawned(vec![free]));
+        assert_eq!(world.doodads.by_id[&21].pos, Pos::new(5.0, 6.0, 7.0));
+        world.apply(&Event::DoodadsRemoved(vec![20]));
+        assert!(!world.doodads.local.contains_key(&20));
     }
 
     #[test]

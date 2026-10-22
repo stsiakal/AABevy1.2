@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 
 use aa_cry::scene::{CryAssets, ModelOptions, spawn_loaded};
 use aa_net::state::Doodads;
+use aa_world::coords::{cry_rot_to_bevy, cry_to_bevy};
 use aa_net::{Event, NetEvent};
 use bevy::prelude::*;
 
@@ -51,7 +52,28 @@ pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
         (phase_changes, grow).chain().after(super::units::sync_views).run_if(super::world_screens),
-    );
+    )
+    .add_systems(Update, follow_parents.before(super::units::sync_views).run_if(super::world_screens));
+}
+
+/// A doodad that hangs on a unit (a plot on its house, a deck item on a ship) is announced in the parent's frame: put
+/// it at the parent's current place, so it is drawn, focused and reached where it stands, and moves with the parent.
+pub fn follow_parents(units: Res<aa_net::state::Units>, mut doodads: ResMut<Doodads>, views: Res<Views>, mut roots: Query<&mut Transform, With<RemoteDoodad>>) {
+    if doodads.local.is_empty() {
+        return;
+    }
+    let moved = doodads.bypass_change_detection().resolve_parents(&units);
+    if moved.is_empty() {
+        return;
+    }
+    doodads.set_changed();
+    for id in moved {
+        let (Some(entity), Some(doodad)) = (views.doodad_entity(id), doodads.by_id.get(&id)) else { continue };
+        let Ok(mut transform) = roots.get_mut(entity) else { continue };
+        let [x, y, z, w] = doodad.rotation;
+        transform.translation = cry_to_bevy(Vec3::new(doodad.pos.x, doodad.pos.y, doodad.pos.z));
+        transform.rotation = cry_rot_to_bevy(Quat::from_xyzw(x, y, z, w).normalize());
+    }
 }
 
 /// `SCDoodadPhaseChanged`: the new phase's growth from the announced `time_left` at once, its model when it differs
