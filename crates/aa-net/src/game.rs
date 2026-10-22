@@ -152,6 +152,8 @@ pub enum ClientMsg {
     /// `CSCreateSkillController`: the local unit's controller changed, see [`crate::skill::controller_kind`].
     CreateSkillController { obj_id: u32, sc_type: u8, fall_damage_immune: bool },
     Slave(crate::slave_control::SlaveCommand),
+    /// `CSBoardingTransfer`: board a carriage / ferry / airship at a passenger point, or leave it.
+    Transfer(crate::transfer::TransferCommand),
     Auction(crate::auction::AuctionCommand),
     Trade(crate::trade::TradeCommand),
     Mail(crate::mail::MailCommand),
@@ -238,6 +240,7 @@ impl ClientMsg {
             Self::Mate(m) => m.opcode(),
             Self::CreateSkillController { .. } => cs::CSCreateSkillControllerPacket,
             Self::Slave(m) => m.opcode(),
+            Self::Transfer(m) => m.opcode(),
             Self::Auction(m) => m.opcode(),
             Self::Trade(m) => m.opcode(),
             Self::Mail(m) => m.opcode(),
@@ -366,6 +369,7 @@ impl ClientMsg {
                 w.bc(*obj_id).u8(*sc_type).bool(*fall_damage_immune);
             }
             Self::Slave(m) => m.write(&mut w),
+            Self::Transfer(m) => m.write(&mut w),
             Self::Auction(m) => m.write(&mut w),
             Self::Trade(m) => m.write(&mut w),
             Self::Mail(m) => m.write(&mut w),

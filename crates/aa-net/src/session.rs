@@ -336,6 +336,8 @@ pub enum Command {
     /// `CSCreateSkillController` for the player's own unit (the session fills the object id); see [`crate::skill::controller_kind`].
     SkillController { sc_type: u8, fall_damage_immune: bool },
     Slave(crate::slave_control::SlaveCommand),
+    /// Board / leave a transfer (`CSBoardingTransfer`, see [`crate::transfer`]).
+    Transfer(crate::transfer::TransferCommand),
     /// Legacy unscoped transport API; new app actions should capture persistent identity below.
     Auction(crate::auction::AuctionCommand),
     AuctionForCharacter { character_id:u32,command:crate::auction::AuctionCommand },
@@ -1383,6 +1385,11 @@ impl Session {
                     self.emit(Event::Slave(crate::slave::SlaveEvent::RequestRejected { command, message: message.into() }));
                 } else if self.phase == Phase::InWorld && self.send_game(game::ClientMsg::Slave(command.clone())).await {
                     self.emit(Event::Slave(crate::slave::SlaveEvent::Requested(command)));
+                }
+            }
+            Command::Transfer(command) => {
+                if command.validate().is_ok() && self.phase == Phase::InWorld {
+                    self.send_game(game::ClientMsg::Transfer(command)).await;
                 }
             }
             Command::Mate(command) => {
