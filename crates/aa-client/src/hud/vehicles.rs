@@ -8,9 +8,9 @@
 
 use super::api::{HudBridge, HudData, Shared};
 use super::data::{any_int, GameData};
-use aa_net::model::{Unit, UnitKind};
+use aa_net::model::{Item, Unit, UnitKind};
 use aa_net::slave_control::SlaveCommand;
-use aa_net::state::{Player, Slaves, Units};
+use aa_net::state::{Inventory, Player, Slaves, Units};
 use aa_net::{Command, NetCommand};
 use aa_ui::UiRuntime;
 use bevy::prelude::*;
@@ -38,6 +38,8 @@ pub(super) struct Tables {
     pub(super) land: HashSet<u32>,
     /// Slave templates whose model is a `ShipModel`.
     pub(super) ships: HashSet<u32>,
+    /// Equipment slots, parts and hull rules of ships ([`super::slave_equipment`]).
+    pub(super) equip: super::slave_equipment::Tables,
 }
 
 impl Tables {
@@ -116,6 +118,7 @@ impl Tables {
             let turn = any_int(row, 2)? as f32;
             out.speeds.insert(slave, (speed.max(0.1), turn.abs().max(0.05)));
         }
+        out.equip = super::slave_equipment::Tables::load(conn)?;
         Ok(out)
     }
 }
@@ -124,7 +127,11 @@ impl Tables {
 pub(super) struct Current {
     pub obj_id: u32,
     pub tl_id: u16,
+    /// The slave's database id (`UnitKind::Slave::id`), echoed by equipment requests.
+    pub db_id: u32,
     pub template: u32,
+    /// The parts it wears, by equip slot id (0..26).
+    pub equipment: Vec<Option<Item>>,
     /// The local player's seat (`Some(1)` driver, `Some(2)` passenger), if boarded.
     pub point: Option<u8>,
     pub name: String,
@@ -146,6 +153,10 @@ pub(super) struct View {
     pushed: Option<Current>,
     /// The player's requested leave, sent by `update` after an identity recheck.
     pub(super) requests: Vec<(u32, u16, SlaveCommand)>,
+    /// Part moves the Summon Info scripts asked for, sent by `update` after an identity recheck.
+    pub(super) equip_requests: Vec<super::slave_equipment::Request>,
+    /// The pointer held something at the last push (`UPDATE_SLAVE_EQUIPMENT_SLOT` follows changes).
+    holding: bool,
 }
 
 fn current(world: &World, data: &HudData) -> Option<Current> {
@@ -153,7 +164,7 @@ fn current(world: &World, data: &HudData) -> Option<Current> {
     let own = slaves.own.as_ref()?;
     let units = world.get_resource::<Units>()?;
     let unit = units.get(own.obj_id)?;
-    let UnitKind::Slave { tl_id, template_id, .. } = unit.kind else { return None };
+    let UnitKind::Slave { id: db_id, tl_id, template_id, .. } = unit.kind else { return None };
     if tl_id != own.tl_id {
         return None;
     }
@@ -167,7 +178,9 @@ fn current(world: &World, data: &HudData) -> Option<Current> {
     Some(Current {
         obj_id: own.obj_id,
         tl_id,
+        db_id,
         template: template_id,
+        equipment: unit.equipment.slots[..usize::from(aa_net::slave_control::SLAVE_EQUIPMENT_SLOTS)].to_vec(),
         point,
         name: unit_name(unit, data),
         level: unit.level,
@@ -287,7 +300,10 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             let Some(v) = &data.vehicles.current else { return Ok(None) };
             let out = lua.create_table()?;
             out.set("unitId", v.obj_id.to_string())?;
-            out.set("kind", v.template)?;
+            // `kind` is the SLAVE_KIND text key, `desc_name` the hull's name (slave_info.alb:10-12).
+            let equip = data.game.get().map(|g| &g.vehicles.equip);
+            out.set("kind", equip.and_then(|e| e.kinds.get(&v.template)).copied().unwrap_or("machine"))?;
+            out.set("desc_name", equip.and_then(|e| e.names.get(&v.template)).map_or("", String::as_str))?;
             out.set("name", v.name.as_str())?;
             out.set("level", v.level)?;
             out.set("hp", v.hp)?;
@@ -316,14 +332,7 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             Ok(Some(out))
         })?,
     )?;
-    let state = bridge.clone();
-    weapon.set(
-        "GetSlaveCustomizingType",
-        lua.create_function(move |_, _: Value| {
-            let _ = state.borrow();
-            Ok(None::<i64>)
-        })?,
-    )?;
+    super::slave_equipment::install(lua, bridge)?;
 
     let hud: Table = lua.globals().get("HUD")?;
     let state = bridge.clone();
@@ -412,6 +421,31 @@ pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     if old.as_ref().is_some_and(|v| v.point.is_some()) && next.as_ref().is_none_or(|v| v.point.is_none()) {
         rt.fire_event("SIEGEWEAPON_UNBOUND", ());
     }
+    // The Summon Info window opens when the player boards (the native trigger of `SHOW_SLAVE_INFO` is
+    // not in the scripts; `mode_action.alb` hides the window again when the bar has no skills).
+    let boarded = next.as_ref().is_some_and(|v| v.point.is_some())
+        && old.as_ref().is_none_or(|v| v.point.is_none() || v.obj_id != next.as_ref().map_or(0, |n| n.obj_id));
+    if boarded && rt.lua.load("return slaveInfoFrame ~= nil and not slaveInfoFrame:IsVisible()").eval::<bool>().unwrap_or(false) {
+        rt.fire_event("SHOW_SLAVE_INFO", ());
+    }
+    match (&old, &next) {
+        (Some(o), Some(n)) if o.obj_id == n.obj_id => {
+            if o.name != n.name {
+                rt.fire_event("UNIT_NAME_CHANGED", n.obj_id.to_string());
+            }
+            for slot in super::slave_equipment::changed(&o.equipment, &n.equipment) {
+                rt.fire_event("SLAVE_UNIT_EQUIPMENT_CHANGED", (i64::from(slot), i64::from(slot)));
+            }
+        }
+        // Another slave while the window is open: the same refresh `SHOW_SLAVE_INFO` runs.
+        (_, Some(_)) => {
+            let refresh = "if slaveInfoFrame ~= nil and slaveInfoFrame:IsVisible() then slaveInfoFrame:UpdateSlaveDefaultInfo() end";
+            if let Err(e) = rt.lua.load(refresh).set_name("@slave_info_refresh").exec() {
+                warn!("hud: slave info refresh: {e}");
+            }
+        }
+        _ => {}
+    }
     if let Err(e) = rt.refresh_slots() {
         warn!("hud: mode action slots: {e}");
     }
@@ -423,6 +457,7 @@ pub(super) fn update(
     player: Res<Player>,
     slaves: Option<Res<Slaves>>,
     units: Res<Units>,
+    inventory: Option<Res<Inventory>>,
     mut net: MessageWriter<NetCommand>,
 ) {
     let Some(rt) = rt else { return };
@@ -438,6 +473,17 @@ pub(super) fn update(
         }
         requests.append(&mut data.vehicles.requests);
     }
+    send_equipment_requests(&bridge.0, owner, inventory.as_deref(), &mut net);
+    let holding = rt.holding();
+    let mut data = bridge.0.borrow_mut();
+    if data.vehicles.holding != holding {
+        data.vehicles.holding = holding;
+        let owned = data.vehicles.current.is_some();
+        drop(data);
+        if owned {
+            rt.fire_event("UPDATE_SLAVE_EQUIPMENT_SLOT", ());
+        }
+    }
     for (quoted_owner, tl_id, command) in requests {
         let actual = slaves
             .as_deref()
@@ -450,6 +496,26 @@ pub(super) fn update(
         }
     }
     push(&rt, &bridge.0);
+}
+
+/// The part moves the Summon Info scripts queued, as `CSChangeSlaveEquipment` for the slave the window shows.
+pub(super) fn send_equipment_requests(bridge: &Shared, owner: u32, inventory: Option<&Inventory>, net: &mut MessageWriter<NetCommand>) {
+    let (requests, current) = {
+        let mut data = bridge.borrow_mut();
+        (std::mem::take(&mut data.vehicles.equip_requests), data.vehicles.current.clone())
+    };
+    let (Some(current), Some(inventory)) = (current, inventory) else { return };
+    let data = bridge.borrow();
+    let Some(game) = data.game.get() else { return };
+    for request in requests {
+        match super::slave_equipment::build(&game.vehicles.equip, &current, owner, inventory, request) {
+            Ok(request) => {
+                info!("hud: slave equipment {:?} on slave {} (tl {})", request.second_location, current.obj_id, current.tl_id);
+                net.write(NetCommand(Command::Slave(SlaveCommand::ChangeEquipment(Box::new(request)))));
+            }
+            Err(why) => debug!("hud: slave equipment refused: {why}"),
+        }
+    }
 }
 
 pub(super) fn plugin(app: &mut App) {
@@ -478,7 +544,9 @@ mod tests {
         data.vehicles.current = Some(Current {
             obj_id: 500,
             tl_id: 12,
+            db_id: 0,
             template,
+            equipment: Vec::new(),
             point,
             name: "Tractor".into(),
             level: 1,

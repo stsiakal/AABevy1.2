@@ -104,6 +104,7 @@ mod tips;
 mod trade;
 mod trial;
 mod usable;
+mod slave_equipment;
 mod vehicles;
 
 #[allow(dead_code)]

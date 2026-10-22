@@ -1637,6 +1637,32 @@ and `X2SiegeWeapon:GetVehicleInfo` returns `nil` for a ship: `slave_info.alb:39-
 native nil path (no gear/brake panel), while `GetSiegeWeaponSpeed`/`TurnSpeed` still answer for the
 speed lines (`slave_info.alb:77-90`).
 
+### Summon Info window and ship equipment (2026-10-22)
+
+`hud/slave_equipment.rs` runs the original `slave/slave_info.alb` (+ `slave_info_view`,
+`slave_equipment`, `slave_customizing_style`) for the owned slave. `GetMountedSiegeWeaponInfo` now
+answers `kind` (the `SLAVE_KIND` text key of `slaves.slave_kind_id`: `big_sailing_ship`,
+`small_sailing_ship`, `speedboat`, `boat`, `tank`, `machine`, `siege_weapon`) and `desc_name` (the
+hull's localized name). `GetSlaveCustomizingType` is `slaves.slave_customizing_id` for hulls that
+declare `slave_equip_slots` (1 fishing, 2 speedboat, 3 trade ship, 4 small sailing ship; nil
+otherwise, which hides the grid). Slot numbers are the 0 based equip slot ids (`ES_* - 1`).
+`GetSlaveEquipSlotInfo(slot)` answers `{has, itemInfo}` from the slave unit's equipment
+(`SCUnitEquipmentsChanged`, 27 slots; `itemInfo` is the item tip). `drag.lua` implements
+`PickEquipSlotOfSlave` (pick a part up / drop the held bag item = mount), `UninstallEquipSlotOfSlave`
+(right click = into the first free bag cell), `CanSlaveEquipPickedItem` (nil without a held bag
+item, else whether the database packs allow it, dimming the others) and a part dropped on a bag
+cell. Moves become `CSChangeSlaveEquipment` (bag item first, the part it replaces second, `0xf2`
+slave container; the slave database id is `UnitKind::Slave::id`), checked client side with the same
+rules as the server (`item_slave_equipments`, `allow_to_equip_slaves`, `allow_to_equip_slots`).
+Events: `SLAVE_UNIT_EQUIPMENT_CHANGED(slot, slot)` per changed slot, `UPDATE_SLAVE_EQUIPMENT_SLOT`
+when the pointer picks up / drops something, `UNIT_NAME_CHANGED(obj)` on a rename.
+
+How the window opens is not in the scripts (`SHOW_SLAVE_INFO` is native; the tooltip text
+`showSlaveInfo` belongs to a native button). Here it opens (toggle semantics of
+`mode_action.alb:162-165`) when the player boards the slave; `mode_action.alb` hides it when the bar
+has no skills and `SIEGEWEAPON_UNBOUND` hides it on leaving. There is no 1.2 weight, ramming or
+customize UI; only Type, Classification, Move and Turn speed plus the grid.
+
 Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
 target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
 a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`

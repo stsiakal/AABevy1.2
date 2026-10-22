@@ -7,6 +7,7 @@
 --   { kind = "action", slot = action bar slot (1 based), what = "skill" | "item", id, icon, frame, count }
 --   { kind = "skill",  id = skill id, icon }        a skill of the skill window (a copy)
 --   { kind = "item",   id = item type, grade, icon, frame }
+--   { kind = "slaveequip", slot = equip slot of the slave (0 based), id, grade, icon, frame }   a part of the owned ship
 -- The moves themselves are requests to the server (HUD.drag_*, hud/drag.rs); the windows follow the server's answer.
 
 local CONTAINER_EQUIPMENT, CONTAINER_BAG = 1, 2
@@ -102,6 +103,10 @@ X2Bag.HandleClick = function(self, virtual)
   elseif h.kind == "equip" then
     HUD.drag_move(CONTAINER_EQUIPMENT, h.slot, CONTAINER_BAG, real, 0)
     X2Cursor:ClearCursor()
+  elseif h.kind == "slaveequip" then
+    -- a ship part dropped on the bag: take it off into that cell (or the first free one)
+    HUD.slave_unequip(h.slot, real)
+    X2Cursor:ClearCursor()
   else
     X2Cursor:ClearCursor()
   end
@@ -169,6 +174,35 @@ X2Equipment.IsInventoriable = function(self, es) return true end
 -- Take a worn item off into the first free bag slot.
 X2Equipment.UnequipItem = function(self, es)
   if HUD.equipment[es] ~= nil then HUD.drag_unequip(es) end
+end
+
+-- X2SiegeWeapon (Summon Info window, slave_equipment.alb) -------------------------------------------------------
+-- A click or a drag on a slot of the ship's equipment grid: pick the part up, or drop what is held (mount it).
+X2SiegeWeapon.PickEquipSlotOfSlave = function(self, slot)
+  if not bagKnown() then return end
+  local h = held()
+  if h == nil then
+    local part = HUD.slave_part(slot)
+    if part == nil then return end
+    X2Cursor:SetHeld({ kind = "slaveequip", cursorInfo = "Item_Id", slot = slot, id = part.id, grade = part.grade, icon = part.icon, frame = gradeFrame(part.grade) })
+  elseif h.kind == "bag" then
+    if not h.partial and HUD.slave_can_equip(h.id, slot) then HUD.slave_equip(h.slot, slot) end
+    X2Cursor:ClearCursor()
+  else
+    X2Cursor:ClearCursor()
+  end
+end
+
+-- A right click on a slot: take the part off into the first free bag cell.
+X2SiegeWeapon.UninstallEquipSlotOfSlave = function(self, slot)
+  if bagKnown() and held() == nil then HUD.slave_unequip(slot) end
+end
+
+-- nil while no bag item is held; else whether it fits the slot (the grid dims the others).
+X2SiegeWeapon.CanSlaveEquipPickedItem = function(self, slot)
+  local h = held()
+  if h == nil or h.kind ~= "bag" then return nil end
+  return HUD.slave_can_equip(h.id, slot)
 end
 
 -- The slot widgets (action bars, skill window) --------------------------------------------------------------
