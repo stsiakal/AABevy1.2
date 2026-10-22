@@ -61,7 +61,7 @@ pub fn enabled() -> bool {
         if args.iter().any(|a| a == "--login-screen" || a == "--login-type") {
             return true;
         }
-        !args.iter().any(|a| a.starts_with("--") && !matches!(a.as_str(), "--size" | "--mute" | "--sound"))
+        !args.iter().any(|a| a.starts_with("--") && !matches!(a.as_str(), "--size" | "--mute" | "--sound" | "--no-overlays"))
     })
 }
 
