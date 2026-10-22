@@ -152,7 +152,9 @@ pub fn clip_names(phase: JumpPhase, dir: JumpDir, kind: JumpKind) -> Vec<String>
         JumpKind::Combat(item) => format!("{item}_mo_combat_jump_{}", suffix(dir.combat())),
     };
     let mut names = vec![first];
-    for n in [relaxed, "fist_mo_relaxed_jump_s_loop".to_string()] {
+    // a mount names its jump `fist_mo_jump_f_<start|loop|land>` (`global_horse.cal`)
+    let mount = format!("fist_mo_jump_f_{}", suffix("f"));
+    for n in [relaxed, mount, "fist_mo_relaxed_jump_s_loop".to_string()] {
         if !names.contains(&n) {
             names.push(n);
         }

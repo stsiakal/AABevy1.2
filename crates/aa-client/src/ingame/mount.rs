@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use super::anim::{Locomotion, Motion, bind_clip, bind_clip_with};
 use super::camera::OrbitCamera;
 use super::data::{Db, MountMove, Seat};
-use super::mount_anim::{self, Hop, Side};
+use super::mount_anim::{self, Band, Hop, MateGait, Side};
 use super::player::{LocalPlayer, Mover, PlayerInput, approach_angle, forward, placement, right};
 use super::units::{RemoteUnit, Views};
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
@@ -65,6 +65,15 @@ enum Gait {
     Idle,
     Walk,
     Run,
+}
+
+/// Gives every mate its [`MateGait`] (the run speed its PseudoSpeed is measured against: `game_stances` of its actor model).
+pub fn tag_mates(mut commands: Commands, net: Res<Units>, db: Option<Res<Db>>, units: Query<(Entity, &RemoteUnit), Without<MateGait>>) {
+    let Some(db) = db else { return };
+    for (entity, unit) in &units {
+        let Some(mate) = net.by_id.get(&unit.obj_id).filter(|u| matches!(u.kind, UnitKind::Mate { .. })) else { continue };
+        commands.entity(entity).insert(MateGait::new(db.mount_move(mate.model_id).run));
+    }
 }
 
 /// The mounting in progress (the original `MountHorse Controller`): the HUD starts it with [`MountFlow::begin`] after its checks, the

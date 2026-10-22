@@ -675,6 +675,7 @@ pub fn plugin(app: &mut App) {
                 super::ship::board_deck,
                 super::mount::fake_mount,
                 super::mount::record_attach_reasons,
+                super::mount::tag_mates,
                 super::mount::drive_mount_flow,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,

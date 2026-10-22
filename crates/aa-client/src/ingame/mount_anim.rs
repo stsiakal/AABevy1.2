@@ -130,6 +130,91 @@ impl Hop {
     }
 }
 
+// ---- PseudoSpeed bands (`horse_full_body.xml`, `player_full_body.xml`) ----
+
+/// The gait band a mount or a rider is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Band {
+    Idle,
+    Walk,
+    Run,
+}
+
+/// `PseudoSpeed` of a unit moving at `speed` m/s when its run speed is `run_speed` (inferred: the cryaction.dll producer was not
+/// read; the data fits `speed / run speed`, a walk at 1.8 m/s of the horse's 9 is 0.2 = `game_walk_multiplier`, a sprint 1.5).
+pub fn pseudo_speed(speed: f32, run_speed: f32) -> f32 {
+    if run_speed > 0.0 { speed / run_speed } else { 0.0 }
+}
+
+/// The band between two limits keeps the band the unit was in (the graph's `PseudoSpeed` ranges leave gaps).
+fn band(ps: f32, idle_max: f32, walk: (f32, f32), run_min: f32, prev: Band) -> Band {
+    if ps <= idle_max {
+        Band::Idle
+    } else if ps >= run_min {
+        Band::Run
+    } else if (walk.0..=walk.1).contains(&ps) {
+        Band::Walk
+    } else {
+        prev
+    }
+}
+
+/// A mount: idle 0..0.1, walk 0.11..0.7, run from 0.8 (`horse_full_body.xml`).
+pub fn mount_band(ps: f32, prev: Band) -> Band {
+    band(ps, 0.10, (0.11, 0.7), 0.8, prev)
+}
+
+/// A rider on a mount: idle 0..0.1, walk 0.15..0.6, run from 0.7 (`player_full_body.xml`, `Horse_Driver*`).
+pub fn rider_band(ps: f32, prev: Band) -> Band {
+    band(ps, 0.10, (0.15, 0.6), 0.7, prev)
+}
+
+/// From this PseudoSpeed on a mount runs its sprint tier (between the run at 1 and the sprint at `game_sprint_multiplier` 1.5; inferred).
+pub const SPRINT_PSEUDO: f32 = 1.25;
+
+/// The turn rate (rad/s) from which a unit plays its turn clips: turning in place on the mount, the run turn blend on the rider
+/// and the mount (inferred; the graph's `RequestedTurnSpeedLZ` thresholds were not read).
+pub const TURN_MIN: f32 = 0.6;
+
+/// -1 for a right turn, 1 for a left turn, 0 for none (yaw grows to the left).
+pub fn turn_dir(rate: f32) -> i8 {
+    if rate > TURN_MIN {
+        1
+    } else if rate < -TURN_MIN {
+        -1
+    } else {
+        0
+    }
+}
+
+/// A mate's gait: its run speed (m/s) for the PseudoSpeed and the rate it turns at.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct MateGait {
+    pub run_speed: f32,
+    last_yaw: Option<f32>,
+    /// The smoothed turn rate (rad/s), positive to the left.
+    pub turn: f32,
+}
+
+impl MateGait {
+    pub fn new(run_speed: f32) -> MateGait {
+        MateGait { run_speed, last_yaw: None, turn: 0.0 }
+    }
+
+    pub fn pseudo(&self, speed: f32) -> f32 {
+        pseudo_speed(speed, self.run_speed)
+    }
+
+    /// Follows the facing: the turn rate is the smoothed change of `yaw` over `dt`.
+    pub fn track_turn(&mut self, yaw: f32, dt: f32) {
+        if let (Some(last), true) = (self.last_yaw, dt > 1e-4) {
+            let d = (yaw - last + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            self.turn += (d / dt - self.turn) * 0.3;
+        }
+        self.last_yaw = Some(yaw);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +384,52 @@ mod flow_tests {
         assert!((target - Vec2::new(-1.0, 0.0)).length() < 1e-5, "{target}");
         assert!(bearing(Vec2::ZERO, Vec2::new(0.0, 5.0)).abs() < 1e-5, "north is facing 0");
         assert!((bearing(Vec2::ZERO, Vec2::new(5.0, 0.0)) + std::f32::consts::FRAC_PI_2).abs() < 1e-5, "east is -90 degrees");
+    }
+}
+
+#[cfg(test)]
+mod band_tests {
+    use super::*;
+
+    #[test]
+    fn the_mount_bands_follow_the_pseudo_speed_with_gaps_holding_the_band() {
+        assert_eq!(mount_band(0.0, Band::Run), Band::Idle);
+        assert_eq!(mount_band(0.1, Band::Run), Band::Idle);
+        assert_eq!(mount_band(0.2, Band::Idle), Band::Walk, "a walk at 1.8 of 9 m/s");
+        assert_eq!(mount_band(0.7, Band::Idle), Band::Walk);
+        assert_eq!(mount_band(0.75, Band::Walk), Band::Walk, "the gap holds the walk");
+        assert_eq!(mount_band(0.75, Band::Run), Band::Run, "and the run");
+        assert_eq!(mount_band(0.8, Band::Walk), Band::Run);
+        assert_eq!(mount_band(1.5, Band::Idle), Band::Run);
+    }
+
+    #[test]
+    fn the_rider_bands_are_wider_at_the_walk() {
+        assert_eq!(rider_band(0.12, Band::Idle), Band::Idle, "0.1..0.15 holds");
+        assert_eq!(rider_band(0.12, Band::Walk), Band::Walk);
+        assert_eq!(rider_band(0.15, Band::Idle), Band::Walk);
+        assert_eq!(rider_band(0.65, Band::Walk), Band::Walk, "0.6..0.7 holds the walk");
+        assert_eq!(rider_band(0.7, Band::Walk), Band::Run);
+        // the horse walks at 0.2 and runs at 1: the rider walks and runs with it
+        assert_eq!(rider_band(pseudo_speed(1.8, 9.0), Band::Idle), Band::Walk);
+        assert_eq!(rider_band(pseudo_speed(9.0, 9.0), Band::Idle), Band::Run);
+    }
+
+    #[test]
+    fn a_turning_mate_reports_the_direction_of_the_turn() {
+        let mut gait = MateGait::new(9.0);
+        gait.track_turn(0.0, 0.016);
+        for i in 1..40 {
+            gait.track_turn(i as f32 * 0.03, 0.016);
+        }
+        assert_eq!(turn_dir(gait.turn), 1, "yaw grows to the left: {}", gait.turn);
+        assert_eq!(turn_dir(-1.0), -1);
+        assert_eq!(turn_dir(0.2), 0);
+        assert!((gait.pseudo(9.0) - 1.0).abs() < 1e-6);
+        // across the +-pi seam the turn stays small
+        let mut seam = MateGait::new(9.0);
+        seam.track_turn(3.13, 0.016);
+        seam.track_turn(-3.13, 0.016);
+        assert!((seam.turn - 0.3 * (0.0232 / 0.016)).abs() < 0.01, "{}", seam.turn);
     }
 }

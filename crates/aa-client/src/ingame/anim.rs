@@ -17,6 +17,7 @@ use bevy::prelude::*;
 
 use super::combat::{Acting, Dead};
 use super::jump::{self, JumpDir, JumpKind, JumpPhase, JumpTrack};
+use super::mount_anim::{self, Band, MateGait};
 use super::player::LocalPlayer;
 use super::weapons::{Drawn, Out, Wield};
 
@@ -240,6 +241,11 @@ impl StanceClips {
 }
 
 impl ClipSet {
+    /// The clip called `name` in the model's `.cal`, when it has one (a mount turns and starts with clips of its own).
+    pub(super) fn named(&self, rig: &Rig, library: &ClipLibrary, name: &str) -> Option<BoundClip> {
+        bind_clip(rig, &self.cal, library, name)
+    }
+
     /// Binds the clips of `cal` to `rig`. `None` when the model has no idle at all.
     pub fn load(rig: &Arc<Rig>, cal: Arc<Cal>, clips: &ClipLibrary) -> Option<ClipSet> {
         let bind = |name: &str| bind_clip(rig, &cal, clips, name);
@@ -247,7 +253,7 @@ impl ClipSet {
         let dirs = |prefix: &str| -> [Option<BoundClip>; 8] { std::array::from_fn(|i| bind(&format!("{prefix}_{}", DIRS[i]))) };
         let run = dirs("fist_mo_normal_run");
         let walk = dirs("fist_mo_normal_walk");
-        let jump = bind("fist_mo_relaxed_jump_s_loop");
+        let jump = bind("fist_mo_relaxed_jump_s_loop").or_else(|| bind("fist_mo_jump_f_loop"));
         let run_clip_speed = run[0].as_ref().map_or(0.0, |c| ground_speed(rig, c));
         let walk_clip_speed = walk[0].as_ref().map_or(0.0, |c| ground_speed(rig, c));
         let sprint = SprintClips::load(rig, &cal, clips, "fist_mo_normal_run");
@@ -362,6 +368,10 @@ enum State {
     Swim(bool),
     /// A phase of a jump, the direction it was chosen with and what the unit jumps as.
     Jump(JumpPhase, JumpDir, JumpKind),
+    /// A mount turning on the spot (`fist_mo_relaxed_turn_l/r`), true for a left turn.
+    Turn(bool),
+    /// A mount running forward while it turns (`fist_mo_normal_run_f_lturn/rturn`): a left turn, and the sprint tier.
+    RunTurn(bool, bool),
 }
 
 const JUMP_DIRS: [JumpDir; 9] = [JumpDir::S, JumpDir::F, JumpDir::B, JumpDir::L, JumpDir::R, JumpDir::Fl, JumpDir::Fr, JumpDir::Bl, JumpDir::Br];
@@ -408,11 +418,12 @@ pub fn drive_locomotion(
     time: Res<Time>,
     library: Res<ClipLibrary>,
     local_jump: Option<Res<LocalJump>>,
-    mut units: Query<(&mut Animator, &mut Locomotion, &Motion, Option<&Acting>, Option<&Drawn>, Option<&Wield>, Has<LocalPlayer>), Without<Dead>>,
+    mut units: Query<(&mut Animator, &mut Locomotion, &Motion, Option<&Acting>, Option<&Drawn>, Option<&Wield>, Has<LocalPlayer>, Option<&mut MateGait>, &Transform), Without<Dead>>,
 ) {
+    let dt = time.delta_secs();
     let now = time.elapsed_secs_f64();
     let local_jump = local_jump.map(|j| *j).unwrap_or_default();
-    for (mut animator, mut loco, motion, acting, drawn, wield, local) in &mut units {
+    for (mut animator, mut loco, motion, acting, drawn, wield, local, mut mate, transform) in &mut units {
         // an action on the whole body owns the clip; one on the upper body leaves the legs to locomotion
         if acting.is_some_and(|a| !a.layered) {
             // the action owns the body: the jump's phase is over when it ends
@@ -426,11 +437,32 @@ pub fn drive_locomotion(
             loco.stance = stance;
             loco.state = State::Unknown;
         }
-        let moving = motion.speed > 0.3 && loco.clips.can_move();
+        // a mate (a mount) walks and runs by PseudoSpeed bands, not by metres per second (`horse_full_body.xml`)
+        let gait = mate.as_deref_mut().map(|g| {
+            g.track_turn(transform.rotation.to_euler(EulerRot::YXZ).0, dt);
+            let prev = match loco.state {
+                State::Moving(_, true, _) => Band::Walk,
+                State::Moving(_, false, _) | State::RunTurn(..) => Band::Run,
+                _ => Band::Idle,
+            };
+            let ps = g.pseudo(motion.speed);
+            (mount_anim::mount_band(ps, prev), ps, mount_anim::turn_dir(g.turn))
+        });
+        let moving = match gait {
+            Some((band, ..)) => band != Band::Idle && loco.clips.can_move(),
+            None => motion.speed > 0.3 && loco.clips.can_move(),
+        };
         // the local player's buffs change its speed (Dash, a slow): the walk or run clip is chosen by its speed without them
         let base_speed = if local && local_jump.speed_mul > 0.05 { motion.speed / local_jump.speed_mul } else { motion.speed };
-        let walk = moving && base_speed < (WALK_SPEED + RUN_SPEED) * 0.5;
-        let sprinting = moving && !walk && local && local_jump.sprint_motion;
+        let walk = match gait {
+            Some((band, ..)) => moving && band == Band::Walk,
+            None => moving && base_speed < (WALK_SPEED + RUN_SPEED) * 0.5,
+        };
+        let sprinting = match gait {
+            Some((_, ps, _)) => moving && !walk && ps >= mount_anim::SPRINT_PSEUDO,
+            None => moving && !walk && local && local_jump.sprint_motion,
+        };
+        let turning = gait.map_or(0, |(.., t)| t);
         // a jump: its phase by 1.2's graph (`super::jump`), the share of the playing clip deciding when a phase may end
         let jumping = if loco.clips.jump.is_some() {
             let (rising, asked) = if local { (local_jump.rising, local_jump.dir) } else { (false, if moving { motion.local_dir } else { Vec2::ZERO }) };
@@ -465,7 +497,14 @@ pub fn drive_locomotion(
         } else if motion.swimming && loco.clips.swim_idle.is_some() {
             State::Swim(moving)
         } else if moving {
-            State::Moving(direction_index(motion.local_dir), walk, sprinting)
+            let dir = direction_index(motion.local_dir);
+            if gait.is_some() && turning != 0 && !walk && dir == 0 {
+                State::RunTurn(turning > 0, sprinting)
+            } else {
+                State::Moving(dir, walk, sprinting)
+            }
+        } else if gait.is_some() && turning != 0 {
+            State::Turn(turning > 0)
         } else {
             State::Idle
         };
@@ -486,6 +525,15 @@ pub fn drive_locomotion(
             let clip = match wanted {
                 State::Unknown | State::Idle => stance_clips.and_then(|c| c.idle.clone()).or_else(|| Some(loco.clips.idle.clone())),
                 State::Jump(..) => None,
+                State::Turn(left) => loco.clips.named(&animator.rig, &library, if left { "fist_mo_relaxed_turn_l" } else { "fist_mo_relaxed_turn_r" }).or_else(|| Some(loco.clips.idle.clone())),
+                State::RunTurn(left, sprint) => {
+                    let tier = if sprint { "sprint" } else { "run" };
+                    let side = if left { "lturn" } else { "rturn" };
+                    loco.clips
+                        .named(&animator.rig, &library, &format!("fist_mo_normal_{tier}_f_{side}"))
+                        .or_else(|| loco.clips.named(&animator.rig, &library, &format!("fist_mo_normal_run_f_{side}")))
+                        .or_else(|| loco.clips.run[0].clone())
+                }
                 State::Swim(moving) => loco.clips.swim_f.clone().filter(|_| moving).or_else(|| loco.clips.swim_idle.clone()),
                 State::Moving(d, walk, sprint) => {
                     let (primary, secondary) = if walk { (&loco.clips.walk, &loco.clips.run) } else { (&loco.clips.run, &loco.clips.walk) };
@@ -495,12 +543,26 @@ pub fn drive_locomotion(
                 }
             };
             if let Some(clip) = clip {
-                animator.play(clip, true, 0.15);
+                // a mount starts a run with `fist_mo_relaxed_idletorun_f` and ends it with `fist_mo_relaxed_runtoidle_f`
+                let transition = match (gait.is_some(), loco.state, wanted) {
+                    (true, State::Idle | State::Turn(_), State::Moving(0, false, false)) => Some("fist_mo_relaxed_idletorun_f"),
+                    (true, State::Moving(_, false, _) | State::RunTurn(..), State::Idle) => Some("fist_mo_relaxed_runtoidle_f"),
+                    _ => None,
+                }
+                .and_then(|name| loco.clips.named(&animator.rig, &library, name));
+                match transition {
+                    Some(transition) => animator.play_once_then(transition, clip, 0.15),
+                    None => animator.play(clip, true, 0.15),
+                }
                 animator.random_idle = None;
             }
             loco.state = wanted;
         }
         animator.speed = match loco.state {
+            State::RunTurn(..) => {
+                let clip_speed = loco.clips.run_clip_speed;
+                if clip_speed > 0.1 { (motion.speed / clip_speed).clamp(0.4, 2.0) } else { 1.0 }
+            }
             State::Moving(d, walk, sprint) => {
                 let combat_run = stance_clips.filter(|c| !walk && c.run[d].is_some());
                 let clip_speed = match combat_run {
