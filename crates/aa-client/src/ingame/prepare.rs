@@ -86,6 +86,17 @@ pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Uni
             return UnitBuild::Ship { parts, models };
         }
     }
+    if !unit.is_character() {
+        let parts = db.housing_parts(unit.model_id);
+        if !parts.is_empty() {
+            let mut paths = parts.iter().map(|p| p.path.as_str()).collect::<Vec<_>>();
+            paths.sort_unstable();
+            paths.dedup();
+            let options = ModelOptions::default();
+            let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
+            return UnitBuild::Ship { parts, models };
+        }
+    }
     let file = db.actor_model_file(unit.model_id);
     let humanoid = match unit.kind {
         UnitKind::Character { .. } => appearance::race_gender(unit.model_id, unit.race(), unit.gender()),

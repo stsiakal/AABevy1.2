@@ -763,18 +763,19 @@ fn start(r: &mut Runner, c: &mut Ctx, cmd: &Cmd, now: f32) -> Option<Active> {
                 r.fail("the Start Construction window is not open".into());
                 return None;
             }
-            match session.create_house() {
-                Some(request) => {
+            let auto = c.inventory.auto_use_aa_point();
+            match c.placement.send_create(auto, std::time::Instant::now()) {
+                Ok(request) => {
                     say(r, "confirming the Start Construction window");
-                    session.done = true;
                     c.net.write(NetCommand(Command::House(request)));
                     r.await_event("Housing.MyHouse", now + 10.0, false)
                 }
-                None => {
-                    r.fail(format!(
-                        "cannot send CSCreateHouse: {}",
-                        session.build_blocked().unwrap_or("unknown reason")
-                    ));
+                Err(crate::ingame::placement::CreateRefusal::Wait(seconds)) => {
+                    r.fail(format!("CSCreateHouse is rate limited: {seconds} s left"));
+                    None
+                }
+                Err(crate::ingame::placement::CreateRefusal::Blocked(why)) => {
+                    r.fail(format!("cannot send CSCreateHouse: {why}"));
                     None
                 }
             }

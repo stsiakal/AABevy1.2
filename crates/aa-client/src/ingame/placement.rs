@@ -59,8 +59,16 @@ use super::virtual_input::VirtualInput;
 use crate::Screen;
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
 
-/// Step of the rotation keys, radians (15 degrees; Shift: 90 degrees).
+/// Rotation step of one wheel notch with Shift held, radians: exactly pi/12 = 15 degrees (`builder_rotate_*_large`,
+/// `FUN_39016fe0`; docs/research/re-placement.md section 1).
 pub const ROT_STEP: f32 = std::f32::consts::PI / 12.0;
+/// Rotation step of one wheel notch with Alt held, radians: exactly 0.01 rad = 0.573 degrees (`builder_rotate_*_small`).
+pub const ROT_STEP_SMALL: f32 = 0.01;
+/// Rotation step of one plain wheel notch, radians.
+/// TODO(re-placement.md section 1, "Step sizes" and open questions): UNRESOLVED. The original computes
+/// `value * 1 degree * X` with a runtime scale `X = DAT_39adac58->vtbl[3]()` that static analysis could not
+/// resolve; 10 degrees is the placeholder until one live count in the retail client gives the real value.
+pub const ROT_STEP_PLAIN: f32 = 10.0 * std::f32::consts::PI / 180.0;
 /// Fallback use range of an item whose skill has none (the planting skills have 2 m).
 const DEFAULT_RANGE: f32 = 2.0;
 /// How far above the ground the floor is searched for, metres.
@@ -87,6 +95,9 @@ pub struct Plantable {
     /// The template's phases include a `DoodadFuncWaterVolume`: it must be placed on water.
     pub requires_water: bool,
     pub grounding: Grounding,
+    /// A house or farm design's model is a prefab of several brushes (wall, roof, floor and their decorations): the
+    /// pieces of the finished building, each at its place. Empty for a doodad and for a single-model design.
+    pub parts: Vec<super::data::ShipPart>,
     /// A design item (`item_housings`): the placement is a house plot, not a doodad.
     pub house: Option<HouseDesign>,
 }
@@ -128,6 +139,11 @@ pub struct Catalog {
     area_groups: HashMap<u32, u32>,
     /// `housing_groups.id` -> the categories its `housing_group_categories` rows allow.
     group_categories: HashMap<u32, HashSet<u32>>,
+}
+
+/// The ground-point offset of a housing design: none (see the design loader for why `housings.auto_z_offset_*` is left out).
+fn house_grounding(_auto_z: bool, _offset: Vec3) -> Grounding {
+    Grounding::default()
 }
 
 impl Catalog {
@@ -189,6 +205,7 @@ impl Catalog {
                     footprint: radius,
                     requires_water: water,
                     grounding: Grounding::default(),
+                    parts: Vec::new(),
                     house: None,
                 });
             }
@@ -244,7 +261,12 @@ impl Catalog {
                     model: db.and_then(|db| db.actor_model_file(model_id)),
                     footprint: garden,
                     requires_water: false,
-                    grounding: Grounding { auto_z, offset: Vec3::new(ox, oy, oz) },
+                    // a house's `auto_z_offset` (z +1 m on almost every design) is NOT lifted into the spot: the design's model
+                    // origin is its ground contact (floor brush at z 0, the stone base meets the ground; the owner's retail
+                    // capture shows it standing on the ground) and the server stores the sent z for the finished house, so a
+                    // +1 m spot floated the ghost and would raise the house
+                    grounding: house_grounding(auto_z, Vec3::new(ox, oy, oz)),
+                    parts: db.map(|db| db.housing_parts(model_id)).unwrap_or_default(),
                     house: Some(house),
                 });
             }
@@ -274,6 +296,12 @@ impl Catalog {
             }
         }
         Some(catalog)
+    }
+
+    /// The placement of a housing design (its item's template), for the offline renders and tests.
+    #[allow(dead_code)]
+    pub fn plantable_for_design(&self, design: u32) -> Option<&Plantable> {
+        self.by_item.values().find(|p| p.house.as_ref().is_some_and(|h| h.design == design))
     }
 
     pub fn plantable(&self, item: u32) -> Option<&Plantable> {
@@ -375,10 +403,17 @@ pub struct Session {
     pub invalid: Option<Invalid>,
     /// The ghost root, its model and the tinted part materials.
     root: Option<Entity>,
+    /// The model child of the ghost root and whether it wears the invalid material (house ghosts only).
+    ghost_model: Option<Entity>,
+    ghost_invalid: bool,
     model_failed: bool,
     /// The left button was released after the session started: only then may a click confirm (the bag click that
     /// used the seed must not carry into the placement).
     left_armed: bool,
+    /// House only: the original builder's state 2 ("rotation"): the first click locked the spot, the wheel turns the
+    /// model and the next click asks for the tax quote. It stays set while the quote is pending and the popup is open,
+    /// so Cancel on the popup returns to it.
+    pub rotating: bool,
     /// House only: the tax quote asked from the server, its answer, and the original build window.
     pub quote_requested: bool,
     pub quote: Option<ConstructHouseTax>,
@@ -393,15 +428,45 @@ pub struct Session {
 }
 
 impl Session {
-    /// A house or farm whose spot the left click locked (the Start Construction popup is asked for or open).
+    /// A house or farm whose spot the first left click locked (rotation, or the Start Construction popup is asked for
+    /// or open).
     pub fn locked(&self) -> bool {
-        self.is_house() && (self.quote_requested || self.window_open)
+        self.is_house() && (self.rotating || self.quote_requested || self.window_open)
     }
 
     /// Retail: only after the click that locks a house / farm spot does the wheel turn the model (and then it is not the
     /// camera's); before it, and for seeds and saplings, the wheel zooms the camera.
     pub fn wheel_rotates(&self) -> bool {
         self.locked()
+    }
+
+    /// Retail `FUN_39331760` (back / right click) for a house or farm: a pending quote goes back to the rotation,
+    /// the rotation goes back to free placement (the spot unlocks). `false` when there is no step back (free
+    /// placement, or a seed): the click cancels the placement.
+    pub fn step_back(&mut self) -> bool {
+        if !self.is_house() {
+            return false;
+        }
+        if self.quote_requested {
+            self.quote_requested = false;
+            self.quote = None;
+            self.rotating = true;
+            true
+        } else if self.rotating {
+            self.rotating = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The Start Construction popup's Cancel (retail `FUN_39017220`): the builder steps back to the rotation, not to
+    /// free placement; the spot stays locked.
+    pub fn cancel_popup(&mut self) {
+        self.window_open = false;
+        self.quote_requested = false;
+        self.quote = None;
+        self.rotating = true;
     }
 
     pub fn new(item_id: u64, plant: Plantable, yaw: f32) -> Session {
@@ -413,8 +478,11 @@ impl Session {
             scale: 1.0,
             invalid: Some(Invalid::NoGround),
             root: None,
+            ghost_model: None,
+            ghost_invalid: false,
             model_failed: false,
             left_armed: false,
+            rotating: false,
             quote_requested: false,
             quote: None,
             window_open: false,
@@ -483,7 +551,7 @@ impl Session {
 
     /// `CSCreateHouse`: the build window's Build button. It uses the confirmed spot, not the live cursor
     /// validity: the pointer may be over the window and the preview locked when this is called.
-    pub fn create_house(&self) -> Option<HouseCommand> {
+    pub fn create_house(&self, auto_use_aa_point: bool) -> Option<HouseCommand> {
         if self.build_blocked().is_some() {
             return None;
         }
@@ -499,17 +567,65 @@ impl Session {
             item_id: self.item_id,
             money_amount: quote.total_tax_money_amount,
             ht: 0,
-            auto_use_aa_point: false,
+            auto_use_aa_point,
         })
     }
+}
+
+/// Minimum time between two `CSCreateHouse` sends (`DAT_3a167ea0`, 5000 ms in the original builder).
+pub const CREATE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Why the Build button sent nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreateRefusal {
+    /// The last create was sent less than [`CREATE_INTERVAL`] ago: whole seconds left (rounded up).
+    Wait(u64),
+    /// The session cannot build yet (no quote, not confirmed, ...).
+    Blocked(&'static str),
 }
 
 #[derive(Resource, Default)]
 pub struct Placement {
     pub session: Option<Session>,
+    /// When the last `CSCreateHouse` was sent (the 5 s rate limit).
+    pub last_create: Option<std::time::Instant>,
     /// Design of a house create that was sent and is waiting for the server's `SCMyHouse`; the ghost is
     /// already gone, so this keeps enough identity to close the original build window on the answer.
     pub pending_house: Option<u32>,
+}
+
+impl Placement {
+    /// The Build button: the `CSCreateHouse` of the active session, unless the 5 s limit holds it back. A send marks
+    /// the session done and starts the limit. `auto_use_aa_point` is the player's real setting.
+    pub fn send_create(&mut self, auto_use_aa_point: bool, now: std::time::Instant) -> Result<HouseCommand, CreateRefusal> {
+        let Some(session) = self.session.as_mut() else { return Err(CreateRefusal::Blocked("the active placement is gone")) };
+        if let Some(why) = session.build_blocked() {
+            return Err(CreateRefusal::Blocked(why));
+        }
+        if let Some(last) = self.last_create {
+            let left = CREATE_INTERVAL.saturating_sub(now.saturating_duration_since(last));
+            if !left.is_zero() {
+                return Err(CreateRefusal::Wait(left.as_millis().div_ceil(1000) as u64));
+            }
+        }
+        let request = session.create_house(auto_use_aa_point).ok_or(CreateRefusal::Blocked("the house cannot be built"))?;
+        session.done = true;
+        self.last_create = Some(now);
+        Ok(request)
+    }
+}
+
+/// The red message of a held-back `CSCreateHouse`: `CANNOT_LOCATE_DOODAD_NOW` with the seconds left.
+pub fn create_wait_notice(rt: Option<&aa_ui::UiRuntime>, seconds: u64) -> String {
+    match localized_error(rt, "CANNOT_LOCATE_DOODAD_NOW") {
+        Some(text) => text.replace("$1", &seconds.to_string()),
+        None => cooldown_message(seconds),
+    }
+}
+
+/// Raises the red top-centre message (the original `centermessage`).
+pub fn notify_text(rt: Option<&aa_ui::UiRuntime>, text: String) {
+    notify(rt, text);
 }
 
 #[derive(Component)]
@@ -535,6 +651,8 @@ struct Visuals {
     cursor_mesh: Option<Handle<Mesh>>,
     cursor_good: Option<Handle<StandardMaterial>>,
     cursor_bad: Option<Handle<StandardMaterial>>,
+    cursor_rotation: Option<Handle<StandardMaterial>>,
+    cursor_zoom: Option<Handle<StandardMaterial>>,
     ring: RingParts,
     arrow: Option<Entity>,
 }
@@ -550,7 +668,7 @@ struct RingPart {
 struct RingParts {
     yellow: Option<RingPart>,
     red: Option<RingPart>,
-    /// The active plot's glowing dots.
+    /// The active plot's white dots.
     dots: Option<RingPart>,
     /// Nearby finished plots' white/grey dots.
     neighbours: Option<RingPart>,
@@ -567,7 +685,31 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, load_catalog)
         .add_systems(PreUpdate, input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
         .add_systems(Update, (start, finish, track, cursor_icon, log_server).chain().run_if(in_state(Screen::InGame)))
+        .add_systems(Update, builder_events.after(finish).run_if(in_state(Screen::InGame)))
         .add_systems(OnExit(Screen::InGame), leave);
+}
+
+/// The `BUILDER_STEP` argument of the original builder (`FUN_39017410`, table `{"stanby","position","rotation","elevation"}`)
+/// for a house / farm placement; seeds and saplings are not builder placements.
+fn builder_step(session: Option<&Session>) -> Option<&'static str> {
+    let session = session.filter(|s| s.is_house())?;
+    Some(if session.locked() { "rotation" } else { "position" })
+}
+
+/// Raises the original builder's UI events: `BUILDER_STEP(step)` whenever the state changes (the stock
+/// `hud/build_guide.alb` shows its help tooltip for `"rotation"` only) and `BUILDER_END` when the placement ends.
+fn builder_events(placement: Res<Placement>, rt: Option<NonSend<aa_ui::UiRuntime>>, mut last: Local<Option<&'static str>>) {
+    let now = builder_step(placement.session.as_ref());
+    if now == *last {
+        return;
+    }
+    if let Some(rt) = rt.as_deref() {
+        match now {
+            Some(step) => rt.fire_event("BUILDER_STEP", step),
+            None => rt.fire_event("BUILDER_END", ()),
+        }
+    }
+    *last = now;
 }
 
 /// A house create was sent: put the ghost, ring, stones and arrow away in this frame.
@@ -877,7 +1019,7 @@ fn track(
 /// A house preview stops following the pointer once confirmed (the Start Construction window is open) and
 /// whenever the pointer is over the HUD.
 fn house_locks_pointer(session: &Session, over_ui: bool) -> bool {
-    session.is_house() && (session.quote_requested || over_ui)
+    session.is_house() && (session.rotating || session.quote_requested || over_ui)
 }
 
 /// Puts the ghost root at the session's spot (the last valid one for a house over the UI).
@@ -894,37 +1036,84 @@ fn show_ghost(commands: &mut Commands, root: Option<Entity>, session: &Session) 
     ));
 }
 
-/// The ghost entity of the session, loaded once; `None` when the doodad has no model.
+/// The original builder's invalid-ghost material (`FUN_39334460`: `error != 0` overrides the ghost's materials with it,
+/// else the override is cleared). Its `Diffuse` is the red (0.737, 0.013, 0.013) on `defaults/white.dds`.
+pub const INVALID_GHOST_MATERIAL: &str = "materials/special/housing_build_invalid.mtl";
+
+/// The ghost's model options: its own materials, or the original builder's invalid material on every part.
+fn ghost_options(invalid: bool) -> ModelOptions {
+    ModelOptions { material: invalid.then(|| INVALID_GHOST_MATERIAL.to_string()), ..ModelOptions::default() }
+}
+
+/// The ghost entity of the session, loaded once; `None` when the doodad has no model. A house ghost is reloaded with
+/// the original invalid material while the spot is invalid and with its own materials otherwise.
 fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Session) -> Option<Entity> {
+    let want_invalid = session.is_house() && session.invalid.is_some();
     if let Some(root) = session.root {
+        if session.ghost_invalid != want_invalid
+            && let Some(old) = session.ghost_model.take()
+        {
+            let options = ghost_options(want_invalid);
+            if let Some((model, _)) = spawn_ghost_model(commands, cry, &session.plant, &options, root) {
+                commands.entity(old).despawn();
+                session.ghost_model = Some(model);
+                session.ghost_invalid = want_invalid;
+            } else {
+                session.ghost_model = Some(old);
+            }
+        }
         return Some(root);
     }
     if session.model_failed {
         return None;
     }
-    let Some(path) = session.plant.model.clone() else {
+    if session.plant.model.is_none() && session.plant.parts.is_empty() {
         session.model_failed = true;
         warn!("planting: doodad {} has no model to ghost", session.plant.doodad);
         return None;
-    };
-    let options = ModelOptions::default();
-    let loaded = match cry.load_model(&path, &options) {
-        Ok(loaded) => loaded,
-        Err(e) => {
-            session.model_failed = true;
-            warn!("planting: cannot load ghost model {path}: {e}");
-            return None;
-        }
-    };
+    }
     let root = commands
         .spawn((Name::new("planting ghost"), Ghost, Transform::IDENTITY, Visibility::Visible))
         .id();
-    let model = spawn_loaded(commands, &path, &loaded, &options);
-    commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
-    let parts: usize = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
-    info!("planting: ghost {path} loaded ({parts} parts)");
+    let options = ghost_options(want_invalid);
+    let Some((model, parts)) = spawn_ghost_model(commands, cry, &session.plant, &options, root) else {
+        commands.entity(root).despawn();
+        session.model_failed = true;
+        warn!("planting: cannot load the ghost model of {:?}", session.plant.model);
+        return None;
+    };
+    session.ghost_model = Some(model);
+    session.ghost_invalid = want_invalid;
+    info!("planting: ghost {:?} loaded ({parts} parts)", session.plant.model);
     session.root = Some(root);
     Some(root)
+}
+
+/// The ghost's model under `root`: every brush of the design's prefab at its place (a house is wall, roof and floor), or
+/// the single model file. Returns the entity and the number of drawn parts, `None` when nothing loads.
+fn spawn_ghost_model(commands: &mut Commands, cry: &mut CryAssets, plant: &Plantable, options: &ModelOptions, root: Entity) -> Option<(Entity, usize)> {
+    if !plant.parts.is_empty() {
+        let holder = commands.spawn((Name::new("ghost model"), Transform::IDENTITY, Visibility::Visible, ChildOf(root))).id();
+        let mut drawn = 0;
+        for part in &plant.parts {
+            let Ok(loaded) = cry.load_model(&part.path, options) else { continue };
+            drawn += loaded.parts.iter().map(|(_, parts)| parts.len()).sum::<usize>();
+            let model = spawn_loaded(commands, &part.path, &loaded, options);
+            commands
+                .entity(model)
+                .insert((super::units::ship_part_transform(part), ChildOf(holder), Visibility::Visible, NoFrustumCulling));
+        }
+        if drawn > 0 {
+            return Some((holder, drawn));
+        }
+        commands.entity(holder).despawn();
+    }
+    let path = plant.model.as_deref()?;
+    let loaded = cry.load_model(path, options).ok()?;
+    let drawn = loaded.parts.iter().map(|(_, parts)| parts.len()).sum();
+    let model = spawn_loaded(commands, path, &loaded, options);
+    commands.entity(model).insert((ChildOf(root), Visibility::Visible, NoFrustumCulling));
+    Some((model, drawn))
 }
 
 /// The petals of a ring that touch a placed doodad (the mixed red / yellow ring), when any does.
@@ -1152,15 +1341,20 @@ fn update_ring(
     }
 }
 
-/// The glowing dots along the plot square (half extent = the housing's garden_radius), turned with the
-/// ghost. The 1.2 pak's flare_08.dds is the flare texture of its housing line/twinkle effects; the retail
-/// 3.5 capture shows the same dotted orange boundary for the active plot.
+/// Spacing (m) and edge length (m) of a plot dot: small white points along straight edges (live capture of the
+/// original; the exact retail step is the terrain unit of `FUN_39337fb0`, not resolved).
+const PLOT_DOT_SPACING: f32 = 1.0;
+const PLOT_DOT_SIZE: f32 = 0.14;
+
+/// The white dots along the plot square (half extent = the housing's garden_radius), on straight edges that follow
+/// the terrain. The caller passes yaw 0: whether the retail dots turn with the model is not measured yet, so the
+/// square stays axis-aligned.
 fn plot_dot_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
     let half = plant.footprint.max(0.5);
     let (sin, cos) = yaw.sin_cos();
     let to_world = |u: f32, v: f32| Vec2::new(spot.x + u * cos - v * sin, spot.y + u * sin + v * cos);
     let corners = [to_world(-half, -half), to_world(half, -half), to_world(half, half), to_world(-half, half)].map(|p| (p.x, p.y));
-    edge_dot_quads(corners, 0.62, 0.34, floor)
+    edge_dot_quads(corners, PLOT_DOT_SPACING, PLOT_DOT_SIZE, floor)
 }
 
 /// Existing plots around the placement are marked by white/grey dots (the retail 3.5 capture).
@@ -1181,8 +1375,8 @@ fn neighbour_dot_quads(houses: &Houses, catalog: &Catalog, spot: Vec3, floor: im
         }
         out.extend(edge_dot_quads(
             [(p.x - radius, p.y - radius), (p.x + radius, p.y - radius), (p.x + radius, p.y + radius), (p.x - radius, p.y + radius)],
-            0.7,
-            0.26,
+            PLOT_DOT_SPACING,
+            PLOT_DOT_SIZE,
             &floor,
         ));
     }
@@ -1207,8 +1401,8 @@ fn edge_dot_quads(corners: [(f32, f32); 4], spacing: f32, size: f32, floor: impl
     out
 }
 
-/// One glowing dot as a ground quad plus two crossed vertical quads. A flat ground quad alone is only a few
-/// foreshortened pixels from the normal camera; the crossed quads keep the retail round glow visible at that angle
+/// One white dot as a ground quad plus two crossed vertical quads. A flat ground quad alone is only a few
+/// foreshortened pixels from the normal camera; the crossed quads keep the retail dot visible at that angle
 /// (and the ground quad still shows it from straight above).
 fn dot_quads(g: Vec2, ground: f32, size: f32) -> [Quad; 3] {
     let h = size * 0.5;
@@ -1308,24 +1502,18 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
     } else {
         warn!("planting: cannot read textures/p_effects/leaf_03.dds (petal ring disabled)");
     }
-    // the retail dotted plot boundary: the 1.2 pak's `flare_08.dds` (the texture of its housing
-    // line/twinkle effects), orange for the active plot and white/grey for the neighbours
-    if let Some(flare) = dds_image("textures/p_effects/flare_08.dds") {
-        let flare = images.add(flare);
-        let dot_material = |color: Color| StandardMaterial {
-            base_color: color,
-            base_color_texture: Some(flare.clone()),
-            unlit: true,
-            alpha_mode: AlphaMode::Add,
-            cull_mode: None,
-            depth_bias: 20.0,
-            ..default()
-        };
-        visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 0.62, 0.20, 1.0))));
-        visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(0.92, 0.92, 0.88, 0.9))));
-    } else {
-        warn!("planting: cannot read textures/p_effects/flare_08.dds (plot dots disabled)");
-    }
+    // the retail dotted plot boundary (live capture, Scarecrow Garden): small plain WHITE dots, alpha 0.69
+    // (`FUN_39334ab0` colour 0xAFFFFFFF), no glow texture; the neighbours' plots look the same
+    let dot_material = |color: Color| StandardMaterial {
+        base_color: color,
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        depth_bias: 20.0,
+        ..default()
+    };
+    visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
+    visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
     visuals.post = Some(materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
         unlit: true,
@@ -1352,6 +1540,9 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         };
         visuals.cursor_good = Some(materials.add(cursor_material(&good)));
         visuals.cursor_bad = Some(materials.add(cursor_material(&bad)));
+        // the builder's rotation and Ctrl-zoom cursors; a missing one falls back to the position cursor
+        visuals.cursor_rotation = dds_image("ui/cursor/housing_rotation.dds").map(|i| materials.add(cursor_material(&images.add(i))));
+        visuals.cursor_zoom = dds_image("ui/cursor/housing_zoom.dds").map(|i| materials.add(cursor_material(&images.add(i))));
         visuals.cursor_mesh = Some(meshes.add(Mesh::from(Rectangle::new(1.0, 1.0))));
     } else {
         warn!("planting: cannot read the housing cursor textures");
@@ -1373,6 +1564,33 @@ fn dds_image(path: &str) -> Option<Image> {
     Some(image)
 }
 
+/// Which of the builder's cursor images the placement shows (`FUN_39017410` -> `FUN_397a7b40`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CursorKind {
+    /// `housing_position.dds`
+    Position,
+    /// `housing_rotation.dds`: state 2.
+    Rotation,
+    /// `housing_zoom.dds`: Ctrl held (the wheel zooms the camera instead of turning the model).
+    Zoom,
+    /// `housing_invalid.dds`: the spot has an error.
+    Invalid,
+}
+
+/// The error image wins, then Ctrl's zoom, then the state's own (rotation after the lock click, else position). A seed
+/// or sapling keeps the position / invalid pair.
+fn cursor_kind(session: &Session, ctrl: bool) -> CursorKind {
+    if session.invalid.is_some() {
+        CursorKind::Invalid
+    } else if session.is_house() && ctrl {
+        CursorKind::Zoom
+    } else if session.locked() {
+        CursorKind::Rotation
+    } else {
+        CursorKind::Position
+    }
+}
+
 /// Hides the OS cursor while placing and draws the client's placement cursor at the pointer (the white crosshair
 /// `housing_position` / red cross `housing_invalid` of the 1.2 client).
 #[allow(clippy::too_many_arguments)]
@@ -1384,6 +1602,7 @@ fn cursor_icon(
     mut windows: Query<(Entity, &mut Window, &mut bevy::window::CursorOptions), With<bevy::window::PrimaryWindow>>,
     cameras: Query<(Entity, &Camera, &Projection), With<Camera3d>>,
     ui_cameras: Query<Entity, With<aa_ui::render::UiCamera>>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut icon: Query<(&mut Transform, &mut Visibility, &mut MeshMaterial3d<StandardMaterial>), With<PlacementCursorIcon>>,
 ) {
     let Ok((window_entity, window, mut cursor_options)) = windows.single_mut() else { return };
@@ -1480,7 +1699,14 @@ fn cursor_icon(
         }
         return;
     };
-    let Some(material) = (if placement.session.as_ref().is_some_and(|s| s.invalid.is_none()) { visuals.cursor_good.clone() } else { visuals.cursor_bad.clone() }) else { return };
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    let wanted = placement.session.as_ref().map_or(CursorKind::Position, |s| cursor_kind(s, ctrl));
+    let Some(material) = (match wanted {
+        CursorKind::Invalid => visuals.cursor_bad.clone(),
+        CursorKind::Zoom => visuals.cursor_zoom.clone().or_else(|| visuals.cursor_good.clone()),
+        CursorKind::Rotation => visuals.cursor_rotation.clone().or_else(|| visuals.cursor_good.clone()),
+        CursorKind::Position => visuals.cursor_good.clone(),
+    }) else { return };
     let Some(mesh) = visuals.cursor_mesh.clone() else { return };
     let size_px = 32.0;
     let view = camera.logical_viewport_size().unwrap_or(Vec2::new(1920.0, 1080.0));
@@ -1571,7 +1797,9 @@ fn input(
     let right_click = mouse.just_pressed(MouseButton::Right);
     if right_click {
         mouse.clear_just_pressed(MouseButton::Right);
-        cancel = true;
+        if !session.step_back() {
+            cancel = true;
+        }
     }
     let left_down = mouse.pressed(MouseButton::Left);
     let left_just = mouse.just_pressed(MouseButton::Left);
@@ -1586,9 +1814,8 @@ fn input(
         if let Some(seconds) = cooldown {
             notify(rt.as_deref(), cooldown_message(seconds));
         } else if let Some(reason) = session.invalid {
-            let text = if reason == Invalid::WrongCategory {
-                localized_error(rt.as_deref(), "HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA")
-                    .or_else(|| error_message(reason).map(str::to_string))
+            let text = if session.is_house() {
+                house_error_text(rt.as_deref(), reason)
             } else {
                 error_message(reason).map(str::to_string)
             };
@@ -1596,7 +1823,12 @@ fn input(
                 Some(text) => notify(rt.as_deref(), text),
                 None => info!("placement: not confirmed: {}", reason.text()),
             }
+        } else if session.is_house() && !session.rotating {
+            // retail `FUN_39332200`, state 1: the click locks the spot and starts the rotation (no quote yet)
+            info!("housing: spot locked, rotation (wheel turns the model, click again to continue)");
+            session.rotating = true;
         } else if session.is_house() {
+            // state 2: the click asks for the tax quote (`CSConstructHouseTax`); the popup opens on the reply
             if let Some(request) = session.tax_request() {
                 if let HouseCommand::ConstructHouseTax { design_id, x, y, z } = &request {
                     info!("housing: tax quote for design {design_id} at ({x:.2}, {y:.2}, {z:.2})");
@@ -1632,7 +1864,8 @@ fn left_confirm(armed: &mut bool, pressed: bool, just_pressed: bool, over_ui: bo
     just_pressed && !over_ui
 }
 
-/// The mouse wheel's turn for one notch/test: none with Ctrl (camera zoom), 15 degrees with Shift, 1 with Alt.
+/// The mouse wheel's turn for one notch/test: none with Ctrl (camera zoom), 15 degrees with Shift, 0.01 rad with Alt,
+/// else the (unresolved) plain step.
 fn wheel_turn(shift: bool, alt: bool, ctrl: bool, delta: f32) -> f32 {
     if ctrl || delta == 0.0 {
         return 0.0;
@@ -1640,9 +1873,9 @@ fn wheel_turn(shift: bool, alt: bool, ctrl: bool, delta: f32) -> f32 {
     let step = if shift {
         ROT_STEP
     } else if alt {
-        1f32.to_radians()
+        ROT_STEP_SMALL
     } else {
-        ROT_STEP * 2.0 / 3.0
+        ROT_STEP_PLAIN
     };
     step * delta.signum()
 }
@@ -1668,6 +1901,28 @@ fn error_message(reason: Invalid) -> Option<&'static str> {
         Invalid::OutOfRange => None,
         Invalid::WrongCategory => Some("Building doesn't fit in this area."),
         _ => Some("Can't be installed here."),
+    }
+}
+
+/// The `ERROR_MSG` key of a house / farm placement error, the retail builder's `ui_texts[code + 1]` row (the codes 0x70..0x78
+/// family, `FUN_393363b0`), with the English text used when no UI runtime is there: 0x70 `HOUSE_CANNOT_LOCATE_INVALID_AREA`,
+/// 0x71 `..OVERLAP_HOUSE`, 0x72 `..OVERLAP_UNIT`, 0x9a `TOO_FAR_AWAY`, 0x244 `HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA`.
+fn house_error_key(reason: Invalid) -> Option<(&'static str, &'static str)> {
+    match reason {
+        Invalid::OutsideHousingArea => Some(("HOUSE_CANNOT_LOCATE_INVALID_AREA", "You can't construct a building here.")),
+        Invalid::Overlap => Some(("HOUSE_CANNOT_LOCATE_OVERLAP_HOUSE", "You can't construct a building here: it would overlap another structure.")),
+        Invalid::Player => Some(("HOUSE_CANNOT_LOCATE_OVERLAP_UNIT", "You can't construct a building here: obstacles block the way.")),
+        Invalid::OutOfRange => Some(("TOO_FAR_AWAY", "Too far away.")),
+        Invalid::WrongCategory => Some(("HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA", "Building doesn't fit in this area.")),
+        _ => None,
+    }
+}
+
+/// The text the retail builder prints for a refused house / farm click.
+fn house_error_text(rt: Option<&aa_ui::UiRuntime>, reason: Invalid) -> Option<String> {
+    match house_error_key(reason) {
+        Some((key, english)) => localized_error(rt, key).or_else(|| Some(english.to_string())),
+        None => error_message(reason).map(str::to_string),
     }
 }
 
@@ -1805,6 +2060,7 @@ mod tests {
             footprint: 0.5,
             requires_water: false,
             grounding: Grounding::default(),
+            parts: Vec::new(),
             house: None,
         }
     }
@@ -1822,6 +2078,25 @@ mod tests {
         assert_eq!((p.doodad, p.start_group), (2246, 4366));
         assert_eq!(c.footprint(2246), 0.5);
         assert_eq!(c.plantable(1), None);
+    }
+
+    /// The ghost of a house or farm design is the design's whole prefab (wall, roof, floor, decorations), not one wall
+    /// piece, and it stands on the ground point (the Thatched Farmhouse's `auto_z_offset_z` of 1 m is not lifted into it).
+    #[test]
+    fn a_design_ghost_is_the_whole_prefab_on_the_ground() {
+        let Some(db) = Db::open() else { return };
+        let Some(catalog) = Catalog::load(&db) else { return };
+        for (design, min_parts) in [(171, 3), (267, 1), (89, 1), (172, 3)] {
+            let plant = catalog.plantable_for_design(design).unwrap_or_else(|| panic!("design {design}"));
+            assert!(plant.parts.len() >= min_parts, "design {design}: {} parts", plant.parts.len());
+            let distinct: HashSet<&str> = plant.parts.iter().map(|p| p.path.as_str()).collect();
+            assert!(distinct.len() >= min_parts, "design {design} draws {distinct:?}");
+            let hit = Vec3::new(100.0, 200.0, 10.0);
+            assert_eq!(grounded(hit, 10.0, None, plant), hit, "design {design} sits on the ground point, no lift");
+        }
+        let farmhouse = catalog.plantable_for_design(171).unwrap();
+        assert!(farmhouse.parts.iter().any(|p| p.path.ends_with("housing_s_roof03.cgf")), "the roof is part of the ghost");
+        assert!(farmhouse.parts.iter().any(|p| p.path.ends_with("housing_s_floor03.cgf")), "so is the floor");
     }
 
     #[test]
@@ -1997,11 +2272,12 @@ mod tests {
 
     #[test]
     fn the_wheel_mapping_keeps_ctrl_for_the_camera() {
-        let normal = ROT_STEP * 2.0 / 3.0;
+        let normal = ROT_STEP_PLAIN;
         assert!((wheel_turn(false, false, false, 1.0) - normal).abs() < 1e-6);
         assert!((wheel_turn(false, false, false, -3.0) + normal).abs() < 1e-6);
-        assert!((wheel_turn(true, false, false, 1.0) - ROT_STEP).abs() < 1e-6);
-        assert!((wheel_turn(false, true, false, 1.0) - 1f32.to_radians()).abs() < 1e-6);
+        assert!((wheel_turn(true, false, false, 1.0) - 15f32.to_radians()).abs() < 1e-6, "Shift is exactly 15 degrees");
+        assert_eq!(wheel_turn(false, true, false, -1.0), -0.01, "Alt is exactly 0.01 rad");
+        assert!((ROT_STEP_PLAIN - 10f32.to_radians()).abs() < 1e-6);
         assert_eq!(wheel_turn(false, false, true, 1.0), 0.0);
         assert_eq!(wheel_turn(true, true, false, 0.0), 0.0);
     }
@@ -2048,6 +2324,7 @@ mod tests {
             footprint: radius,
             requires_water: false,
             grounding: Grounding::default(),
+            parts: Vec::new(),
             house: Some(HouseDesign {
                 design,
                 name: "Scarecrow Garden".into(),
@@ -2084,7 +2361,7 @@ mod tests {
         session.spot = Some(Vec3::new(1.0, 2.0, 3.0));
         session.window_open = false;
         session.yaw = wrap_angle(session.yaw + 0.5);
-        assert!(matches!(session.create_house(), Some(HouseCommand::CreateHouse { z_rot, .. }) if (z_rot - wrap_angle(3.0)).abs() < 1e-5));
+        assert!(matches!(session.create_house(false), Some(HouseCommand::CreateHouse { z_rot, .. }) if (z_rot - wrap_angle(3.0)).abs() < 1e-5));
         let seed = Session::new(1, plant(), 0.0);
         assert!(!seed.wheel_rotates(), "seeds never rotate, the wheel zooms");
     }
@@ -2155,7 +2432,7 @@ mod tests {
                 assert!(v.z >= -200.0 - 4.2 && v.z <= -200.0 + 4.2, "inside the plot: {v:?}");
             }
         }
-        assert!(tallest > 10.31, "the crossed quads stand up from the ground: {tallest}");
+        assert!(tallest > 10.15, "the crossed quads stand up from the ground: {tallest}");
         let turned = plot_dot_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
         assert_ne!(quads_signature(&dots), quads_signature(&turned), "rotating the ghost rotates the square");
     }
@@ -2204,7 +2481,7 @@ mod tests {
                 tallest = tallest.max(v.y);
             }
         }
-        assert!(tallest > 10.24, "neighbour dots also stand up: {tallest}");
+        assert!(tallest > 10.15, "neighbour dots also stand up: {tallest}");
     }
 
     #[test]
@@ -2314,7 +2591,7 @@ mod tests {
             session.tax_request(),
             Some(HouseCommand::ConstructHouseTax { design_id: 267, x: 1000.5, y: 2000.25, z: 100.0 })
         );
-        assert!(session.create_house().is_none(), "no quote yet");
+        assert!(session.create_house(false).is_none(), "no quote yet");
         session.quote = Some(ConstructHouseTax {
             design_id: 267,
             heavy_tax_house_count: 1,
@@ -2329,7 +2606,7 @@ mod tests {
         session.spot = Some(Vec3::new(1000.5, 2000.25, 100.0));
         session.invalid = Some(Invalid::NoGround);
         assert_eq!(
-            session.create_house(),
+            session.create_house(false),
             Some(HouseCommand::CreateHouse {
                 design_id: 267,
                 x: 1000.5,
@@ -2567,5 +2844,344 @@ mod tests {
         app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
         app.update();
         assert_eq!(app.world().resource::<Placement>().session.as_ref().unwrap().yaw, 0.0);
+    }
+
+    /// A house app for the input system: the real `input` system plus a recorder of the packets sent.
+    #[derive(Resource, Default)]
+    struct Sent(Vec<Command>);
+
+    fn collect_sent(mut events: MessageReader<NetCommand>, mut sent: ResMut<Sent>) {
+        sent.0.extend(events.read().map(|command| command.0.clone()));
+    }
+
+    fn house_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Sent>()
+            .init_resource::<Skills>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (input, collect_sent).chain());
+        app.insert_resource(Time::<()>::default());
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
+        app.update(); // arm the left button
+        app
+    }
+
+    fn click(app: &mut App, button: MouseButton) {
+        app.world_mut().resource_mut::<VirtualInput>().queue_click(button);
+        app.update();
+    }
+
+    fn sent(app: &mut App) -> Vec<Command> {
+        std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0)
+    }
+
+    fn session_of(app: &App) -> &Session {
+        app.world().resource::<Placement>().session.as_ref().unwrap()
+    }
+
+    /// Retail `FUN_39332200`: click 1 locks the spot and starts the rotation, click 2 asks for the quote.
+    #[test]
+    fn a_house_needs_two_clicks_the_second_asks_for_the_quote() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).rotating && !session_of(&app).quote_requested);
+        assert!(sent(&mut app).is_empty(), "click 1 sends nothing");
+        click(&mut app, MouseButton::Left);
+        let packets = sent(&mut app);
+        assert!(matches!(packets.as_slice(), [Command::House(HouseCommand::ConstructHouseTax { design_id: 267, .. })]), "{packets:?}");
+        assert!(session_of(&app).quote_requested);
+        // seeds and saplings never rotate: their one click still plants
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        seed.invalid = None;
+        app.insert_resource(Placement { session: Some(seed), ..Default::default() });
+        app.update();
+        click(&mut app, MouseButton::Left);
+        assert!(matches!(sent(&mut app).as_slice(), [Command::CreateDoodad(_)]));
+    }
+
+    #[test]
+    fn the_builder_steps_follow_the_house_state_and_seeds_have_none() {
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        assert_eq!(builder_step(Some(&session)), Some("position"));
+        session.rotating = true;
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        session.quote_requested = true;
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        assert_eq!(builder_step(Some(&Session::new(2, plant(), 0.0))), None);
+        assert_eq!(builder_step(None), None);
+    }
+
+    /// Retail `FUN_39331760`: right click steps back (rotation -> position), and cancels from position.
+    #[test]
+    fn right_click_steps_back_one_state_and_cancels_from_the_first() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).rotating);
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_some(), "rotation steps back, it does not cancel");
+        assert!(!session_of(&app).locked(), "back in free placement: the spot is unlocked");
+        // a pending quote steps back to the rotation
+        click(&mut app, MouseButton::Left);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).quote_requested);
+        click(&mut app, MouseButton::Right);
+        assert!(session_of(&app).rotating && !session_of(&app).quote_requested);
+        click(&mut app, MouseButton::Right);
+        assert!(!session_of(&app).locked());
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_none(), "free placement: right click cancels");
+        // a seed has no step to go back to
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        app.insert_resource(Placement { session: Some(seed), ..Default::default() });
+        app.update();
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_none());
+    }
+
+    /// The popup's Cancel button (`Request::HouseCancel`) returns to the rotation, not to free placement.
+    #[test]
+    fn popup_cancel_returns_to_the_rotation() {
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.rotating = true;
+        session.quote_requested = true;
+        session.window_open = true;
+        session.cancel_popup();
+        assert!(session.rotating && session.locked() && !session.quote_requested && !session.window_open);
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        assert!(session.step_back(), "the next right click goes on to free placement");
+        assert!(!session.locked());
+    }
+
+    /// Shift and Alt steps through the real input system after the lock click.
+    #[test]
+    fn the_modifier_wheel_steps_turn_the_locked_model_exactly() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(-1.0, false, true, false);
+        app.update();
+        assert_eq!(session_of(&app).yaw, -0.01, "Alt is 0.01 rad");
+        // the virtual clock is stopped, so Alt is still held: Shift wins, as in the retail binding table
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, true, false, false);
+        app.update();
+        assert!((session_of(&app).yaw - (15f32.to_radians() - 0.01)).abs() < 1e-5, "{}", session_of(&app).yaw);
+    }
+
+    #[test]
+    fn an_invalid_house_ghost_wears_the_original_invalid_material() {
+        assert_eq!(ghost_options(false).material, None);
+        assert_eq!(ghost_options(true).material.as_deref(), Some(INVALID_GHOST_MATERIAL));
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let mtl = String::from_utf8(aa_cry::read(INVALID_GHOST_MATERIAL).expect("the 1.2 pak has the invalid material")).unwrap();
+        assert!(mtl.contains("Diffuse=\"0.73720491,0.01266372,0.01266372\""), "{mtl}");
+        use bevy::asset::AssetPlugin;
+        #[derive(Resource, Default)]
+        struct Mtl(Option<String>);
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .add_plugins(aa_cry::CryPlugin)
+            .init_resource::<Mtl>()
+            .add_systems(Startup, |mut cry: CryAssets, mut out: ResMut<Mtl>| {
+                if let Ok(loaded) = cry.load_model("objects/env/05_nature/00_common/common_plants_rice01.cgf", &ghost_options(true)) {
+                    out.0 = loaded.material_path.clone();
+                }
+            });
+        app.update();
+        assert_eq!(app.world().resource::<Mtl>().0.as_deref(), Some(INVALID_GHOST_MATERIAL));
+    }
+
+    #[test]
+    fn the_cursor_image_follows_the_builder_state() {
+        let mut house = Session::new(1, house_plantable(267, 4.0), 0.0);
+        house.invalid = None;
+        assert_eq!(cursor_kind(&house, false), CursorKind::Position);
+        house.rotating = true;
+        assert_eq!(cursor_kind(&house, false), CursorKind::Rotation);
+        assert_eq!(cursor_kind(&house, true), CursorKind::Zoom, "Ctrl held shows the zoom cursor");
+        house.invalid = Some(Invalid::Overlap);
+        assert_eq!(cursor_kind(&house, true), CursorKind::Invalid);
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.invalid = None;
+        assert_eq!(cursor_kind(&seed, true), CursorKind::Position);
+        if aa_cry::pak_available() {
+            for name in ["housing_rotation", "housing_zoom"] {
+                assert!(dds_image(&format!("ui/cursor/{name}.dds")).is_some(), "{name}.dds is in the 1.2 pak");
+            }
+        }
+    }
+
+    #[test]
+    fn house_errors_use_the_retail_ui_text_rows_by_code() {
+        // `ui_texts[code + 1]`: 0x70 -> row 113 ... 0x72 -> row 115, 0x9a -> row 155
+        assert_eq!(house_error_key(Invalid::OutsideHousingArea).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_INVALID_AREA"));
+        assert_eq!(house_error_key(Invalid::Overlap).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_OVERLAP_HOUSE"));
+        assert_eq!(house_error_key(Invalid::Player).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_OVERLAP_UNIT"));
+        assert_eq!(house_error_key(Invalid::OutOfRange).map(|k| k.0), Some("TOO_FAR_AWAY"));
+        assert_eq!(house_error_text(None, Invalid::OutsideHousingArea).as_deref(), Some("You can't construct a building here."));
+        assert_eq!(house_error_text(None, Invalid::OutOfRange).as_deref(), Some("Too far away."));
+        // the keys exist in the database at those rows
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        if let Ok(conn) = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            for (reason, code) in [(Invalid::OutsideHousingArea, 0x70), (Invalid::Overlap, 0x71), (Invalid::Player, 0x72), (Invalid::OutOfRange, 0x9a)] {
+                let key: String = conn.query_row("SELECT key FROM ui_texts WHERE id = ?1", [code + 1], |r| r.get(0)).unwrap();
+                assert_eq!(Some(key.as_str()), house_error_key(reason).map(|k| k.0), "code {code:#x}");
+            }
+        }
+    }
+
+    /// An invalid click on a house prints the per-check text through the real input system.
+    #[test]
+    fn an_invalid_house_click_sends_nothing_and_stays_in_free_placement() {
+        let mut app = house_app();
+        {
+            let mut placement = app.world_mut().resource_mut::<Placement>();
+            placement.session.as_mut().unwrap().invalid = Some(Invalid::OutsideHousingArea);
+        }
+        click(&mut app, MouseButton::Left);
+        assert!(sent(&mut app).is_empty());
+        assert!(!session_of(&app).locked(), "an invalid spot cannot be locked");
+    }
+
+    fn quoted_house() -> Session {
+        let mut session = Session::new(77, house_plantable(267, 4.0), 0.5);
+        session.spot = Some(Vec3::new(1.0, 2.0, 3.0));
+        session.invalid = None;
+        session.rotating = true;
+        session.quote_requested = true;
+        session.window_open = true;
+        session.quote = Some(ConstructHouseTax {
+            design_id: 267,
+            heavy_tax_house_count: 0,
+            normal_tax_house_count: 0,
+            is_heavy_tax_house: false,
+            base_tax_money_amount: 1,
+            deposit_tax_money_amount: 2,
+            total_tax_money_amount: 3,
+        });
+        session
+    }
+
+    #[test]
+    fn create_house_is_limited_to_one_send_per_five_seconds_with_a_countdown() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let mut placement = Placement { session: Some(quoted_house()), ..Default::default() };
+        let sent = placement.send_create(true, t0).expect("the first create goes out");
+        assert!(matches!(sent, HouseCommand::CreateHouse { auto_use_aa_point: true, .. }), "the real option is sent: {sent:?}");
+        assert!(placement.session.as_ref().unwrap().done);
+        // the server refused and the player builds again 1.2 s later
+        placement.session = Some(quoted_house());
+        assert_eq!(placement.send_create(false, t0 + Duration::from_millis(1200)), Err(CreateRefusal::Wait(4)));
+        assert!(!placement.session.as_ref().unwrap().done, "a held-back create does not consume the session");
+        assert_eq!(placement.send_create(false, t0 + Duration::from_millis(4999)), Err(CreateRefusal::Wait(1)));
+        let again = placement.send_create(false, t0 + CREATE_INTERVAL).expect("5 s later it goes out");
+        assert!(matches!(again, HouseCommand::CreateHouse { auto_use_aa_point: false, .. }));
+        assert_eq!(create_wait_notice(None, 3), "Can't place this for 3 second(s).");
+        // an unconfirmed session reports its own reason, not the countdown
+        placement.session = Some(Session::new(1, house_plantable(267, 4.0), 0.0));
+        assert!(matches!(placement.send_create(false, t0 + CREATE_INTERVAL), Err(CreateRefusal::Blocked(_))));
+    }
+
+    /// Real `update_input` + `orbit_input` + placement `input`: the wheel zooms the camera before the lock click and
+    /// turns the model (without zooming) after it; Ctrl+wheel keeps the camera zoom while locked.
+    #[test]
+    fn the_real_camera_zooms_before_the_lock_click_and_the_wheel_turns_the_model_after_it() {
+        use crate::ingame::camera::{OrbitCamera, orbit_input};
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(crate::hud::api::HudData::default()));
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .insert_non_send(crate::hud::api::HudBridge(bridge))
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Skills>()
+            .init_resource::<crate::settings::Actions>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (crate::settings::update_input, orbit_input, input).chain());
+        app.insert_resource(Time::<()>::default());
+        let camera = app.world_mut().spawn(OrbitCamera { yaw: 0.0, pitch: 0.0, distance: 4.0, wanted: 4.0 }).id();
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
+        app.update();
+        let wanted = |app: &App| app.world().entity(camera).get::<OrbitCamera>().unwrap().wanted;
+        let yaw = |app: &App| app.world().resource::<Placement>().session.as_ref().unwrap().yaw;
+        // before click 1: three notches zoom the camera and leave the model alone
+        for _ in 0..3 {
+            app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+            app.update();
+        }
+        assert!(wanted(&app) < 4.0, "the wheel zooms before the click: {}", wanted(&app));
+        assert_eq!(yaw(&app), 0.0);
+        let zoomed = wanted(&app);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).locked());
+        // after click 1: the wheel turns the model and does not zoom
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+        app.update();
+        assert_ne!(yaw(&app), 0.0, "the wheel rotates after the lock");
+        assert_eq!(wanted(&app), zoomed, "and does not zoom");
+        // Ctrl+wheel is the camera zoom while locked and does not rotate
+        let turned = yaw(&app);
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, true);
+        app.update();
+        assert!(wanted(&app) < zoomed, "Ctrl+wheel zooms the camera while locked");
+        assert_eq!(yaw(&app), turned);
+    }
+
+    /// Live capture: after the popup's Cancel the ghost stays locked (it ignores the cursor), the rotation hint stays,
+    /// and one right click returns to free placement.
+    #[test]
+    fn after_popup_cancel_the_ghost_stays_locked_until_a_right_click() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).quote_requested);
+        app.world_mut().resource_mut::<Placement>().session.as_mut().unwrap().cancel_popup();
+        let session = session_of(&app);
+        assert!(house_locks_pointer(session, false), "the ghost ignores the cursor");
+        assert_eq!(builder_step(Some(session)), Some("rotation"), "the rotation hint stays");
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_some());
+        assert!(!house_locks_pointer(session_of(&app), false), "free placement again");
+        assert_eq!(builder_step(Some(session_of(&app))), Some("position"));
+    }
+
+    #[test]
+    fn the_plot_dots_are_small_white_points_on_straight_edges() {
+        let p = house_plantable(267, 4.0);
+        let dots = plot_dot_quads(&p, Vec3::new(10.0, 10.0, 0.0), 0.0, |_| 0.0);
+        // 4 edges of 8 m at 1 m spacing, 3 quads per dot
+        assert_eq!(dots.len(), 4 * 8 * 3);
+        for q in &dots {
+            let size = (q.p[1] - q.p[0]).length().max((q.p[3] - q.p[0]).length());
+            assert!(size <= PLOT_DOT_SIZE * 1.01, "a dot is small: {size}");
+        }
+        let mut images = Assets::<Image>::default();
+        let (mut meshes, mut materials) = (Assets::<Mesh>::default(), Assets::<StandardMaterial>::default());
+        let mut visuals = Visuals::default();
+        ensure_visuals(&mut images, &mut meshes, &mut materials, &mut visuals);
+        let mat = materials.get(visuals.dot_valid.as_ref().unwrap()).unwrap();
+        assert_eq!(mat.base_color, Color::srgba(1.0, 1.0, 1.0, 0.69), "white, alpha 0.69");
+        assert!(mat.base_color_texture.is_none() && mat.alpha_mode == AlphaMode::Blend, "no glow texture, no additive blend");
     }
 }

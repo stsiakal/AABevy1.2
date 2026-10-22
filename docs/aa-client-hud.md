@@ -2600,7 +2600,7 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   (item `15596` -> design `267` "Scarecrow Garden", radii 4 and 8 for `15566` -> `89`). The ghost is the housing's
   `main_model_id` through `Db::actor_model_file` (the prefab's first object, e.g. `scarecrow_farm1`); the plot square
   half extent is `housings.garden_radius`, and the 1.2 `auto_z` offset fields are applied (`Grounding`).
-* **Preview**: the plain, untinted house model follows the cursor; a square of large glowing orange/white dots runs
+* **Preview**: the house model (untinted while valid) follows the cursor; a square of large glowing orange/white dots runs
   along the plot edge (turned with the ghost; each dot is a ground quad plus two crossed vertical quads using the 1.2
   pak's `flare_08.dds`, the flare texture of its housing line/twinkle effects, so it stays round at the normal camera
   angle; every preview texture loads independently, so a missing flare cannot remove the petals, posts or cursor)
@@ -2608,14 +2608,31 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   `housing_area.xml` shape that contains the spot, `ingame/houses.rs`). The white / pink crosshair is the same
   `housing_position.dds` / `housing_invalid.dds`; when the cursor is over the UI or no ground the house ghost stays
   at its last valid spot (the retail capture shows this; plants hide instead). The ghost stops following the pointer
-  as soon as the left click confirms it for the tax window, so the spot is locked while the window is open; Cancel
-  returns to free placement. A pointer over the HUD neither moves nor re-validates the preview. Retail wheel rule
-  (owner-confirmed, houses and farms alike, no fixed-orientation farms): the model starts facing the player (the
-  retail first yaw, the camera heading); before the click the wheel zooms the camera; after the click (the Start
-  Construction popup is up, before Build) the wheel rotates the MODEL (Shift 15 degrees, Alt 1, Ctrl keeps the zoom)
-  and does not zoom, while the dot border stays axis-aligned (`plot_dot_quads` with yaw 0). The confirmed yaw is the
-  `CSCreateHouse` `z_rot`. Seeds and saplings never rotate; the wheel zooms the camera while planting
-  (`Session::wheel_rotates` is `locked()`, read by `ingame/camera.rs`).
+  as soon as the first left click locks it, so the spot stays locked through the rotation and the tax window. A pointer
+  over the HUD neither moves nor re-validates the preview.
+
+  **Builder state machine** (`docs/research/re-placement.md`, original `FUN_39332200`, `FUN_39331760`; `Session::rotating`,
+  `locked()`, `step_back()`, `cancel_popup()`): state 1 "position" = free placement, the wheel zooms the camera. **Click 1**
+  locks the spot and enters state 2 "rotation": the model starts facing the player (the camera heading), the wheel turns
+  the MODEL (Shift exactly 15 degrees, Alt exactly 0.01 rad, plain step `ROT_STEP_PLAIN`, Ctrl keeps the camera zoom) and does
+  not zoom; the dot border stays axis-aligned for now (open, below). **Click 2** sends `CSConstructHouseTax`; the Start
+  Construction popup opens on the reply (the original needs two clicks, the owner's screenshot with the tooltip and no
+  popup is state 2). **Right click** steps back: pending quote -> rotation, rotation -> position, position -> cancels
+  (Escape cancels from any state); the popup's Cancel returns to the rotation (`FUN_39017220`). The confirmed yaw is the
+  `CSCreateHouse` `z_rot`. Seeds and saplings never rotate and plant on the first click; the wheel zooms the camera
+  while planting (`Session::wheel_rotates` is `locked()`, read by `ingame/camera.rs`).
+  `builder_events` raises the original UI events: `BUILDER_STEP("position" | "rotation")` on every change (the stock
+  `hud/build_guide.alb` shows its four-row help tooltip for `"rotation"` only) and `BUILDER_END` when the placement ends.
+  Other retail details: an invalid house ghost is redrawn with the original `materials/special/housing_build_invalid.mtl`
+  (red `Diffuse` 0.737, 0.013, 0.013 on every part, `ModelOptions::material`); the cursor is `housing_position.dds`,
+  `housing_rotation.dds` in rotation, `housing_zoom.dds` while Ctrl is held, `housing_invalid.dds` on an error; a refused
+  click prints `ui_texts[code + 1]` (0x70 "You can't construct a building here.", 0x71 overlap, 0x72 obstacles, 0x9a "Too
+  far away.", 0x244 category) through `ERROR_MSG`; `CSCreateHouse` is held back for 5 s after the last send
+  (`Placement::send_create`, `CREATE_INTERVAL`) with the `CANNOT_LOCATE_DOODAD_NOW` countdown message, and sends the
+  inventory's real "auto use AA point" option.
+  Open: the plain wheel step (unresolved in the RE, 10 degrees placeholder until one live count in retail), and the
+  plot dots (they rotate with the model and follow the terrain in the original code; white/grey alpha ~0.69; waits for a
+  rotated retail screenshot).
 * **Finished house / farm interaction**: the dynamic action bar (`hud/doodad.rs` `find_focus`) now also shows for a
   finished house in reach: F (`do_interaction_1`, icon of skill 15212) opens the maintain / info window; on the
   character's OWN house that has a workbench doodad on it (a farm's `DoodadFuncCraftPack` bundle list, e.g. doodad 973
@@ -2625,7 +2642,7 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
 * **Validity** (`check_house`): inside a `housing_area.xml` polygon whose `value1` is a `housing_areas` row, not
   overlapping another received house as an axis-aligned square of half extent `garden_radius` + the other's
   `garden_radius` (the server's `validate_house`), on land, and not on the player. The server remains authoritative.
-* **Tax quote**: a valid left click sends `CSConstructHouseTax` (`Session::tax_request`); the answer
+* **Tax quote**: the second left click (rotation) sends `CSConstructHouseTax` (`Session::tax_request`); the answer
   `SCConstructHouseTax` opens the original `x2ui/housing/build_window.alb` through its `HOUSE_BUILD_INFO` event
   (`HOUSE_BUILD_INFO(hType, bTax, hTax, heavyCnt, normalCnt, isHeavy, depositString, taxItemType)`), exactly the
   eight arguments `housing_manager.alb` forwards to `ShowBuildWindow`. `X2House` (`hud/houses.rs`) answers
@@ -2633,7 +2650,7 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   `skill_effects` material and `skills.consume_lp`), `CountTaxItemForTax` (10,000 copper per item `31891`),
   `CountTaxItemInBag`, and `GetHouse*Progress` from the received snapshot. Build calls
   `NextStepFromBuildCheck` -> `CSCreateHouse` (quote total, design item instance, yaw); Cancel / Escape calls
-  `PrevStepFromBuildCheck` -> the window closes and the placement continues. When the server accepts the build it
+  `PrevStepFromBuildCheck` -> the window closes and the placement returns to the rotation. When the server accepts the build it
   sends `SCMyHouse`; `ingame/houses.rs::close_created_build` raises the original client's `BUILDER_END`, which
   `housing_manager.alb` answers with `ShowBuildWindow()` and so hides the Start Construction window.
 * **Construction**: the server spawns the house as a `UnitKind::Housing` with the first build step's model.
@@ -2687,6 +2704,9 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   instead of only raising an alert; `placement.rs::check` logs (debug) the doodad whose footprint blocks a spot,
   including house-attached doodads (`owner_type` 3). The server accepts a placement inside the owner's garden
   (`handle_create_doodad`), so a blocked spot there is a client footprint or precheck refusal.
+* **Plot dots and wheel (live-measured)**: the active plot is outlined by small untextured white dots (alpha 0.69, 0.14 m, 1 m apart)
+  on straight, terrain-following, axis-aligned edges (rotation with the model unmeasured). After popup Cancel the ghost stays locked
+  with the rotation hint until a right click. Ctrl+wheel zooms the camera while the plain wheel turns the locked model.
 * **Script**: `house_place ITEM DX DY [YAW]` aims the real session without a cursor (for headless captures), then
   `click left` asks for the quote (or use the real mouse). `house_build` confirms the open window; `key escape` is
   the original Cancel. See `docs/aa-client-script.md`.

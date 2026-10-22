@@ -861,6 +861,25 @@ pub(super) mod tests {
         let _ = std::fs::remove_file(path);
     }
 
+    /// The stock `hud/build_guide.alb` handles `BUILDER_STEP` / `BUILDER_END`: the help tooltip is for `"rotation"` only.
+    #[test]
+    fn the_original_build_guide_shows_for_rotation_and_hides_on_builder_end() {
+        let Ok((rt, _bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        rt.lua
+            .load("GUIDE = {}; local f = ShowBuildGuide; ShowBuildGuide = function(show, ...) GUIDE[#GUIDE + 1] = tostring(show); return f(show, ...) end")
+            .exec()
+            .unwrap();
+        rt.fire_event("BUILDER_STEP", "position");
+        rt.fire_event("BUILDER_STEP", "rotation");
+        rt.fire_event("BUILDER_END", ());
+        let calls: String = rt.lua.load("return table.concat(GUIDE, ',')").eval().unwrap();
+        assert_eq!(calls, "false,true,false", "hidden at position, shown at rotation, hidden at BUILDER_END");
+        assert!(rt.errors.is_empty(), "the original guide window script runs without a Lua error: {:?}", rt.errors);
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn get_house_permission_answers_the_script_index_and_the_always_public_flag() {
         let lua = Lua::new();
@@ -938,5 +957,23 @@ pub(super) mod tests {
         lua.load("X2House:NextStepFromBuildCheck()").exec().unwrap();
         lua.load("X2House:PrevStepFromBuildCheck()").exec().unwrap();
         assert_eq!(bridge.borrow().requests, vec![Request::HouseBuild, Request::HouseCancel]);
+    }
+
+    /// Live oracle: the original popup had Build disabled with 5 Tax Certificates in the bag and enabled with 35.
+    /// The stock Lua decides it from `CountTaxItemInBag` / `CountTaxItemForTax`.
+    #[test]
+    fn the_original_popup_disables_build_without_enough_tax_certificates() {
+        let Ok((rt, bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        let enabled = |rt: &aa_ui::UiRuntime| -> bool { rt.lua.load("return housing.buildWindow.startButton:IsEnabled()").eval().unwrap() };
+        for (have, want) in [(5, false), (35, true)] {
+            bridge.borrow_mut().panels.bag = vec![Some(SlotSnap { id: TAX_ITEM, count: have, ..Default::default() })];
+            bridge.borrow_mut().house.design = 267;
+            rt.lua.load("ShowBuildWindow(267, 50000, 150000, 1, 0, true, 100000, 31891)").exec().unwrap();
+            assert_eq!(enabled(&rt), want, "{have} certificates in the bag");
+            rt.fire_event("BUILDER_END", ());
+        }
+        let _ = std::fs::remove_file(path);
     }
 }
