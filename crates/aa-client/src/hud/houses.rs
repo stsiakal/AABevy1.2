@@ -876,6 +876,7 @@ pub(super) mod tests {
         rt.fire_event("BUILDER_END", ());
         let calls: String = rt.lua.load("return table.concat(GUIDE, ',')").eval().unwrap();
         assert_eq!(calls, "false,true,false", "hidden at position, shown at rotation, hidden at BUILDER_END");
+        assert!(rt.errors.is_empty(), "the original guide window script runs without a Lua error: {:?}", rt.errors);
         let _ = std::fs::remove_file(path);
     }
 
@@ -956,5 +957,23 @@ pub(super) mod tests {
         lua.load("X2House:NextStepFromBuildCheck()").exec().unwrap();
         lua.load("X2House:PrevStepFromBuildCheck()").exec().unwrap();
         assert_eq!(bridge.borrow().requests, vec![Request::HouseBuild, Request::HouseCancel]);
+    }
+
+    /// Live oracle: the original popup had Build disabled with 5 Tax Certificates in the bag and enabled with 35.
+    /// The stock Lua decides it from `CountTaxItemInBag` / `CountTaxItemForTax`.
+    #[test]
+    fn the_original_popup_disables_build_without_enough_tax_certificates() {
+        let Ok((rt, bridge, path)) = super::super::breath::fixture::runtime(1280.0, 720.0) else {
+            return;
+        };
+        let enabled = |rt: &aa_ui::UiRuntime| -> bool { rt.lua.load("return housing.buildWindow.startButton:IsEnabled()").eval().unwrap() };
+        for (have, want) in [(5, false), (35, true)] {
+            bridge.borrow_mut().panels.bag = vec![Some(SlotSnap { id: TAX_ITEM, count: have, ..Default::default() })];
+            bridge.borrow_mut().house.design = 267;
+            rt.lua.load("ShowBuildWindow(267, 50000, 150000, 1, 0, true, 100000, 31891)").exec().unwrap();
+            assert_eq!(enabled(&rt), want, "{have} certificates in the bag");
+            rt.fire_event("BUILDER_END", ());
+        }
+        let _ = std::fs::remove_file(path);
     }
 }

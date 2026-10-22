@@ -2682,6 +2682,9 @@ the original 1.2 "Start Construction" window confirms `CSCreateHouse`, and the r
   instead of only raising an alert; `placement.rs::check` logs (debug) the doodad whose footprint blocks a spot,
   including house-attached doodads (`owner_type` 3). The server accepts a placement inside the owner's garden
   (`handle_create_doodad`), so a blocked spot there is a client footprint or precheck refusal.
+* **Plot dots and wheel (live-measured)**: the active plot is outlined by small untextured white dots (alpha 0.69, 0.14 m, 1 m apart)
+  on straight, terrain-following, axis-aligned edges (rotation with the model unmeasured). After popup Cancel the ghost stays locked
+  with the rotation hint until a right click. Ctrl+wheel zooms the camera while the plain wheel turns the locked model.
 * **Script**: `house_place ITEM DX DY [YAW]` aims the real session without a cursor (for headless captures), then
   `click left` asks for the quote (or use the real mouse). `house_build` confirms the open window; `key escape` is
   the original Cancel. See `docs/aa-client-script.md`.

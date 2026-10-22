@@ -139,8 +139,28 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
 * G action on a house under construction (which step skill) and the per-house dynamic action source.
 * The owner's "one click opens the popup" (3.5 retail) contradicts 1.2 code (two clicks); the screenshot with tooltip and no popup supports 1.2. Please re-check in 3.5 whether a second click is needed.
 
+## Live original-client measurements (Scarecrow Garden, item 15596; screenshots `tmp/oracle/a-p-*.png`)
+
+Measured **[M]** in the running original client:
+
+* Click 1 sends nothing; click 2 sends `CSConstructHouseTax` and the Start Construction popup opens. Test:
+  `a_house_needs_two_clicks_the_second_asks_for_the_quote` counts the packets through the real `input` system.
+* After popup Cancel the ghost STAYS LOCKED (it ignores the cursor) and the rotation hint (the `housing_build_guide` window) stays; one right
+  click returns to free placement (a-p-6, a-p-7). Test: `after_popup_cancel_the_ghost_stays_locked_until_a_right_click`.
+* After click 1 the tutorial tip "Scroll to rotate / Alt precise / Shift 15 degrees / Ctrl view" is the stock `build_guide.alb` window
+  (`BUILDER_STEP("rotation")`), not a separate tutorial path. Test (real Lua runtime):
+  `the_original_build_guide_shows_for_rotation_and_hides_on_builder_end`.
+* Plot dots: small plain WHITE points (alpha 0.69, `FUN_39334ab0` colour 0xAFFFFFFF), no glow, on straight plot edges that follow the terrain
+  (a-p-8-move.png). Bevy now draws untextured white alpha-0.69 dots, 0.14 m, 1.0 m apart (spacing/size are estimates from the screenshot, the
+  retail step is the terrain unit, still **[?]**). Whether they rotate with the model is still **unmeasured**: they stay axis-aligned.
+  The orange `flare_08` look was the 3.5 capture's, not 1.2.
+* Wheel (suspect: inverted on the old main build): the branch zooms before click 1 and rotates after it without zooming; Ctrl+wheel keeps the
+  camera zoom while locked (`camera::orbit_input` now reads the raw wheel for it, because the normal mode has no CTRL-wheel binding). Test:
+  `the_real_camera_zooms_before_the_lock_click_and_the_wheel_turns_the_model_after_it` (real `update_input`, `orbit_input`, `input`).
+* Build button: disabled with 5 Tax Certificates in the bag, enabled with 35: the popup's own Lua decides it from `CountTaxItemInBag`;
+  test `the_original_popup_disables_build_without_enough_tax_certificates`.
+
 ## Status in Bevy (fix/placement-re)
 
 Gaps 1, 2, 3, 4 (Shift/Alt exact; plain step still a named placeholder `ROT_STEP_PLAIN`, 10 degrees), 6, 7, 9, 10 and 11 are implemented
-(see `docs/aa-client-hud.md`, "Builder state machine"). Gap 5 (rebinding through `builder_rotate_mode`) is not done. Gap 8 (plot dots
-rotating with the model, following the terrain, white/grey colour) is open until a rotated retail screenshot confirms it.
+(see `docs/aa-client-hud.md`, "Builder state machine"). Gap 5 (rebinding through `builder_rotate_mode`) is not done. Gap 8: the dots are white, small, on straight terrain-following edges (measured); rotation with the model is still open until a rotated retail screenshot.

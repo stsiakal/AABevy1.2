@@ -272,6 +272,8 @@ pub fn orbit_input(
     // the last fixed view's offset, which Page Down / Page Up step from (`input::g_fixed_view_yaw`)
     mut kept: Local<f32>,
     placement: Option<Res<super::placement::Placement>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
 ) {
     let Ok(mut orbit) = cameras.single_mut() else { return };
     // the fixed views: the yaw is set at once relative to the character's heading
@@ -305,6 +307,12 @@ pub fn orbit_input(
     let turning_ghost = placement.as_ref().and_then(|p| p.session.as_ref()).is_some_and(|s| s.wheel_rotates());
     if !over_ui && !turning_ghost {
         *notches += actions.zoom_lines();
+    } else if !over_ui && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        // retail `builder_rotate_mode`: CTRL-wheel is `builder_zoom_in/out`, the camera zoom, while the plain wheel turns the model
+        *notches += match scroll.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => scroll.delta.y,
+            bevy::input::mouse::MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
+        };
     }
     while notches.abs() >= 1.0 {
         let notch = notches.signum();

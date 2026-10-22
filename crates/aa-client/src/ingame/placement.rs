@@ -648,7 +648,7 @@ struct RingPart {
 struct RingParts {
     yellow: Option<RingPart>,
     red: Option<RingPart>,
-    /// The active plot's glowing dots.
+    /// The active plot's white dots.
     dots: Option<RingPart>,
     /// Nearby finished plots' white/grey dots.
     neighbours: Option<RingPart>,
@@ -1302,15 +1302,20 @@ fn update_ring(
     }
 }
 
-/// The glowing dots along the plot square (half extent = the housing's garden_radius), turned with the
-/// ghost. The 1.2 pak's flare_08.dds is the flare texture of its housing line/twinkle effects; the retail
-/// 3.5 capture shows the same dotted orange boundary for the active plot.
+/// Spacing (m) and edge length (m) of a plot dot: small white points along straight edges (live capture of the
+/// original; the exact retail step is the terrain unit of `FUN_39337fb0`, not resolved).
+const PLOT_DOT_SPACING: f32 = 1.0;
+const PLOT_DOT_SIZE: f32 = 0.14;
+
+/// The white dots along the plot square (half extent = the housing's garden_radius), on straight edges that follow
+/// the terrain. The caller passes yaw 0: whether the retail dots turn with the model is not measured yet, so the
+/// square stays axis-aligned.
 fn plot_dot_quads(plant: &Plantable, spot: Vec3, yaw: f32, floor: impl Fn(Vec2) -> f32) -> Vec<Quad> {
     let half = plant.footprint.max(0.5);
     let (sin, cos) = yaw.sin_cos();
     let to_world = |u: f32, v: f32| Vec2::new(spot.x + u * cos - v * sin, spot.y + u * sin + v * cos);
     let corners = [to_world(-half, -half), to_world(half, -half), to_world(half, half), to_world(-half, half)].map(|p| (p.x, p.y));
-    edge_dot_quads(corners, 0.62, 0.34, floor)
+    edge_dot_quads(corners, PLOT_DOT_SPACING, PLOT_DOT_SIZE, floor)
 }
 
 /// Existing plots around the placement are marked by white/grey dots (the retail 3.5 capture).
@@ -1331,8 +1336,8 @@ fn neighbour_dot_quads(houses: &Houses, catalog: &Catalog, spot: Vec3, floor: im
         }
         out.extend(edge_dot_quads(
             [(p.x - radius, p.y - radius), (p.x + radius, p.y - radius), (p.x + radius, p.y + radius), (p.x - radius, p.y + radius)],
-            0.7,
-            0.26,
+            PLOT_DOT_SPACING,
+            PLOT_DOT_SIZE,
             &floor,
         ));
     }
@@ -1357,8 +1362,8 @@ fn edge_dot_quads(corners: [(f32, f32); 4], spacing: f32, size: f32, floor: impl
     out
 }
 
-/// One glowing dot as a ground quad plus two crossed vertical quads. A flat ground quad alone is only a few
-/// foreshortened pixels from the normal camera; the crossed quads keep the retail round glow visible at that angle
+/// One white dot as a ground quad plus two crossed vertical quads. A flat ground quad alone is only a few
+/// foreshortened pixels from the normal camera; the crossed quads keep the retail dot visible at that angle
 /// (and the ground quad still shows it from straight above).
 fn dot_quads(g: Vec2, ground: f32, size: f32) -> [Quad; 3] {
     let h = size * 0.5;
@@ -1458,24 +1463,18 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
     } else {
         warn!("planting: cannot read textures/p_effects/leaf_03.dds (petal ring disabled)");
     }
-    // the retail dotted plot boundary: the 1.2 pak's `flare_08.dds` (the texture of its housing
-    // line/twinkle effects), orange for the active plot and white/grey for the neighbours
-    if let Some(flare) = dds_image("textures/p_effects/flare_08.dds") {
-        let flare = images.add(flare);
-        let dot_material = |color: Color| StandardMaterial {
-            base_color: color,
-            base_color_texture: Some(flare.clone()),
-            unlit: true,
-            alpha_mode: AlphaMode::Add,
-            cull_mode: None,
-            depth_bias: 20.0,
-            ..default()
-        };
-        visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 0.62, 0.20, 1.0))));
-        visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(0.92, 0.92, 0.88, 0.9))));
-    } else {
-        warn!("planting: cannot read textures/p_effects/flare_08.dds (plot dots disabled)");
-    }
+    // the retail dotted plot boundary (live capture, Scarecrow Garden): small plain WHITE dots, alpha 0.69
+    // (`FUN_39334ab0` colour 0xAFFFFFFF), no glow texture; the neighbours' plots look the same
+    let dot_material = |color: Color| StandardMaterial {
+        base_color: color,
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        depth_bias: 20.0,
+        ..default()
+    };
+    visuals.dot_valid = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
+    visuals.dot_neighbour = Some(materials.add(dot_material(Color::srgba(1.0, 1.0, 1.0, 0.69))));
     visuals.post = Some(materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.83, 0.08, 1.0),
         unlit: true,
@@ -2373,7 +2372,7 @@ mod tests {
                 assert!(v.z >= -200.0 - 4.2 && v.z <= -200.0 + 4.2, "inside the plot: {v:?}");
             }
         }
-        assert!(tallest > 10.31, "the crossed quads stand up from the ground: {tallest}");
+        assert!(tallest > 10.15, "the crossed quads stand up from the ground: {tallest}");
         let turned = plot_dot_quads(&p, spot, std::f32::consts::FRAC_PI_4, |_| 10.0);
         assert_ne!(quads_signature(&dots), quads_signature(&turned), "rotating the ghost rotates the square");
     }
@@ -2422,7 +2421,7 @@ mod tests {
                 tallest = tallest.max(v.y);
             }
         }
-        assert!(tallest > 10.24, "neighbour dots also stand up: {tallest}");
+        assert!(tallest > 10.15, "neighbour dots also stand up: {tallest}");
     }
 
     #[test]
@@ -3037,5 +3036,92 @@ mod tests {
         // an unconfirmed session reports its own reason, not the countdown
         placement.session = Some(Session::new(1, house_plantable(267, 4.0), 0.0));
         assert!(matches!(placement.send_create(false, t0 + CREATE_INTERVAL), Err(CreateRefusal::Blocked(_))));
+    }
+
+    /// Real `update_input` + `orbit_input` + placement `input`: the wheel zooms the camera before the lock click and
+    /// turns the model (without zooming) after it; Ctrl+wheel keeps the camera zoom while locked.
+    #[test]
+    fn the_real_camera_zooms_before_the_lock_click_and_the_wheel_turns_the_model_after_it() {
+        use crate::ingame::camera::{OrbitCamera, orbit_input};
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(crate::hud::api::HudData::default()));
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .insert_non_send(crate::hud::api::HudBridge(bridge))
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Skills>()
+            .init_resource::<crate::settings::Actions>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (crate::settings::update_input, orbit_input, input).chain());
+        app.insert_resource(Time::<()>::default());
+        let camera = app.world_mut().spawn(OrbitCamera { yaw: 0.0, pitch: 0.0, distance: 4.0, wanted: 4.0 }).id();
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
+        app.update();
+        let wanted = |app: &App| app.world().entity(camera).get::<OrbitCamera>().unwrap().wanted;
+        let yaw = |app: &App| app.world().resource::<Placement>().session.as_ref().unwrap().yaw;
+        // before click 1: three notches zoom the camera and leave the model alone
+        for _ in 0..3 {
+            app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+            app.update();
+        }
+        assert!(wanted(&app) < 4.0, "the wheel zooms before the click: {}", wanted(&app));
+        assert_eq!(yaw(&app), 0.0);
+        let zoomed = wanted(&app);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).locked());
+        // after click 1: the wheel turns the model and does not zoom
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+        app.update();
+        assert_ne!(yaw(&app), 0.0, "the wheel rotates after the lock");
+        assert_eq!(wanted(&app), zoomed, "and does not zoom");
+        // Ctrl+wheel is the camera zoom while locked and does not rotate
+        let turned = yaw(&app);
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, true);
+        app.update();
+        assert!(wanted(&app) < zoomed, "Ctrl+wheel zooms the camera while locked");
+        assert_eq!(yaw(&app), turned);
+    }
+
+    /// Live capture: after the popup's Cancel the ghost stays locked (it ignores the cursor), the rotation hint stays,
+    /// and one right click returns to free placement.
+    #[test]
+    fn after_popup_cancel_the_ghost_stays_locked_until_a_right_click() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).quote_requested);
+        app.world_mut().resource_mut::<Placement>().session.as_mut().unwrap().cancel_popup();
+        let session = session_of(&app);
+        assert!(house_locks_pointer(session, false), "the ghost ignores the cursor");
+        assert_eq!(builder_step(Some(session)), Some("rotation"), "the rotation hint stays");
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_some());
+        assert!(!house_locks_pointer(session_of(&app), false), "free placement again");
+        assert_eq!(builder_step(Some(session_of(&app))), Some("position"));
+    }
+
+    #[test]
+    fn the_plot_dots_are_small_white_points_on_straight_edges() {
+        let p = house_plantable(267, 4.0);
+        let dots = plot_dot_quads(&p, Vec3::new(10.0, 10.0, 0.0), 0.0, |_| 0.0);
+        // 4 edges of 8 m at 1 m spacing, 3 quads per dot
+        assert_eq!(dots.len(), 4 * 8 * 3);
+        for q in &dots {
+            let size = (q.p[1] - q.p[0]).length().max((q.p[3] - q.p[0]).length());
+            assert!(size <= PLOT_DOT_SIZE * 1.01, "a dot is small: {size}");
+        }
+        let mut images = Assets::<Image>::default();
+        let (mut meshes, mut materials) = (Assets::<Mesh>::default(), Assets::<StandardMaterial>::default());
+        let mut visuals = Visuals::default();
+        ensure_visuals(&mut images, &mut meshes, &mut materials, &mut visuals);
+        let mat = materials.get(visuals.dot_valid.as_ref().unwrap()).unwrap();
+        assert_eq!(mat.base_color, Color::srgba(1.0, 1.0, 1.0, 0.69), "white, alpha 0.69");
+        assert!(mat.base_color_texture.is_none() && mat.alpha_mode == AlphaMode::Blend, "no glow texture, no additive blend");
     }
 }
