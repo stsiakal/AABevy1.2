@@ -59,8 +59,16 @@ use super::virtual_input::VirtualInput;
 use crate::Screen;
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
 
-/// Step of the rotation keys, radians (15 degrees; Shift: 90 degrees).
+/// Rotation step of one wheel notch with Shift held, radians: exactly pi/12 = 15 degrees (`builder_rotate_*_large`,
+/// `FUN_39016fe0`; docs/research/re-placement.md section 1).
 pub const ROT_STEP: f32 = std::f32::consts::PI / 12.0;
+/// Rotation step of one wheel notch with Alt held, radians: exactly 0.01 rad = 0.573 degrees (`builder_rotate_*_small`).
+pub const ROT_STEP_SMALL: f32 = 0.01;
+/// Rotation step of one plain wheel notch, radians.
+/// TODO(re-placement.md section 1, "Step sizes" and open questions): UNRESOLVED. The original computes
+/// `value * 1 degree * X` with a runtime scale `X = DAT_39adac58->vtbl[3]()` that static analysis could not
+/// resolve; 10 degrees is the placeholder until one live count in the retail client gives the real value.
+pub const ROT_STEP_PLAIN: f32 = 10.0 * std::f32::consts::PI / 180.0;
 /// Fallback use range of an item whose skill has none (the planting skills have 2 m).
 const DEFAULT_RANGE: f32 = 2.0;
 /// How far above the ground the floor is searched for, metres.
@@ -1698,7 +1706,8 @@ fn left_confirm(armed: &mut bool, pressed: bool, just_pressed: bool, over_ui: bo
     just_pressed && !over_ui
 }
 
-/// The mouse wheel's turn for one notch/test: none with Ctrl (camera zoom), 15 degrees with Shift, 1 with Alt.
+/// The mouse wheel's turn for one notch/test: none with Ctrl (camera zoom), 15 degrees with Shift, 0.01 rad with Alt,
+/// else the (unresolved) plain step.
 fn wheel_turn(shift: bool, alt: bool, ctrl: bool, delta: f32) -> f32 {
     if ctrl || delta == 0.0 {
         return 0.0;
@@ -1706,9 +1715,9 @@ fn wheel_turn(shift: bool, alt: bool, ctrl: bool, delta: f32) -> f32 {
     let step = if shift {
         ROT_STEP
     } else if alt {
-        1f32.to_radians()
+        ROT_STEP_SMALL
     } else {
-        ROT_STEP * 2.0 / 3.0
+        ROT_STEP_PLAIN
     };
     step * delta.signum()
 }
@@ -2063,11 +2072,12 @@ mod tests {
 
     #[test]
     fn the_wheel_mapping_keeps_ctrl_for_the_camera() {
-        let normal = ROT_STEP * 2.0 / 3.0;
+        let normal = ROT_STEP_PLAIN;
         assert!((wheel_turn(false, false, false, 1.0) - normal).abs() < 1e-6);
         assert!((wheel_turn(false, false, false, -3.0) + normal).abs() < 1e-6);
-        assert!((wheel_turn(true, false, false, 1.0) - ROT_STEP).abs() < 1e-6);
-        assert!((wheel_turn(false, true, false, 1.0) - 1f32.to_radians()).abs() < 1e-6);
+        assert!((wheel_turn(true, false, false, 1.0) - 15f32.to_radians()).abs() < 1e-6, "Shift is exactly 15 degrees");
+        assert_eq!(wheel_turn(false, true, false, -1.0), -0.01, "Alt is exactly 0.01 rad");
+        assert!((ROT_STEP_PLAIN - 10f32.to_radians()).abs() < 1e-6);
         assert_eq!(wheel_turn(false, false, true, 1.0), 0.0);
         assert_eq!(wheel_turn(true, true, false, 0.0), 0.0);
     }
@@ -2750,5 +2760,19 @@ mod tests {
         assert_eq!(builder_step(Some(&session)), Some("rotation"));
         assert!(session.step_back(), "the next right click goes on to free placement");
         assert!(!session.locked());
+    }
+
+    /// Shift and Alt steps through the real input system after the lock click.
+    #[test]
+    fn the_modifier_wheel_steps_turn_the_locked_model_exactly() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(-1.0, false, true, false);
+        app.update();
+        assert_eq!(session_of(&app).yaw, -0.01, "Alt is 0.01 rad");
+        // the virtual clock is stopped, so Alt is still held: Shift wins, as in the retail binding table
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, true, false, false);
+        app.update();
+        assert!((session_of(&app).yaw - (15f32.to_radians() - 0.01)).abs() < 1e-5, "{}", session_of(&app).yaw);
     }
 }
