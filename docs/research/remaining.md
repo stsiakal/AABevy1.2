@@ -73,7 +73,7 @@ Visibility = how much a player notices. IDs are for section 3 and 4.
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
 | CH1 | characters | Costume specular / silver armour duller than captures; clothing clipping (the `Cut` hulls leave straddling triangles); dye only for the bake path (weapons, bows, non-default armour dye, dynamic UCC) | `aa-anim.md` Gaps, `aa-cry.md`, parity | med | M | uncommitted calibration |
-| CH2 | units | Mount / rider placement unverified, no dismount animation, no mount skills; humanoid NPCs lack combat idle; `SCUnitMovements` types read from the packet not the object | `aa-client-units.md` Gaps | med | M | G2 |
+| CH2 | units | Mount / rider placement unverified (the get-on/get-off clips, PseudoSpeed gaits and mount inertia are in, unchecked against the retail client), no rider/mount skills (`ride_ub`, `<weapon>_co_horse_attack_*`, `horse_ac_spur_f`, jousting), no stirrup IK, no `CSRemoveMate` auto-dismiss, PseudoSpeed formula/turn thresholds/approach point/hop exit inferred (`re-mounts.md` section 7); humanoid NPCs lack combat idle; `SCUnitMovements` types read from the packet not the object | `aa-client-units.md` Gaps | med | M | G2 |
 | CH3 | units | Remote units: full-world facial / attachment QA, CDF entity bindings, skinned render slots | parity "Character and animation rendering" | low | M | none |
 
 ### Combat and skills

@@ -56,13 +56,26 @@ A unit with `Unit::attached_to` set (`SCUnitAttached`) becomes a `Rider`:
 * the mount is another unit, drawn like any creature (model, gait clips by its own speed);
 * the rider sits on the mount's `bone_spine_driver` (attach point 1) or `bone_spine_passenger`, faces the mount's facing, and
   plays the rider clips of the mount's kind: `models.mount_pose_id` 1 horse, 2 lion, 3 bear, 4 wildboar, 10 pangolin give
-  `horse_ba_relaxed_idle`, `horse_mo_normal_walk_f`, `horse_mo_normal_run_f` (and the other prefixes), with the gait picked from
-  the mount's speed (idle below 0.3 m/s, walk below 3 m/s, run above) and the tempo copied from the mount's animator. The bear
-  set has no mounted walk/run, so it keeps its idle;
-* `global_player.cal`'s authored `fist_ac_<kind>_l_geton` plays once when the seat appears and `fist_ac_<kind>_l_getoff` plays
-  once on `SCUnitDetached`; the on-foot `Locomotion` is held in a `Dismounting` component until that clip ends (or restored at
-  once when there is no clip/model). The local player uses the same clips through `LocalRider` (`mount.rs`), seated at the same
-  bones;
+  `horse_ba_relaxed_idle`, `horse_mo_normal_walk_f`, `horse_mo_normal_run_f` (and the other prefixes). The gait is the mount's
+  PseudoSpeed, copied from the mount every frame as the original does (`FUN_390dcc80`): PseudoSpeed = ground speed / run
+  speed of the mount's actor model (**inferred**, the producer is in `cryaction.dll`), rider idle up to 0.1, walk 0.15 to 0.6,
+  run from 0.7 (the gaps hold the band), sprint tier (`horse_mo_normal_sprint_f`) from 1.25 (inferred), `..._run_f_lturn/rturn`
+  while the mount turns faster than 0.6 rad/s (inferred), `horse_mo_relaxed_idletorun_f` / `runtoidle_f` between idle and run,
+  `horse_mo_jump_f_start/loop/land` while the mount is airborne, and the idle while the mount swims. The tempo is copied from
+  the mount's animator. The bear set has no mounted walk/run, so it keeps its idle (`mount::RideAnim`, `mount_anim::rider_band`);
+* **Get on**: the side comes from the `reason` byte of `SCUnitAttached` (`mount::AttachReasons`, 1 left, 2 right, 3 back, 4
+  front, anything else left). The rider plays `fist_ac_<kind>_<l|r|b|f>_geton` with its root motion (1 m beside or 2 m in front of
+  or behind the saddle, 1.888 m up, 1.0 s), standing at the approach point (saddle minus the clip's root offset, facing the
+  mount), then snaps to the seat bone. A rider already seated when it came into view has no reason and plays no clip. Other
+  clients play the same side clip from the same byte.
+* **Get off** (`SCUnitDetached`): `fist_ac_<kind>_l_getoff_start`, `_loop`, `_end` as a hop (`mount_anim::Hop`): the entity stays
+  at an anchor that carries each clip's root motion on, and the unit stands where the last clip left the body (about 1 m to
+  the mount's left, on the ground); the on-foot `Locomotion` is held in a `Dismounting` component until then. The local player
+  uses the same clips through `LocalRider` (`mount.rs`), seated at the same bones;
+* a mate's own clips follow the PseudoSpeed bands of `horse_full_body.xml` (`mount_anim::MateGait`, `anim::drive_locomotion`):
+  idle up to 0.1, walk 0.11 to 0.7, run from 0.8, the sprint tier from 1.25, turn in place (`fist_mo_relaxed_turn_l/r`) and the run
+  turn blend (`fist_mo_normal_run_f_lturn/rturn`) from the turn rate, `fist_mo_relaxed_idletorun_f` / `runtoidle_f` transitions,
+  `fist_mo_jump_f_start/loop/land` for jumps;
 * the local player's seat comes from `aa_net::state::Player::apply` keeping the server's `UnitAttached`/`UnitDetached` for its
   own object on `PlayerSpawn.unit.attached_to` (the local player is not in `Units`). `control_player` freezes the on-foot
   controller while attached and during the get-off clip.
@@ -88,12 +101,21 @@ speeds, a forward input packet naming the mate object id with the expected veloc
 on-foot control after dismount; `aa-net` covers the `MoveUnit` body. Full client suite 418 passed / 39 ignored, `aa-net`
 library 632 passed (including the mate-cast position target).
 
+Mounting is not immediate (`mount::MountFlow`, the original `MountHorse Controller`): the pet bar's mount command checks 25 m, the
+shared two-second cooldown and a line of sight (blocked: the text of system message 0x6b, no walk), then the controller walks the
+player to the mate's side (any key cancels it, half speed inside 1.5 m, 10 s lifetime) and sends `CSMountMate` once the player is
+within 3 m, with the reason byte computed at that moment, then waits 2 s for the attach. While riding the own mate the dynamic action
+bar (F) holds `command_unmount` (`icon_skill_vehicle03`, `CSUnMountMate` reason 9). The driven mount's speed follows `game_inertia`
+(slowing down) and `game_inertia_accel` (speeding up) of its actor model, 4 and 11 for the horse; which of the two applies when is
+inferred. Not read from the original: the exact approach point (the controller heads for 1 m beside the saddle on the player's
+side), the line-of-sight mask (terrain and structures) and the exit point of the hop.
+
 The owned mount/dismiss flow is in `hud/pets/owned.rs`: `X2Mate:CanMount`/`CanDismiss` follow the original controller gates
 (25 m, shared two-second cooldown, casting/channel and pending action), `MountMate`/`UnMountMate`/`DismissPet` send the proven
 `CSMountMate`/`CSUnMountMate`/`CSRemoveMate`, and a mounted dismiss first unmounts with reason 10 then removes after the
-server's detach (native `39362070`). The mount reason byte follows the decompiled native `FUN_3909ae90`: the mount→player
-direction projected on the player's forward gives back 3 / front 4, the sides 1 or 2 by the cross sign, with the occupied
-seat override. `ISLOT_PET_ACTION` clicks reach `use_pet_action`, which sends a mate-cast `CSStartSkill` with the mate as the
+server's detach (native `39362070`). The mount reason byte follows the decompiled native `FUN_3909ae90`: the player→mate
+direction against the **mate's** forward gives back 3 (with the passenger seat taken: 1) / front 4 (driver seat taken: 1), the sides
+1 or 2 by the cross sign with no occupancy override (`mount_anim::entry_reason`). `ISLOT_PET_ACTION` clicks reach `use_pet_action`, which sends a mate-cast `CSStartSkill` with the mate as the
 self target and the player's selection for unit-target skills; position-targeted mount skills send the mate-caster position
 target (`UseMateSkillAt`) at the selected target's spot, or the mate's own spot for a source-position row. `X2Mate:GetSpeedInfo`
 returns the last received movement report's horizontal speed in m/s, or

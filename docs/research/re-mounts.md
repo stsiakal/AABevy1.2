@@ -49,3 +49,6 @@ Scratch: `tmp/re/mounts/` (`gh/Xr.java` Ghidra script, `gh/out*.txt` decompiles,
 - PseudoSpeed / AnimPhase producers live in 1.2 `cryaction.dll`; import it into a scratch Ghidra project to confirm the formula.
 - Exact approach offset (FUN_390a2c90) and exit point (FUN_3909b1a0) constants; how the engine places the rider's root during the get-on clip.
 - Default key for the pet mount command; the mount screenshot from the owner.
+
+## 8. Status of the Bevy gaps (branch fix/mount-re)
+Done: 3 (reason from the mate's forward, `mount_anim::entry_reason`), 1 (side get-on clips with root motion, `getoff_start/loop/end` hop), 2 (`MountFlow`: 25 m, 2 s, LOS, auto-walk, send within 3 m, 2 s wait), 4 (`command_unmount` on the F bar and the F key), 5 and 6 (PseudoSpeed bands, turn in place, run turn blends, idle/run transitions, jump, sprint tier, rider copied from the mount, swim = idle), 8 (`game_inertia` / `game_inertia_accel`). Inferred and flagged in the code: PseudoSpeed = speed / run speed, the sprint (1.25) and turn (0.6 rad/s) thresholds, which inertia value applies when, the approach point (1 m beside the saddle on the player's side) and the LOS mask. Still open: 7 (rider skills), 9 (stirrup IK, `CSRemoveMate` auto-dismiss), section 7.
