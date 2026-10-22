@@ -662,7 +662,7 @@ const MOUNT_SWIM_DEPTH: f32 = 1.3;
 /// The systems that follow the movement packets and the idle poses; they run around the main chain of `sync_views`,
 /// `move_units` and `cull_units` (registered by [`super::InGamePlugin`]) and [`super::anim::drive_locomotion`].
 pub fn plugin(app: &mut App) {
-    app.init_resource::<super::mount::AttachReasons>().add_systems(
+    app.init_resource::<super::mount::AttachReasons>().init_resource::<super::mount::MountFlow>().add_systems(
         Update,
         (
             receive_moves.before(move_units),
@@ -675,6 +675,7 @@ pub fn plugin(app: &mut App) {
                 super::ship::board_deck,
                 super::mount::fake_mount,
                 super::mount::record_attach_reasons,
+                super::mount::drive_mount_flow,
                 super::mount::start_stop_riding,
                 super::mount::pose_riders,
                 super::mount::start_stop_local_riding,

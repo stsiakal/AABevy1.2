@@ -439,3 +439,48 @@ fn original_chat_and_portal_name_dialogs_keep_case_spaces_and_distinct_limits() 
     }
     Ok(())
 }
+
+#[test]
+fn mounting_starts_the_walk_controller_instead_of_sending_at_once() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
+    let _ = path;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .insert_non_send(rt)
+        .insert_non_send(HudBridge(bridge.clone()))
+        .insert_resource(player)
+        .insert_resource(units)
+        .insert_resource(mates)
+        .init_resource::<crate::ingame::mount::MountFlow>()
+        .add_message::<NetEvent>()
+        .add_message::<NetCommand>()
+        .add_systems(Update, super::super::update);
+    app.update();
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+    }
+    let runtime = app.world().non_send::<UiRuntime>();
+    super::super::super::expansion::fixture::click(runtime, "petBar.command.buttons[PET_CMD_MOUNT]")?;
+    app.update();
+    let sent = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect::<Vec<_>>();
+    assert!(sent.is_empty(), "CSMountMate waits for the controller: {sent:?}");
+    assert!(app.world().resource::<crate::ingame::mount::MountFlow>().active());
+    Ok(())
+}
+
+#[test]
+fn command_unmount_is_the_first_dynamic_bar_entry_while_riding_the_own_mate() {
+    let mut data = HudData::default();
+    data.character_id = 5;
+    data.pets.owned.local_mount = Some(LocalMount { obj_id: 201, tl_id: 12, point: 1, own: false });
+    unmount_own(&mut data);
+    assert!(data.pets.owned.requests.is_empty(), "somebody else's mount has no command_unmount");
+    data.pets.owned.local_mount = Some(LocalMount { obj_id: 201, tl_id: 12, point: 1, own: true });
+    assert!(riding_own(&data));
+    unmount_own(&mut data);
+    match data.pets.owned.requests.as_slice() {
+        [Request { command: MateCommand::Unmount { tl_id: 12, point: 1, reason: 9 }, .. }] => {}
+        _ => panic!("expected CSUnMountMate with reason 9"),
+    }
+}

@@ -133,6 +133,9 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
 
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) { owned::push(rt, bridge); }
 
+/// Adds the original `command_unmount` entry to the dynamic action bar; installed after the doodad bar it wraps.
+pub(super) fn install_dynamic_bar(lua: &Lua, bridge: &Shared) -> mlua::Result<()> { owned::install_dynamic_bar(lua, bridge) }
+
 /// `ISLOT_PET_ACTION` click: the displayed mount skill of the current pet.
 pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<Command> {
     owned::use_pet_action(data, index, target_obj_id, target_pos)
@@ -153,6 +156,9 @@ pub(super) fn update(
     units: Res<Units>,
     mates: Option<Res<aa_net::Mates>>,
     mut net: MessageWriter<NetCommand>,
+    mut mounting: Option<ResMut<crate::ingame::mount::MountFlow>>,
+    collision: Option<Res<aa_world::WorldCollision>>,
+    keys: Option<(Res<crate::settings::Actions>, Res<super::HudKeyboardFocus>)>,
 ) {
     let Some(rt) = rt else {
         events.clear();
@@ -170,6 +176,10 @@ pub(super) fn update(
             data.pets = default();
             events.clear();
             return;
+        }
+        // F (`do_interaction_1`) is the first entry of the dynamic action bar: `command_unmount` while riding the own mate
+        if keys.as_ref().is_some_and(|(actions, typing)| !typing.0 && actions.just_pressed("do_interaction_1", 0)) {
+            owned::unmount_own(&mut data);
         }
         for NetEvent(event) in events.read() {
             equipment.extend(owned::equipment_slots(&data, event));
@@ -219,7 +229,7 @@ pub(super) fn update(
                 net.write(NetCommand(Command::Mate(MateCommand::ReviveItems { npc_obj_id: npc.0 })));
             }
         }
-        if let Some(mates)=mates { owned::commands(&mut data,&player,&units,&mates,&mut net); }
+        if let Some(mates)=mates { owned::commands(&mut data,&player,&units,&mates,&mut net,(mounting.as_deref_mut(),collision.as_deref(),&mut errors)); }
     }
     owned::push(&rt,&bridge.0);
     for slot in equipment { rt.fire_event("UNIT_NPC_EQUIPMENT_CHANGED", slot); }

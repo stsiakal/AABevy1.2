@@ -177,3 +177,127 @@ mod tests {
         assert!((p - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4, "{p}");
     }
 }
+
+// ---- the mount flow controller (`MountHorse Controller`, FUN_390a5f00 / FUN_390aaf30) ----
+
+/// A mate is mounted from at most this far (25 m; the native check is `distance squared <= 625`).
+pub const MOUNT_RANGE: f32 = 25.0;
+/// The shared cooldown of the vehicle actions (ms).
+pub const COOLDOWN_MS: u64 = 2000;
+/// `CSMountMate` goes out once the player is within 3 m of the mate (`dist^2 < 9.0`).
+pub const SEND_RANGE: f32 = 3.0;
+/// The controller gives up after 10 s.
+pub const LIFETIME: f32 = 10.0;
+/// After the request it waits 2 s for the server's attach.
+pub const WAIT: f32 = 2.0;
+/// The auto-walk stops this close (horizontally) to its approach point; it slows down inside 1.5 m.
+pub const ARRIVE: f32 = 0.8;
+pub const SLOW_RANGE: f32 = 1.5;
+
+/// Native `FUN_3909ae90`, the entry side as the `CSMountMate` reason byte. `d` is the unit direction from the player to the mate and
+/// `f` the **mate**'s forward: `d.f >= 0.96` is the player behind the mate (3; 1 when the passenger seat is taken), `< -0.96` in
+/// front of it (4; 1 when the driver seat is taken), between the mate's left/right side by the sign of `d.y*f.x - d.x*f.y` (2 right,
+/// 1 left) with no occupancy override.
+pub fn entry_reason(player: Vec3, mate: Vec3, mate_yaw: f32, driver_taken: bool, passenger_taken: bool) -> u8 {
+    let diff = (mate - player).truncate();
+    let len = diff.length();
+    if len <= 1e-5 {
+        return 2;
+    }
+    let (d, f) = (diff / len, forward(mate_yaw));
+    let dot = d.dot(f);
+    if 0.96 <= dot {
+        if passenger_taken { 1 } else { 3 }
+    } else if dot < -0.96 {
+        if driver_taken { 1 } else { 4 }
+    } else if d.y * f.x - d.x * f.y >= 0.0 {
+        2
+    } else {
+        1
+    }
+}
+
+/// What the controller does this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Step {
+    /// Walk to this point (`slow`: inside 1.5 m of it, at half speed).
+    Walk { to: Vec2, slow: bool },
+    /// Within 3 m of the mate: send `CSMountMate` now.
+    Send,
+    /// The request is out; the controller waits for the server.
+    Wait,
+    /// Done: attached, timed out or the walk arrived without the request being possible.
+    Stop,
+}
+
+/// The point at the mate's side the auto-walk heads for (1 m from its middle, on the side the player stands on).
+pub fn approach_target(player: Vec3, mate: Vec3, mate_yaw: f32) -> Vec2 {
+    let side = right(mate_yaw);
+    let sign = if (player - mate).truncate().dot(side) >= 0.0 { 1.0 } else { -1.0 };
+    mate.truncate() + side * sign
+}
+
+/// One frame of the controller. `elapsed` is the seconds since it started, `sent` the elapsed time of the request when it went out.
+pub fn flow_step(player: Vec3, mate: Vec3, mate_yaw: f32, elapsed: f32, sent: Option<f32>) -> Step {
+    if elapsed >= LIFETIME {
+        return Step::Stop;
+    }
+    if let Some(at) = sent {
+        return if elapsed - at >= WAIT { Step::Stop } else { Step::Wait };
+    }
+    let flat = (mate - player).truncate();
+    if flat.length_squared() < SEND_RANGE * SEND_RANGE {
+        return Step::Send;
+    }
+    let to = approach_target(player, mate, mate_yaw);
+    let away = (to - player.truncate()).length();
+    if away <= ARRIVE {
+        return Step::Stop;
+    }
+    Step::Walk { to, slow: away < SLOW_RANGE }
+}
+
+/// The facing (radians, 0 = north, [`forward`]) towards `to` from `from`.
+pub fn bearing(from: Vec2, to: Vec2) -> f32 {
+    let d = to - from;
+    (-d.x).atan2(d.y)
+}
+
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+
+    #[test]
+    fn entry_reason_uses_the_mates_forward() {
+        let player = Vec3::ZERO;
+        // the mate stands north of the player and faces north: the player is behind it
+        assert_eq!(entry_reason(player, Vec3::new(0.0, 3.0, 0.0), 0.0, false, false), 3);
+        assert_eq!(entry_reason(player, Vec3::new(0.0, 3.0, 0.0), 0.0, false, true), 1);
+        // facing south: the player is in front of it
+        assert_eq!(entry_reason(player, Vec3::new(0.0, 3.0, 0.0), std::f32::consts::PI, true, false), 1);
+        assert_eq!(entry_reason(player, Vec3::new(0.0, 3.0, 0.0), std::f32::consts::PI, false, false), 4);
+        // the mate to the east facing north: the player is on its left
+        assert_eq!(entry_reason(player, Vec3::new(3.0, 0.0, 0.0), 0.0, true, true), 1);
+        assert_eq!(entry_reason(player, Vec3::new(-3.0, 0.0, 0.0), 0.0, true, true), 2);
+    }
+
+    #[test]
+    fn the_controller_walks_in_sends_within_three_metres_then_waits() {
+        let mate = Vec3::new(0.0, 10.0, 0.0);
+        let far = flow_step(Vec3::ZERO, mate, 0.0, 0.0, None);
+        assert!(matches!(far, Step::Walk { slow: false, .. }), "{far:?}");
+        assert_eq!(flow_step(Vec3::new(0.0, 7.5, 0.0), mate, 0.0, 1.0, None), Step::Send, "2.5 m away");
+        assert!(matches!(flow_step(Vec3::new(0.0, 6.9, 0.0), mate, 0.0, 1.0, None), Step::Walk { .. }), "3.1 m away still walks");
+        assert_eq!(flow_step(Vec3::new(0.0, 7.5, 0.0), mate, 0.0, 1.5, Some(1.0)), Step::Wait);
+        assert_eq!(flow_step(Vec3::new(0.0, 7.5, 0.0), mate, 0.0, 3.1, Some(1.0)), Step::Stop, "2 s wait ran out");
+        assert_eq!(flow_step(Vec3::ZERO, mate, 0.0, 10.0, None), Step::Stop, "10 s lifetime");
+    }
+
+    #[test]
+    fn the_walk_aims_at_the_side_the_player_is_on() {
+        let target = approach_target(Vec3::new(-8.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.0);
+        assert!((target - Vec2::new(-1.0, 0.0)).length() < 1e-5, "{target}");
+        assert!(bearing(Vec2::ZERO, Vec2::new(0.0, 5.0)).abs() < 1e-5, "north is facing 0");
+        assert!((bearing(Vec2::ZERO, Vec2::new(5.0, 0.0)) + std::f32::consts::FRAC_PI_2).abs() < 1e-5, "east is -90 degrees");
+    }
+}

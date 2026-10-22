@@ -375,7 +375,7 @@ pub fn control_player(
     dev: Res<DevOptions>,
     typing: Option<Res<crate::hud::HudKeyboardFocus>>,
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
-    (mut trace, sprint, mut local_jump, gliding): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>),
+    (mut trace, sprint, mut local_jump, gliding, mut mounting): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>, ResMut<super::mount::MountFlow>),
 ) {
     let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride)) = player.single_mut() else { return };
     // a glider flies the character: `glide::control_glide` moves it and sends the packets
@@ -463,9 +463,12 @@ pub fn control_player(
         turn_left: pressed("turnleft", 'A'),
         turn_right: pressed("turnright", 'D'),
     };
+    // walking to a mate that is being mounted (`mount::MountFlow`): any movement key cancels it
+    let asked = held.forward || held.back || held.left || held.right || held.turn_left || held.turn_right || (left_mouse && right_mouse) || tapped("jump");
+    let (mount_walk, mount_slow) = mounting.steer(mover.pos, &mut mover.facing, asked);
     // auto-run (NumLock): W, S or both mouse buttons end it once they were let go
     state.autorun.update(tapped("autorun"), held.forward || held.back || (left_mouse && right_mouse));
-    let (fwd, strafe, turn) = resolve_keys(MoveKeys { forward: held.forward || state.autorun.on, ..held }, left_mouse, right_mouse, state.last_turn);
+    let (fwd, strafe, turn) = resolve_keys(MoveKeys { forward: held.forward || state.autorun.on || mount_walk, ..held }, left_mouse, right_mouse, state.last_turn);
     let jump_held = pressed("jump", 'J');
     let jump_tapped = tapped("jump") || (dev.scripted(t, 'J') && !dev.scripted(t - dt, 'J'));
     let vertical = jump_held as i32 as f32 - key("down", 'X');
@@ -487,7 +490,7 @@ pub fn control_player(
     let old = mover.pos;
     let swimming = mover.swim.is_some();
     // local velocity (x right, y forward): walking and running as the actor model says, swimming at the swim speed
-    let walking = state.walk != (dev.scripted(t, 'H') || (!typing && (keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight))));
+    let walking = (state.walk || mount_slow) != (dev.scripted(t, 'H') || (!typing && (keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight))));
     let local_vel = if swimming {
         swim::local_velocity(local_dir)
     } else {
@@ -1216,6 +1219,7 @@ mod scripted_input_tests {
             .init_resource::<PlayerInput>()
             .init_resource::<LocalJump>()
             .init_resource::<crate::ingame::glide::Gliding>()
+            .init_resource::<crate::ingame::mount::MountFlow>()
             .init_resource::<VirtualInput>()
             .init_resource::<aa_net::state::Player>()
             .init_resource::<crate::settings::Actions>()

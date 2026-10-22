@@ -67,6 +67,96 @@ enum Gait {
     Run,
 }
 
+/// The mounting in progress (the original `MountHorse Controller`): the HUD starts it with [`MountFlow::begin`] after its checks, the
+/// player walks to the mate while the controller runs ([`MountFlow::steer`], used by `control_player`), and
+/// [`drive_mount_flow`] sends `CSMountMate` once the player is within 3 m. Any movement input cancels it.
+#[derive(Resource, Default)]
+pub struct MountFlow {
+    pending: Option<Flow>,
+}
+
+struct Flow {
+    mount: u32,
+    tl_id: u16,
+    point: u8,
+    /// Seconds since the controller started (the app clock when it did, until the first frame stamps it).
+    started: Option<f32>,
+    sent: Option<f32>,
+    /// Where to walk this frame and whether slowly (`None`: standing).
+    walk_to: Option<(Vec2, bool)>,
+}
+
+impl MountFlow {
+    /// Starts the controller for the mate `mount` (a new request replaces the one in progress).
+    pub fn begin(&mut self, mount: u32, tl_id: u16, point: u8) {
+        self.pending = Some(Flow { mount, tl_id, point, started: None, sent: None, walk_to: None });
+    }
+
+    /// Whether a mounting is in progress.
+    #[cfg(test)]
+    pub fn active(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The auto-walk of this frame for the player at `pos`: turns `facing` to the approach point and returns whether to walk forward
+    /// and whether slowly. Any key (`input`) cancels the controller.
+    pub fn steer(&mut self, pos: Vec3, facing: &mut f32, input: bool) -> (bool, bool) {
+        let Some(flow) = self.pending.as_mut() else { return (false, false) };
+        if input {
+            self.pending = None;
+            return (false, false);
+        }
+        let Some((to, slow)) = flow.walk_to else { return (false, false) };
+        *facing = mount_anim::bearing(pos.truncate(), to);
+        (true, slow)
+    }
+}
+
+/// Runs the mount controller: stops it when it is over, and sends `CSMountMate` (reason by the geometry of that moment) as soon as
+/// the player is within 3 m of the mate.
+pub fn drive_mount_flow(
+    time: Res<Time>,
+    mut flow: ResMut<MountFlow>,
+    net: Res<Units>,
+    player: Res<Player>,
+    movers: Query<&Mover, With<LocalPlayer>>,
+    mut out: MessageWriter<NetCommand>,
+) {
+    let Some(pending) = flow.pending.as_mut() else { return };
+    let now = time.elapsed_secs();
+    let started = *pending.started.get_or_insert(now);
+    let elapsed = now - started;
+    let (Ok(mover), Some(mount)) = (movers.single(), net.by_id.get(&pending.mount)) else {
+        flow.pending = None;
+        return;
+    };
+    let attached = player.spawn.as_ref().is_some_and(|s| s.unit.attached_to.is_some());
+    if attached || mount.dead {
+        flow.pending = None;
+        return;
+    }
+    let mount_pos = Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z);
+    let step = mount_anim::flow_step(mover.pos, mount_pos, mount.yaw(), elapsed, pending.sent);
+    pending.walk_to = None;
+    match step {
+        mount_anim::Step::Walk { to, slow } => pending.walk_to = Some((to, slow)),
+        mount_anim::Step::Send => {
+            let (mut driver, mut passenger) = (false, false);
+            for unit in net.iter() {
+                if let Some(a) = unit.attached_to.filter(|a| a.obj_id == pending.mount) {
+                    driver |= a.point == 1;
+                    passenger |= a.point == 2;
+                }
+            }
+            let reason = mount_anim::entry_reason(mover.pos, mount_pos, mount.yaw(), driver, passenger);
+            out.write(NetCommand(Command::Mate(aa_net::mate::MateCommand::Mount { tl_id: pending.tl_id, point: pending.point, reason })));
+            pending.sent = Some(elapsed);
+        }
+        mount_anim::Step::Wait => {}
+        mount_anim::Step::Stop => flow.pending = None,
+    }
+}
+
 /// The `reason` byte of the `SCUnitAttached` that seated each rider (rider object id to mount object id and reason): it names the
 /// side the rider got on from, which the get-on clip follows (the original reads it as the rider graph `VehicleSeat`).
 #[derive(Resource, Default)]
@@ -451,7 +541,7 @@ fn boarding_pose(boarding: &Boarding, seat: Vec3, mount_facing: f32, scale: f32)
 
 /// Seats the local player when the server attached its own object (`SCUnitAttached`), and starts the
 /// authored get-off clip on the detach that follows an unmount or dismiss.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn start_stop_local_riding(
     mut commands: Commands,
     player: Res<Player>,
@@ -622,6 +712,7 @@ pub fn pose_local_riders(
 
 /// Plays the dismount hop: the entity stays at the anchor while the clip moves the body (the root motion), and where the last clip
 /// leaves the body the unit stands from then on and its on-foot locomotion starts again.
+#[allow(clippy::type_complexity)]
 pub fn finish_dismount(
     time: Res<Time>,
     mut commands: Commands,
@@ -963,5 +1054,21 @@ mod attach_tests {
         let (pos, facing) = boarding_pose(&boarding, Vec3::new(10.0, 10.0, 5.0), 0.0, 1.0);
         assert!((pos - Vec3::new(11.0, 10.0, 3.112)).length() < 1e-4, "{pos}");
         assert!((facing - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_mount_walk_turns_to_the_mate_and_any_key_cancels_it() {
+        let mut flow = MountFlow::default();
+        assert_eq!(flow.steer(Vec3::ZERO, &mut 0.0, false), (false, false), "nothing in progress");
+        flow.begin(5, 77, 1);
+        assert!(flow.active());
+        flow.pending.as_mut().unwrap().walk_to = Some((Vec2::new(0.0, 6.0), false));
+        let mut facing = 1.0;
+        assert_eq!(flow.steer(Vec3::ZERO, &mut facing, false), (true, false));
+        assert!(facing.abs() < 1e-5, "faces north: {facing}");
+        flow.pending.as_mut().unwrap().walk_to = Some((Vec2::new(0.0, 1.0), true));
+        assert_eq!(flow.steer(Vec3::ZERO, &mut facing, false), (true, true), "slow near the mate");
+        assert_eq!(flow.steer(Vec3::ZERO, &mut facing, true), (false, false), "a key press cancels");
+        assert!(!flow.active());
     }
 }
