@@ -57,19 +57,20 @@ A unit with `Unit::attached_to` set (`SCUnitAttached`) becomes a `Rider`:
 * the rider sits on the mount's `bone_spine_driver` (attach point 1) or `bone_spine_passenger`, faces the mount's facing, and
   plays the rider clips of the mount's kind: `models.mount_pose_id` 1 horse, 2 lion, 3 bear, 4 wildboar, 10 pangolin give
   `horse_ba_relaxed_idle`, `horse_mo_normal_walk_f`, `horse_mo_normal_run_f` (and the other prefixes). The gait is the mount's
-  PseudoSpeed, copied from the mount every frame as the original does (`FUN_390dcc80`): PseudoSpeed = ground speed / run
-  speed of the mount's actor model (**inferred**, the producer is in `cryaction.dll`), rider idle up to 0.1, walk 0.15 to 0.6,
-  run from 0.7 (the gaps hold the band), sprint tier (`horse_mo_normal_sprint_f`) from 1.25 (inferred), `..._run_f_lturn/rturn`
-  while the mount turns faster than 0.6 rad/s (inferred), `horse_mo_relaxed_idletorun_f` / `runtoidle_f` between idle and run,
+  PseudoSpeed, copied from the mount every frame as the original does (`FUN_390dcc80`): PseudoSpeed is the discrete
+  requested urgency of the movement request (confirmed, `FUN_39404d50` / `FUN_3906a7f0`): 0 idle or under 0.5 m/s, 1.0 moving, 0.4
+  walking, 1.5 under auto-move (`mount_anim::pseudo_speed`; the walk modifier of a remote mate is told from its speed), rider idle up to 0.1, walk 0.15 to 0.6,
+  run from 0.7 (the gaps hold the band), sprint tier (`horse_mo_normal_sprint_f`) from 1.25, reachable only through the 1.5 of auto-move (how else a mount gets a value above 1 is open), `..._run_f_lturn/rturn`
+  while the mount turns faster than 34.4 deg/s (0.6 rad/s, inferred; `RequestedTurnSpeedLZ` is in degrees/s), `horse_mo_relaxed_idletorun_f` / `runtoidle_f` between idle and run,
   `horse_mo_jump_f_start/loop/land` while the mount is airborne, and the idle while the mount swims. The tempo is copied from
   the mount's animator. The bear set has no mounted walk/run, so it keeps its idle (`mount::RideAnim`, `mount_anim::rider_band`);
 * **Get on**: the side comes from the `reason` byte of `SCUnitAttached` (`mount::AttachReasons`, 1 left, 2 right, 3 back, 4
-  front, anything else left). The rider plays `fist_ac_<kind>_<l|r|b|f>_geton` with its root motion (1 m beside or 2 m in front of
-  or behind the saddle, 1.888 m up, 1.0 s), standing at the approach point (saddle minus the clip's root offset, facing the
-  mount), then snaps to the seat bone. A rider already seated when it came into view has no reason and plays no clip. Other
+  front, anything else left). The rider is bound to the seat bone as soon as the mount is confirmed and plays
+  `fist_ac_<kind>_<l|r|b|f>_geton` (1.0 s); the clip is entity-controlled in the original (no root motion reaches the entity), so
+  the pose starting 1 to 2 m beside the horse is the clip's own skeletal motion. A rider already seated when it came into view has no reason and plays no clip. Other
   clients play the same side clip from the same byte.
-* **Get off** (`SCUnitDetached`): `fist_ac_<kind>_l_getoff_start`, `_loop`, `_end` as a hop (`mount_anim::Hop`): the entity stays
-  at an anchor that carries each clip's root motion on, and the unit stands where the last clip left the body (about 1 m to
+* **Get off** (`SCUnitDetached`): `fist_ac_<kind>_l_getoff_start`, `_loop`, `_end` as a hop (`mount_anim::Hop`): the rider stays bound
+  to the saddle while the clips play their skeletal motion, and the unit stands where the last clip left the body (about 1 m to
   the mount's left, on the ground); the on-foot `Locomotion` is held in a `Dismounting` component until then. The local player
   uses the same clips through `LocalRider` (`mount.rs`), seated at the same bones;
 * a mate's own clips follow the PseudoSpeed bands of `horse_full_body.xml` (`mount_anim::MateGait`, `anim::drive_locomotion`):
@@ -107,7 +108,7 @@ player to the mate's side (any key cancels it, half speed inside 1.5 m, 10 s lif
 within 3 m, with the reason byte computed at that moment, then waits 2 s for the attach. While riding the own mate the dynamic action
 bar (F) holds `command_unmount` (`icon_skill_vehicle03`, `CSUnMountMate` reason 9). The driven mount's speed follows `game_inertia`
 (slowing down) and `game_inertia_accel` (speeding up) of its actor model, 4 and 11 for the horse; which of the two applies when is
-inferred. Not read from the original: the exact approach point (the controller heads for 1 m beside the saddle on the player's
+inferred. Not read from the original: the approach point of the auto-walk (the controller heads for 1 m beside the saddle on the player's
 side), the line-of-sight mask (terrain and structures) and the exit point of the hop.
 
 The owned mount/dismiss flow is in `hud/pets/owned.rs`: `X2Mate:CanMount`/`CanDismiss` follow the original controller gates

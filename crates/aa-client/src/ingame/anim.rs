@@ -332,6 +332,8 @@ pub struct Motion {
     pub airborne: bool,
     /// Floating in deep water: a unit whose model has swim clips plays them instead of the walk and run.
     pub swimming: bool,
+    /// Moving by auto-move / move-to-point: the movement request then carries PseudoSpeed 1.5 (a mount's sprint tier).
+    pub auto: bool,
 }
 
 /// The clips of a model and what it is currently playing.
@@ -446,7 +448,7 @@ pub fn drive_locomotion(
                 State::Moving(_, false, _) | State::RunTurn(..) => Band::Run,
                 _ => Band::Idle,
             };
-            let ps = g.pseudo(motion.speed);
+            let ps = g.pseudo(motion.speed, motion.auto);
             (mount_anim::mount_band(ps, prev), ps, mount_anim::turn_dir(g.turn))
         });
         let moving = match gait {

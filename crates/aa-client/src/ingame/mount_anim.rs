@@ -1,5 +1,6 @@
 //! The pure rules of how a rider gets on and off a mount in the original 1.2 client (`docs/research/re-mounts.md` section 2):
-//! the entry side from the `SCUnitAttached` reason byte, the clips of each side and where the rider stands when the clip starts.
+//! the entry side from the `SCUnitAttached` reason byte and the clips of each side. The rider is bound to the seat bone for the whole
+//! get-on (the clips use movement control 1, Entity: no root motion reaches the entity); the clip's own skeletal pose starts beside the horse.
 //! No Bevy system here; [`super::mount`] plays what these rules choose.
 
 use aa_anim::pose::{BoundClip, Rig};
@@ -35,17 +36,6 @@ impl Side {
             Side::Right => "r",
             Side::Back => "b",
             Side::Front => "f",
-        }
-    }
-
-    /// The facing of a rider that starts the get-on clip on this side: the clip walks the root forward (1 m for the sides, 2 m for
-    /// back and front) towards the saddle, so the rider faces the mount from its left, right, rear or front.
-    pub fn rider_facing(self, mount_facing: f32) -> f32 {
-        match self {
-            Side::Left => mount_facing - std::f32::consts::FRAC_PI_2,
-            Side::Right => mount_facing + std::f32::consts::FRAC_PI_2,
-            Side::Back => mount_facing,
-            Side::Front => mount_facing + std::f32::consts::PI,
         }
     }
 }
@@ -88,12 +78,6 @@ pub fn root_offset(rig: &Rig, clip: &BoundClip, t: f32) -> Vec3 {
 pub fn to_world(offset: Vec3, facing: f32, scale: f32) -> Vec3 {
     let xy = right(facing) * offset.x + forward(facing) * offset.y;
     Vec3::new(xy.x, xy.y, offset.z) * scale
-}
-
-/// Where the rider entity stands for a get-on clip whose root offset at its end is `end`, so that the clip finishes on the
-/// saddle `seat`: the approach point, one or two metres out on the side and down on the ground.
-pub fn approach_point(seat: Vec3, rider_facing: f32, end: Vec3, scale: f32) -> Vec3 {
-    seat - to_world(end, rider_facing, scale)
 }
 
 /// The jump-style dismount: the clips play one after another, each starting where the root motion of the one before left the body.
@@ -140,11 +124,31 @@ pub enum Band {
     Run,
 }
 
-/// `PseudoSpeed` of a unit moving at `speed` m/s when its run speed is `run_speed` (inferred: the cryaction.dll producer was not
-/// read; the data fits `speed / run speed`, a walk at 1.8 m/s of the horse's 9 is 0.2 = `game_walk_multiplier`, a sprint 1.5).
-pub fn pseudo_speed(speed: f32, run_speed: f32) -> f32 {
-    if run_speed > 0.0 { speed / run_speed } else { 0.0 }
+/// The `pseudoSpeed` the x2game movement request carries (`FUN_39404d50`; crygame `FUN_3906a7f0` writes it to the graph input, clamped
+/// to 0.4 under actor flag bit0). It is a requested urgency, not a speed: 0 idle, 1.0 moving, 0.4 with the walk modifier, 1.5 for
+/// move-to-point and auto-move (`FUN_393ba480`). cryaction `FUN_306747f0` zeroes it when the ground speed is under 0.5 m/s.
+/// `speed`/`run_speed` only tell a walk from a run here (the walk modifier is not sent to other clients). How a sprint value above
+/// 1.0 comes about for a mount outside auto-move is not found (open).
+pub fn pseudo_speed(speed: f32, run_speed: f32, auto_move: bool) -> f32 {
+    if speed < IDLE_SPEED || run_speed <= 0.0 {
+        0.0
+    } else if auto_move {
+        AUTO_PSEUDO
+    } else if speed / run_speed < WALK_SHARE {
+        WALK_PSEUDO
+    } else {
+        MOVE_PSEUDO
+    }
 }
+
+/// Under this ground speed (m/s) the request is zeroed (cryaction `FUN_306747f0`).
+pub const IDLE_SPEED: f32 = 0.5;
+/// The requested PseudoSpeed of a move, of a move with the walk modifier and of move-to-point / auto-move.
+pub const MOVE_PSEUDO: f32 = 1.0;
+pub const WALK_PSEUDO: f32 = 0.4;
+pub const AUTO_PSEUDO: f32 = 1.5;
+/// A move under this share of the run speed counts as the walk modifier (the horse walks at `game_walk_multiplier` 0.2, runs at 1).
+const WALK_SHARE: f32 = 0.6;
 
 /// The band between two limits keeps the band the unit was in (the graph's `PseudoSpeed` ranges leave gaps).
 fn band(ps: f32, idle_max: f32, walk: (f32, f32), run_min: f32, prev: Band) -> Band {
@@ -169,12 +173,14 @@ pub fn rider_band(ps: f32, prev: Band) -> Band {
     band(ps, 0.10, (0.15, 0.6), 0.7, prev)
 }
 
-/// From this PseudoSpeed on a mount runs its sprint tier (between the run at 1 and the sprint at `game_sprint_multiplier` 1.5; inferred).
+/// From this PseudoSpeed on a mount runs its sprint tier: only the 1.5 of move-to-point / auto-move reaches it (the band threshold in
+/// the graph XML is kept as it was).
 pub const SPRINT_PSEUDO: f32 = 1.25;
 
-/// The turn rate (rad/s) from which a unit plays its turn clips: turning in place on the mount, the run turn blend on the rider
-/// and the mount (inferred; the graph's `RequestedTurnSpeedLZ` thresholds were not read).
-pub const TURN_MIN: f32 = 0.6;
+/// The turn rate (degrees/s, the unit of `RequestedTurnSpeedLZ` = change of rotation angle in degrees / dt, cryaction `FUN_30665830`)
+/// from which a unit plays its turn clips: turning in place on the mount, the run turn blend on the rider and the mount. The value is
+/// the earlier 0.6 rad/s (inferred; the graph's own thresholds were not read).
+pub const TURN_MIN: f32 = 0.6 * 180.0 / std::f32::consts::PI;
 
 /// -1 for a right turn, 1 for a left turn, 0 for none (yaw grows to the left).
 pub fn turn_dir(rate: f32) -> i8 {
@@ -187,12 +193,12 @@ pub fn turn_dir(rate: f32) -> i8 {
     }
 }
 
-/// A mate's gait: its run speed (m/s) for the PseudoSpeed and the rate it turns at.
+/// A mate's gait: its run speed (m/s) and the rate it turns at.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct MateGait {
     pub run_speed: f32,
     last_yaw: Option<f32>,
-    /// The smoothed turn rate (rad/s), positive to the left.
+    /// The smoothed turn rate (`RequestedTurnSpeedLZ`, degrees/s), positive to the left.
     pub turn: f32,
 }
 
@@ -201,15 +207,15 @@ impl MateGait {
         MateGait { run_speed, last_yaw: None, turn: 0.0 }
     }
 
-    pub fn pseudo(&self, speed: f32) -> f32 {
-        pseudo_speed(speed, self.run_speed)
+    pub fn pseudo(&self, speed: f32, auto_move: bool) -> f32 {
+        pseudo_speed(speed, self.run_speed, auto_move)
     }
 
-    /// Follows the facing: the turn rate is the smoothed change of `yaw` over `dt`.
+    /// Follows the facing: the turn rate is the smoothed change of `yaw` over `dt`, in degrees/s.
     pub fn track_turn(&mut self, yaw: f32, dt: f32) {
         if let (Some(last), true) = (self.last_yaw, dt > 1e-4) {
             let d = (yaw - last + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-            self.turn += (d / dt - self.turn) * 0.3;
+            self.turn += (d.to_degrees() / dt - self.turn) * 0.3;
         }
         self.last_yaw = Some(yaw);
     }
@@ -236,30 +242,6 @@ mod tests {
         assert_eq!(geton_names("lion", Side::Front), ["fist_ac_lion_f_geton", "fist_ac_horse_f_geton", "fist_ac_lion_l_geton"]);
         assert_eq!(getoff_names("horse")[0], ["fist_ac_horse_l_getoff_start"]);
         assert_eq!(getoff_names("bear")[2], ["fist_ac_bear_l_getoff_end", "fist_ac_horse_l_getoff_end"]);
-    }
-
-    #[test]
-    fn rider_starts_on_the_side_it_gets_on_from() {
-        let seat = Vec3::new(100.0, 200.0, 50.0);
-        // the mount faces +y; the side clips end 1 m forward and 1.888 m up, back and front 2 m
-        let side_end = Vec3::new(0.0, 1.0, 1.888);
-        let left = approach_point(seat, Side::Left.rider_facing(0.0), side_end, 1.0);
-        assert!((left - Vec3::new(99.0, 200.0, 48.112)).length() < 1e-4, "left of the saddle: {left}");
-        let right = approach_point(seat, Side::Right.rider_facing(0.0), side_end, 1.0);
-        assert!((right - Vec3::new(101.0, 200.0, 48.112)).length() < 1e-4, "right of the saddle: {right}");
-        let long_end = Vec3::new(0.0, 2.0, 1.888);
-        let back = approach_point(seat, Side::Back.rider_facing(0.0), long_end, 1.0);
-        assert!((back - Vec3::new(100.0, 198.0, 48.112)).length() < 1e-4, "behind the mount: {back}");
-        let front = approach_point(seat, Side::Front.rider_facing(0.0), long_end, 1.0);
-        assert!((front - Vec3::new(100.0, 202.0, 48.112)).length() < 1e-4, "in front of the mount: {front}");
-    }
-
-    #[test]
-    fn approach_turns_with_the_mount() {
-        // the mount faces +x (yaw -90 degrees); its left is +y
-        let yaw = -std::f32::consts::FRAC_PI_2;
-        let p = approach_point(Vec3::ZERO, Side::Left.rider_facing(yaw), Vec3::new(0.0, 1.0, 0.0), 1.0);
-        assert!((p - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4, "{p}");
     }
 }
 
@@ -404,6 +386,18 @@ mod band_tests {
     }
 
     #[test]
+    fn the_requested_pseudo_speed_is_discrete() {
+        assert_eq!(pseudo_speed(0.3, 9.0, false), 0.0, "under 0.5 m/s the request is zeroed");
+        assert_eq!(pseudo_speed(0.0, 9.0, true), 0.0);
+        assert_eq!(pseudo_speed(1.8, 9.0, false), WALK_PSEUDO, "the walk modifier asks 0.4");
+        assert_eq!(pseudo_speed(9.0, 9.0, false), MOVE_PSEUDO);
+        assert_eq!(pseudo_speed(13.5, 9.0, false), MOVE_PSEUDO, "no sprint value outside auto-move");
+        assert_eq!(pseudo_speed(9.0, 9.0, true), AUTO_PSEUDO);
+        assert_eq!(mount_band(pseudo_speed(1.8, 9.0, false), Band::Idle), Band::Walk);
+        assert_eq!(mount_band(pseudo_speed(9.0, 9.0, false), Band::Idle), Band::Run);
+    }
+
+    #[test]
     fn the_rider_bands_are_wider_at_the_walk() {
         assert_eq!(rider_band(0.12, Band::Idle), Band::Idle, "0.1..0.15 holds");
         assert_eq!(rider_band(0.12, Band::Walk), Band::Walk);
@@ -411,8 +405,8 @@ mod band_tests {
         assert_eq!(rider_band(0.65, Band::Walk), Band::Walk, "0.6..0.7 holds the walk");
         assert_eq!(rider_band(0.7, Band::Walk), Band::Run);
         // the horse walks at 0.2 and runs at 1: the rider walks and runs with it
-        assert_eq!(rider_band(pseudo_speed(1.8, 9.0), Band::Idle), Band::Walk);
-        assert_eq!(rider_band(pseudo_speed(9.0, 9.0), Band::Idle), Band::Run);
+        assert_eq!(rider_band(pseudo_speed(1.8, 9.0, false), Band::Idle), Band::Walk);
+        assert_eq!(rider_band(pseudo_speed(9.0, 9.0, false), Band::Idle), Band::Run);
     }
 
     #[test]
@@ -423,13 +417,13 @@ mod band_tests {
             gait.track_turn(i as f32 * 0.03, 0.016);
         }
         assert_eq!(turn_dir(gait.turn), 1, "yaw grows to the left: {}", gait.turn);
-        assert_eq!(turn_dir(-1.0), -1);
-        assert_eq!(turn_dir(0.2), 0);
-        assert!((gait.pseudo(9.0) - 1.0).abs() < 1e-6);
+        assert_eq!(turn_dir(-40.0), -1, "degrees per second");
+        assert_eq!(turn_dir(20.0), 0, "under the 0.6 rad/s (34.4 deg/s) threshold");
+        assert!((gait.turn - 0.03 / 0.016 * 180.0 / std::f32::consts::PI).abs() < 5.0, "0.03 rad per 16 ms is about 107 deg/s: {}", gait.turn);
         // across the +-pi seam the turn stays small
         let mut seam = MateGait::new(9.0);
         seam.track_turn(3.13, 0.016);
         seam.track_turn(-3.13, 0.016);
-        assert!((seam.turn - 0.3 * (0.0232 / 0.016)).abs() < 0.01, "{}", seam.turn);
+        assert!((seam.turn - 0.3 * (0.0232 / 0.016 * 180.0 / std::f32::consts::PI)).abs() < 0.5, "{}", seam.turn);
     }
 }

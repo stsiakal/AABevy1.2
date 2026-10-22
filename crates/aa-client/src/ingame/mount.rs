@@ -96,14 +96,14 @@ struct MountDrive {
     /// The mount PseudoSpeed (0 while it swims: the rider sits idle).
     pseudo: f32,
     airborne: bool,
-    /// The mount turn rate (rad/s), positive to the left.
+    /// The mount turn rate (`RequestedTurnSpeedLZ`, degrees/s), positive to the left.
     turn: f32,
     /// The mount playback speed, which keeps the feet on the ground.
     tempo: f32,
 }
 
 /// The rider state for what the mount does: a jump in the air, else the gait band by the mount PseudoSpeed (walk 0.15-0.6, run from
-/// 0.7), the run turn blend while the mount turns, the sprint tier from 1.25. `have` says which clips exist: (turn, sprint, jump).
+/// 0.7), the run turn blend while the mount turns, the sprint tier from 1.25 (reached only by the 1.5 of auto-move). `have` says which clips exist: (turn, sprint, jump).
 fn choose_ride(drive: MountDrive, prev: Band, have: (bool, bool, bool)) -> (Ride, Band) {
     if drive.airborne && have.2 {
         return (Ride::Air, prev);
@@ -403,18 +403,15 @@ pub struct LocalRider {
     on_foot: Option<Locomotion>,
 }
 
-/// A get-on clip in progress: the rider stands at the approach point of its side and the clip lifts it onto the saddle.
+/// A get-on clip in progress. The rider is bound to the seat bone from the start (the clip uses movement control Entity: no root
+/// motion moves the entity); the clip's skeletal pose starts beside the mount and ends in the saddle.
 struct Boarding {
     remaining: f32,
-    side: Side,
-    /// The root offset of the clip at its end (model space).
-    end: Vec3,
 }
 
 impl Boarding {
-    fn new(clip: Option<&BoundClip>, side: Option<Side>, animator: &Animator) -> Option<Boarding> {
-        let (clip, side) = (clip?, side?);
-        Some(Boarding { remaining: clip.clip.duration, side, end: mount_anim::root_offset(&animator.rig, clip, clip.clip.duration) })
+    fn new(clip: Option<&BoundClip>) -> Option<Boarding> {
+        Some(Boarding { remaining: clip?.clip.duration })
     }
 }
 
@@ -550,7 +547,7 @@ pub fn start_stop_riding(
                 let (mount_id, point) = (a.obj_id, a.point);
                 let seat = db.seat(mount.model_id, point);
                 let RidingClips { anim, geton } = clis;
-                let boarding = Boarding::new(geton.as_ref(), side, animator);
+                let boarding = Boarding::new(geton.as_ref());
                 debug!("unit {} rides {} (model {}) at point {point}{}", unit.obj_id, mount_id, mount.model_id, if vehicle { " (slave seat)" } else { "" });
                 commands.queue(move |world: &mut World| {
                     if let (Some(on), Some(mut animator)) = (geton, world.entity_mut(entity).get_mut::<Animator>()) {
@@ -634,7 +631,7 @@ pub fn pose_riders(
                 let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
                 let world = seat.map_or_else(|| aa_world::cry_to_bevy(mount.pos), |g| g.translation());
                 let swimming = motion.swimming;
-                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed)) };
+                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed, motion.auto)) };
                 (bevy_to_cry(world), mount.facing, MountDrive { pseudo, airborne: motion.airborne && !swimming, turn: gait.map_or(0.0, |g| g.turn), tempo: mount_animator.speed })
             }
             None => {
@@ -648,11 +645,7 @@ pub fn pose_riders(
                 (pos, facing, MountDrive { tempo: 1.0, ..default() })
             }
         };
-        // while the get-on clip plays the rider stands at the approach point of its side; the clip walks it onto the saddle
-        let (pos, facing) = match &rider.boarding {
-            Some(b) if !rider.vehicle => boarding_pose(b, pos, facing, unit.scale()),
-            _ => (pos, facing),
-        };
+        // the rider is bound to the seat bone, also while the get-on clip plays
         unit.pos = pos;
         unit.facing = facing;
         *transform = placement(pos, facing, unit.scale());
@@ -666,12 +659,6 @@ pub fn pose_riders(
         }
         rider.anim.update(&mut animator, drive);
     }
-}
-
-/// Where a rider stands (and which way it faces) while its get-on clip plays, for the saddle at `seat` and a mount facing `mount_facing`.
-fn boarding_pose(boarding: &Boarding, seat: Vec3, mount_facing: f32, scale: f32) -> (Vec3, f32) {
-    let facing = boarding.side.rider_facing(mount_facing);
-    (mount_anim::approach_point(seat, facing, boarding.end, scale), facing)
 }
 
 /// Seats the local player when the server attached its own object (`SCUnitAttached`), and starts the
@@ -706,7 +693,7 @@ pub fn start_stop_local_riding(
                 };
                 let Some(clis) = clis else { continue };
                 let RidingClips { anim, geton } = clis;
-                let boarding = Boarding::new(geton.as_ref(), side, animator);
+                let boarding = Boarding::new(geton.as_ref());
                 let (mount_id, point) = (a.obj_id, a.point);
                 let body = if vehicle { None } else { db.as_deref().map(|db| db.mount_move(mount.model_id)) };
                 let vehicle_body = if vehicle && point == 1 && db.as_deref().is_some_and(|db| db.is_land_vehicle(mount.model_id)) {
@@ -792,7 +779,7 @@ pub fn pose_local_riders(
                 let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
                 let world = seat.map_or_else(|| aa_world::cry_to_bevy(mount.pos), |g| g.translation());
                 let swimming = motion.swimming;
-                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed)) };
+                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed, motion.auto)) };
                 (bevy_to_cry(world), mount.facing, MountDrive { pseudo, airborne: motion.airborne && !swimming, turn: gait.map_or(0.0, |g| g.turn), tempo: mount_animator.speed })
             }
             None => {
@@ -804,10 +791,6 @@ pub fn pose_local_riders(
                 };
                 (pos, facing, MountDrive { tempo: 1.0, ..default() })
             }
-        };
-        let (pos, facing) = match &rider.boarding {
-            Some(b) if !rider.vehicle => boarding_pose(b, pos, facing, 1.0),
-            _ => (pos, facing),
         };
         mover.pos = pos;
         mover.facing = facing;
@@ -1015,7 +998,7 @@ pub fn drive_mount(
     unit.facing = drive.facing;
     *transform = placement(pos, drive.facing, unit.scale());
     if let Some(mut m) = motion {
-        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: drive.swimming };
+        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: drive.swimming, auto: drive.autorun };
     }
     let turned = (drive.facing - before_facing).abs() > 1e-4;
     *input_state = PlayerInput { moving, jumped, turned };
@@ -1189,11 +1172,8 @@ mod attach_tests {
     }
 
     #[test]
-    fn a_get_on_stands_the_rider_on_the_approach_side() {
-        let boarding = Boarding { remaining: 1.0, side: Side::Right, end: Vec3::new(0.0, 1.0, 1.888) };
-        let (pos, facing) = boarding_pose(&boarding, Vec3::new(10.0, 10.0, 5.0), 0.0, 1.0);
-        assert!((pos - Vec3::new(11.0, 10.0, 3.112)).length() < 1e-4, "{pos}");
-        assert!((facing - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    fn a_get_on_only_times_the_clip() {
+        assert!(Boarding::new(None).is_none(), "no clip, no boarding: the rider sits at once");
     }
 
     #[test]
@@ -1221,9 +1201,9 @@ mod attach_tests {
         assert_eq!(choose_ride(drive(1.0), Band::Walk, all), (Ride::Run, Band::Run));
         assert_eq!(choose_ride(drive(1.5), Band::Run, all).0, Ride::Sprint);
         assert_eq!(choose_ride(drive(1.5), Band::Run, (true, false, true)).0, Ride::Run, "no sprint clip: the run");
-        assert_eq!(choose_ride(MountDrive { turn: 2.0, ..drive(1.0) }, Band::Run, all).0, Ride::Turn(true));
-        assert_eq!(choose_ride(MountDrive { turn: -2.0, ..drive(1.0) }, Band::Run, all).0, Ride::Turn(false));
-        assert_eq!(choose_ride(MountDrive { turn: 2.0, ..drive(0.2) }, Band::Walk, all).0, Ride::Walk, "turn blends are for the run");
+        assert_eq!(choose_ride(MountDrive { turn: 90.0, ..drive(1.0) }, Band::Run, all).0, Ride::Turn(true));
+        assert_eq!(choose_ride(MountDrive { turn: -90.0, ..drive(1.0) }, Band::Run, all).0, Ride::Turn(false));
+        assert_eq!(choose_ride(MountDrive { turn: 90.0, ..drive(0.4) }, Band::Walk, all).0, Ride::Walk, "turn blends are for the run");
         assert_eq!(choose_ride(MountDrive { airborne: true, ..drive(1.0) }, Band::Run, all).0, Ride::Air);
         assert_eq!(choose_ride(MountDrive { airborne: true, ..drive(1.0) }, Band::Run, (true, true, false)).0, Ride::Run, "no jump clips");
     }
