@@ -227,7 +227,6 @@ X2Interaction.CancelNPCInteraction = function(self) HUD.quest_end() end
 local directing = false
 -- The lines being played: the step's chain, the one shown, and what the last button sends.
 local play = { chain = {}, pos = 0, qtype = 0, ctype = 0, atype = 0 }
-local talkCalled = false
 
 -- 0 = accept (START_QUEST_CONTEXT_NPC), 2 = hand in (COMPLETE_QUEST_CONTEXT_NPC).
 X2Quest.CallQuestUi = function(self, kind, qtype, npcId)
@@ -237,10 +236,8 @@ X2Quest.CallQuestUi = function(self, kind, qtype, npcId)
     FAKE.fire_later("START_QUEST_CONTEXT_NPC", qtype, true, npcId)
   end
 end
--- npc_interaction.lua calls this for every talk objective the NPC has: one dialog plays them.
+-- npc_interaction.lua calls this for every talk objective the NPC has: each one is sent.
 X2Quest.CallQuestTalk = function(self, qtype, ctype, npcId)
-  if talkCalled then return end
-  talkCalled = true
   FAKE.fire_later("PROGRESS_TALK_QUEST_CONTEXT", qtype, true, npcId)
 end
 
@@ -328,7 +325,6 @@ X2Quest.EnterQuestDirectingMode = function(self)
 end
 X2Quest.LeaveQuestDirectingMode = function(self)
   directing = false
-  talkCalled = false
   play = { chain = {}, pos = 0, qtype = 0, ctype = 0, atype = 0 }
   HUD.quest_directing(false)
 end
