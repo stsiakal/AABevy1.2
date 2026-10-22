@@ -338,6 +338,19 @@ mod tests {
     }
 
     #[test]
+    fn the_slave_unit_wears_its_parts_from_unit_equipment_changes() {
+        // SCUnitEquipmentsChanged on the slave object reaches the highest cannon slot (25, 26).
+        let mut units = crate::state::Units::default();
+        let mut slave = crate::state::tests::unit(0xaabbcc);
+        slave.kind = UnitKind::Slave { id: 9, tl_id: 0x4567, template_id: 22, summoner_id: 42 };
+        units.apply(&Event::UnitSpawned(Box::new(slave)));
+        let part = crate::model::Item { template_id: 28852, id: 6, ..Default::default() };
+        assert!(units.apply(&Event::EquipmentChanged { obj_id: 0xaabbcc, items: vec![(25, Some(part.clone())), (26, Some(part.clone()))] }));
+        let unit = units.get(0xaabbcc).unwrap();
+        assert_eq!(unit.equipment.slots[26], Some(part));
+    }
+
+    #[test]
     fn three_native_lifecycle_shapes_consume_exactly_and_keep_following_dd04_packets() {
         let created = fixture();
         assert_eq!(created.creator_name.len(), 8);

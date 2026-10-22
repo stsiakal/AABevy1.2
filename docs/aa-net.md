@@ -1871,7 +1871,7 @@ CSChangeMateUserState0aa is u16 tl +u8 state and has no lane ACK. Mate equipment
 separate full-item transaction contract. Slave info/equipment Lua uses **X2SiegeWeapon**
 (`GetMountedSiegeWeaponInfo`, `GetVehicleInfo`, `GetSlaveEquipSlotInfo`,
 `PickEquipSlotOfSlave`, `UninstallEquipSlotOfSlave`); this is not an invented X2Slave API.
-Lane slave equipment/repair requests are logging-only stubs, and slave target has no
+Lane slave repair requests are logging-only stubs, and slave target has no
 registered 1.2 opcode. Slave created/removed/despawn/bound/my-slave/escape packets and
 owned-slave state remain subsequent bounded work.
 
@@ -7723,3 +7723,16 @@ character's own shown (active) title. The layouts are the server's (`packets/wor
 * `Appellations` has a revision that the HUD compares to raise its events.
 
 Tests: `cargo test -p aa-net appellation` (6).
+
+## Slave equipment request (`CSChangeSlaveEquipment`, 0x037)
+
+`SlaveCommand::ChangeEquipment(SlaveEquipmentRequest)` writes the 1.2 body the fork server reads
+(`systems/vehicles/packets.rs`): character id `u32`, slave timeline `u16`, db slave id `u32` (0 is
+accepted, the server resolves the slave by timeline), `bts` bool, two full items (template 0 when
+empty; tag 10 ship parts keep their received 12 detail bytes) and four location bytes: bag
+container `2` or slave equipment `0xf2` plus slot, then `0xf2` plus the slave slot (0..26).
+The first item is the bag item to mount (empty to unequip), the second the part already in the
+slave slot. `validate()` rejects zero ids, other containers, slots above 26, no item at all, and
+items without their received detail bytes. The reply `SCSlaveEquipmentChanged` stays an
+`Event::Slave(EquipmentChanged)` (it never touches `Slaves`); the worn parts are the slave unit's
+`equipment.slots` (28 slots cover the 27 slave equip slots), updated by `SCUnitEquipmentsChanged`.

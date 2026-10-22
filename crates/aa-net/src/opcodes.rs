@@ -111,6 +111,7 @@ opcodes! {
         CSBindSlavePacket = 0x031,
         CSDiscardSlavePacket = 0x032,
         CSChangeSlaveNamePacket = 0x034,
+        CSChangeSlaveEquipmentPacket = 0x037,
         CSRepairSingleEquipmentPacket = 0x03c,
         CSRepairAllEquipmentsPacket = 0x03d,
         CSExpandSlotsPacket = 0x041,

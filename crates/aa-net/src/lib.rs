@@ -112,7 +112,7 @@ pub use party::{LootingRule, Party, PartyCommand, PartyEvent, PartyInvite, Party
 pub use repair::{Repair, RepairCommand, RepairEvent, RepairReport, RepairedItem};
 pub use trade::{Trade, TradeCommand, TradeEvent, TradeFailure, TradeOffer};
 pub use slave::{SlaveCreated, SlaveEquipmentChange, SlaveEscape, SlaveEvent, SlavePositionInfo, Slaves};
-pub use slave_control::{SlaveCommand, SlaveItemLocation, SlaveSpawnRequest};
+pub use slave_control::{SlaveCommand, SlaveEquipmentRequest, SlaveItemLocation, SlaveSpawnRequest};
 pub use wire::Pos;
 pub use ui_data::{UiData, UiDataCommand, UiDataEvent, UiDataResponse};
 
