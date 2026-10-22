@@ -61,6 +61,10 @@ pub enum Request {
     HouseBuild,
     /// The original build window's Cancel / Escape (`X2House:PrevStepFromBuildCheck`); placement continues.
     HouseCancel,
+    /// A finished house's maintain window changed something (`X2House:SetHousePermission`, `SetHouseForSale`, ...).
+    House(aa_net::housing::HouseCommand),
+    /// The maintain window's Demolish button (`X2House:Demolish`): cast the world-interaction skill on the house.
+    Demolish { obj_id: u32 },
 }
 
 /// Edge-to-edge distance on the ground plane, the server's `distance_to(..., include_z = false)`:
@@ -916,6 +920,11 @@ pub fn handle_requests(
             Request::Friend(command) => { net.write(NetCommand(Command::Friend(command))); }
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
             Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
+            Request::House(command) => { net.write(NetCommand(Command::House(command))); }
+            Request::Demolish { obj_id } => {
+                net.write(NetCommand(Command::Target { obj_id }));
+                net.write(NetCommand(Command::UseSkill { skill_id: super::house_maintain::DEMOLISH_SKILL, target_obj_id: obj_id }));
+            }
             Request::HouseBuild => {
                 let Some(placement) = placement.as_deref_mut() else {
                     warn!("housing: Build pressed with no placement state");
@@ -1334,6 +1343,41 @@ mod tests {
             }))]
         ), "{commands:?}");
         assert!(app.world().resource::<Placement>().session.as_ref().is_some_and(|s| s.done));
+    }
+
+    #[test]
+    fn the_maintain_window_requests_become_house_packets_and_the_demolish_cast() {
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        {
+            let mut d = bridge.borrow_mut();
+            d.requests.push(Request::House(aa_net::housing::HouseCommand::ChangePermission { tl: 13, permission: 2 }));
+            d.requests.push(Request::Demolish { obj_id: 16211 });
+        }
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge))
+            .init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::ActionBar>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Target>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<aa_net::state::Buffs>()
+            .init_resource::<super::super::usable::InFlight>()
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_message::<crate::ingame::ground_target::SkillPressed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
+            .add_systems(Update, handle_requests);
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|c| c.0).collect();
+        assert!(matches!(
+            &commands[..],
+            [
+                Command::House(aa_net::housing::HouseCommand::ChangePermission { tl: 13, permission: 2 }),
+                Command::Target { obj_id: 16211 },
+                Command::UseSkill { skill_id: 11404, target_obj_id: 16211 },
+            ]
+        ), "{commands:?}");
     }
 
     #[test]

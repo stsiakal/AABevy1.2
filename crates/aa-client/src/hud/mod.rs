@@ -64,6 +64,7 @@ mod formula;
 mod family;
 pub(crate) mod farm;
 pub(crate) mod houses;
+mod house_maintain;
 mod expedition;
 mod friends;
 mod input;
@@ -484,6 +485,7 @@ impl Plugin for HudPlugin {
         store::plugin(app);
         portal::plugin(app);
         doodad::plugin(app);
+        house_maintain::plugin(app);
         app.add_systems(Update, alerts::track_death.before(sync_hud).run_if(crate::ingame::world_screens));
         app.add_systems(Update, skillbook::apply_resets.before(sync_hud).run_if(in_state(Screen::InGame)));
         app.add_systems(Update, skillbook::route_book.after(sync_hud).before(api::handle_requests).run_if(in_state(Screen::InGame)));

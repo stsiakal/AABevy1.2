@@ -10,7 +10,7 @@
 //! `housing_build_steps.skill_id` (the server's `CraftEffect` validates it) and raises `HOUSE_INTERACTION_START`,
 //! which opens the original material/progress window ([`right_click_build`]).
 
-use aa_net::housing::{ConstructHouseTax, HouseSnapshot};
+use aa_net::housing::{ConstructHouseTax, HouseSnapshot, HouseTaxInfo};
 use aa_net::model::UnitKind;
 use aa_net::state::{Player, Target, Units};
 use aa_ui::UiRuntime;
@@ -46,14 +46,27 @@ pub struct HouseState {
     pub owner_id: u32,
     pub name: String,
     pub owner_name: String,
+    /// The house unit's object id (`SCHouseState.obj_id`).
+    pub obj_id: u32,
     /// The wire permission (`HousePermission`: private 0, guild 1, public 2, family 3).
     pub permission: u8,
+    pub allow_recover: bool,
+    /// The asking price in copper (0: not for sale) and the designated buyer.
+    pub sell_price: i32,
+    pub sell_to_name: String,
+    /// The last `SCHouseTaxInfo` for this house.
+    pub tax: Option<HouseTaxInfo>,
 }
 
 impl HouseState {
     pub(super) fn of(snapshot: &HouseSnapshot) -> HouseState {
         HouseState {
+            obj_id: snapshot.obj_id,
             permission: snapshot.permission,
+            allow_recover: snapshot.allow_recover,
+            sell_price: snapshot.sell_price,
+            sell_to_name: snapshot.sell_to_name.clone(),
+            tax: None,
             tl_id: snapshot.tl_id,
             template_id: snapshot.template_id,
             model_id: snapshot.model_id,
@@ -63,6 +76,11 @@ impl HouseState {
             name: snapshot.name.clone(),
             owner_name: snapshot.owner_name.clone(),
         }
+    }
+
+    /// The snapshot plus the received tax answer.
+    pub(super) fn of_house(house: &aa_net::housing::House) -> HouseState {
+        HouseState { tax: house.tax.clone(), ..HouseState::of(&house.snapshot) }
     }
 
     pub fn under_construction(&self) -> bool {
@@ -82,6 +100,8 @@ pub struct HouseView {
     /// The material window is up for [`Self::material_house`].
     pub material_open: bool,
     pub material_house: Option<u32>,
+    /// The maintain window (`ShowHousingMainTainWindow`) is up for this house unit.
+    pub maintain_house: Option<u32>,
     pub tax_item: u32,
 }
 
@@ -119,12 +139,22 @@ pub fn refresh(world: &mut World, data: &mut HudData) {
     data.house.tax_item = TAX_ITEM;
     data.house.quote = world.get_resource::<aa_net::Houses>().and_then(|h| h.construct_quote.clone());
     // keep the selected house while the server has not answered a target change (`Target.obj_id` is None)
-    if let Some(obj) = world.get_resource::<Target>().and_then(|t| t.obj_id) {
+    // (the open maintain window keeps its house when another unit gets targeted)
+    if let Some(obj) = world.get_resource::<Target>().and_then(|t| t.obj_id)
+        && data.house.maintain_house.is_none()
+    {
         data.house.selected = (|| {
             let unit = world.get_resource::<Units>()?.by_id.get(&obj)?;
             let UnitKind::Housing { tl_id, .. } = unit.kind else { return None };
-            world.get_resource::<aa_net::Houses>()?.by_tl_id.get(&tl_id).map(|h| HouseState::of(&h.snapshot))
+            world.get_resource::<aa_net::Houses>()?.by_tl_id.get(&tl_id).map(HouseState::of_house)
         })();
+    }
+    // the selected house follows what the server says about it (permission, sale, tax ...)
+    if let Some(tl_id) = data.house.selected.as_ref().map(|h| h.tl_id)
+        && let Some(house) = world.get_resource::<aa_net::Houses>().and_then(|h| h.by_tl_id.get(&tl_id))
+        && !house.demolished
+    {
+        data.house.selected = Some(HouseState::of_house(house));
     }
 }
 
@@ -148,7 +178,7 @@ pub fn route_build_progress(
             continue;
         }
         if let Some(house) = houses.by_tl_id.get(tl_id) {
-            d.house.selected = Some(HouseState::of(&house.snapshot));
+            d.house.selected = Some(HouseState::of_house(house));
             updated = true;
         }
     }
@@ -199,12 +229,7 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     x2.set(
         "CountTaxItemForTax",
         lua.create_function(move |_, (_this, value): (Table, Value)| {
-            let amount = match value {
-                Value::Integer(n) => n,
-                Value::Number(n) => n as i64,
-                Value::String(s) => s.to_string_lossy().parse::<i64>().unwrap_or(0),
-                _ => 0,
-            };
+            let amount = amount(&value);
             let unit = b
                 .borrow()
                 .game
@@ -295,7 +320,7 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             Ok(b.borrow().house.selected.as_ref().map_or(0, |h| (h.all_actions - h.current_actions).max(0)))
         })?,
     )?;
-    Ok(())
+    super::house_maintain::install(lua, bridge)
 }
 
 /// The construction rows the original material/build views iterate: one per `housing_build_steps` row with the
@@ -316,6 +341,16 @@ fn steps_table(lua: &Lua, game: &super::data::GameData, housing_id: u32) -> mlua
     Ok(out)
 }
 
+/// A number the scripts pass as an integer, a float or the text of an edit box.
+pub(super) fn amount(value: &Value) -> i64 {
+    match value {
+        Value::Integer(n) => *n,
+        Value::Number(n) => *n as i64,
+        Value::String(s) => s.to_string_lossy().trim().parse::<i64>().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// Why the build step skill `skill_id` of `template_id` cannot be cast: the material it consumes
 /// (`skill_effects.consume_item_id`, a soft check on the server) is short in the bag, or the labor (`skills.consume_lp`)
 /// is. The result is a `SkillResult` code and the item the refusal text names, like the original `CanUseSkill`.
@@ -333,7 +368,7 @@ pub(super) fn build_shortfall(
     (i64::from(step.labor) > i64::from(labor)).then_some((super::usable::code::NEED_LABOR_POWER, 0))
 }
 
-fn bag_count(bag: &[Option<SlotSnap>], template: u32) -> i64 {
+pub(super) fn bag_count(bag: &[Option<SlotSnap>], template: u32) -> i64 {
     bag.iter()
         .flatten()
         .filter(|slot| slot.id == template)
@@ -447,6 +482,15 @@ pub fn right_click_build(
         return;
     };
     let mut commands = Vec::new();
+    if !(house.snapshot.current_actions < house.snapshot.all_actions) {
+        // a finished house: the original `HOUSE_INTERACTION_START("housing")` opens the maintain window
+        super::house_maintain::open(unit, house, &bridge.0, rt.as_deref(), &mut commands);
+        info!("housing: right click on unit {obj_id} (tl {tl_id}) opened the maintain window");
+        for command in commands {
+            net.write(aa_net::NetCommand(command));
+        }
+        return;
+    }
     match start_construction(unit, house, &bridge.0, rt.as_deref(), &mut commands) {
         Ok(skill) => {
             info!("housing: right click on unit {obj_id} (tl {tl_id}) opened the material window and cast build skill {skill}");
@@ -572,7 +616,7 @@ pub(super) fn step_skill(game: &super::data::GameData, design: u32, current_acti
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -583,7 +627,7 @@ mod tests {
         Rc::new(RefCell::new(data))
     }
 
-    fn house() -> aa_net::housing::House {
+    pub(in crate::hud) fn house() -> aa_net::housing::House {
         aa_net::housing::House {
             snapshot: HouseSnapshot {
                 tl_id: 13,
@@ -615,7 +659,7 @@ mod tests {
         }
     }
 
-    fn unit() -> aa_net::Unit {
+    pub(in crate::hud) fn unit() -> aa_net::Unit {
         aa_net::Unit {
             obj_id: 16211,
             name: "Scarecrow Garden".into(),
