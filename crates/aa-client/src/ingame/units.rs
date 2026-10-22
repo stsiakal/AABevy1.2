@@ -842,11 +842,10 @@ pub fn move_units(
             } else {
                 Vec2::Y
             };
-            // a creature or mount (not a ship, which only floats) in deep water swims, when its model has the clips
-            let swimming = !unit.character
-                && !floating
-                && ground.zip(water.as_deref()).is_some_and(|(g, w)| w.water_at(Vec3::new(pos.x, pos.y, g + 0.1)).is_some_and(|(surface, _)| surface - g > MOUNT_SWIM_DEPTH));
-            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character, swimming };
+            // a creature, mount or player character (not a ship, which only floats) in deep water swims, when its model has the clips
+            let swimming = !floating
+                && ground.zip(water.as_deref()).is_some_and(|(g, w)| w.water_at(Vec3::new(pos.x, pos.y, g + 0.1)).is_some_and(|(surface, _)| surface - g > MOUNT_SWIM_DEPTH && pos.z < surface));
+            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character && !swimming, swimming };
         }
     }
     if measure {
