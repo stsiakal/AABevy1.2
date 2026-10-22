@@ -34,6 +34,7 @@ fn tooltip(lua: &Lua, data: &HudData, template: u32, grade: u8, item: Option<&It
             aa_net::model::ItemDetail::Equip(d) => (d.temper_physical, d.temper_magical),
             _ => (0, 0),
         },
+        unsecure_time: item.unsecure_time,
     });
     let info = tips::item_tip(
         lua,

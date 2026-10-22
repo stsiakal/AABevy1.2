@@ -57,6 +57,10 @@ pub enum Request {
     Friend(aa_net::friend::FriendCommand),
     Target { obj_id: u32 },
     ItemEffect { character_id: u32, request: aa_net::item_effect::ItemEffectRequest },
+    /// `HUD.secure_item(slot, lock)`: lock or start unlocking the bag item in real slot `slot` (1 based).
+    SecureItem { request: aa_net::secure::ItemSecurityRequest, lock: bool },
+    /// `X2Equipment:SecurityLock` / `SecurityUnlock`: the equipment-wide request.
+    SecureEquipments { lock: bool },
     /// `HUD.request("farm_list")` / `X2.RequestRuntimeCommonFarmDoodadInfo`: ask for `SCResponseCommonFarmList`.
     FarmList,
     /// The original build window's Build button (`X2House:NextStepFromBuildCheck`).
@@ -331,6 +335,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     let frames: Table = lua.load(ROAD_FRAMES_LUA).set_name("@road_frames.lua").eval()?;
     lua.globals().raw_set("HUD_ROAD_FRAMES", frames)?;
     lua.load(INGAME_LUA).set_name("@ingame.lua").exec()?;
+    super::secure::install(lua, &hud, bridge)?;
     crate::login::name_policy::install(lua)?;
     super::cooldown::install(lua, bridge)?;
     install_feature_limits(lua, bridge)?;
@@ -397,6 +402,8 @@ fn install_feature_limits(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             out.set("taxItem", true)?;
             // the server serves the auction house only at an auctioneer: no remote button
             out.set("hudAuctionButton", false)?;
+            // the bag's four-button lock window (item_lock.alb, sort_bag.alb:281-347)
+            out.set("itemSecure", true)?;
             Ok(out)
         })?,
     )
@@ -963,6 +970,8 @@ pub fn handle_requests(
             Request::Friend(command) => { net.write(NetCommand(Command::Friend(command))); }
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
             Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
+            Request::SecureItem { request, lock } => { net.write(NetCommand(Command::ItemSecurity { request, lock })); }
+            Request::SecureEquipments { lock } => { net.write(NetCommand(Command::EquipmentsSecurity { lock })); }
             Request::House(command) => { net.write(NetCommand(Command::House(command))); }
             Request::Demolish { obj_id } => {
                 net.write(NetCommand(Command::Target { obj_id }));
@@ -1262,7 +1271,7 @@ mod tests {
         lua.load("X2Player={GetFeatureSet=function()return{levelLimit=false,mateLevelLimit=false,premium=false}end}").exec()?;
         let bridge = Rc::new(RefCell::new(HudData::default()));
         install_feature_limits(&lua, &bridge)?;
-        lua.load("local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==0 and f.premium==false and f.taxItem==true)").exec()?;
+        lua.load("local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==0 and f.premium==false and f.taxItem==true and f.itemSecure==true)").exec()?;
         bridge.borrow_mut().feature_limits = (Some(55), Some(50));
         lua.load(
             "local f=X2Player:GetFeatureSet();assert(f.levelLimit==55 and f.mateLevelLimit==50)",

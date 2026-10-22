@@ -54,6 +54,8 @@ pub struct SlotSnap {
     pub dur: Option<u8>,
     pub temper: (u16, u16),
     pub flags: Option<u8>,
+    /// Item instances: the end of a pending 600 s unlock (Unix seconds, 0 = none).
+    pub unsecure_time: i64,
     /// Action bar slots that cannot be used now (the icon goes dark, the hotkey red): the skill result that refuses them
     /// (`usable::code`), `None` when the slot is lit.
     pub blocked: Option<u8>,
@@ -162,6 +164,7 @@ pub(in crate::hud) fn item_slot(game: Option<&GameData>, template: u32, count: i
         dur: None,
         temper: (0, 0),
         flags: None,
+        unsecure_time: 0,
         blocked: None,
     }
 }
@@ -175,6 +178,7 @@ impl SlotSnap {
             self.temper = (d.temper_physical, d.temper_magical);
         }
         self.flags = Some(it.flags);
+        self.unsecure_time = it.unsecure_time;
         self
     }
 }
@@ -208,6 +212,7 @@ pub(in crate::hud) fn skill_slot(game: Option<&GameData>, skills: Option<&Skills
         dur: None,
         temper: (0, 0),
         flags: None,
+        unsecure_time: 0,
         blocked: None,
     }
 }
@@ -395,6 +400,9 @@ pub(in crate::hud) fn slot_table(lua: &Lua, s: &SlotSnap) -> mlua::Result<Table>
     t.raw_set("tm", i64::from(s.temper.1))?;
     if let Some(f) = s.flags {
         t.raw_set("fl", i64::from(f))?;
+    }
+    if s.unsecure_time != 0 {
+        t.raw_set("un", s.unsecure_time)?;
     }
     if let Some(b) = s.blocked {
         t.raw_set("blocked", i64::from(b))?;
