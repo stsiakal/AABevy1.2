@@ -1238,6 +1238,39 @@ mod attach_tests {
     }
 
     #[test]
+    fn the_mount_controller_is_announced_at_its_start_and_its_end() {
+        let mut flow = MountFlow::default();
+        flow.begin(5, 1, 1);
+        assert_eq!(flow.announce, [controller_kind::MOUNT_HORSE]);
+        let mut facing = 0.0;
+        flow.steer(Vec3::ZERO, &mut facing, true);
+        assert!(!flow.active());
+        assert_eq!(flow.announce, [controller_kind::MOUNT_HORSE, controller_kind::NONE]);
+        flow.steer(Vec3::ZERO, &mut facing, true);
+        assert_eq!(flow.announce.len(), 2, "an idle flow reports nothing");
+    }
+
+    #[test]
+    fn the_unmount_controller_lasts_500_ms_for_reason_9_and_continues_a_dismiss_after_1_s_for_reason_10() {
+        let mut flow = MountFlow::default();
+        flow.start_unmount(9, None);
+        assert_eq!(flow.announce, [controller_kind::UNMOUNT_HORSE]);
+        assert!(flow.tick_unmount(10.0).is_none());
+        assert!(flow.tick_unmount(10.4).is_none());
+        assert!(flow.tick_unmount(10.5).is_none());
+        assert_eq!(flow.announce, [controller_kind::UNMOUNT_HORSE, controller_kind::NONE]);
+        let dismiss = Command::Mate(aa_net::mate::MateCommand::Dismiss { tl_id: 3 });
+        flow.start_unmount(10, None);
+        flow.start_unmount(10, Some(dismiss));
+        assert_eq!(flow.announce.len(), 3, "a running controller is not started twice");
+        assert!(flow.tick_unmount(20.0).is_none());
+        assert!(matches!(flow.tick_unmount(21.0), Some(Command::Mate(aa_net::mate::MateCommand::Dismiss { tl_id: 3 }))));
+        assert_eq!(flow.announce.last(), Some(&controller_kind::NONE));
+        flow.start_unmount(3, None);
+        assert_eq!(flow.announce.len(), 4, "other reasons have no controller");
+    }
+
+    #[test]
     fn the_attach_reason_picks_the_side_until_the_detach() {
         let mut app = app();
         app.world_mut().write_message(NetEvent(Event::UnitAttached { obj_id: 7, mount: 90, point: 1, reason: 2 }));
