@@ -311,11 +311,15 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
 
 ## 5. Gaps vs Bevy (ranked)
 
-1. **No action-bar pages.** Original has 4 pages, a 1-based Lua page API and `ACTION_BAR_PAGE_CHANGED`
-   (`FUN_393f6910`, `FUN_3943f8a0`). Bevy's `aa-ui/src/lua/stubs.rs:367` (`GetActionBarPage`) and
-   `:1554` (`SetActionBarPage`) are nil stubs and `aa-net::ActionBar` has only the flat 85 slots
-   (`aa-net/src/items.rs:121`). Fix: expose page state, map page N to slot offset, fire the event, and
-   send the same `CSUpdateActionSlot` when a page's slot changes.
+1. **Action-bar pages - done in `88945c4`.** Original has 4 pages, a 1-based Lua page API and
+   `ACTION_BAR_PAGE_CHANGED` (`FUN_393f6910`, `FUN_3943f8a0`). `aa-net::ActionBar` now carries the
+   0-based page, maps the main 12 slots per page (0, 48, 60, 72; `FUN_392c5a50`) and the sub bars
+   stay at 12..23; the real `GetActionBarPage`/`SetActionBarPage`, Shift+Up/Down page keys, the event
+   and the page-aware `CSUpdateActionSlot` are wired in `aa-client`. Original gap text: Bevy's
+   `aa-ui/src/lua/stubs.rs:367` (`GetActionBarPage`) and `:1554` (`SetActionBarPage`) were nil stubs
+   and `aa-net::ActionBar` had only the flat 85 slots (`aa-net/src/items.rs:121`). Fix: expose page
+   state, map page N to slot offset, fire the event, and send the same `CSUpdateActionSlot` when a
+   page's slot changes.
 2. **Target combat state is hardcoded off.** Original `target.alb:543` calls
    `UnitCombatState("target")`; Bevy writes `in_combat:false` for every target
    (`aa-client/src/hud/panels.rs:488`). Fix: carry `SCCombatEngaged/Cleared` per unit and return it.
