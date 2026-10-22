@@ -169,6 +169,7 @@ pub fn route_build_progress(
     let Some(rt) = rt else { return };
     let Some(houses) = houses else { return };
     let mut updated = false;
+    let mut finished = false;
     for aa_net::NetEvent(event) in events.read() {
         let aa_net::Event::Housing(aa_net::housing::HousingEvent::BuildProgress { tl_id, .. }) = event else {
             continue;
@@ -178,12 +179,24 @@ pub fn route_build_progress(
             continue;
         }
         if let Some(house) = houses.by_tl_id.get(tl_id) {
-            d.house.selected = Some(HouseState::of_house(house));
-            updated = true;
+            let state = HouseState::of_house(house);
+            // the last step is done: the construction window has nothing left to show (`HOUSE_INTERACTION_END`
+            // hides it, the maintain window takes over on the next interaction)
+            if state.under_construction() {
+                updated = true;
+            } else {
+                d.house.material_open = false;
+                d.house.material_house = None;
+                finished = true;
+            }
+            d.house.selected = Some(state);
         }
     }
-    if updated {
-        rt.fire_event("HOUSE_STEP_INFO_UPDATED", ());
+    if finished {
+        rt.fire_event("HOUSE_INTERACTION_END", ());
+    } else if updated {
+        // `housing_manager.alb` takes the window kind as its argument: anything but "housing" is the shipyard's
+        rt.fire_event("HOUSE_STEP_INFO_UPDATED", "housing");
     }
 }
 
@@ -320,6 +333,12 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             Ok(b.borrow().house.selected.as_ref().map_or(0, |h| (h.all_actions - h.current_actions).max(0)))
         })?,
     )?;
+    // the shipyard variants of the progress getters (`material.alb` `GetShipyardProgressInfo` subtracts them): the client
+    // has no shipyard construction yet, so they report an empty one instead of nothing
+    x2.set("GetShipyardBaseProgress", lua.create_function(|_, _this: Table| Ok(0))?)?;
+    x2.set("GetShipyardRemainProgress", lua.create_function(|_, _this: Table| Ok(0))?)?;
+    x2.set("GetShipyardOwnerName", lua.create_function(|_, _this: Table| Ok(String::new()))?)?;
+    x2.set("GetShipyardConstructionStepInfo", lua.create_function(|lua, _this: Table| lua.create_table())?)?;
     super::house_maintain::install(lua, bridge)
 }
 
@@ -542,7 +561,10 @@ pub(super) fn open_material_window(rt: &UiRuntime) {
     rt.fire_event("HOUSE_INTERACTION_START", "housing");
     // `ShowMaterialWindow(true)` creates the original window but leaves it hidden in the 1.2 script;
     // the retail interaction shows it, so raise the already populated window.
-    if let Err(e) = rt.exec("@house_interaction", "if housing.materialWindow then housing.materialWindow:Show(true) end") {
+    // The 1.2 script fills the window (title, materials, progress, labor) in `UpdateHousingMaterialInfo`, which its
+    // `HOUSE_INTERACTION_START` handler only reaches for a castle: the engine asks for it for a house under construction.
+    let show = "if housing.materialWindow then         if X2House:IsHouseUnderConstruction() and UpdateHousingMaterialInfo then UpdateHousingMaterialInfo() end         housing.materialWindow:Show(true) end";
+    if let Err(e) = rt.exec("@house_interaction", show) {
         warn!("housing: cannot show the material window: {e}");
     }
 }
@@ -771,7 +793,16 @@ pub(super) mod tests {
         };
         let (unit, house) = (unit(), house());
         let mut commands = Vec::new();
+        rt.lua
+            .load("FILLED = 0; local f = UpdateHousingMaterialInfo; UpdateHousingMaterialInfo = function(...) FILLED = FILLED + 1; return f(...) end")
+            .exec()
+            .unwrap();
         let skill = start_construction(&unit, &house, &bridge, Some(&rt), &mut commands).expect("construction starts");
+        assert_eq!(rt.lua.load("return FILLED").eval::<i64>().unwrap(), 1, "the window is filled by the original script");
+        // the progress event of the original handler (`HOUSE_STEP_INFO_UPDATED("housing")`) and the shipyard getters raise no error
+        let (ok, error): (bool, Option<String>) =
+            rt.lua.load("return pcall(function() housing.materialWindow:UpdateStepInfo('housing'); GetShipyardProgressInfo() end)").eval().unwrap();
+        assert!(ok, "{error:?}");
         assert_eq!(skill, 18553);
         assert!(matches!(
             commands.as_slice(),
