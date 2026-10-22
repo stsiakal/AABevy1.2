@@ -409,6 +409,35 @@ impl Session {
         self.locked()
     }
 
+    /// Retail `FUN_39331760` (back / right click) for a house or farm: a pending quote goes back to the rotation,
+    /// the rotation goes back to free placement (the spot unlocks). `false` when there is no step back (free
+    /// placement, or a seed): the click cancels the placement.
+    pub fn step_back(&mut self) -> bool {
+        if !self.is_house() {
+            return false;
+        }
+        if self.quote_requested {
+            self.quote_requested = false;
+            self.quote = None;
+            self.rotating = true;
+            true
+        } else if self.rotating {
+            self.rotating = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The Start Construction popup's Cancel (retail `FUN_39017220`): the builder steps back to the rotation, not to
+    /// free placement; the spot stays locked.
+    pub fn cancel_popup(&mut self) {
+        self.window_open = false;
+        self.quote_requested = false;
+        self.quote = None;
+        self.rotating = true;
+    }
+
     pub fn new(item_id: u64, plant: Plantable, yaw: f32) -> Session {
         Session {
             item_id,
@@ -1601,7 +1630,9 @@ fn input(
     let right_click = mouse.just_pressed(MouseButton::Right);
     if right_click {
         mouse.clear_just_pressed(MouseButton::Right);
-        cancel = true;
+        if !session.step_back() {
+            cancel = true;
+        }
     }
     let left_down = mouse.pressed(MouseButton::Left);
     let left_just = mouse.just_pressed(MouseButton::Left);
@@ -2677,5 +2708,47 @@ mod tests {
         assert_eq!(builder_step(Some(&session)), Some("rotation"));
         assert_eq!(builder_step(Some(&Session::new(2, plant(), 0.0))), None);
         assert_eq!(builder_step(None), None);
+    }
+
+    /// Retail `FUN_39331760`: right click steps back (rotation -> position), and cancels from position.
+    #[test]
+    fn right_click_steps_back_one_state_and_cancels_from_the_first() {
+        let mut app = house_app();
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).rotating);
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_some(), "rotation steps back, it does not cancel");
+        assert!(!session_of(&app).locked(), "back in free placement: the spot is unlocked");
+        // a pending quote steps back to the rotation
+        click(&mut app, MouseButton::Left);
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).quote_requested);
+        click(&mut app, MouseButton::Right);
+        assert!(session_of(&app).rotating && !session_of(&app).quote_requested);
+        click(&mut app, MouseButton::Right);
+        assert!(!session_of(&app).locked());
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_none(), "free placement: right click cancels");
+        // a seed has no step to go back to
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        app.insert_resource(Placement { session: Some(seed), ..Default::default() });
+        app.update();
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_none());
+    }
+
+    /// The popup's Cancel button (`Request::HouseCancel`) returns to the rotation, not to free placement.
+    #[test]
+    fn popup_cancel_returns_to_the_rotation() {
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.rotating = true;
+        session.quote_requested = true;
+        session.window_open = true;
+        session.cancel_popup();
+        assert!(session.rotating && session.locked() && !session.quote_requested && !session.window_open);
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        assert!(session.step_back(), "the next right click goes on to free placement");
+        assert!(!session.locked());
     }
 }

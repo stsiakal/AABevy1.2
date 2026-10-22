@@ -961,9 +961,7 @@ pub fn handle_requests(
                 if session.window_open {
                     info!("housing: build window cancelled; the placement stays");
                 }
-                session.window_open = false;
-                session.quote_requested = false;
-                session.quote = None;
+                session.cancel_popup();
             }
             Request::ItemEffect { character_id, request } => {
                 // The typed request was captured by the original enchant API.
