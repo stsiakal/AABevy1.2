@@ -129,6 +129,14 @@ pub enum ClientMsg {
     Bank(crate::bank::BankCommand),
     SetAutoUseAaPoint(bool),
     UnpackItem(crate::unpack::UnpackItemRequest),
+    /// `CSItemSecure`: lock the bag/bank/equipment item named by the request.
+    ItemSecure(crate::secure::ItemSecurityRequest),
+    /// `CSItemUnsecure`: start the 600 s unlock of the named item.
+    ItemUnsecure(crate::secure::ItemSecurityRequest),
+    /// `CSEquipmentsSecure`: lock every worn item (empty body).
+    EquipmentsSecure,
+    /// `CSEquipmentsUnsecure`: start unlocking every worn item (empty body).
+    EquipmentsUnsecure,
     Expedition(crate::ExpeditionCommand),
     Family(crate::FamilyCommand),
     /// Native automatic response to a genuine server SummonJury; not a user invitation choice.
@@ -221,6 +229,10 @@ impl ClientMsg {
             Self::Bank(m) => m.opcode(),
             Self::SetAutoUseAaPoint(_) => cs::CSChangeAutoUseAAPointPacket,
             Self::UnpackItem(_) => cs::CSThisTimeUnpackItemPacket,
+            Self::ItemSecure(_) => cs::CSItemSecurePacket,
+            Self::ItemUnsecure(_) => cs::CSItemUnsecurePacket,
+            Self::EquipmentsSecure => cs::CSEquipmentsSecurePacket,
+            Self::EquipmentsUnsecure => cs::CSEquipmentsUnsecurePacket,
             Self::Expedition(command) => command.opcode(),
             Self::Family(command) => command.opcode(),
             Self::JurySummoned{..} => cs::CSJurySummonedPacket,
@@ -347,6 +359,8 @@ impl ClientMsg {
             Self::Bank(m) => m.write(&mut w),
             Self::SetAutoUseAaPoint(value) => { w.bool(*value); },
             Self::UnpackItem(request) => request.write(&mut w),
+            Self::ItemSecure(request) | Self::ItemUnsecure(request) => request.write(&mut w),
+            Self::EquipmentsSecure | Self::EquipmentsUnsecure => {}
             Self::Expedition(command) => command.write(&mut w),
             Self::Family(command) => command.write(&mut w),
             Self::JurySummoned{trial_id,court,jury_number} => {w.u32(*trial_id).i32(*court).i32(*jury_number);},

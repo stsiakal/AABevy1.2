@@ -295,6 +295,10 @@ pub enum Command {
     SetAutoUseAaPoint(bool),
     ItemEffect { character_id:u32, request:crate::item_effect::ItemEffectRequest },
     UnpackItem(crate::unpack::UnpackItemRequest),
+    /// Item security lock / unlock. `lock` selects `CSItemSecure` or `CSItemUnsecure`.
+    ItemSecurity { request: crate::secure::ItemSecurityRequest, lock: bool },
+    /// Equipment-wide security lock / unlock (empty packet bodies).
+    EquipmentsSecurity { lock: bool },
     /// Captured persistent character identity is local-only, never part of the wire body.
     Expedition { character_id: u32, command: crate::ExpeditionCommand },
     /// Captured persistent character identity is local-only, never part of the Family wire body.
@@ -644,6 +648,11 @@ pub enum Event {
     FamilyRequestRejected { character_id: u32, command: crate::FamilyCommand, message: String },
     UnpackItemRequested(crate::unpack::UnpackItemRequest),
     UnpackItemRequestRejected { request:crate::unpack::UnpackItemRequest,message:String },
+    /// A lock (`lock` true) or unlock request was written to the socket.
+    ItemSecurityRequested { request: crate::secure::ItemSecurityRequest, lock: bool },
+    ItemSecurityRequestRejected { request: crate::secure::ItemSecurityRequest, lock: bool, message: String },
+    EquipmentsSecurityRequested { lock: bool },
+    EquipmentsSecurityRequestRejected { lock: bool, message: String },
     Actability(crate::actability::ActabilityEvent),
     CraftFailureNotice(crate::craft::CraftFailureNotice),
     InitialConfig(crate::initial_config::InitialConfig),
@@ -1308,6 +1317,25 @@ impl Session {
                 if let Some(message)=invalid {self.emit(Event::UnpackItemRequestRejected{request,message:message.into()});}
                 else if self.send_game(game::ClientMsg::UnpackItem(request)).await {self.emit(Event::UnpackItemRequested(request));}
                 else {self.emit(Event::UnpackItemRequestRejected{request,message:"unpack request was not sent".into()});}
+            }
+            Command::ItemSecurity { request, lock } => {
+                let invalid=if self.phase!=Phase::InWorld || self.selected==0 {Some("item security requires an active selected character")}
+                    else {request.recheck(&self.received_inventory.borrow()).err()};
+                if let Some(message)=invalid {self.emit(Event::ItemSecurityRequestRejected{request,lock,message:message.into()});}
+                else {
+                    let message=if lock {game::ClientMsg::ItemSecure(request)} else {game::ClientMsg::ItemUnsecure(request)};
+                    if self.send_game(message).await {self.emit(Event::ItemSecurityRequested{request,lock});}
+                    else {self.emit(Event::ItemSecurityRequestRejected{request,lock,message:"item security request was not sent".into()});}
+                }
+            }
+            Command::EquipmentsSecurity { lock } => {
+                if self.phase!=Phase::InWorld || self.selected==0 {
+                    self.emit(Event::EquipmentsSecurityRequestRejected{lock,message:"equipment security requires an active selected character".into()});
+                } else {
+                    let message=if lock {game::ClientMsg::EquipmentsSecure} else {game::ClientMsg::EquipmentsUnsecure};
+                    if self.send_game(message).await {self.emit(Event::EquipmentsSecurityRequested{lock});}
+                    else {self.emit(Event::EquipmentsSecurityRequestRejected{lock,message:"equipment security request was not sent".into()});}
+                }
             }
             Command::SetAutoUseAaPoint(value) => {
                 if self.phase != Phase::InWorld {
@@ -2798,6 +2826,41 @@ mod tests {
         session.game.as_mut().unwrap().shutdown().await;
         session.command(Command::UnpackItem(request)).await;
         let mut rejected=false;while let Ok(e)=events.try_recv(){if matches!(e,Event::UnpackItemRequestRejected{..}){rejected=true}assert!(!matches!(e,Event::UnpackItemRequested(_)));}assert!(rejected);
+    }
+
+    #[tokio::test]
+    async fn item_security_commands_recheck_the_live_item_and_write_native_bodies() {
+        use crate::{items::{ItemTask,ItemTasks},model::Item,secure::ItemSecurityRequest};
+        let (evt,mut events)=unbounded_channel();let mut session=Session::new(evt,ClientOptions::default());
+        let request=ItemSecurityRequest::new(2,0,55).unwrap();
+        session.command(Command::ItemSecurity{request,lock:true}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::ItemSecurityRequestRejected{request:actual,lock:true,..}) if actual==request));
+        session.command(Command::EquipmentsSecurity{lock:false}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::EquipmentsSecurityRequestRejected{lock:false,..})));
+        session.phase=Phase::InWorld;session.selected=42;
+        session.emit(Event::InventoryInit{bag_slots:1,bank_slots:0});while events.try_recv().is_ok(){}
+        session.command(Command::ItemSecurity{request,lock:false}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::ItemSecurityRequestRejected{request:actual,lock:false,..}) if actual==request));
+        let add=ItemTasks{reason:114,tasks:vec![ItemTask::Add{ raw_detail_block: None,action:1,container:2,slot:0,item:Item{id:55,template_id:99,..Default::default()}}],..Default::default()};
+        session.emit(Event::ItemsChanged(add));while events.try_recv().is_ok(){}
+        let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap().to_string();
+        let(connection,accepted)=tokio::join!(GameConn::connect(&addr),listener.accept());let(mut peer,_)=accepted.unwrap();session.game=Some(connection.unwrap());
+        session.command(Command::ItemSecurity{request,lock:true}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::ItemSecurityRequested{request:actual,lock:true}) if actual==request));
+        let mut length=[0;2];peer.read_exact(&mut length).await.unwrap();let mut frame=vec![0;u16::from_le_bytes(length) as usize];peer.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame[4..6],&[0x4a,0]);
+        assert_eq!(&frame[6..],&[0,2,0,0,55,0,0,0,0,0,0,0]);
+        session.command(Command::ItemSecurity{request,lock:false}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::ItemSecurityRequested{request:actual,lock:false}) if actual==request));
+        let mut length=[0;2];peer.read_exact(&mut length).await.unwrap();let mut frame=vec![0;u16::from_le_bytes(length) as usize];peer.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame[4..6],&[0x4b,0]);
+        assert_eq!(&frame[6..],&[0,2,0,0,55,0,0,0,0,0,0,0]);
+        session.command(Command::EquipmentsSecurity{lock:true}).await;
+        assert!(matches!(events.try_recv(),Ok(Event::EquipmentsSecurityRequested{lock:true})));
+        let mut length=[0;2];peer.read_exact(&mut length).await.unwrap();let mut frame=vec![0;u16::from_le_bytes(length) as usize];peer.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame[4..6],&[0x4c,0]);
+        assert_eq!(&frame[6..],&[] as &[u8]);
+        session.game.as_mut().unwrap().shutdown().await;
     }
 
     #[tokio::test]
