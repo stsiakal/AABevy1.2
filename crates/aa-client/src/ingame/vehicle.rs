@@ -261,7 +261,7 @@ pub fn drive_vehicle(
     unit.facing = drive.facing;
     *transform = placement(pos, drive.facing, unit.scale());
     if let Some(mut m) = motion {
-        *m = Motion { speed: actual.length(), local_dir: Vec2::Y, airborne: false };
+        *m = Motion { speed: actual.length(), local_dir: Vec2::Y, airborne: false, swimming: false };
     }
     let turned = (drive.facing - before_facing).abs() > 1e-4;
     *input_state = PlayerInput { moving, jumped: false, turned };

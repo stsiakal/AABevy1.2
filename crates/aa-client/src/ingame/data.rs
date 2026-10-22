@@ -342,9 +342,20 @@ impl Db {
                     .ok()
                     .flatten();
                 raw.as_deref().and_then(model_file)
+            })
+            .or_else(|| {
+                // a ship (`ShipModel`, 26 slave models): the hull brush of the `ship_models.normal` prefab
+                let parts = ship_parts_of(&l.conn, model_id);
+                parts.iter().find(|p| p.is_hull()).or(parts.first()).map(|p| p.path.clone())
             });
         l.actor_files.insert(model_id, file.clone());
         file
+    }
+
+    /// The brushes a ship model is drawn from (hull, rudder, cannons, cargo), empty for a model that is not a ship.
+    pub fn ship_parts(&self, model_id: u32) -> Vec<ShipPart> {
+        let l = self.lookups.lock().unwrap();
+        ship_parts_of(&l.conn, model_id)
     }
 
     /// The clip (`.cal` entry name, lower case) of an animation action (`anim_actions.anim_name`): the idle pose of an NPC.
@@ -788,6 +799,72 @@ fn prefab_effects_of(path: &str) -> Vec<aa_world::placement::PlacedEffect> {
     aa_world::placement::parse_effect_entities(export).into_iter().filter(|e| !e.effect.to_ascii_lowercase().starts_with("x2_sounds.")).collect()
 }
 
+/// One static brush of a ship's prefab (`ship_models.normal`): the hull, rudder, cannons, cargo. Positions are
+/// relative to the ship's origin, cry space.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipPart {
+    pub name: String,
+    /// Pak path of the `.cgf`, lower case.
+    pub path: String,
+    pub pos: Vec3,
+    /// Cry space (`Rotate="w,x,y,z"` in the file).
+    pub rot: Quat,
+    pub scale: Vec3,
+}
+
+impl ShipPart {
+    /// The ship's body brush (`galleon_body.cgf`, named `body`).
+    pub fn is_hull(&self) -> bool {
+        self.name == "body" || self.path.ends_with("_body.cgf")
+    }
+}
+
+/// The static brushes of the prefab at `path` (`prefab://prefabs/galleon.xml/galleon.step_10galleon_normal`).
+fn prefab_brushes(path: &str) -> Vec<ShipPart> {
+    let Some((file, name)) = path.strip_prefix("prefab://").and_then(|r| r.rsplit_once('/')) else { return Vec::new() };
+    let Ok(xml) = aa_pak::Pak::global().read_string(&norm(file)) else { return Vec::new() };
+    // the slave table and the prefab file disagree on case
+    let Some(from) = xml.to_ascii_lowercase().find(&format!("<prefab name=\"{}\"", name.to_ascii_lowercase())) else { return Vec::new() };
+    let tail = &xml[from..];
+    let prefab = &tail[..tail.find("</Prefab>").map_or(tail.len(), |e| e + "</Prefab>".len())];
+    parse_prefab_brushes(prefab)
+}
+
+fn parse_prefab_brushes(prefab: &str) -> Vec<ShipPart> {
+    let Ok(doc) = roxmltree::Document::parse(prefab) else { return Vec::new() };
+    let floats = |s: Option<&str>| -> Vec<f32> { s.map(|s| s.split(',').filter_map(|v| v.trim().parse().ok()).collect()).unwrap_or_default() };
+    let mut out = Vec::new();
+    for o in doc.descendants().filter(|n| n.has_tag_name("Object") && n.attribute("Type") == Some("Brush")) {
+        let Some(model) = o.attribute("Prefab").map(norm).filter(|m| m.ends_with(".cgf")) else { continue };
+        let pos = match floats(o.attribute("Pos"))[..] {
+            [x, y, z] => Vec3::new(x, y, z),
+            _ => Vec3::ZERO,
+        };
+        let rot = match floats(o.attribute("Rotate"))[..] {
+            [w, x, y, z] => Quat::from_xyzw(x, y, z, w).normalize(),
+            _ => Quat::IDENTITY,
+        };
+        let scale = match floats(o.attribute("Scale"))[..] {
+            [x, y, z] => Vec3::new(x, y, z),
+            _ => Vec3::ONE,
+        };
+        out.push(ShipPart { name: o.attribute("Name").unwrap_or_default().to_string(), path: model, pos, rot, scale });
+    }
+    out
+}
+
+fn ship_parts_of(conn: &Connection, model_id: u32) -> Vec<ShipPart> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT h.normal FROM models m JOIN ship_models h ON h.id = m.sub_id AND m.sub_type = 'ShipModel' WHERE m.id = ?1",
+            params![model_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten();
+    raw.map(|r| prefab_brushes(r.trim())).unwrap_or_default()
+}
+
 /// The model file of a prefab element path (`prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02`): the
 /// prefab's first static `Brush` (`Prefab="...cgf"`, the houses / farms) or, for an effect-only prefab, its first
 /// `object_Model`.
@@ -926,6 +1003,56 @@ mod tests {
         let Some(db) = Db::open() else { return };
         let file = db.actor_model_file(1008).expect("the Farm Wagon body");
         assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
+    }
+
+    /// Every `ShipModel` draws a hull: model 393 (the galleon / clipper line) resolves to a body file.
+    #[test]
+    fn a_ship_model_resolves_to_its_hull_body() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let file = db.actor_model_file(393).expect("the galleon hull");
+        assert!(file.ends_with("galleon_body.cgf"), "{file}");
+        let parts = db.ship_parts(393);
+        assert!(parts.len() > 5 && parts.iter().any(|p| p.path.ends_with("galleon_rudder.cgf")), "{} parts", parts.len());
+        assert!(parts.iter().all(|p| aa_pak::Pak::global().exists(&p.path)), "a part is missing from the pak");
+    }
+
+    /// The Eznan Cutter (slave 21, model 393): the authored driver seat sits on the drawn deck, next to the helm chair
+    /// brush of the hull prefab, so a seated player is within 2 m of the deck and the hull root is not 24 m below it.
+    #[test]
+    fn the_cutter_seat_is_on_its_drawn_deck() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let seat = db.seat(393, 1);
+        let chair = db.ship_parts(393).into_iter().find(|p| p.name.starts_with("ndeco_cookstore_chair")).expect("the helm chair brush");
+        assert!((seat.local[2] - chair.pos.z).abs() < 2.0, "seat {:?} chair {:?}", seat.local, chair.pos);
+        assert!(Vec2::new(seat.local[0], seat.local[1]).distance(Vec2::new(chair.pos.x, chair.pos.y)) < 2.0, "seat {:?} chair {:?}", seat.local, chair.pos);
+        // the deck the walking player stands on is the same height
+        assert!((db.ship_body(393).deck - chair.pos.z).abs() < 2.0);
+    }
+
+    /// The ship slave models draw a hull. Three have no prefab in the 1.2 pak, so the original draws nothing for them
+    /// either: 512 (`galleon02.xml` is not shipped) and the sunken wrecks 1386 / 1402 (`boxship_old_normal_6f` / `_2f`
+    /// are not in `boxship_old.xml`).
+    #[test]
+    fn every_ship_model_has_a_hull() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let ids: Vec<u32> = {
+            let l = db.lookups.lock().unwrap();
+            let mut st = l.conn.prepare("SELECT id FROM models WHERE sub_type = 'ShipModel'").unwrap();
+            st.query_map([], |r| r.get::<_, u32>(0)).unwrap().map(Result::unwrap).collect()
+        };
+        assert!(!ids.is_empty());
+        let mut missing: Vec<u32> = ids.into_iter().filter(|id| db.actor_model_file(*id).is_none()).collect();
+        missing.sort_unstable();
+        assert_eq!(missing, [512, 1386, 1402], "ship models without a hull");
     }
 
     #[test]

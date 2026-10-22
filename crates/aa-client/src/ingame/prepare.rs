@@ -41,6 +41,8 @@ pub enum UnitBuild {
     },
     /// A monster / NPC model of its own (`.cdf`, `.chr`, `.cgf`).
     Creature { file: String, cdf: Option<Box<aa_anim::Cdf>>, models: Vec<PreparedModel> },
+    /// A ship: the static brushes of its prefab (hull, rudder, cannons, cargo), each at its place on the ship.
+    Ship { parts: Vec<super::data::ShipPart>, models: Vec<PreparedModel> },
     /// Particle effects only (a prefab model without a model, the summoned portal gates), positions relative to the unit.
     Effects(Vec<aa_world::placement::PlacedEffect>),
     /// Nothing we can draw, and why (logged once by [`super::units`]).
@@ -73,6 +75,17 @@ pub fn humanoid_of_file(file: &str) -> Option<(Race, Gender)> {
 /// Prepares the models of `unit`; callable from any thread.
 pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Unit) -> UnitBuild {
     let _t = aa_cry::prof::scope("unit.prepare");
+    if db.is_ship(unit.model_id) {
+        let parts = db.ship_parts(unit.model_id);
+        if !parts.is_empty() {
+            let mut paths = parts.iter().map(|p| p.path.as_str()).collect::<Vec<_>>();
+            paths.sort_unstable();
+            paths.dedup();
+            let options = ModelOptions::default();
+            let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
+            return UnitBuild::Ship { parts, models };
+        }
+    }
     let file = db.actor_model_file(unit.model_id);
     let humanoid = match unit.kind {
         UnitKind::Character { .. } => appearance::race_gender(unit.model_id, unit.race(), unit.gender()),

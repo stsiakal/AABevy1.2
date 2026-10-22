@@ -622,7 +622,7 @@ pub fn control_player(
         *local_jump = jump_now;
     }
     // the swim clips are driven by `swim::drive_swim`; the locomotion sees a character standing still
-    *motion = if swimming { Motion::default() } else { Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne } };
+    *motion = if swimming { Motion::default() } else { Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: false } };
     let turned = (mover.facing - before_facing).abs() > 1e-4;
     let input = PlayerInput { moving, jumped, turned };
     if *input_state != input {

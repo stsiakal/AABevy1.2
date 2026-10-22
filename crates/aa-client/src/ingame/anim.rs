@@ -108,6 +108,10 @@ pub struct ClipSet {
     walk_clip_speed: f32,
     /// The combat stances, bound when a unit first fights in one.
     stances: Arc<[OnceLock<Arc<StanceClips>>; 5]>,
+    /// The swim idle and forward swim (`fist_ba_idle_swim`, `fist_mo_swim_f`) of a model that has them (mounts and creatures in
+    /// deep water; the local player's own swim is [`super::swim`]).
+    swim_idle: Option<BoundClip>,
+    swim_f: Option<BoundClip>,
 }
 
 /// The stance a unit fights in, from the weapon it holds: its idle and run clips are `<prefix>_ba_combat_idle` and
@@ -247,7 +251,8 @@ impl ClipSet {
         let run_clip_speed = run[0].as_ref().map_or(0.0, |c| ground_speed(rig, c));
         let walk_clip_speed = walk[0].as_ref().map_or(0.0, |c| ground_speed(rig, c));
         let sprint = SprintClips::load(rig, &cal, clips, "fist_mo_normal_run");
-        let set = ClipSet { cal, idle, upper: BoneMask::upper_body(rig), run, walk, sprint, jump, jumps: Default::default(), run_clip_speed, walk_clip_speed, stances: Default::default() };
+        let (swim_idle, swim_f) = (bind("fist_ba_idle_swim"), bind("fist_mo_swim_f"));
+        let set = ClipSet { cal, idle, upper: BoneMask::upper_body(rig), run, walk, sprint, jump, jumps: Default::default(), run_clip_speed, walk_clip_speed, stances: Default::default(), swim_idle, swim_f };
         // a jump's clips are bound before the first jump: binding loads the file, and a take-off is shorter than a hitch
         if set.jump.is_some() {
             for kind in [JumpKind::Relaxed, JumpKind::Walk, JumpKind::Sprint] {
@@ -319,6 +324,8 @@ pub struct Motion {
     /// zero when standing).
     pub local_dir: Vec2,
     pub airborne: bool,
+    /// Floating in deep water: a unit whose model has swim clips plays them instead of the walk and run.
+    pub swimming: bool,
 }
 
 /// The clips of a model and what it is currently playing.
@@ -351,6 +358,8 @@ enum State {
     Idle,
     /// Direction index, whether it is the walk set and whether it is the sprint tier of the run.
     Moving(usize, bool, bool),
+    /// Swimming, and whether it moves.
+    Swim(bool),
     /// A phase of a jump, the direction it was chosen with and what the unit jumps as.
     Jump(JumpPhase, JumpDir, JumpKind),
 }
@@ -453,6 +462,8 @@ pub fn drive_locomotion(
                 State::Jump(p, d, k) if p == phase && d == dir => State::Jump(p, d, k),
                 _ => State::Jump(phase, dir, kind),
             }
+        } else if motion.swimming && loco.clips.swim_idle.is_some() {
+            State::Swim(moving)
         } else if moving {
             State::Moving(direction_index(motion.local_dir), walk, sprinting)
         } else {
@@ -475,6 +486,7 @@ pub fn drive_locomotion(
             let clip = match wanted {
                 State::Unknown | State::Idle => stance_clips.and_then(|c| c.idle.clone()).or_else(|| Some(loco.clips.idle.clone())),
                 State::Jump(..) => None,
+                State::Swim(moving) => loco.clips.swim_f.clone().filter(|_| moving).or_else(|| loco.clips.swim_idle.clone()),
                 State::Moving(d, walk, sprint) => {
                     let (primary, secondary) = if walk { (&loco.clips.walk, &loco.clips.run) } else { (&loco.clips.run, &loco.clips.walk) };
                     let combat_run = stance_clips.filter(|_| !walk).and_then(|c| if sprint { c.sprint.clips[d].clone().or_else(|| c.run[d].clone()) } else { c.run[d].clone() });

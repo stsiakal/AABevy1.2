@@ -588,6 +588,26 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
             let _t = aa_cry::prof::scope("unit.spawn_creature");
             creature::spawn(commands, cry, clips, &file, cdf.as_deref(), transform).ok_or_else(|| format!("{file} cannot be spawned (no skeleton model or unreadable)"))?
         }
+        UnitBuild::Ship { parts, models } => {
+            for m in models {
+                cry.finish_model(m);
+            }
+            let _t = aa_cry::prof::scope("unit.spawn_ship");
+            let root = commands.spawn((transform, Visibility::default())).id();
+            let options = ModelOptions::default();
+            for part in parts {
+                let Ok(loaded) = cry.load_model(&part.path, &options) else { continue };
+                let model = spawn_loaded(commands, &part.path, &loaded, &options);
+                // cry space (x right, y forward, z up) to Bevy; the scale axes swap like the position's
+                let local = Transform {
+                    translation: cry_to_bevy(part.pos),
+                    rotation: cry_rot_to_bevy(part.rot),
+                    scale: Vec3::new(part.scale.x, part.scale.z, part.scale.y),
+                };
+                commands.entity(model).insert((local, ChildOf(root)));
+            }
+            root
+        }
         UnitBuild::Effects(effects) => {
             let root = commands.spawn((transform, Visibility::default())).id();
             for e in effects {
@@ -628,6 +648,9 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
 fn unit_hash(v: u32) -> u32 {
     v.wrapping_mul(2654435761) >> 7
 }
+
+/// Water over the ground (m) at which a creature or mount that is not driven swims (the mounts' own rule is `DrivenMount`).
+const MOUNT_SWIM_DEPTH: f32 = 1.3;
 
 /// The systems that follow the movement packets and the idle poses; they run around the main chain of `sync_views`,
 /// `move_units` and `cull_units` (registered by [`super::InGamePlugin`]) and [`super::anim::drive_locomotion`].
@@ -754,6 +777,7 @@ const GROUND_SNAP: f32 = 1.0;
 pub fn move_units(
     time: Res<Time>,
     terrain: Res<TerrainQuery>,
+    water: Option<Res<aa_world::WaterQuery>>,
     db: Option<Res<Db>>,
     mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>, Without<super::vehicle::DrivenSlave>)>,
     timers: Option<Res<aa_world::profile::Timers>>,
@@ -802,7 +826,11 @@ pub fn move_units(
             } else {
                 Vec2::Y
             };
-            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character };
+            // a creature or mount (not a ship, which only floats) in deep water swims, when its model has the clips
+            let swimming = !unit.character
+                && !floating
+                && ground.zip(water.as_deref()).is_some_and(|(g, w)| w.water_at(Vec3::new(pos.x, pos.y, g + 0.1)).is_some_and(|(surface, _)| surface - g > MOUNT_SWIM_DEPTH));
+            *m = Motion { speed: if moving { pose.speed } else { 0.0 }, local_dir, airborne: airborne && unit.character, swimming };
         }
     }
     if measure {
