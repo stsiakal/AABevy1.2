@@ -390,6 +390,8 @@ fn install_feature_limits(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             out.set("achievement", state.borrow().achievement.cache.native_enabled == Some(true))?;
             // the 1.2 server's `Feature::TaxItem` (housing taxes are paid with certificates, item 31891)
             out.set("taxItem", true)?;
+            // the server serves the auction house only at an auctioneer: no remote button
+            out.set("hudAuctionButton", false)?;
             Ok(out)
         })?,
     )

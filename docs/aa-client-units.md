@@ -122,6 +122,15 @@ target (`UseMateSkillAt`) at the selected target's spot, or the mate's own spot 
 returns the last received movement report's horizontal speed in m/s, or
 no values without a pet.
 
+### Owned mounts (the local player)
+
+The summon, mount, dismount and dismiss flow is the one above (`mount::MountFlow`, `hud/pets/owned.rs`, `DrivenMount`), proven
+against the original client in `docs/research/re-mounts.md`. Summoning is the normal item use (`CSStartSkill` with the
+summon item; the server's `SpawnMount` effect spawns the mate in front of the player). The own mount's buffs scale the driven
+speed (`Sprint::mount_speed_mul`, the `MoveSpeedMul` of the mate's buffs, applied in `mount::drive_mount`). Getting thrown off
+is the server's (`SCUnitDetached`).
+
+
 ## What is drawn (the census)
 
 Units are spawned within `UNIT_RADIUS` (140 m) of the player, in a time budget per frame (models are prepared on the task pool,
@@ -242,7 +251,7 @@ chest, so F near an owned ship boards it; the dynamic action bar ignores its but
 
 * `AA_UNIT_SMOOTHNESS=1`: logs how the displayed speed of remote units compares with their path speed (mean and p5/p95 per
   group, npcs and players).
-* `AA_FAKE_MOUNT=1`: the mount check above.
+* `AA_FAKE_MOUNT=1`: the remote rider check above.
 * `AA_UNIT_SHADOW_RADIUS`, `AA_ANIM_LOD`: shadow radius and animation levels of detail of units (performance pass).
 
 ## Gaps

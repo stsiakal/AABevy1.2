@@ -35,8 +35,8 @@
 #[path = "../addons/mod.rs"]
 pub(crate) mod addons;
 mod achievement;
-mod auction;
 mod alerts;
+mod auction;
 mod battlefield;
 mod breath;
 mod buffs;

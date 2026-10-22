@@ -986,6 +986,19 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_player_gets_on_and_off_a_mount() {
+        use crate::model::Attachment;
+        let mut player = Player::default();
+        player.apply(&Event::PlayerSpawn(Box::new(PlayerSpawn { obj_id: 5, state: Default::default(), unit: unit(5) })));
+        assert!(!player.apply(&Event::UnitAttached { obj_id: 6, mount: 9, point: 1, reason: 1 }), "another unit");
+        assert!(player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 1, reason: 1 }));
+        assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, Some(Attachment { obj_id: 9, point: 1 }));
+        assert!(!player.apply(&Event::UnitAttached { obj_id: 5, mount: 9, point: 1, reason: 1 }), "no change");
+        assert!(player.apply(&Event::UnitDetached { obj_id: 5, reason: 9 }));
+        assert_eq!(player.spawn.as_ref().unwrap().unit.attached_to, None);
+    }
+
+    #[test]
     fn units_follow_mounting_poses_and_what_they_stand_on() {
         use crate::model::{actor_flags, Attachment, MoveSupport};
         let mut units = Units::default();

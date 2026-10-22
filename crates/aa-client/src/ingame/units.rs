@@ -806,7 +806,9 @@ const TURN_RATE: f32 = 8.0;
 const GROUND_SNAP: f32 = 1.0;
 
 /// Moves the displayed units along their tracks: the position the server reported, turned to face where the server says,
-/// set on the terrain, and the speed and direction of travel handed to the locomotion clips ([`Motion`]).
+/// set on the terrain, and the speed and direction of travel handed to the locomotion clips ([`Motion`]). Riders sit on their
+/// mounts and the mate the player drives goes with the player ([`super::mount`]).
+#[allow(clippy::type_complexity)]
 pub fn move_units(
     time: Res<Time>,
     terrain: Res<TerrainQuery>,

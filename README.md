@@ -66,7 +66,7 @@ create, the loading screen, and in game. The aim is a client that looks and beha
 **HUD (original windows on real data)**
 - Action bars that grey out skills you can't use, cooldowns, buffs, unit frames and nameplates.
 - Bag, bank, equipment and the character window.
-- Merchants, repair, enchant, mail, trade.
+- Merchants, repair, enchant, mail, trade, auction house.
 - Party and raid, friends, guilds and families.
 - Duels (challenge, countdown, result), titles over the name plate, emotes and speech bubbles.
 - Quests, the world map and minimap, chat, skills, crafting, achievements, rankings, battlefields, pets.
@@ -82,8 +82,7 @@ This list is what works, not a parity claim: see [`docs/aa-client-parity.md`](do
 
 - **Transport:** owning and riding mounts, ships (drawn from their prefab brushes, summoned onto the water plane) and vehicles. Gliders fly for the local player and are drawn on other players (`docs/aa-client-movement.md`, "Gliders").
 - **Housing:** building, placing and decorating, and farms.
-- **Auction house, in-game shop, territory, siege and nation:** aa-net has the auction protocol, but there's no window
-  yet. The rest have no client side.
+- **In-game shop, territory, siege and nation:** no client side yet.
 - **Doodads:** using them works, but there's no gathering or farming UI yet, phase models (a doodad changing look)
   aren't drawn, and doodads placed by other players are missing.
 - **Teleports:** the player-placed Navi signs are only unit-tested, and world gate 304 (the White Dress Portrait in
@@ -98,7 +97,7 @@ This list is what works, not a parity claim: see [`docs/aa-client-parity.md`](do
 - **Characters:** faces are flatter than the real client in character create, and heeled shoes sit a little low.
 - **Skills:** a handful of effects are dimmer than the real client (Summon Wraith's cloud). Missile Rain's arrow
   rain is missing from the game data itself.
-- **Options:** the graphics settings are not applied yet, and key bindings can't be changed.
+- **Options:** the graphics page applies resolution, screen mode, vsync, gamma, draw distance, shadows, clouds, effect quality, HDR and anti-aliasing; texture, terrain detail, character and water quality, depth of field and the native key-binding sync are not applied yet. A new draw distance reaches the cells that stream in afterwards.
 - **Performance:** big towns (Marianople, about 38 fps).
 - **Portability:** it is developed and tested on Windows only.
 

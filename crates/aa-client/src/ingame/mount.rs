@@ -962,8 +962,7 @@ pub fn drive_mount(
     water: Res<WaterQuery>,
     mut out: MessageWriter<NetCommand>,
     mut input_state: ResMut<PlayerInput>,
-    typing: Option<Res<HudKeyboardFocus>>,
-    over_ui: Option<Res<HudPointerOverUi>>,
+    (typing, over_ui, sprint): (Option<Res<HudKeyboardFocus>>, Option<Res<HudPointerOverUi>>, Option<Res<super::sprint::Sprint>>),
     mut mounts: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>, Option<&mut DrivenMount>)>,
     mut commands: Commands,
 ) {
@@ -1016,7 +1015,8 @@ pub fn drive_mount(
         drive.facing = approach_angle(drive.facing, orbit.yaw, MOUNT_ALIGN_RATE * dt);
     }
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let wanted = drive.step(local_dir, drive.walking != shift);
+    // the mount's own buffs (a gallop) speed it up (`sprint::Sprint::mount_speed_mul`)
+    let wanted = drive.step(local_dir, drive.walking != shift) * sprint.as_deref().map_or(1.0, |s| s.mount_speed_mul);
     let step = drive.smooth(wanted, dt);
     let old = drive.pos;
     let mut pos = old;
