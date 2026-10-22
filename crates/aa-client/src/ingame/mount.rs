@@ -39,6 +39,17 @@ fn rider_prefix(pose: u32) -> Option<&'static str> {
 }
 
 /// The bone of a mount a rider at `point` sits on (`model_attach_point_strings`: `$driver` is `bone_spine_driver`).
+/// The seat bone in the world for the mount as it is placed **this frame**. The bone's `GlobalTransform` is last frame's (the
+/// propagation runs after `Update`), so a mount that moved since then left the rider one step behind it: the jitter at speed. The
+/// bone is therefore taken relative to the mount's previous global transform and re-applied to its current `Transform`.
+fn seat_now(mount_now: &Transform, mount_before: Option<&GlobalTransform>, bone: Option<&GlobalTransform>, fallback: Vec3) -> Vec3 {
+    match (mount_before, bone) {
+        (Some(before), Some(bone)) => (mount_now.to_matrix() * before.to_matrix().inverse() * bone.to_matrix()).w_axis.truncate(),
+        (None, Some(bone)) => bone.translation(),
+        _ => aa_world::cry_to_bevy(fallback),
+    }
+}
+
 fn seat_bone(point: u8) -> &'static str {
     if point <= 1 { "bone_spine_driver" } else { "bone_spine_passenger" }
 }
@@ -694,24 +705,23 @@ pub fn pose_riders(
     net: Res<Units>,
     views: Res<Views>,
     mut riders: Query<(&mut RemoteUnit, &mut Transform, &mut Rider, &mut Animator)>,
-    mounts: Query<(&RemoteUnit, &Animator, &Motion, Option<&MateGait>), Without<Rider>>,
+    mounts: Query<(&RemoteUnit, &Animator, &Motion, Option<&MateGait>, &Transform), Without<Rider>>,
     globals: Query<&GlobalTransform>,
 ) {
     for (mut unit, mut transform, mut rider, mut animator) in &mut riders {
         let mount_entity = views.unit_entity(rider.mount);
         let mounted = mount_entity.and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
         let (pos, facing, drive) = match mounted {
-            Some((_e, (mount, mount_animator, _motion, _gait))) if rider.vehicle => {
+            Some((_e, (mount, mount_animator, _motion, _gait, _tf))) if rider.vehicle => {
                 let (pos, facing) = seat_world(Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z), mount.facing, mount.scale(), rider.seat);
                 (pos, facing, MountDrive { tempo: mount_animator.speed, ..default() })
             }
-            Some((e, (mount, mount_animator, motion, gait))) => {
+            Some((e, (mount, mount_animator, motion, gait, mount_tf))) => {
                 // the seat bone of the mount's skeleton, in the world
                 let bone = mount_animator.rig.skeleton.bones.iter().position(|b| b.name == seat_bone(rider.point)).and_then(|i| mount_animator.bones.get(i));
-                let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
-                let world = seat.map_or_else(|| aa_world::cry_to_bevy(mount.pos), |g| g.translation());
+                let world = seat_now(mount_tf, globals.get(e).ok(), bone.and_then(|b| globals.get(*b).ok()), mount.pos);
                 let swimming = motion.swimming;
-                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed, motion.auto)) };
+                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo_of(motion)) };
                 (bevy_to_cry(world), mount.facing, MountDrive { pseudo, airborne: motion.airborne && !swimming, turn: gait.map_or(0.0, |g| g.turn), tempo: mount_animator.speed })
             }
             None => {
@@ -843,23 +853,22 @@ pub fn pose_local_riders(
     net: Res<Units>,
     views: Res<Views>,
     mut locals: Query<(&mut Mover, &mut Transform, &mut LocalRider, &mut Animator), Without<RemoteUnit>>,
-    mounts: Query<(&RemoteUnit, &Animator, &Motion, Option<&MateGait>), (Without<Rider>, Without<LocalRider>)>,
+    mounts: Query<(&RemoteUnit, &Animator, &Motion, Option<&MateGait>, &Transform), (Without<Rider>, Without<LocalRider>)>,
     globals: Query<&GlobalTransform>,
 ) {
     for (mut mover, mut transform, mut rider, mut animator) in &mut locals {
         let mount_entity = views.unit_entity(rider.mount);
         let mounted = mount_entity.and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
         let (pos, facing, drive) = match mounted {
-            Some((_e, (mount, mount_animator, _motion, _gait))) if rider.vehicle => {
+            Some((_e, (mount, mount_animator, _motion, _gait, _tf))) if rider.vehicle => {
                 let (pos, facing) = seat_world(Vec3::new(mount.pos.x, mount.pos.y, mount.pos.z), mount.facing, mount.scale(), rider.seat);
                 (pos, facing, MountDrive { tempo: mount_animator.speed, ..default() })
             }
-            Some((e, (mount, mount_animator, motion, gait))) => {
+            Some((e, (mount, mount_animator, motion, gait, mount_tf))) => {
                 let bone = mount_animator.rig.skeleton.bones.iter().position(|b| b.name == seat_bone(rider.point)).and_then(|i| mount_animator.bones.get(i));
-                let seat = bone.and_then(|b| globals.get(*b).ok()).or_else(|| globals.get(e).ok());
-                let world = seat.map_or_else(|| aa_world::cry_to_bevy(mount.pos), |g| g.translation());
+                let world = seat_now(mount_tf, globals.get(e).ok(), bone.and_then(|b| globals.get(*b).ok()), mount.pos);
                 let swimming = motion.swimming;
-                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo(motion.speed, motion.auto)) };
+                let pseudo = if swimming { 0.0 } else { gait.map_or(0.0, |g| g.pseudo_of(motion)) };
                 (bevy_to_cry(world), mount.facing, MountDrive { pseudo, airborne: motion.airborne && !swimming, turn: gait.map_or(0.0, |g| g.turn), tempo: mount_animator.speed })
             }
             None => {
@@ -1078,7 +1087,11 @@ pub fn drive_mount(
     unit.facing = drive.facing;
     *transform = placement(pos, drive.facing, unit.scale());
     if let Some(mut m) = motion {
-        *m = Motion { speed: if moving { actual.length() } else { 0.0 }, local_dir, airborne, swimming: drive.swimming, auto: drive.autorun };
+        let speed = if moving { actual.length() } else { 0.0 };
+        // the request, not the speed the inertia is at: coasting to a stop is idle, not a walk (cryaction `FUN_306747f0` zeroes it
+        // under 0.5 m/s)
+        let request = mount_anim::requested_pseudo(local_dir != Vec2::ZERO || drive.autorun, drive.walking != shift, drive.autorun, speed);
+        *m = Motion { speed, local_dir, airborne, swimming: drive.swimming, auto: drive.autorun, request: Some(request) };
     }
     let turned = (drive.facing - before_facing).abs() > 1e-4;
     *input_state = PlayerInput { moving, jumped, turned };
@@ -1161,6 +1174,15 @@ pub fn fake_mount(time: Res<Time>, player: Res<Player>, mut units: ResMut<Units>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_seat_follows_the_mount_of_this_frame_not_the_last_one() {
+        let before = GlobalTransform::from(Transform::from_xyz(0.0, 0.0, 0.0));
+        let bone = GlobalTransform::from(Transform::from_xyz(0.0, 1.0, 2.0));
+        let now = Transform::from_xyz(5.0, 0.0, 0.0);
+        let seat = seat_now(&now, Some(&before), Some(&bone), Vec3::ZERO);
+        assert!((seat - Vec3::new(5.0, 1.0, 2.0)).length() < 1e-4, "{seat:?}");
+    }
+
     use super::*;
 
     fn horse() -> MountMove {

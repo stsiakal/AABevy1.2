@@ -334,6 +334,9 @@ pub struct Motion {
     pub swimming: bool,
     /// Moving by auto-move / move-to-point: the movement request then carries PseudoSpeed 1.5 (a mount's sprint tier).
     pub auto: bool,
+    /// The PseudoSpeed the movement request carries when it is known (the mount the local player drives: 0 without input, 0.4 with
+    /// the walk toggle, 1.0, 1.5 under auto-move). Without it the value is guessed from the ground speed (remote units).
+    pub request: Option<f32>,
 }
 
 /// The clips of a model and what it is currently playing.
@@ -448,7 +451,7 @@ pub fn drive_locomotion(
                 State::Moving(_, false, _) | State::RunTurn(..) => Band::Run,
                 _ => Band::Idle,
             };
-            let ps = g.pseudo(motion.speed, motion.auto);
+            let ps = g.pseudo_of(&motion);
             (mount_anim::mount_band(ps, prev), ps, mount_anim::turn_dir(g.turn))
         });
         let moving = match gait {

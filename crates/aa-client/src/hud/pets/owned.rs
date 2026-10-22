@@ -857,65 +857,21 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     Ok(())
 }
 
-/// The pseudo skill id of the dynamic action bar entry `command_unmount` (the bar asks skill ids; the original entry has none).
-const UNMOUNT_ENTRY: u32 = 0xFFFF_FF01;
-/// `command_unmount`: `FUN_3933b1b0` adds it to the dynamic bar whenever the player sits on its own mate.
-const UNMOUNT_ICON: &str = "ui/icon/icon_skill_vehicle03.dds";
+/// How close the own mate must stand for the interaction key (F) to mount it: the interaction reach,
+/// well inside the 25 m of the pet bar command; the mount flow then walks the last metres.
+pub(super) const KEY_MOUNT_REACH: f32 = 6.0;
 
-/// The player rides its own mate: `command_unmount` is the first entry of the dynamic action bar.
-fn riding_own(data: &HudData) -> bool {
-    data.pets.owned.local_mount.is_some_and(|m| m.own)
-}
-
-/// The bar entry or the F key: unmount with reason 9 (`FUN_39361e80(9)`) while riding the own mate.
-pub(super) fn unmount_own(data: &mut HudData) {
-    if riding_own(data) {
-        unmount_mate(data);
+/// F next to the own, unmounted mate mounts it without selecting it (the original gives no dynamic
+/// action bar while riding; dismounting is the pet bar command).
+pub(super) fn mount_near(data: &mut HudData) {
+    if data.pets.owned.mounted || data.pets.owned.local_mount.is_some() || data.loot.nearest.is_some() || data.doodad.claims_key() {
+        return;
     }
-}
-
-pub(super) fn install_dynamic_bar(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
-    let x2: Table = lua.globals().get("X2")?;
-    let interaction: Table = lua.globals().get("X2Interaction")?;
-    let (count, skill, execute): (mlua::Function, mlua::Function, mlua::Function) =
-        (x2.get("GetDynamicActionCount")?, x2.get("GetDynamicActionSkill")?, x2.get("ExecuteDynamicAction")?);
-    let icon: mlua::Function = interaction.get("GetInteractionSkillIconPath")?;
-    let state = bridge.clone();
-    x2.set(
-        "GetDynamicActionCount",
-        lua.create_function(move |_, args: MultiValue| if riding_own(&state.borrow()) { Ok(1) } else { count.call::<i64>(args) })?,
-    )?;
-    let state = bridge.clone();
-    x2.set(
-        "GetDynamicActionSkill",
-        lua.create_function(move |_, args: MultiValue| {
-            if riding_own(&state.borrow()) {
-                return Ok(Some(i64::from(UNMOUNT_ENTRY)));
-            }
-            skill.call::<Option<i64>>(args)
-        })?,
-    )?;
-    let state = bridge.clone();
-    x2.set(
-        "ExecuteDynamicAction",
-        lua.create_function(move |_, args: MultiValue| {
-            if riding_own(&state.borrow()) {
-                unmount_mate(&mut state.borrow_mut());
-                return Ok(());
-            }
-            execute.call::<()>(args)
-        })?,
-    )?;
-    interaction.set(
-        "GetInteractionSkillIconPath",
-        lua.create_function(move |_, args: MultiValue| {
-            if args.iter().any(|v| matches!(v, Value::Integer(i) if *i == i64::from(UNMOUNT_ENTRY))) {
-                return Ok(UNMOUNT_ICON.to_string());
-            }
-            icon.call::<String>(args)
-        })?,
-    )?;
-    Ok(())
+    let Some(pet) = &data.pets.owned.current else { return };
+    if data.pos.distance(pet.pos) > KEY_MOUNT_REACH {
+        return;
+    }
+    mount_mate(data);
 }
 
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {

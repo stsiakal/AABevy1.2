@@ -141,6 +141,20 @@ pub fn pseudo_speed(speed: f32, run_speed: f32, auto_move: bool) -> f32 {
     }
 }
 
+/// The PseudoSpeed the driven mount requests: 0 without input (also while it coasts to a stop), 0.4 with the walk modifier, 1.5
+/// under auto-move, else 1.0; zeroed under [`IDLE_SPEED`] like the original.
+pub fn requested_pseudo(input: bool, walk: bool, auto_move: bool, speed: f32) -> f32 {
+    if !input || speed < IDLE_SPEED {
+        0.0
+    } else if auto_move {
+        AUTO_PSEUDO
+    } else if walk {
+        WALK_PSEUDO
+    } else {
+        MOVE_PSEUDO
+    }
+}
+
 /// Under this ground speed (m/s) the request is zeroed (cryaction `FUN_306747f0`).
 pub const IDLE_SPEED: f32 = 0.5;
 /// The requested PseudoSpeed of a move, of a move with the walk modifier and of move-to-point / auto-move.
@@ -209,6 +223,11 @@ impl MateGait {
 
     pub fn pseudo(&self, speed: f32, auto_move: bool) -> f32 {
         pseudo_speed(speed, self.run_speed, auto_move)
+    }
+
+    /// The PseudoSpeed of a mount: the request when it is known (the driven mount), else guessed from its speed.
+    pub fn pseudo_of(&self, motion: &super::anim::Motion) -> f32 {
+        motion.request.unwrap_or_else(|| self.pseudo(motion.speed, motion.auto))
     }
 
     /// Follows the facing: the turn rate is the smoothed change of `yaw` over `dt`, in degrees/s.
@@ -393,6 +412,12 @@ mod band_tests {
         assert_eq!(pseudo_speed(9.0, 9.0, false), MOVE_PSEUDO);
         assert_eq!(pseudo_speed(13.5, 9.0, false), MOVE_PSEUDO, "no sprint value outside auto-move");
         assert_eq!(pseudo_speed(9.0, 9.0, true), AUTO_PSEUDO);
+        // the driven mount asks, it does not coast through the bands: letting go of the key is idle at once
+        assert_eq!(requested_pseudo(false, false, false, 7.0), 0.0);
+        assert_eq!(requested_pseudo(true, false, false, 7.0), MOVE_PSEUDO);
+        assert_eq!(requested_pseudo(true, true, false, 1.8), WALK_PSEUDO);
+        assert_eq!(requested_pseudo(true, false, true, 9.0), AUTO_PSEUDO);
+        assert_eq!(requested_pseudo(true, false, false, 0.3), 0.0, "pushing against a wall is not a move");
         assert_eq!(mount_band(pseudo_speed(1.8, 9.0, false), Band::Idle), Band::Walk);
         assert_eq!(mount_band(pseudo_speed(9.0, 9.0, false), Band::Idle), Band::Run);
     }

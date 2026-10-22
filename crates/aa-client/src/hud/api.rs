@@ -365,7 +365,6 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
-    super::pets::install_dynamic_bar(lua, bridge)?;
     super::look::install(lua, bridge)?;
     super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;

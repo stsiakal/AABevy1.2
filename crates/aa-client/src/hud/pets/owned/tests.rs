@@ -473,16 +473,39 @@ fn mounting_starts_the_walk_controller_instead_of_sending_at_once() -> Result<()
 }
 
 #[test]
-fn command_unmount_is_the_first_dynamic_bar_entry_while_riding_the_own_mate() {
-    let mut data = HudData { character_id: 5, ..HudData::default() };
-    data.pets.owned.local_mount = Some(LocalMount { obj_id: 201, tl_id: 12, point: 1, own: false });
-    unmount_own(&mut data);
-    assert!(data.pets.owned.requests.is_empty(), "somebody else's mount has no command_unmount");
-    data.pets.owned.local_mount = Some(LocalMount { obj_id: 201, tl_id: 12, point: 1, own: true });
-    assert!(riding_own(&data));
-    unmount_own(&mut data);
-    match data.pets.owned.requests.as_slice() {
-        [Request { command: MateCommand::Unmount { tl_id: 12, point: 1, reason: 9 }, .. }] => {}
-        _ => panic!("expected CSUnMountMate with reason 9"),
+fn f_next_to_the_own_mate_starts_the_mount_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, bridge, path, player, units, mates) = super::super::active_fixture::runtime(1920.0, 1080.0)?;
+    let _ = path;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .insert_non_send(rt)
+        .insert_non_send(HudBridge(bridge.clone()))
+        .insert_resource(player)
+        .insert_resource(units)
+        .insert_resource(mates)
+        .init_resource::<crate::ingame::mount::MountFlow>()
+        .init_resource::<crate::settings::Actions>()
+        .init_resource::<crate::hud::HudKeyboardFocus>()
+        .add_message::<NetEvent>()
+        .add_message::<NetCommand>()
+        .add_systems(Update, super::super::update);
+    app.update();
+    {
+        let mut data = bridge.borrow_mut();
+        super::super::refresh(app.world(), &mut data);
+        let far = data.pos + Vec3::new(30.0, 0.0, 0.0);
+        data.pets.owned.current.as_mut().expect("own mate").pos = far;
     }
+    app.world_mut().resource_mut::<crate::settings::Actions>().tap_for_test("do_interaction_1");
+    app.update();
+    assert!(!app.world().resource::<crate::ingame::mount::MountFlow>().active(), "30 m away F does nothing");
+    {
+        let mut data = bridge.borrow_mut();
+        let near = data.pos + Vec3::new(2.0, 0.0, 0.0);
+        data.pets.owned.current.as_mut().unwrap().pos = near;
+    }
+    app.world_mut().resource_mut::<crate::settings::Actions>().tap_for_test("do_interaction_1");
+    app.update();
+    assert!(app.world().resource::<crate::ingame::mount::MountFlow>().active(), "F within reach of the own mate mounts it");
+    Ok(())
 }

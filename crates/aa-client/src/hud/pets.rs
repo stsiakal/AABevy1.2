@@ -133,9 +133,6 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
 
 pub(super) fn push(rt: &UiRuntime, bridge: &Shared) { owned::push(rt, bridge); }
 
-/// Adds the original `command_unmount` entry to the dynamic action bar; installed after the doodad bar it wraps.
-pub(super) fn install_dynamic_bar(lua: &Lua, bridge: &Shared) -> mlua::Result<()> { owned::install_dynamic_bar(lua, bridge) }
-
 /// `ISLOT_PET_ACTION` click: the displayed mount skill of the current pet.
 pub(super) fn use_pet_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<Command> {
     owned::use_pet_action(data, index, target_obj_id, target_pos)
@@ -178,9 +175,9 @@ pub(super) fn update(
             events.clear();
             return;
         }
-        // F (`do_interaction_1`) is the first entry of the dynamic action bar: `command_unmount` while riding the own mate
+        // F (`do_interaction_1`) next to the own mate mounts it
         if keys.as_ref().is_some_and(|(actions, typing)| !typing.0 && actions.just_pressed("do_interaction_1", 0)) {
-            owned::unmount_own(&mut data);
+            owned::mount_near(&mut data);
         }
         for NetEvent(event) in events.read() {
             equipment.extend(owned::equipment_slots(&data, event));
