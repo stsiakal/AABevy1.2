@@ -102,16 +102,7 @@ pub struct HouseDesign {
     /// `housings.garden_radius`: the half extent of the axis-aligned plot square (m).
     pub garden_radius: f32,
     pub heavy_tax: bool,
-    /// A farm (`housings.category_id` in [`FARM_CATEGORIES`]): its orientation is fixed, the wheel does not turn it.
-    pub fixed_orientation: bool,
 }
-
-/// `housings.category_id` of the scarecrow gardens / farms (16: straw-hat scarecrow, 17: pumpkin scarecrows, 18:
-/// thatched farm). The 1.2 data has no rotation flag; these are the designs the owner confirmed cannot be turned.
-pub const FARM_CATEGORIES: [i64; 3] = [16, 17, 18];
-
-/// The yaw a fixed-orientation design is placed (and sent) with.
-pub const FIXED_YAW: f32 = 0.0;
 
 /// The offset fields a placement template may carry. The 1.2 server database has none on doodads (only `housings`),
 /// so plants keep the defaults; the maths is here for the house placement of a later phase.
@@ -238,8 +229,7 @@ impl Catalog {
                 );
                 let heavy_tax: bool = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0) != 0;
                 let category_id: u32 = r.get::<_, Option<i64>>(13).unwrap_or_default().unwrap_or(0).max(0) as u32;
-                let fixed_orientation = FARM_CATEGORIES.contains(&(category_id as i64));
-                let house = HouseDesign { design, name: name.clone(), category_id, garden_radius: garden, heavy_tax, fixed_orientation };
+                let house = HouseDesign { design, name: name.clone(), category_id, garden_radius: garden, heavy_tax };
                 catalog.houses.insert(design, house.clone());
                 catalog.by_item.entry(item).or_insert(Plantable {
                     item,
@@ -403,19 +393,18 @@ pub struct Session {
 }
 
 impl Session {
-    /// The wheel turns the ghost (and so is not the camera's): not for a fixed-orientation farm, not once the
-    /// placement is locked for the tax window.
-    pub fn rotatable(&self) -> bool {
-        !self.plant.house.as_ref().is_some_and(|h| h.fixed_orientation)
+    /// A house or farm whose spot the left click locked (the Start Construction popup is asked for or open).
+    pub fn locked(&self) -> bool {
+        self.is_house() && (self.quote_requested || self.window_open)
     }
 
-    /// The wheel is spent on rotating the ghost this frame, so the camera must not zoom with it.
+    /// Retail: only after the click that locks a house / farm spot does the wheel turn the model (and then it is not the
+    /// camera's); before it, and for seeds and saplings, the wheel zooms the camera.
     pub fn wheel_rotates(&self) -> bool {
-        self.rotatable() && !self.quote_requested && !self.window_open
+        self.locked()
     }
 
     pub fn new(item_id: u64, plant: Plantable, yaw: f32) -> Session {
-        let yaw = if plant.house.as_ref().is_some_and(|h| h.fixed_orientation) { FIXED_YAW } else { yaw };
         Session {
             item_id,
             plant,
@@ -1126,7 +1115,7 @@ fn update_ring(
     };
     let floor = |p: Vec2| ground_at(collision, terrain, p.x, p.y, spot.z, spot.z);
     if session.is_house() {
-        let dots = plot_dot_quads(&session.plant, spot, session.yaw, floor);
+        let dots = plot_dot_quads(&session.plant, spot, 0.0, floor);
         let neighbours = neighbour_dot_quads(houses, catalog, spot, floor);
         let posts = areas.map_or_else(Vec::new, |areas| post_quads(areas, spot, floor));
         let empty: [Quad; 0] = [];
@@ -1530,7 +1519,8 @@ fn cursor_icon(
         }
     }
 }
-/// Mouse wheel rotates; Alt finely, Shift 15 degrees, Ctrl keeps the camera zoom; Escape / right click cancels and a
+/// After the click that locks a house / farm spot the mouse wheel rotates the model (the plot border stays
+/// axis-aligned); before it, and for seeds, the wheel zooms the camera. Alt finely, Shift 15 degrees, Ctrl keeps the camera zoom; Escape / right click cancels and a
 /// left click confirms. An invalid click prints the retail error and sends nothing.
 #[allow(clippy::too_many_arguments)]
 fn input(
@@ -1548,6 +1538,22 @@ fn input(
 ) {
     let Some(session) = placement.session.as_mut() else { return };
     let over_ui = over_ui.is_some_and(|o| o.0);
+    // Scripted input reaches this point as real `KeyboardInput` / `MouseButtonInput` / `MouseWheel`
+    // (`ingame::virtual_input::inject`), so the buttons, the modifiers and the wheel below are the
+    // same for the script and the physical devices.
+    let (shift, alt, ctrl) = (
+        keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
+        keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
+        keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
+    );
+    let mut turn = 0.0;
+    for ev in wheel.read() {
+        turn += wheel_turn(shift, alt, ctrl, ev.y);
+    }
+    // the locked spot's model turns with the wheel (also while the popup is open); the border does not
+    if turn != 0.0 && !over_ui && session.wheel_rotates() {
+        session.yaw = wrap_angle(session.yaw + turn);
+    }
     // the tax window owns the pointer and Escape; Cancel closes it and keeps the placement (retail)
     if session.window_open || focus.is_some_and(|f| f.0) {
         return;
@@ -1558,25 +1564,9 @@ fn input(
         end_session(&mut commands, &mut placement, &visuals);
         return;
     }
-    // Scripted input reaches this point as real `KeyboardInput` / `MouseButtonInput` / `MouseWheel`
-    // (`ingame::virtual_input::inject`), so the buttons, the modifiers and the wheel below are the
-    // same for the script and the physical devices.
     let mut cancel = keys.just_pressed(KeyCode::Escape);
     if cancel {
         keys.clear_just_pressed(KeyCode::Escape);
-    }
-    let (shift, alt, ctrl) = (
-        keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
-        keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
-        keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
-    );
-    let mut turn = 0.0;
-    for ev in wheel.read() {
-        turn += wheel_turn(shift, alt, ctrl, ev.y);
-    }
-    // the confirmed house's yaw is part of the locked placement; a farm's orientation is fixed
-    if turn != 0.0 && !session.quote_requested && session.rotatable() {
-        session.yaw = wrap_angle(session.yaw + turn);
     }
     let right_click = mouse.just_pressed(MouseButton::Right);
     if right_click {
@@ -2064,7 +2054,6 @@ mod tests {
                 category_id: 16,
                 garden_radius: radius,
                 heavy_tax: true,
-                fixed_orientation: false,
             }),
         }
     }
@@ -2079,18 +2068,34 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_orientation_farm_ignores_the_initial_yaw_and_the_wheel() {
-        let mut fixed = house_plantable(267, 4.0);
-        fixed.house.as_mut().unwrap().fixed_orientation = true;
-        let session = Session::new(1, fixed, 2.5);
-        assert_eq!(session.yaw, FIXED_YAW, "a fixed design starts (and is sent) with its fixed yaw");
-        assert!(!session.rotatable() && !session.wheel_rotates(), "the wheel stays the camera's");
-        let free = Session::new(1, house_plantable(267, 4.0), 2.5);
-        assert_eq!(free.yaw, 2.5);
-        assert!(free.rotatable() && free.wheel_rotates(), "a rotatable design takes the wheel from the zoom");
-        let mut locked = Session::new(1, house_plantable(267, 4.0), 2.5);
-        locked.quote_requested = true;
-        assert!(!locked.wheel_rotates(), "a locked placement no longer rotates, the camera may zoom");
+    fn the_wheel_zooms_until_the_click_locks_the_spot_then_turns_the_model() {
+        let mut session = Session::new(1, house_plantable(267, 4.0), 2.5);
+        assert_eq!(session.yaw, 2.5);
+        assert!(!session.locked() && !session.wheel_rotates(), "before the click the wheel zooms");
+        session.quote_requested = true;
+        assert!(session.locked() && session.wheel_rotates(), "after the click the wheel turns the model");
+        session.quote_requested = false;
+        session.window_open = true;
+        assert!(session.wheel_rotates(), "also while the popup is open");
+        // the placed house starts facing the player (the retail first yaw, the camera heading) and the confirmed yaw is what
+        // CSCreateHouse sends after the wheel turned it
+        session.quote_requested = true;
+        session.quote = Some(ConstructHouseTax { design_id: 267, heavy_tax_house_count: 0, normal_tax_house_count: 0, is_heavy_tax_house: false, base_tax_money_amount: 0, deposit_tax_money_amount: 0, total_tax_money_amount: 0 });
+        session.spot = Some(Vec3::new(1.0, 2.0, 3.0));
+        session.window_open = false;
+        session.yaw = wrap_angle(session.yaw + 0.5);
+        assert!(matches!(session.create_house(), Some(HouseCommand::CreateHouse { z_rot, .. }) if (z_rot - wrap_angle(3.0)).abs() < 1e-5));
+        let seed = Session::new(1, plant(), 0.0);
+        assert!(!seed.wheel_rotates(), "seeds never rotate, the wheel zooms");
+    }
+
+    #[test]
+    fn the_plot_border_ignores_the_model_yaw() {
+        let p = house_plantable(267, 4.0);
+        let floor = |_: Vec2| 0.0;
+        // the border is always built axis-aligned (yaw 0), whatever the locked model yaw is
+        let a = plot_dot_quads(&p, Vec3::new(10.0, 10.0, 0.0), 0.0, floor);
+        assert!(!a.is_empty());
     }
 
     #[test]
@@ -2128,7 +2133,6 @@ mod tests {
         assert_eq!((house.design, house.garden_radius), (267, 4.0));
         assert_eq!((house.category_id, house.name.as_str()), (16, "Scarecrow Garden"));
         assert!(house.heavy_tax);
-        assert!(house.fixed_orientation, "category 16 is a scarecrow farm");
         assert_eq!(catalog.house_radius(267), 4.0);
         assert!(catalog.area_known(128) && !catalog.area_known(129));
         assert!(catalog.area_allows(128, 16) && !catalog.area_allows(128, 17));
@@ -2525,5 +2529,43 @@ mod tests {
         assert!(app.world().resource::<Sent>().0.is_empty(), "an invalid click sends no packet");
         assert_eq!(error_message(Invalid::Footprint), Some("Too close to other objects."));
         assert!(app.world().resource::<Placement>().session.is_some(), "the mode stays for another spot");
+    }
+
+    /// The wheel does nothing to the ghost before the click (the camera zooms) and turns the model after it.
+    #[test]
+    fn the_wheel_turns_the_model_only_after_the_lock_click() {
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Skills>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, input);
+        app.insert_resource(Time::<()>::default());
+        let mut session = Session::new(1, house_plantable(267, 4.0), 0.0);
+        session.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        session.invalid = None;
+        app.insert_resource(Placement { session: Some(session), ..Default::default() });
+        app.update();
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+        app.update();
+        assert_eq!(app.world().resource::<Placement>().session.as_ref().unwrap().yaw, 0.0, "before the click: zoom");
+        app.world_mut().resource_mut::<VirtualInput>().queue_click(MouseButton::Left);
+        app.update();
+        assert!(app.world().resource::<Placement>().session.as_ref().unwrap().locked());
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+        app.update();
+        assert_ne!(app.world().resource::<Placement>().session.as_ref().unwrap().yaw, 0.0, "after the click: rotate");
+        // a seed never rotates
+        let mut seed = Session::new(2, plant(), 0.0);
+        seed.spot = Some(Vec3::new(100.0, 200.0, 10.0));
+        app.insert_resource(Placement { session: Some(seed), ..Default::default() });
+        app.update();
+        app.world_mut().resource_mut::<VirtualInput>().queue_wheel(1.0, false, false, false);
+        app.update();
+        assert_eq!(app.world().resource::<Placement>().session.as_ref().unwrap().yaw, 0.0);
     }
 }
