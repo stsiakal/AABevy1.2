@@ -296,12 +296,12 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     let state = bridge.clone();
     weapon.set(
         "GetSiegeWeaponSpeed",
-        lua.create_function(move |_, _: Value| Ok(state.borrow().vehicles.current.as_ref().map(|v| f64::from(v.speed))))?,
+        lua.create_function(move |_, _: Value| Ok(state.borrow().vehicles.current.as_ref().map_or(0.0, |v| f64::from(v.speed))))?,
     )?;
     let state = bridge.clone();
     weapon.set(
         "GetSiegeWeaponTurnSpeed",
-        lua.create_function(move |_, _: Value| Ok(state.borrow().vehicles.current.as_ref().map(|v| f64::from(v.turn))))?,
+        lua.create_function(move |_, _: Value| Ok(state.borrow().vehicles.current.as_ref().map_or(0.0, |v| f64::from(v.turn))))?,
     )?;
     let state = bridge.clone();
     weapon.set(
@@ -514,14 +514,8 @@ pub(super) fn update(
     }
     send_equipment_requests(&bridge.0, owner, inventory.as_deref(), &mut net);
     let holding = rt.holding();
-    let mut data = bridge.0.borrow_mut();
-    if data.vehicles.holding != holding {
-        data.vehicles.holding = holding;
-        let owned = data.vehicles.current.is_some();
-        drop(data);
-        if owned {
-            rt.fire_event("UPDATE_SLAVE_EQUIPMENT_SLOT", ());
-        }
+    if note_holding(&bridge.0, holding) {
+        rt.fire_event("UPDATE_SLAVE_EQUIPMENT_SLOT", ());
     }
     // the cannon the player is manning is as valid a target of the leave request as the owned slave
     let manned = bridge.0.borrow().vehicles.current.as_ref().filter(|c| c.cannon).map(|c| (c.tl_id, c.obj_id));
@@ -537,6 +531,17 @@ pub(super) fn update(
         }
     }
     push(&rt, &bridge.0);
+}
+
+/// Records the pointer's held state; true when it changed while a slave is owned (the equipment slots refresh).
+/// The borrow ends here: `update` borrows the bridge again right after.
+fn note_holding(bridge: &Shared, holding: bool) -> bool {
+    let mut data = bridge.borrow_mut();
+    if data.vehicles.holding == holding {
+        return false;
+    }
+    data.vehicles.holding = holding;
+    data.vehicles.current.is_some()
 }
 
 /// The part moves the Summon Info scripts queued, as `CSChangeSlaveEquipment` for the slave the window shows.
@@ -648,6 +653,28 @@ mod tests {
             use_action(&data, 1, 987, None),
             Some(Command::UseMateSkill { target_obj_id: 987, .. })
         ));
+    }
+
+    #[test]
+    fn holding_change_releases_the_bridge_borrow_and_speed_getters_always_answer_numbers() {
+        let bridge: Shared = std::rc::Rc::new(std::cell::RefCell::new(HudData::default()));
+        assert!(!note_holding(&bridge, false), "unchanged");
+        assert!(bridge.try_borrow_mut().is_ok());
+        assert!(!note_holding(&bridge, true), "no slave owned");
+        bridge.borrow_mut().vehicles.current = data_with(60, None, Skill { combat: 1, first_seat: None, target_type: 0, target_selection: 1 }, 1).vehicles.current;
+        assert!(!note_holding(&bridge, true), "unchanged again");
+        assert!(note_holding(&bridge, false));
+        assert!(bridge.try_borrow_mut().is_ok());
+        // the Summon Info window multiplies the answers: nil would raise every OnUpdate
+        let lua = Lua::new();
+        let weapon = lua.create_table().unwrap();
+        lua.globals().set("X2SiegeWeapon", weapon).unwrap();
+        lua.globals().set("X2Unit", lua.create_table().unwrap()).unwrap();
+        lua.globals().set("HUD", lua.create_table().unwrap()).unwrap();
+        bridge.borrow_mut().vehicles.current = None;
+        let _ = install(&lua, &bridge);
+        let sum: f64 = lua.load("return X2SiegeWeapon:GetSiegeWeaponSpeed() + X2SiegeWeapon:GetSiegeWeaponTurnSpeed()").eval().unwrap();
+        assert_eq!(sum, 0.0);
     }
 
     /// A world with the owned ship (obj 500) and a cannon child slave (obj 600, template 10) of it.
