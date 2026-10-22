@@ -112,20 +112,30 @@ fn local_modes_use_attackable_and_active_command_duplicate_guards() {
 
 #[test]
 fn mount_reason_follows_native_approach_and_seat_rules() {
+    // The player stands at the origin; the mate faces +y (yaw 0) unless a test turns it.
     let mut data = HudData::default();
     data.pos = Vec3::ZERO;
-    data.yaw = 0.0; // faces +y
+    data.yaw = 2.0; // the player's own facing does not matter
     let at = |x: f32, y: f32| Vec3::new(x, y, 0.0);
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, false), 4, "in front");
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), true, false), 1, "front + occupied driver seat");
-    assert_eq!(mount_reason(&data, at(0.0, 1.0), false, true), 4, "front ignores the passenger seat");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, false), 3, "behind");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), false, true), 1, "behind + occupied passenger seat");
-    assert_eq!(mount_reason(&data, at(0.0, -1.0), true, false), 3, "behind ignores the driver seat");
-    assert_eq!(mount_reason(&data, at(1.0, 0.0), false, false), 2, "right side");
-    assert_eq!(mount_reason(&data, at(-1.0, 0.0), false, false), 1, "left side");
-    assert_eq!(mount_reason(&data, at(1.0, 0.0), true, false), 1, "driver seat wins on the side");
-    assert_eq!(mount_reason(&data, Vec3::ZERO, false, false), 2, "under the seat is the side split");
+    // the mate stands ahead of the player and faces away from it: the player is behind the mate
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, false, false), 3, "behind the mate");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, false, true), 1, "behind + occupied passenger seat");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 0.0, true, false), 3, "behind ignores the driver seat");
+    // the mate faces the player: the player is in front of the mate
+    let toward = std::f32::consts::PI;
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, false, false), 4, "in front of the mate");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, true, false), 1, "front + occupied driver seat");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), toward, false, true), 4, "front ignores the passenger seat");
+    // the mate at +x of the player and facing +y: the player is on the mate's left
+    assert_eq!(mount_reason(&data, at(3.0, 0.0), 0.0, false, false), 1, "left side");
+    assert_eq!(mount_reason(&data, at(-3.0, 0.0), 0.0, false, false), 2, "right side");
+    assert_eq!(mount_reason(&data, at(3.0, 0.0), 0.0, true, true), 1, "left side, seats ignored");
+    assert_eq!(mount_reason(&data, at(-3.0, 0.0), 0.0, true, true), 2, "right side ignores the driver seat");
+    assert_eq!(mount_reason(&data, Vec3::ZERO, 0.0, false, false), 2, "under the seat is the side split");
+    // the band edge: 0.96 is cos(16.3 deg)
+    let near = 16.0_f32.to_radians();
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), near, false, false), 3, "inside the back cone");
+    assert_eq!(mount_reason(&data, at(0.0, 3.0), 17.0_f32.to_radians(), false, false), 1, "outside it: the side by the cross sign");
 }
 
 #[test]

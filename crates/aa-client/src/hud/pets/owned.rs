@@ -129,6 +129,8 @@ struct Pet {
     /// The horizontal speed of the last received movement report (m/s).
     speed: f32,
     pos: Vec3,
+    /// The mount's facing (radians), for the entry side of `CSMountMate`.
+    yaw: f32,
     info: Option<super::super::stats::MateDetails>,
 }
 
@@ -144,6 +146,7 @@ struct TargetMount {
     seat2: bool,
     distance: f32,
     pos: Vec3,
+    yaw: f32,
 }
 
 /// Where the local player sits (the server's `SCUnitAttached` for its own object).
@@ -264,6 +267,7 @@ pub(super) fn refresh(world: &World, data: &mut HudData) {
             seat2,
             distance: (dx * dx + dy * dy + dz * dz).sqrt() as f32,
             pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
+            yaw: unit.yaw(),
         })
     })();
     let next = (|| {
@@ -323,6 +327,7 @@ pub(super) fn refresh(world: &World, data: &mut HudData) {
             seat2,
             speed: reported_speed(unit),
             pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
+            yaw: unit.yaw(),
             info: game.and_then(|game| super::super::stats::mate_details(game, unit, native_buffs)),
         })
     })();
@@ -399,36 +404,36 @@ fn can_mount_any(data: &HudData) -> bool {
             .is_some_and(|t| target_mount_point(data, t).is_some())
 }
 
-/// Native `FUN_3909ae90`: the approach-geometry reason byte for `CSMountMate`. It is the direction
-/// from the mount to the player projected on the player's forward: `>= 0.96` is behind (3), `< -0.96`
-/// in front (4), the band between is the left/right side (1/2 by the cross sign). An occupied
-/// passenger seat forces 1 for a rear approach; an occupied driver seat forces 1 otherwise.
-fn mount_reason(data: &HudData, mount_pos: Vec3, seat1: bool, seat2: bool) -> u8 {
+/// Native `FUN_3909ae90`: the approach-geometry reason byte for `CSMountMate`. `d` is the unit
+/// direction from the player to the mount and `f` the **mount's** forward vector: `d.f >= 0.96` is
+/// the player behind the mount (3; 1 when the passenger seat is taken), `< -0.96` in front of it
+/// (4; 1 when the driver seat is taken), the band between is the mount's left/right side by the
+/// sign of `d.y*f.x - d.x*f.y` (2 right, 1 left) with no occupancy override.
+fn mount_reason(data: &HudData, mount_pos: Vec3, mount_yaw: f32, seat1: bool, seat2: bool) -> u8 {
     let diff = mount_pos - data.pos;
-    let fwd = Vec2::new(-data.yaw.sin(), data.yaw.cos());
+    let fwd = Vec2::new(-mount_yaw.sin(), mount_yaw.cos());
     let len = diff.truncate().length();
     if len <= 1e-5 {
         return 2;
     }
-    let dot = -(diff.x * fwd.x + diff.y * fwd.y) / len;
+    let d = diff.truncate() / len;
+    let dot = d.dot(fwd);
     if 0.96 <= dot {
         if seat2 { 1 } else { 3 }
     } else if dot < -0.96 {
         if seat1 { 1 } else { 4 }
-    } else if seat1 {
-        1
-    } else if diff.x * fwd.y - diff.y * fwd.x >= 0.0 {
+    } else if d.y * fwd.x - d.x * fwd.y >= 0.0 {
         2
     } else {
         1
     }
 }
 
-fn queue_mount(data: &mut HudData, obj_id: u32, tl_id: u16, point: u8, seats: (bool, bool), mount_pos: Vec3, own: Option<(u32, u16, u32)>) {
+fn queue_mount(data: &mut HudData, obj_id: u32, tl_id: u16, point: u8, seats: (bool, bool), mount_pos: Vec3, mount_yaw: f32, own: Option<(u32, u16, u32)>) {
     if on_vehicle_cooldown(data) || casting(data) {
         return;
     }
-    let reason = mount_reason(data, mount_pos, seats.0, seats.1);
+    let reason = mount_reason(data, mount_pos, mount_yaw, seats.0, seats.1);
     data.pets.owned.last_action_ms = Some(now_ms(data));
     let command = MateCommand::Mount { tl_id, point, reason };
     if command.validate().is_err() {
@@ -445,7 +450,7 @@ fn mount_mate(data: &mut HudData) {
     if let Some(target) = data.pets.owned.target_mount.clone()
         && let Some(point) = target_mount_point(data, &target)
     {
-        queue_mount(data, target.obj_id, target.tl_id, point, (target.seat1, target.seat2), target.pos, None);
+        queue_mount(data, target.obj_id, target.tl_id, point, (target.seat1, target.seat2), target.pos, target.yaw, None);
         return;
     }
     let Some(pet) = data.pets.owned.current.clone() else { return };
@@ -453,7 +458,7 @@ fn mount_mate(data: &mut HudData) {
         return;
     }
     let own = Some(pet.identity());
-    queue_mount(data, pet.object, pet.spawn.tl_id, 1, (pet.seat1, pet.seat2), pet.pos, own);
+    queue_mount(data, pet.object, pet.spawn.tl_id, 1, (pet.seat1, pet.seat2), pet.pos, pet.yaw, own);
 }
 
 fn unmount_mate(data: &mut HudData) {
