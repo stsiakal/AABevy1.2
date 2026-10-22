@@ -268,6 +268,20 @@ impl Db {
                     .ok()
                     .flatten();
                 prefab.and_then(|p| prefab_model_file(&p))
+            })
+            .or_else(|| {
+                // a land vehicle (the Farm Wagon, 92 slave models): `vehicle_models.normal`, usually
+                // a `prefab://` element whose animated object is the body `.chr`
+                let raw: Option<String> = l
+                    .conn
+                    .query_row(
+                        "SELECT v.normal FROM models m JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' WHERE m.id = ?1",
+                        params![model_id],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten();
+                raw.as_deref().and_then(model_file)
             });
         l.actor_files.insert(model_id, file.clone());
         file
@@ -723,6 +737,18 @@ mod tests {
             return;
         }
         assert_eq!(prefab_model_file("prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02").as_deref(), Some("objects/env/01_nuia/001_ndeco/old/learning_ob01_e.chr"));
+    }
+
+    /// Model 1008 (`models.sub_type = 'VehicleModel'`, the Farm Wagon): `vehicle_models.normal`
+    /// is a prefab whose animated body is `transfers_trailer_a_body.chr`.
+    #[test]
+    fn a_vehicle_model_resolves_to_its_prefab_body() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let file = db.actor_model_file(1008).expect("the Farm Wagon body");
+        assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
     }
 
     #[test]
