@@ -168,7 +168,9 @@ impl Plugin for InGamePlugin {
                         .chain()
                         .after(crate::hud::HudInputReady),
                     (units::sync_views, units::move_units, units::cull_units).chain(),
+                    glide::track_remote_gliders.after(units::move_units).before(anim::drive_locomotion),
                     anim::drive_locomotion,
+                    glide::draw_remote_gliders.after(anim::drive_locomotion),
                     sprint::apply_blur.after(sprint::drive_sprint),
                     cam_fov::drive_cam_fov.after(camera::follow_player),
                     swim::drive_swim.after(anim::drive_locomotion),

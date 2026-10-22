@@ -86,6 +86,12 @@ pub struct RemoteUnit {
 }
 
 impl RemoteUnit {
+    /// A drawn player character with nothing else, for the tests of the systems that read `obj_id` and `is_character`.
+    #[cfg(test)]
+    pub(super) fn test_character(obj_id: u32) -> RemoteUnit {
+        RemoteUnit { obj_id, track: Track::new(Vec3::ZERO, 0.0), pos: Vec3::ZERO, facing: 0.0, scale: 1.0, character: true, combat: false, casting: false }
+    }
+
     pub(super) fn scale(&self) -> f32 {
         self.scale
     }

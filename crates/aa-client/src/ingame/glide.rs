@@ -579,15 +579,15 @@ pub fn equipped_glider_skill(inventory: Option<&Inventory>, db: Option<&Db>) -> 
 /// The action bar's "Use Glider" (skill 14901, no effect of its own) uses the glider on the back.
 pub fn redirect_use_glider(
     time: Res<Time>,
-    mut commands: MessageReader<NetCommand>,
+    mut messages: ResMut<Messages<NetCommand>>,
+    mut cursor: Local<bevy::ecs::message::MessageCursor<NetCommand>>,
     inventory: Option<Res<Inventory>>,
     db: Option<Res<Db>>,
     mut gliding: ResMut<Gliding>,
-    mut out: MessageWriter<NetCommand>,
 ) {
     let now = time.elapsed_secs_f64();
     let mut forward = Vec::new();
-    for NetCommand(cmd) in commands.read() {
+    for NetCommand(cmd) in cursor.read(&messages) {
         if matches!(cmd, Command::UseSkill { skill_id: USE_GLIDER_SKILL, .. })
             && !gliding.asked.is_some_and(|t| now - t < RETRY)
             && let Some(skill) = equipped_glider_skill(inventory.as_deref(), db.as_deref())
@@ -598,7 +598,7 @@ pub fn redirect_use_glider(
     for skill in forward {
         gliding.asked = Some(now);
         info!("glide: Use Glider asks for skill {skill}");
-        out.write(NetCommand(Command::UseSkill { skill_id: skill, target_obj_id: 0 }));
+        messages.write(NetCommand(Command::UseSkill { skill_id: skill, target_obj_id: 0 }));
     }
 }
 
@@ -768,15 +768,18 @@ pub fn show_glider(
     mut commands: Commands,
     mut cry: aa_cry::scene::CryAssets,
     player: Query<Entity, With<LocalPlayer>>,
-    mut models: Query<(Entity, &GliderModel, &mut Animator, Option<&mut GliderPlay>)>,
+    mut models: Query<(Entity, &GliderModel, &mut Animator, Option<&mut GliderPlay>), Without<RemoteSide>>,
+    children: Query<&Children>,
     mut stowed: Query<&mut Visibility, With<StowedPack>>,
 ) {
     let flying = gliding.active.is_some_and(|a| a.after.is_none());
     let Ok(owner) = player.single() else { return };
-    for mut v in &mut stowed {
-        let wanted = if flying { Visibility::Hidden } else { Visibility::Inherited };
-        if *v != wanted {
-            *v = wanted;
+    for d in children.iter_descendants(owner) {
+        if let Ok(mut v) = stowed.get_mut(d) {
+            let wanted = if flying { Visibility::Hidden } else { Visibility::Inherited };
+            if *v != wanted {
+                *v = wanted;
+            }
         }
     }
     let have = !models.is_empty();
@@ -828,6 +831,160 @@ pub struct GliderPlay {
 fn glider_cal(path: &str) -> Option<Arc<Cal>> {
     let chr = if path.ends_with(".cdf") { aa_anim::Cdf::load(path).ok()?.model } else { path.to_string() };
     Cal::shared(&format!("{}.cal", chr.trim_end_matches(".chr"))).ok()
+}
+
+// ------------------------------------------------------------------------------------------------- other players
+
+/// Marks a glider model that belongs to another player's character.
+#[derive(Component)]
+pub struct RemoteSide;
+
+/// Another player's character under a gliding buff: the server's buff list says it flies (the movement packets carry stance
+/// `FLY` and no ground flag, which `units` already keeps from drawing it as a runner in the air). The keys are not on the wire, so
+/// the pose comes from its speed against the buff's normal move speed.
+#[derive(Component)]
+pub struct RemoteGlide {
+    pub buff_id: u32,
+    /// Seconds since the glider was seen opening.
+    pub age: f32,
+    /// Ground speed it moves at (m/s).
+    pub speed: f32,
+    pub pose: Pose,
+    glider: Option<Entity>,
+    playing: Option<Pose>,
+    bound: HashMap<&'static str, Option<BoundClip>>,
+}
+
+/// The pose of another player's glider: the opening, then fast / slow against the normal speed.
+pub fn remote_pose(params: &GlideParams, age: f32, speed: f32) -> Pose {
+    let [slow, normal, fast] = params.move_speed;
+    if age < params.startup_time {
+        Pose::Start
+    } else if speed > normal + 0.5 * (fast - normal).max(0.5) {
+        Pose::Front
+    } else if speed < normal - 0.5 * (normal - slow).max(0.5) {
+        Pose::Back
+    } else {
+        Pose::Idle
+    }
+}
+
+/// Follows the buff lists of the drawn characters: one under a gliding buff gets a [`RemoteGlide`] (its [`Motion`] is emptied, so
+/// the locomotion does not run it through the air), loses it with the buff, and its stowed glider is hidden meanwhile.
+#[allow(clippy::type_complexity)]
+pub fn track_remote_gliders(
+    time: Res<Time>,
+    buffs: Option<Res<Buffs>>,
+    mut gliding: ResMut<Gliding>,
+    mut commands: Commands,
+    children: Query<&Children>,
+    mut packs: Query<&mut Visibility, With<StowedPack>>,
+    mut units: Query<(Entity, &super::units::RemoteUnit, &mut Motion, Option<&mut Locomotion>, Option<&mut RemoteGlide>)>,
+) {
+    let Some(buffs) = buffs else { return };
+    let dt = time.delta_secs().min(0.1);
+    for (entity, unit, mut motion, loco, glide) in &mut units {
+        if !unit.is_character() {
+            continue;
+        }
+        let found = buffs.of(unit.obj_id).iter().find(|e| gliding.params_of(e.buff.buff_id).is_some()).map(|e| e.buff.buff_id);
+        let mut set_packs = |flying: bool| {
+            for d in children.iter_descendants(entity) {
+                if let Ok(mut v) = packs.get_mut(d) {
+                    let wanted = if flying { Visibility::Hidden } else { Visibility::Inherited };
+                    if *v != wanted {
+                        *v = wanted;
+                    }
+                }
+            }
+        };
+        match (found, glide) {
+            (Some(buff_id), None) => {
+                commands.entity(entity).insert(RemoteGlide { buff_id, age: 0.0, speed: motion.speed, pose: Pose::Start, glider: None, playing: None, bound: HashMap::new() });
+            }
+            (Some(buff_id), Some(mut g)) => {
+                // the speed of the move before it was emptied
+                if motion.speed > 0.0 {
+                    g.speed = motion.speed;
+                }
+                g.buff_id = buff_id;
+                g.age += dt;
+                if let Some(params) = gliding.params_of(buff_id) {
+                    g.pose = remote_pose(&params, g.age, g.speed);
+                }
+                *motion = Motion::default();
+                set_packs(true);
+            }
+            (None, Some(g)) => {
+                if let Some(glider) = g.glider.filter(|g| *g != Entity::PLACEHOLDER) {
+                    commands.entity(glider).despawn();
+                }
+                commands.entity(entity).remove::<RemoteGlide>();
+                if let Some(mut loco) = loco {
+                    loco.invalidate();
+                }
+                set_packs(false);
+            }
+            (None, None) => {}
+        }
+    }
+}
+
+/// Draws the glider of another player's character and plays the gliding clips on both.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn draw_remote_gliders(
+    library: Res<ClipLibrary>,
+    units: Option<Res<aa_net::state::Units>>,
+    db: Option<Res<Db>>,
+    mut commands: Commands,
+    mut cry: aa_cry::scene::CryAssets,
+    mut flyers: Query<(Entity, &super::units::RemoteUnit, &mut RemoteGlide, &mut Animator, Option<&Locomotion>), Without<GliderModel>>,
+    mut gliders: Query<(&mut Animator, &mut GliderPlay), With<GliderModel>>,
+) {
+    for (entity, unit, mut glide, mut animator, loco) in &mut flyers {
+        if glide.glider.is_none() {
+            let model = units
+                .as_deref()
+                .and_then(|u| u.get(unit.obj_id))
+                .and_then(|u| u.equipment.get(slot::BACKPACK))
+                .map(|i| i.template_id)
+                .and_then(|t| db.as_deref()?.glider(t))
+                .and_then(|g| g.model);
+            if let Some(path) = model
+                && let Some(root) = super::creature::spawn(&mut commands, &mut cry, &library, &path, None, Transform::IDENTITY)
+            {
+                commands.entity(root).insert((GliderModel, RemoteSide, GliderPlay { cal: glider_cal(&path), playing: None }, ChildOf(entity)));
+                glide.glider = Some(root);
+            } else {
+                // no glider known for it: the character still glides
+                glide.glider = Some(Entity::PLACEHOLDER);
+            }
+        }
+        if glide.playing == Some(glide.pose) {
+            continue;
+        }
+        let pose = glide.pose;
+        if let Some(loco) = loco {
+            let (name, looped) = pose.character_clip();
+            let g = &mut *glide;
+            let clip = g.bound.entry(name).or_insert_with(|| bind_clip(&animator.rig, &loco.clips.cal, &library, name)).clone();
+            if let Some(clip) = clip {
+                animator.play(clip, looped, 0.25);
+                animator.random_idle = None;
+            }
+        }
+        if let Some(glider) = glide.glider.filter(|g| *g != Entity::PLACEHOLDER)
+            && let Ok((mut ganim, mut play)) = gliders.get_mut(glider)
+        {
+            let (name, looped) = pose.glider_clip();
+            if let Some(clip) = play.cal.as_ref().and_then(|cal| bind_clip(&ganim.rig, cal, &library, name)) {
+                ganim.play(clip, looped, 0.15);
+                ganim.random_idle = None;
+            }
+            play.playing = Some(pose);
+        }
+        glide.playing = Some(pose);
+    }
 }
 
 #[cfg(test)]
@@ -1085,6 +1242,47 @@ mod tests {
         assert!(flying.iter().any(|m| m.velocity[2] < 0), "the descent is in the velocity");
         assert_eq!((last.state, last.stance, last.moving), (MoveState::Ground, stance::RELAXED, false));
         assert!(last.fall_vel < 3000, "a glider lands softly: {}", last.fall_vel);
+    }
+
+    #[test]
+    fn another_players_pose_follows_its_speed() {
+        let p = ezi();
+        assert_eq!(remote_pose(&p, 0.5, 9.0), Pose::Start);
+        assert_eq!(remote_pose(&p, 3.0, 9.0), Pose::Idle);
+        assert_eq!(remote_pose(&p, 3.0, 11.0), Pose::Front);
+        assert_eq!(remote_pose(&p, 3.0, 7.0), Pose::Back);
+    }
+
+    /// A drawn character whose buff list gets a gliding buff is a glider pilot, its stowed glider hides and its motion is emptied;
+    /// the buff's removal (the landing) puts everything back.
+    #[test]
+    fn a_remote_character_glides_while_its_buff_lasts() {
+        use aa_net::state::BuffEntry;
+        if GlideParams::load_all().is_empty() {
+            return;
+        }
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default()).init_resource::<Gliding>().init_resource::<Buffs>().add_systems(Update, track_remote_gliders);
+        let unit = app.world_mut().spawn((super::super::units::RemoteUnit::test_character(7), Motion { speed: 9.0, local_dir: Vec2::Y, airborne: false })).id();
+        let pack = app.world_mut().spawn((StowedPack, Visibility::Inherited, ChildOf(unit))).id();
+        let step = |app: &mut App| {
+            app.world_mut().resource_mut::<Time>().advance_by(std::time::Duration::from_millis(33));
+            app.update();
+        };
+        step(&mut app);
+        assert!(app.world().get::<RemoteGlide>(unit).is_none(), "no buff, no glider");
+        let buff = aa_net::buff::Buff { buff_id: 2098, index: 3, ..Default::default() };
+        app.world_mut().resource_mut::<Buffs>().by_unit.insert(7, vec![BuffEntry { buff, received: std::time::Instant::now() }]);
+        step(&mut app);
+        step(&mut app);
+        let g = app.world().get::<RemoteGlide>(unit).expect("gliding");
+        assert_eq!((g.buff_id, g.pose), (2098, Pose::Start));
+        assert_eq!(app.world().get::<Motion>(unit).unwrap().speed, 0.0, "not run through the air");
+        assert_eq!(*app.world().get::<Visibility>(pack).unwrap(), Visibility::Hidden);
+        app.world_mut().resource_mut::<Buffs>().by_unit.insert(7, Vec::new());
+        step(&mut app);
+        assert!(app.world().get::<RemoteGlide>(unit).is_none(), "landed");
+        assert_eq!(*app.world().get::<Visibility>(pack).unwrap(), Visibility::Inherited);
     }
 
     /// The database's gliding buffs are the ones the rules were read for (needs `AA_DB`).
