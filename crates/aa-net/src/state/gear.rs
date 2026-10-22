@@ -262,6 +262,40 @@ impl Inventory {
         true
     }
 
+    /// The bag end of an item move whose other end is a part of a slave (`container::EQUIPMENT_SLAVE`): the bag does not
+    /// know the slave's parts, so `slave_parts` (the slave unit's equipment, still as before the move) supplies the item
+    /// that comes into the bag slot (unequip, or the part a swap takes off). Run after [`Self::apply`]; the item that
+    /// goes the other way was already taken out of the bag by it.
+    pub fn apply_slave_moves(&mut self, event: &Event, slave_parts: &[Option<Item>]) -> bool {
+        let Event::ItemsChanged(changes) = event else { return false };
+        let mut changed = false;
+        for task in &changes.tasks {
+            let ItemTask::Move { from_container, from_slot, from_item_id, to_container, to_slot, to_item_id } = task else { continue };
+            // (bag slot, the slave end's slot and item id) of each direction
+            let ends = [
+                (*from_container, *from_slot, *to_container, *to_slot, *to_item_id),
+                (*to_container, *to_slot, *from_container, *from_slot, *from_item_id),
+            ];
+            for (bag, bag_slot, slave, slave_slot, slave_item) in ends {
+                if slave != container::EQUIPMENT_SLAVE || bag != container::INVENTORY || slave_item == 0 {
+                    continue;
+                }
+                let part = slave_parts
+                    .get(usize::from(slave_slot))
+                    .and_then(Option::as_ref)
+                    .filter(|part| part.id == slave_item)
+                    .cloned();
+                if let (Some(part), Some(slot)) = (part, self.slot_mut(bag, usize::from(bag_slot)))
+                    && slot.is_none()
+                {
+                    *slot = Some(part);
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     fn remove_by_id(&mut self, id: u64) -> bool {
         let mut removed = false;
         for list in [&mut self.bag[..], &mut self.bank[..], &mut self.equipment.slots[..]] {
@@ -514,6 +548,32 @@ mod tests {
         assert!(inv.apply(&Event::CraftItemUnlocked(crate::craft::CraftItemUnlock { kind: 3, slot: 2 })));
         assert!(!inv.apply(&Event::CraftItemUnlocked(crate::craft::CraftItemUnlock { kind: 3, slot: 2 })));
         assert_eq!(inv.bag[0].as_ref().unwrap().id, 123);
+    }
+
+    #[test]
+    fn a_part_taken_off_a_slave_lands_in_the_bag_slot() {
+        use crate::items::container::{EQUIPMENT_SLAVE, INVENTORY};
+        let mut inv = Inventory::default();
+        inv.apply(&selected(10));
+        let mut parts = vec![None; 26];
+        parts[3] = Some(item(28852, 70, 1));
+        // unequip into an empty slot
+        let unequip = tasks(0, vec![ItemTask::Move { from_container: EQUIPMENT_SLAVE, from_slot: 3, from_item_id: 70, to_container: INVENTORY, to_slot: 4, to_item_id: 0 }]);
+        inv.apply(&unequip);
+        assert!(inv.apply_slave_moves(&unequip, &parts));
+        assert_eq!(inv.bag[4].as_ref().map(|i| i.id), Some(70));
+        // equip a bag item over it: the old part takes the bag slot of the new one
+        inv.bag[6] = Some(item(28853, 71, 1));
+        let swap = tasks(0, vec![ItemTask::Move { from_container: INVENTORY, from_slot: 6, from_item_id: 71, to_container: EQUIPMENT_SLAVE, to_slot: 3, to_item_id: 70 }]);
+        inv.apply(&swap);
+        assert!(inv.bag[6].is_none(), "the equipped part left the bag");
+        assert!(inv.apply_slave_moves(&swap, &parts));
+        assert_eq!(inv.bag[6].as_ref().map(|i| i.id), Some(70));
+        // plain equip: the item only leaves the bag
+        let equip = tasks(0, vec![ItemTask::Move { from_container: INVENTORY, from_slot: 4, from_item_id: 70, to_container: EQUIPMENT_SLAVE, to_slot: 5, to_item_id: 0 }]);
+        inv.apply(&equip);
+        assert!(!inv.apply_slave_moves(&equip, &parts));
+        assert!(inv.bag[4].is_none());
     }
 
     #[test]

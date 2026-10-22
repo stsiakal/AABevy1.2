@@ -134,6 +134,14 @@ macro_rules! net_state {
                         self.$field.set_changed();
                     }
                 )*
+                // a part moved between the bag and the owned slave: the bag learns the item that came off it
+                if matches!(event, Event::ItemsChanged(_))
+                    && let Some(own) = self.slaves.own.as_ref()
+                    && let Some(unit) = self.units.by_id.get(&own.obj_id)
+                    && self.inventory.bypass_change_detection().apply_slave_moves(event, &unit.equipment.slots)
+                {
+                    self.inventory.set_changed();
+                }
                 let now=self.server_clock.mapped_now();
                 if self.battlefield.bypass_change_detection().apply_with_time(event,now) {self.battlefield.set_changed();}
                 self.advance_battlefield_clock();

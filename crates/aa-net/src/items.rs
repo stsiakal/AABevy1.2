@@ -112,6 +112,8 @@ pub mod container {
     pub const MAIL: u8 = 5;
     pub const AUCTION: u8 = 6;
     pub const EQUIPMENT_MATE: u8 = 252;
+    /// The parts a ship / vehicle wears (`SlotType.EquipmentSlave`).
+    pub const EQUIPMENT_SLAVE: u8 = 0xF2;
     pub const SYSTEM: u8 = 255;
 }
 
