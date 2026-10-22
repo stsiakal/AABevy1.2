@@ -185,6 +185,7 @@ pub fn item_tip(lua: &Lua, game: &GameData, state: &TipState, id: u32, grade: Op
     item_tip_at(lua, game, state, id, grade, count, instance, aa_net::secure::unix_now())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn item_tip_at(
     lua: &Lua,
     game: &GameData,
