@@ -340,22 +340,22 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
 
 ## 5. Gaps vs Bevy (ranked)
 
-1. **No quest time limit / countdown.** The original publishes `QUEST_LEFT_TIME_UPDATED`
-   once a second with remaining ms and hides the clock at ≤0 (`FUN_3937cd80`;
-   `notifier:1639-1653`). Bevy's `X2Quest.GetQuestContextLeftTime` always returns `0`
-   (`crates/aa-client/src/hud/quest.lua:99`), and no `QUEST_LEFT_TIME_UPDATED` producer
-   exists, so timed quests never show or expire locally. Fix: expose `Quest.time_left_ms`
-   through `HUD`, tick it against `accept_time`, fire the event, and hide at ≤0.
+1. **Done (`3037053`): quest time limit / countdown.** The original publishes
+   `QUEST_LEFT_TIME_UPDATED` once a second with remaining ms and hides the clock at ≤0
+   (`FUN_3937cd80`; `notifier:1639-1653`). Bevy now exposes the clock through
+   `HUD.quest_left_time`, ticks `Quest.time_left_ms` against `accept_time` once a second, raises
+   `QUEST_LEFT_TIME_UPDATED(qtype, remaining_ms)` when at least 1000 ms are left and leaves the
+   getter at ≤0 under that, so `X2Quest.GetQuestContextLeftTime` and the notifier hide the clock.
 2. **Only three quest marks instead of the original 15 stypes.** Original:
    15 prefabs selected by `FUN_393821f0`, including green/yellow/repeat "!", blue/yellow/
    green/half/more "?", huntsign and two flower marks. Bevy: `Mark` has only
    Available/Ready/InProgress (`quests.rs:47-55`) and `marks.rs:54-56` hard-codes three
    models/materials. Fix: port the stype table and compute each NPC's stype from its
    start/ready/talk lists and quest detail type.
-3. **Multi-objective talks only advance one objective.** Original loops every talk
+3. **Done (`a41e134`): multi-objective talks advance every objective.** Original loops every talk
    objective and calls `CallQuestTalk` for each (`npc_interaction.alb:220-234`). Bevy's
-   `CallQuestTalk` returns after the first because of `talkCalled`
-   (`quest.lua:241-245`). Fix: send one `CSQuestTalkMade` per `(qtype, ctype, atype)`.
+   `CallQuestTalk` now raises `PROGRESS_TALK_QUEST_CONTEXT` for every call, so each
+   `(qtype, ctype, atype)` sends its own `CSQuestTalkMade`.
 4. **NPC service windows incomplete.** Original maps 16 kinds to windows, including skill
    trainer, teleporter, specialty, dominion, expedition, look converter, recruiter, trader
    backpack (`npc_interaction.alb:3-105, 268-306`). Bevy's service router covers store, bank,
