@@ -12,6 +12,9 @@ use rusqlite::{Connection, OpenFlags, params};
 
 pub(crate) use super::combat::skills::{Tool, tool_from_conn};
 
+/// `slaves.slave_kind_id` of a cannon.
+pub const SLAVE_KIND_CANNON: u32 = 8;
+
 /// The database handles (a connection is `Send` but not `Sync`, hence the mutexes). Cloning shares them, so worker
 /// threads can use the same lookups and caches.
 #[derive(Resource, Clone)]
@@ -39,6 +42,8 @@ struct Lookups {
     land_vehicles: HashMap<u32, bool>,
     ship_bodies: HashMap<u32, ShipBody>,
     ships: HashMap<u32, bool>,
+    /// `slaves.slave_kind_id` by slave template.
+    slave_kinds: HashMap<u32, u32>,
     seats: HashMap<(u32, u8), Seat>,
 }
 
@@ -288,6 +293,7 @@ impl Db {
                 land_vehicles: HashMap::new(),
                 ship_bodies: HashMap::new(),
                 ships: HashMap::new(),
+                slave_kinds: HashMap::new(),
                 seats: HashMap::new(),
             })),
         })
@@ -524,6 +530,21 @@ impl Db {
             .is_ok();
         l.ships.insert(model_id, out);
         out
+    }
+
+    /// Whether a slave template is a cannon / harpoon gun (`slaves.slave_kind_id` 8, "slave equipment"): the
+    /// child slaves a ship carries at its cannon attach points, manned from the driver seat.
+    pub fn is_cannon(&self, template_id: u32) -> bool {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.slave_kinds.get(&template_id) {
+            return *v == SLAVE_KIND_CANNON;
+        }
+        let kind = l
+            .conn
+            .query_row("SELECT coalesce(slave_kind_id, 0) FROM slaves WHERE id = ?1", params![template_id], |r| r.get::<_, u32>(0))
+            .unwrap_or(0);
+        l.slave_kinds.insert(template_id, kind);
+        kind == SLAVE_KIND_CANNON
     }
 
     /// Whether a slave model is a land vehicle (`models.sub_type = 'VehicleModel'`) rather than a

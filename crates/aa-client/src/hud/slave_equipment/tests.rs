@@ -34,6 +34,7 @@ fn ship(equipment: &[(usize, Item)]) -> Current {
         turn: 1.0,
         land: false,
         ship: true,
+        cannon: false,
     }
 }
 

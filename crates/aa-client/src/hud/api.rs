@@ -1021,7 +1021,9 @@ pub fn handle_requests(
             }
             Request::UseModeAction { slot } => {
                 let data = bridge.0.borrow();
-                if let Some(command) = super::vehicles::use_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
+                if let Some(press) = super::vehicles::ground_press(&data, slot) {
+                    pressed.write(press);
+                } else if let Some(command) = super::vehicles::use_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
                     net.write(NetCommand(command));
                 }
             }

@@ -147,11 +147,17 @@ pub struct SkillPressed {
     pub gcd: bool,
     /// The item summons a ship: place the `SummonPos` target on the water surface.
     pub water: bool,
+    /// A slave casts the skill for the player (a manned ship cannon): `(slave object id, mount skill id)`. The cast
+    /// is the mate-style `UseMateSkill(At)` and the seated gunner is neither turned nor stopped.
+    pub caster: Option<(u32, u32)>,
 }
 
 impl SkillPressed {
     /// The command a skill without a spot sends.
     fn plain(&self) -> Command {
+        if let Some((mate_obj_id, mount_skill_id)) = self.caster {
+            return Command::UseMateSkill { skill_id: self.skill, mate_obj_id, mount_skill_id, target_obj_id: self.target_obj_id };
+        }
         match self.item {
             Some((item_id, template_id)) => Command::UseItem { item_id, template_id, skill_id: self.skill, target_obj_id: self.target_obj_id },
             None => Command::UseSkill { skill_id: self.skill, target_obj_id: self.target_obj_id },
@@ -159,6 +165,9 @@ impl SkillPressed {
     }
 
     fn at(&self, pos: Pos) -> Command {
+        if let Some((mate_obj_id, mount_skill_id)) = self.caster {
+            return Command::UseMateSkillAt { skill_id: self.skill, mate_obj_id, mount_skill_id, pos };
+        }
         match self.item {
             Some((item_id, template_id)) => Command::UseItemAt { item_id, template_id, skill_id: self.skill, pos },
             None => Command::UseSkillAt { skill_id: self.skill, pos },
@@ -355,11 +364,14 @@ fn sent(flight: &mut InFlight, press: &SkillPressed) {
 /// Turns the caster to the spot (a standing movement packet carries the facing: the server checks `target_angle` against it)
 /// and asks for the skill there.
 fn cast_at(press: &SkillPressed, spot: Vec3, mover: &mut Mover, net: &mut MessageWriter<NetCommand>, flight: &mut InFlight) {
-    if let Some(yaw) = yaw_to(mover.pos, spot) {
-        mover.facing = yaw;
-    }
     let me = mover.pos;
-    net.write(NetCommand(Command::Move(MoveCommand::stopped(Pos::new(me.x, me.y, me.z), mover.facing))));
+    // a seated gunner aims the cannon the server turns: no facing change and no standing movement packet
+    if press.caster.is_none() {
+        if let Some(yaw) = yaw_to(mover.pos, spot) {
+            mover.facing = yaw;
+        }
+        net.write(NetCommand(Command::Move(MoveCommand::stopped(Pos::new(me.x, me.y, me.z), mover.facing))));
+    }
     net.write(NetCommand(press.at(Pos::new(spot.x, spot.y, spot.z))));
     sent(flight, press);
     info!("ground: cast skill {} at ({:.1}, {:.1}, {:.1}), {:.1} m away, facing {:.2}", press.skill, spot.x, spot.y, spot.z, me.distance(spot), mover.facing);
@@ -389,7 +401,7 @@ fn dev_script(
     while let Some(i) = script.press.iter().position(|(at, _)| *at <= t) {
         let (_, skill) = script.press.remove(i);
         info!("ground: scripted press of skill {skill} at {t:.1} s");
-        pressed.write(SkillPressed { skill, item: None, target_obj_id: 0, gcd: false, water: false });
+        pressed.write(SkillPressed { skill, item: None, target_obj_id: 0, gcd: false, water: false, caster: None });
     }
     while let Some(i) = script.aim.iter().position(|(at, _)| *at <= t) {
         let (_, p) = script.aim.remove(i);
@@ -829,10 +841,10 @@ mod tests {
             .init_resource::<Sent>()
             .insert_resource(emotes)
             .add_systems(Update, (route, collect).chain());
-        app.world_mut().write_message(SkillPressed { skill: 14460, item: None, target_obj_id: 77, gcd: true, water: false });
+        app.world_mut().write_message(SkillPressed { skill: 14460, item: None, target_obj_id: 77, gcd: true, water: false, caster: None });
         // a skill that is no emote, and an item whose skill is one: plain uses
-        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: true, water: false });
-        app.world_mut().write_message(SkillPressed { skill: 14460, item: Some((9, 3)), target_obj_id: 0, gcd: true, water: false });
+        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: true, water: false, caster: None });
+        app.world_mut().write_message(SkillPressed { skill: 14460, item: Some((9, 3)), target_obj_id: 0, gcd: true, water: false, caster: None });
         app.update();
         let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
         assert!(matches!(sent[0], Command::ExpressEmotion { emotion_id, target_obj_id: 77 } if emotion_id == clap), "{:?}", sent[0]);
@@ -859,13 +871,47 @@ mod tests {
             .add_systems(Update, (route, collect).chain());
         let pending = |app: &App| app.world().resource::<InFlight>().pending(&aa_net::state::Skills::default(), std::time::Instant::now());
         // a skill that ignores the global cooldown does not hold the others back
-        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: false, water: false });
+        app.world_mut().write_message(SkillPressed { skill: 11_001, item: None, target_obj_id: 5, gcd: false, water: false, caster: None });
         app.update();
         assert!(!pending(&app));
-        app.world_mut().write_message(SkillPressed { skill: 11_002, item: None, target_obj_id: 5, gcd: true, water: false });
+        app.world_mut().write_message(SkillPressed { skill: 11_002, item: None, target_obj_id: 5, gcd: true, water: false, caster: None });
         app.update();
         assert!(pending(&app));
         assert_eq!(app.world().resource::<Sent>().0.len(), 2);
+    }
+
+    #[test]
+    fn a_cannon_casts_at_the_spot_without_turning_or_stopping_the_gunner() {
+        let fire = SkillPressed { skill: 10473, item: None, target_obj_id: 0, gcd: false, water: false, caster: Some((500, 16)) };
+        let spot = Pos::new(10.0, 20.0, 1.0);
+        assert!(matches!(
+            fire.at(spot),
+            Command::UseMateSkillAt { skill_id: 10473, mate_obj_id: 500, mount_skill_id: 16, pos } if (pos.x, pos.y) == (10.0, 20.0)
+        ));
+        assert!(matches!(fire.plain(), Command::UseMateSkill { mate_obj_id: 500, mount_skill_id: 16, .. }));
+        let cast = |press: SkillPressed| {
+            let mut app = App::new();
+            app.add_message::<NetCommand>().init_resource::<InFlight>().init_resource::<Sent>();
+            app.add_systems(
+                Update,
+                (
+                    move |mut net: MessageWriter<NetCommand>, mut flight: ResMut<InFlight>| {
+                        let mut mover = Mover { pos: Vec3::ZERO, facing: 0.0, vz: 0.0, grounded: true, velocity: Vec3::ZERO, swim: None, wading: 0.0 };
+                        cast_at(&press, Vec3::new(10.0, 20.0, 1.0), &mut mover, &mut net, &mut flight);
+                        assert_eq!(mover.facing != 0.0, press.caster.is_none(), "only a walking caster turns to the spot");
+                    },
+                    collect,
+                )
+                    .chain(),
+            );
+            app.update();
+            std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0)
+        };
+        let sent = cast(fire);
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(matches!(sent[0], Command::UseMateSkillAt { mate_obj_id: 500, .. }));
+        let sent = cast(SkillPressed { caster: None, skill: 10664, ..fire });
+        assert!(matches!(sent.as_slice(), [Command::Move(_), Command::UseSkillAt { skill_id: 10664, .. }]), "{sent:?}");
     }
 
     #[test]

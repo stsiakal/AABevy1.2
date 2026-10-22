@@ -61,6 +61,22 @@ fn towards(current: f32, target: f32, max_delta: f32) -> f32 {
     }
 }
 
+/// How close the gunner must stand to a ship's cannon to man it (metres). Standing aboard is not
+/// reported to the client, so being this near a cannon is the "aboard" test; the server decides who
+/// may man it (`may_man_cannon`: the summoner, the ship's owner or anybody aboard).
+pub(super) const CANNON_REACH: f32 = 4.5;
+
+/// The timeline id of the cannon `player` can man: the nearest of `cannons` (timeline, position) within
+/// [`CANNON_REACH`].
+pub(super) fn nearest_cannon(player: Vec3, cannons: impl IntoIterator<Item = (u16, Vec3)>) -> Option<u16> {
+    cannons
+        .into_iter()
+        .map(|(tl, pos)| (tl, pos.distance(player)))
+        .filter(|(_, d)| *d <= CANNON_REACH)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(tl, _)| tl)
+}
+
 /// Binds the newly summoned own slave once it is visible and sends `CSDiscardSlave` when the
 /// player presses the primary interaction key while driving. `CSBindSlave`/`CSDiscardSlave` are the
 /// native seat controls; the original client has no separate Lua "board" button (the target popup
@@ -75,6 +91,7 @@ pub fn vehicle_seat(
     db: Option<Res<Db>>,
     views: Option<Res<Views>>,
     visuals: Query<&RemoteUnit>,
+    mover: Query<&super::player::Mover, With<super::player::LocalPlayer>>,
     mut out: MessageWriter<NetCommand>,
     mut handled: Local<Option<(u16, u32)>>,
     mut last: Local<f32>,
@@ -104,6 +121,32 @@ pub fn vehicle_seat(
     // Do not auto-board while another attachment (a mount) owns the player.
     if attached.is_some() {
         return;
+    }
+    // A cannon child slave in reach takes the interaction key before the ship's helm does: the key
+    // binds its gunner seat (`CSBindSlave` on the cannon's timeline); the key again unbinds (above).
+    if actions.just_pressed("do_interaction_1", 0)
+        && now - *last > 0.5
+        && let Some(db) = db.as_deref()
+    {
+        let me = mover.single().map_or_else(|_| Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z), |m| m.pos);
+        let cannons = units.by_id.values().filter_map(|u| {
+            let UnitKind::Slave { tl_id, template_id, .. } = u.kind else { return None };
+            // a child slave: its bearer (the ship) is the owner object of its unit state
+            let bearer = u.state_attachments.and_then(|a| a.first_obj_id).filter(|b| *b != 0)?;
+            (!u.dead && units.get(bearer).is_some() && db.is_cannon(template_id)).then(|| {
+                let at = views
+                    .as_deref()
+                    .and_then(|v| v.unit_entity(u.obj_id))
+                    .and_then(|e| visuals.get(e).ok())
+                    .map_or(u.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
+                (tl_id, Vec3::new(at.x, at.y, at.z))
+            })
+        });
+        if let Some(tl_id) = nearest_cannon(me, cannons) {
+            out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
+            *last = now;
+            return;
+        }
     }
     if actions.just_pressed("do_interaction_1", 0) { debug!("vehicle_seat: F pressed, attached {:?}, own slave {:?}", attached, slaves.as_deref().and_then(|s| s.own.as_ref()).map(|o| (o.obj_id, o.tl_id))); }
     let Some(own) = slaves.as_deref().and_then(|s| s.own.as_ref()) else { return };
@@ -263,6 +306,15 @@ mod tests {
     }
 
     #[test]
+    fn the_nearest_cannon_in_reach_is_manned() {
+        let me = Vec3::new(10.0, 10.0, 2.0);
+        let cannons = [(3, Vec3::new(13.0, 10.0, 2.0)), (4, Vec3::new(11.0, 10.0, 2.0)), (5, Vec3::new(40.0, 10.0, 2.0))];
+        assert_eq!(nearest_cannon(me, cannons), Some(4));
+        assert_eq!(nearest_cannon(me, [(5, Vec3::new(40.0, 10.0, 2.0)), (6, Vec3::new(10.0, 10.0, 2.0 + CANNON_REACH + 0.1))]), None);
+        assert_eq!(nearest_cannon(me, []), None);
+    }
+
+    #[test]
     fn speed_is_braked_and_accelerated_towards_the_throttle() {
         assert_eq!(towards(0.0, 15.0, 8.0), 8.0);
         assert_eq!(towards(8.0, 15.0, 8.0), 15.0);
@@ -363,5 +415,72 @@ mod flow_tests {
         app.world_mut().resource_mut::<Player>().spawn.as_mut().unwrap().unit.attached_to = Some(Attachment { obj_id: 500, point: 1 });
         app.update();
         assert!(drain(&mut app).is_empty());
+    }
+
+    /// The shared deck: the owned ship (obj 500, tl 7, template 22) and a cannon child (obj 600, tl 8, template 10).
+    fn deck(seat: Option<Attachment>, cannon_at: f32) -> App {
+        let mut app = App::new();
+        let mut player = spawn();
+        player.unit.attached_to = seat;
+        let actions = crate::settings::Actions::default();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(Player { spawn: Some(player) })
+            .insert_resource(actions)
+            .add_message::<NetEvent>()
+            .add_message::<NetCommand>()
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs(1)))
+            .add_systems(Update, vehicle_seat);
+        let mut units = Units::default();
+        let mut ship = unit(500, UnitKind::Slave { id: 9, tl_id: 7, template_id: 22, summoner_id: 47 });
+        ship.model_id = 1249;
+        units.by_id.insert(500, ship);
+        let mut cannon = unit(600, UnitKind::Slave { id: 10, tl_id: 8, template_id: 10, summoner_id: 47 });
+        cannon.model_id = 117;
+        cannon.pos = Pos::new(cannon_at, 0.0, 0.0);
+        cannon.state_attachments = Some(aa_net::model::UnitStateAttachments { first_point: 9, first_obj_id: Some(500), bonding_obj_id: None });
+        units.by_id.insert(600, cannon);
+        app.insert_resource(units);
+        app.insert_resource(Db::open().expect("the server database"));
+        let mut slaves = Slaves::default();
+        slaves.apply(&Event::PlayerSpawn(Box::new(spawn())));
+        slaves.apply(&Event::Slave(SlaveEvent::Created(SlaveCreated {
+            owner_obj_id: 100,
+            tl_id: 7,
+            obj_id: 500,
+            hide_spawn_effect: true,
+            raw_id: 0,
+            creator_name: "Ship".into(),
+        })));
+        app.insert_resource(slaves);
+        // let the clock pass the half second the key repeat guard waits for
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(sent(&mut app).is_empty(), "nothing is sent without a key");
+        app
+    }
+
+    /// The interaction key goes down for one frame.
+    fn press(app: &mut App) -> Vec<Command> {
+        app.world_mut().resource_mut::<crate::settings::Actions>().tap_for_test("do_interaction_1");
+        app.update();
+        sent(app)
+    }
+
+    fn sent(app: &mut App) -> Vec<Command> {
+        app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|v| v.0).collect()
+    }
+
+    #[test]
+    fn the_interaction_key_mans_a_cannon_in_reach_before_the_helm_and_leaves_it_again() {
+        // a cannon 3 m away is manned (CSBindSlave on the cannon's timeline), not the ship's helm
+        let mut app = deck(None, 3.0);
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Bind { tl_id: 8 })]));
+        // out of reach the key boards the ship as before
+        let mut app = deck(None, 30.0);
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Bind { tl_id: 7 })]));
+        // seated at the cannon, the key leaves its seat (CSDiscardSlave on the cannon, not the ship)
+        let mut app = deck(Some(Attachment { obj_id: 600, point: 1 }), 0.0);
+        assert!(matches!(press(&mut app).as_slice(), [Command::Slave(SlaveCommand::Unbind { tl_id: 8 })]));
     }
 }

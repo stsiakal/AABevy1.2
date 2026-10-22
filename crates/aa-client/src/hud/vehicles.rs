@@ -38,6 +38,8 @@ pub(super) struct Tables {
     pub(super) land: HashSet<u32>,
     /// Slave templates whose model is a `ShipModel`.
     pub(super) ships: HashSet<u32>,
+    /// Slave templates of cannons / harpoon guns (`slave_kind_id` 8), manned from the driver seat.
+    pub(super) cannons: HashSet<u32>,
     /// Equipment slots, parts and hull rules of ships ([`super::slave_equipment`]).
     pub(super) equip: super::slave_equipment::Tables,
 }
@@ -118,6 +120,11 @@ impl Tables {
             let turn = any_int(row, 2)? as f32;
             out.speeds.insert(slave, (speed.max(0.1), turn.abs().max(0.05)));
         }
+        let mut query = conn.prepare("SELECT id FROM slaves WHERE slave_kind_id = 8")?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            out.cannons.insert(any_int(row, 0)? as u32);
+        }
         out.equip = super::slave_equipment::Tables::load(conn)?;
         Ok(out)
     }
@@ -145,6 +152,8 @@ pub(super) struct Current {
     pub land: bool,
     /// A `ShipModel`: the mode bar shows its `slave_mount_skills` without a player-seat filter.
     pub ship: bool,
+    /// A cannon the player is manning (not the owned slave): the mode bar shows the cannon's skills.
+    pub cannon: bool,
 }
 
 #[derive(Default)]
@@ -160,23 +169,36 @@ pub(super) struct View {
 }
 
 fn current(world: &World, data: &HudData) -> Option<Current> {
-    let slaves = world.get_resource::<Slaves>()?;
-    let own = slaves.own.as_ref()?;
     let units = world.get_resource::<Units>()?;
-    let unit = units.get(own.obj_id)?;
-    let UnitKind::Slave { id: db_id, tl_id, template_id, .. } = unit.kind else { return None };
-    if tl_id != own.tl_id {
-        return None;
-    }
     let player = world.get_resource::<Player>()?.spawn.as_ref()?;
-    let point = player.unit.attached_to.filter(|a| a.obj_id == own.obj_id).map(|a| a.point);
-    let (speed, turn) = data
-        .game
-        .get()
-        .and_then(|g| g.vehicles.speeds.get(&template_id).copied())
-        .unwrap_or((8.0, 1.0));
+    let attached = player.unit.attached_to;
+    let game = data.game.get();
+    // The slave the mode bar and the information window belong to: the cannon whose gunner seat the player
+    // holds, else the owned ship / vehicle.
+    let manned = attached.and_then(|a| units.get(a.obj_id)).filter(|u| {
+        matches!(u.kind, UnitKind::Slave { template_id, .. } if game.is_some_and(|g| g.vehicles.cannons.contains(&template_id)))
+    });
+    let (unit, tl_id) = match manned {
+        Some(unit) => {
+            let UnitKind::Slave { tl_id, .. } = unit.kind else { return None };
+            (unit, tl_id)
+        }
+        None => {
+            let own = world.get_resource::<Slaves>()?.own.as_ref()?;
+            let unit = units.get(own.obj_id)?;
+            let UnitKind::Slave { tl_id, .. } = unit.kind else { return None };
+            if tl_id != own.tl_id {
+                return None;
+            }
+            (unit, tl_id)
+        }
+    };
+    let UnitKind::Slave { id: db_id, template_id, .. } = unit.kind else { return None };
+    let cannon = manned.is_some();
+    let point = attached.filter(|a| a.obj_id == unit.obj_id).map(|a| a.point);
+    let (speed, turn) = game.and_then(|g| g.vehicles.speeds.get(&template_id).copied()).unwrap_or(if cannon { (0.0, 0.0) } else { (8.0, 1.0) });
     Some(Current {
-        obj_id: own.obj_id,
+        obj_id: unit.obj_id,
         tl_id,
         db_id,
         template: template_id,
@@ -189,8 +211,9 @@ fn current(world: &World, data: &HudData) -> Option<Current> {
         pos: Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z),
         speed,
         turn,
-        land: data.game.get().is_some_and(|g| g.vehicles.land.contains(&template_id)),
-        ship: data.game.get().is_some_and(|g| g.vehicles.ships.contains(&template_id)),
+        land: game.is_some_and(|g| g.vehicles.land.contains(&template_id)),
+        ship: game.is_some_and(|g| g.vehicles.ships.contains(&template_id)),
+        cannon,
     })
 }
 
@@ -371,6 +394,22 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     Ok(())
 }
 
+/// A position skill of the manned cannon goes through the ground reticle (`ground_target::route`: the
+/// decal follows the cursor, the click casts); the cannon is the caster, so the cast is the slave-caster
+/// `UseMateSkillAt` and the seated gunner is not turned. Other skills use [`use_action`].
+pub(super) fn ground_press(data: &HudData, index: usize) -> Option<crate::ingame::ground_target::SkillPressed> {
+    let current = data.vehicles.current.as_ref().filter(|c| c.cannon && c.point.is_some())?;
+    let (mount_skill_id, skill) = displayed(data.game.get()?, current).nth(index.checked_sub(1)?)?;
+    matches!(skill.target_type, 6 | 11 | 13 | 15).then_some(crate::ingame::ground_target::SkillPressed {
+        skill: skill.combat,
+        item: None,
+        target_obj_id: 0,
+        gcd: false,
+        water: false,
+        caster: Some((current.obj_id, mount_skill_id)),
+    })
+}
+
 /// The click on a mode action slot: resolve the vehicle's mount skill and target like the pet bar.
 pub(super) fn use_action(data: &HudData, index: usize, target_obj_id: u32, target_pos: Option<Vec3>) -> Option<Command> {
     let current = data.vehicles.current.as_ref()?;
@@ -423,7 +462,7 @@ pub(super) fn push(rt: &UiRuntime, bridge: &Shared) {
     }
     // The Summon Info window opens when the player boards (the native trigger of `SHOW_SLAVE_INFO` is
     // not in the scripts; `mode_action.alb` hides the window again when the bar has no skills).
-    let boarded = next.as_ref().is_some_and(|v| v.point.is_some())
+    let boarded = next.as_ref().is_some_and(|v| v.point.is_some() && !v.cannon)
         && old.as_ref().is_none_or(|v| v.point.is_none() || v.obj_id != next.as_ref().map_or(0, |n| n.obj_id));
     if boarded && rt.lua.load("return slaveInfoFrame ~= nil and not slaveInfoFrame:IsVisible()").eval::<bool>().unwrap_or(false) {
         rt.fire_event("SHOW_SLAVE_INFO", ());
@@ -484,12 +523,14 @@ pub(super) fn update(
             rt.fire_event("UPDATE_SLAVE_EQUIPMENT_SLOT", ());
         }
     }
+    // the cannon the player is manning is as valid a target of the leave request as the owned slave
+    let manned = bridge.0.borrow().vehicles.current.as_ref().filter(|c| c.cannon).map(|c| (c.tl_id, c.obj_id));
     for (quoted_owner, tl_id, command) in requests {
-        let actual = slaves
-            .as_deref()
-            .and_then(|s| s.own.as_ref())
-            .filter(|own| own.tl_id == tl_id)
-            .and_then(|own| units.get(own.obj_id))
+        let object = manned.filter(|(tl, _)| *tl == tl_id).map(|(_, obj)| obj).or_else(|| {
+            slaves.as_deref().and_then(|s| s.own.as_ref()).filter(|own| own.tl_id == tl_id).map(|own| own.obj_id)
+        });
+        let actual = object
+            .and_then(|obj| units.get(obj))
             .is_some_and(|u| matches!(u.kind, UnitKind::Slave { tl_id: actual, .. } if actual == tl_id));
         if owner == quoted_owner && actual {
             net.write(NetCommand(Command::Slave(command)));
@@ -557,6 +598,7 @@ mod tests {
             turn: 0.4,
             land: true,
             ship: false,
+            cannon: false,
         });
         data
     }
@@ -606,5 +648,64 @@ mod tests {
             use_action(&data, 1, 987, None),
             Some(Command::UseMateSkill { target_obj_id: 987, .. })
         ));
+    }
+
+    /// A world with the owned ship (obj 500) and a cannon child slave (obj 600, template 10) of it.
+    fn deck(seat: Option<aa_net::model::Attachment>) -> (World, HudData) {
+        let data = HudData { character_id: 47, ..HudData::default() };
+        assert!(data.game.0.set(GameData::load(aa_anim::db::DEFAULT_DB).expect("the server database")).is_ok());
+        let mut spawn = crate::hud::expansion::fixture::spawn();
+        spawn.unit.attached_to = seat;
+        let mut units = Units::default();
+        let mut ship = spawn.unit.clone();
+        ship.obj_id = 500;
+        ship.name = "Ship".into();
+        ship.kind = UnitKind::Slave { id: 9, tl_id: 12, template_id: 22, summoner_id: 47 };
+        units.by_id.insert(500, ship);
+        let mut cannon = spawn.unit.clone();
+        cannon.obj_id = 600;
+        cannon.name = "Cannon".into();
+        cannon.kind = UnitKind::Slave { id: 10, tl_id: 13, template_id: 10, summoner_id: 47 };
+        units.by_id.insert(600, cannon);
+        let mut slaves = Slaves::default();
+        slaves.apply(&aa_net::Event::PlayerSpawn(Box::new(spawn.clone())));
+        slaves.apply(&aa_net::Event::Slave(aa_net::slave::SlaveEvent::Created(aa_net::slave::SlaveCreated {
+            owner_obj_id: spawn.obj_id,
+            tl_id: 12,
+            obj_id: 500,
+            hide_spawn_effect: false,
+            raw_id: 0,
+            creator_name: String::new(),
+        })));
+        let mut world = World::new();
+        world.insert_resource(units);
+        world.insert_resource(slaves);
+        world.insert_resource(Player { spawn: Some(spawn) });
+        (world, data)
+    }
+
+    #[test]
+    fn the_mode_bar_follows_the_cannon_the_player_mans_and_casts_it_at_a_spot() {
+        let (world, mut data) = deck(None);
+        refresh(&world, &mut data);
+        let ship = data.vehicles.current.clone().expect("the owned ship");
+        assert_eq!((ship.obj_id, ship.cannon, ship.point), (500, false, None));
+        assert_eq!(ship.db_id, 9);
+        // seated at the cannon's gunner seat (point 1): the bar is the cannon's, not the ship's
+        let (world, mut data) = deck(Some(aa_net::model::Attachment { obj_id: 600, point: 1 }));
+        refresh(&world, &mut data);
+        let gun = data.vehicles.current.clone().expect("the manned cannon");
+        assert_eq!((gun.obj_id, gun.tl_id, gun.cannon, gun.point), (600, 13, true, Some(1)));
+        let game = data.game.get().unwrap();
+        let skills: Vec<_> = displayed(game, &gun).map(|(_, s)| s.combat).collect();
+        assert_eq!(skills, [10473], "Fire Cannon");
+        // Fire Cannon is a position skill: the ground reticle, cast by the cannon with its mount skill
+        let press = ground_press(&data, 1).expect("ground press");
+        assert_eq!((press.skill, press.caster), (10473, Some((600, 16))));
+        assert!(ground_press(&data, 2).is_none());
+        // the same click on the owned ship's bar never aims a cannon
+        let (world, mut data) = deck(Some(aa_net::model::Attachment { obj_id: 500, point: 1 }));
+        refresh(&world, &mut data);
+        assert!(ground_press(&data, 1).is_none());
     }
 }

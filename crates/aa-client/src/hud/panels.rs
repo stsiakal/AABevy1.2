@@ -530,7 +530,7 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
                 return;
             }
             // `ground_target::route` sends the command, or aims first when the skill takes a spot of the ground
-            net.write(SkillPressed { skill, item: None, target_obj_id, gcd: env.uses_gcd(skill), water: false });
+            net.write(SkillPressed { skill, item: None, target_obj_id, gcd: env.uses_gcd(skill), water: false, caster: None });
         }
         ActionKind::ItemType | ActionKind::ItemId => {
             let found = match action.item_template_id() {
@@ -580,7 +580,7 @@ fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj
             return;
         }
     }
-    net.write(SkillPressed { skill: skill_id, item: Some((item.id, item.template_id)), target_obj_id, gcd: env.uses_gcd(skill_id), water });
+    net.write(SkillPressed { skill: skill_id, item: Some((item.id, item.template_id)), target_obj_id, gcd: env.uses_gcd(skill_id), water, caster: None });
 }
 
 /// The action bar's number keys.

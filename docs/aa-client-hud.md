@@ -1663,6 +1663,28 @@ How the window opens is not in the scripts (`SHOW_SLAVE_INFO` is native; the too
 has no skills and `SIEGEWEAPON_UNBOUND` hides it on leaving. There is no 1.2 weight, ramming or
 customize UI; only Type, Classification, Move and Turn speed plus the grid.
 
+### Manning a ship cannon (2026-10-22)
+
+The ship's cannons are child slaves (`slaves.slave_kind_id` 8, e.g. template 10 "Steel Cannon" at the
+cannon attach points) whose unit state names the ship as their bearer. `ingame/vehicle.rs`:
+`do_interaction_1` (F) with a cannon within 4.5 m binds its gunner seat (`CSBindSlave` on the
+cannon's timeline) before the ship's own helm bind runs; the key again while seated leaves
+(`CSDiscardSlave`, the generic riding-slave branch). Standing aboard is not reported to the client,
+so being within reach of a cannon child is the test; the server decides (`may_man_cannon`: the
+summoner, the ship's owner or anybody aboard) and answers with `SLAVE_CANNOT_BIND` otherwise. Only
+the key is wired; the 1.2 scripts have no right-click entry for slaves (`popup_menu_proc` offers
+only rename).
+
+`hud/vehicles.rs::current()` follows the seat: while the player is attached to a cannon slave the
+mode action bar belongs to that cannon (its `slave_mount_skills` row 16 -> `Fire Cannon`, gunner
+seat = attach point 1), not to the owned ship; the Summon Info window stays closed for it. A
+position skill of a manned cannon (target types 6/11/13/15) is not cast at the selected unit:
+`ground_press` hands a `SkillPressed { caster: Some((cannon obj, mount skill)) }` to
+`ingame/ground_target.rs`, so the cursor reticle, range check (`Fire Cannon` 4-120 m) and click
+work as for any ground skill, and the cast is `UseMateSkillAt` with the cannon as caster (no
+standing movement packet and no turning of the seated gunner). Leaving the seat returns the bar to
+the owned ship (`SIEGEWEAPON_UNBOUND`), and `DiscardSiegeWeapon` unbinds the cannon.
+
 Validation: new focused checks cover the reason byte and seat overrides, mate/self and hostile
 target resolution, unlearned and position-skill refusal, the real mount button's `Mount` request,
 a seated `Unmount` (reason9), the CYA reason10 → detach → `Dismiss` continuation, `AAUI.UseSlot`
