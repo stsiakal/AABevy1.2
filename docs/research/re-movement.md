@@ -321,11 +321,18 @@ Bevy uses a fixed 0.004 rad/count mouse sensitivity (`camera.rs:55`); the origin
 
 ## 5. Gaps vs Bevy (ranked)
 
-1. **Ladders/climbing are absent.** The original has grab/leave, ladder frames, exit clips and
-   the `isOnLadder` graph state (`FUN_391388f0`, `FUN_39135570`, `FUN_39137470`,
-   `FUN_39132be0`); Bevy has no ladder controller and `aa-net` strips the hanging/support blocks
-   (`aa-net/src/model.rs`, `Movement::write`). Fix: ladder trigger + state, climb clips, actor
-   flag 0x40 with `climb_data`, and `ladder_speed_mul`.
+1. **Ladders/climbing - done in `11d6122`.** The original has grab/leave, ladder frames, exit clips
+   and the `isOnLadder` graph state (`FUN_391388f0`, `FUN_39135570`, `FUN_39137470`,
+   `FUN_39132be0`). `aa-client`'s `ingame/ladder.rs` now grabs the nearest climb doodad with F
+   (`DoodadFuncClimb` -> `climb_type_id`, kinds 1/6 ladder, 2 rope, 3 wood, 4 net, 5 hanging rope,
+   7 mast, 8 guardrail, 9 45-degree ladder, 10 big tree), holds the body on the ladder plane between
+   the model's bottom and top, climbs W/S at `CLIMB_SPEED` x the own buffs' `ladder_speed_mul`
+   (attribute 0x5d), plays the by-path `fist_mo_<family>_up/down/idle` clips and the
+   `fist_mo_ladder_end*` / `fist_mo_rope_end` exit clips, feeds 1.2's `isOnLadder` input to
+   locomotion (`Motion::on_ladder`), and walks the body off at the top (or stands it at the bottom);
+   Space jumps off, F plays the exit. Every hanging movement carries actor flag 0x40, the ladder's
+   gc id and 32-bit `climb_data`, and `aa-net` now writes the support/hanging blocks in the server
+   reader's order (`Movement::write`: 0x20 gc frame, 0x60 gc id, 0x40 climb data).
 
 2. **Click-to-move is absent.** Original option 54 defaults off, gated by
    `x2_effects.ui.click_to_move`, with camera raycast + path (`FUN_390a6af0`, `FUN_390f4960`).
