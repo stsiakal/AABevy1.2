@@ -136,6 +136,10 @@ set AA_PAK_OVERLAYS=D:\AA1.2\gear.pak;D:\AA1.2\costumes.pak
 Paths may be absolute or relative to the working directory. Missing or corrupt overlays are
 reported and skipped; the client logs one line per loaded overlay with its file count.
 
+For parity work on the stock 1.2 data, `AA_PAK_OVERLAYS=off` (or the command-line flag
+`--no-overlays`) ignores both sources and loads only the base `game_pak`. The client logs
+`overlays off` at INFO.
+
 **Build and run**, from the repository root:
 ```
 cargo build -p aa-client
