@@ -674,6 +674,7 @@ pub fn plugin(app: &mut App) {
             receive_moves.before(move_units),
             (
                 follow_slave_parents,
+                super::transfer::transfer_seat,
                 super::vehicle::vehicle_seat,
                 super::mount::drive_mount,
                 super::vehicle::drive_vehicle,
@@ -898,6 +899,30 @@ mod lifecycle_tests {
         let pose = unit.track.pose_at(2.0);
         assert_eq!((pose.pos, pose.yaw, pose.speed), (Vec3::new(30.0, 40.0, 50.0), 2.0, 0.0));
         assert_eq!((unit.pos, unit.facing), (pose.pos, pose.yaw));
+    }
+
+    /// `TransferMoveType` (5) is the pose of a carriage / ferry / airship: the movement is drawn as
+    /// the server sent it (position and quaternion yaw), and its wheels roll from the distance.
+    #[test]
+    fn a_transfer_type_5_pose_is_displayed_as_sent() {
+        let mut app = App::new();
+        app.init_resource::<Time>().init_resource::<Views>().add_message::<NetEvent>().add_systems(Update, receive_moves);
+        let pos = Vec3::new(100.0, 200.0, 30.0);
+        let track = Track::new(Vec3::ZERO, 0.0);
+        let entity = app
+            .world_mut()
+            .spawn(RemoteUnit { obj_id: 9, model_id: 654, track, pos: Vec3::ZERO, facing: 0.0, scale: 1.0, character: false, combat: false, casting: false })
+            .id();
+        app.world_mut().resource_mut::<Views>().units.insert(9, View { entity: Some(entity), ..View::default() });
+        let yaw = std::f32::consts::FRAC_PI_2;
+        let movement = Movement::transfer(aa_net::Pos::new(pos.x, pos.y, pos.z), yaw, 1, 4, 8.0, false);
+        let report = report_of(&movement);
+        assert!((report.pos - pos).length() < 1e-3, "{:?}", report.pos);
+        assert!((report.yaw - yaw).abs() < 1e-3, "{}", report.yaw);
+        app.world_mut().write_message(NetEvent(Event::UnitMoved { obj_id: 9, movement }));
+        app.update();
+        let unit = app.world().get::<RemoteUnit>(entity).unwrap();
+        assert!((unit.track.latest() - pos).length() < 1e-3, "{:?}", unit.track.latest());
     }
 }
 

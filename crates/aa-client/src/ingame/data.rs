@@ -410,6 +410,45 @@ impl Db {
         ship_parts_of(&l.conn, model_id)
     }
 
+    /// The parts of a transfer's `vehicle_models.normal` prefab (an airship's body, wings and propellers):
+    /// every static `Brush` and every `AnimObject` at its place on the model. Empty when the model is not a
+    /// prefab (a single `.cgf` / `.chr` body is drawn as one creature).
+    pub fn transfer_parts(&self, model_id: u32) -> Vec<ShipPart> {
+        let l = self.lookups.lock().unwrap();
+        let raw: Option<String> = l
+            .conn
+            .query_row(
+                "SELECT v.normal FROM models m JOIN vehicle_models v ON v.id = m.sub_id AND m.sub_type = 'VehicleModel' WHERE m.id = ?1",
+                params![model_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten();
+        raw.as_deref().filter(|p| p.trim().to_ascii_lowercase().starts_with("prefab://")).map(prefab_parts).unwrap_or_default()
+    }
+
+    /// `transfers.wait_time` in seconds: how long the transfer waits at a stop when no per-leg time is set.
+    pub fn transfer_wait(&self, transfer_id: u32) -> Option<f32> {
+        let l = self.lookups.lock().unwrap();
+        l.conn
+            .query_row("SELECT wait_time FROM transfers WHERE id = ?1", params![transfer_id], |r| r.get::<_, Option<f64>>(0))
+            .ok()
+            .flatten()
+            .map(|v| v as f32)
+    }
+
+    /// `transfer_paths.wait_time_start` / `wait_time_end` of one named route of a transfer.
+    pub fn transfer_waits(&self, transfer_id: u32, path_name: &str) -> Option<(f32, f32)> {
+        let l = self.lookups.lock().unwrap();
+        l.conn
+            .query_row(
+                "SELECT COALESCE(wait_time_start, 0), COALESCE(wait_time_end, 0) FROM transfer_paths WHERE owner_id = ?1 AND path_name = ?2 LIMIT 1",
+                params![transfer_id, path_name],
+                |r| Ok((r.get::<_, f64>(0)? as f32, r.get::<_, f64>(1)? as f32)),
+            )
+            .ok()
+    }
+
     /// The clip (`.cal` entry name, lower case) of an animation action (`anim_actions.anim_name`): the idle pose of an NPC.
     pub fn anim_action_clip(&self, id: u32) -> Option<String> {
         let mut l = self.lookups.lock().unwrap();
@@ -1014,21 +1053,40 @@ impl ShipPart {
 
 /// The static brushes of the prefab at `path` (`prefab://prefabs/galleon.xml/galleon.step_10galleon_normal`).
 fn prefab_brushes(path: &str) -> Vec<ShipPart> {
+    prefab_part_objects(path, false)
+}
+
+/// The brushes and animated objects of a transfer's prefab (the airship's body, wings, propellers and planks).
+fn prefab_parts(path: &str) -> Vec<ShipPart> {
+    prefab_part_objects(path, true)
+}
+
+fn prefab_part_objects(path: &str, anim_objects: bool) -> Vec<ShipPart> {
     let Some((file, name)) = path.strip_prefix("prefab://").and_then(|r| r.rsplit_once('/')) else { return Vec::new() };
     let Ok(xml) = aa_pak::Pak::global().read_string(&norm(file)) else { return Vec::new() };
     // the slave table and the prefab file disagree on case
     let Some(from) = xml.to_ascii_lowercase().find(&format!("<prefab name=\"{}\"", name.to_ascii_lowercase())) else { return Vec::new() };
     let tail = &xml[from..];
     let prefab = &tail[..tail.find("</Prefab>").map_or(tail.len(), |e| e + "</Prefab>".len())];
-    parse_prefab_brushes(prefab)
+    parse_prefab_part_objects(prefab, anim_objects)
 }
 
-fn parse_prefab_brushes(prefab: &str) -> Vec<ShipPart> {
+fn parse_prefab_part_objects(prefab: &str, anim_objects: bool) -> Vec<ShipPart> {
     let Ok(doc) = roxmltree::Document::parse(prefab) else { return Vec::new() };
     let floats = |s: Option<&str>| -> Vec<f32> { s.map(|s| s.split(',').filter_map(|v| v.trim().parse().ok()).collect()).unwrap_or_default() };
     let mut out = Vec::new();
-    for o in doc.descendants().filter(|n| n.has_tag_name("Object") && n.attribute("Type") == Some("Brush")) {
-        let Some(model) = o.attribute("Prefab").map(norm).filter(|m| m.ends_with(".cgf")) else { continue };
+    for o in doc.descendants().filter(|n| n.has_tag_name("Object")) {
+        let model = match o.attribute("Type") {
+            Some("Brush") => o.attribute("Prefab").map(norm).filter(|m| m.ends_with(".cgf")),
+            Some("Entity") if anim_objects && o.attribute("EntityClass") == Some("AnimObject") => o
+                .children()
+                .find(|c| c.has_tag_name("Properties"))
+                .and_then(|p| p.attribute("object_Model"))
+                .map(norm)
+                .filter(|m| m.contains('.')),
+            _ => None,
+        };
+        let Some(model) = model else { continue };
         let pos = match floats(o.attribute("Pos"))[..] {
             [x, y, z] => Vec3::new(x, y, z),
             _ => Vec3::ZERO,
@@ -1219,6 +1277,37 @@ mod tests {
         assert!(file.ends_with("transfers_trailer_a_body.chr"), "{file}");
     }
 
+    /// A transfer's prefab is its body brush plus the animated objects (the airship's wings and
+    /// propellers): the single-first-model creature path would draw only the wing.
+    #[test]
+    fn a_transfer_prefab_is_its_body_brush_and_animated_parts() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        let parts = db.transfer_parts(657);
+        assert!(parts.iter().any(|p| p.path.ends_with("airship_base.cgf")), "{parts:?}");
+        assert!(parts.iter().any(|p| p.path.ends_with("airship_wing.chr")), "{parts:?}");
+        assert!(parts.iter().all(|p| aa_pak::Pak::global().exists(&p.path)), "a part is missing from the pak");
+        // `carriage_main` is a single body `.cgf`, not a prefab: it keeps the creature path (and its wheel bones)
+        assert!(db.transfer_parts(654).is_empty());
+    }
+
+    #[test]
+    fn a_prefab_part_list_keeps_brushes_and_anim_objects_at_their_places() {
+        let prefab = r#"<Prefab Name="a.x"><Objects>
+            <Object Type="Brush" Name="body" Pos="1,2,3" Prefab="Objects\Env\a.cgf"/>
+            <Object Type="Entity" Name="wing" Pos="4,5,6" EntityClass="AnimObject"><Properties object_Model="game/Objects/Env/wing.chr"/></Object>
+            <Object Type="Entity" Name="fx" EntityClass="ParticleEffect"><Properties ParticleEffect="x"/></Object>
+        </Objects></Prefab>"#;
+        let parts = parse_prefab_part_objects(prefab, true);
+        assert_eq!(parts.len(), 2);
+        assert_eq!((parts[0].name.as_str(), parts[0].pos), ("body", Vec3::new(1.0, 2.0, 3.0)));
+        assert_eq!((parts[1].name.as_str(), parts[1].pos), ("wing", Vec3::new(4.0, 5.0, 6.0)));
+        assert!(parts[1].path.ends_with("wing.chr"));
+        assert_eq!(parse_prefab_part_objects(prefab, false).len(), 1, "ships keep their brushes only");
+    }
+
     /// The cargo crates of the Farm Wagon hang on `$cannon0..3` (attach points 9..12): the helpers of the prefab.
     #[test]
     fn the_wagons_cargo_points_come_from_its_prefab() {
@@ -1276,7 +1365,7 @@ mod tests {
     #[test]
     fn a_prefab_brush_transform_converts_like_the_rest_of_the_client() {
         let xml = r#"<Prefab Name="p"><Object Type="Brush" Name="b" Prefab="a/b.cgf" Pos="1,2,3" Rotate="0.70710678,0,0,0.70710678" Scale="1,2,3"/></Prefab>"#;
-        let parts = parse_prefab_brushes(xml);
+        let parts = parse_prefab_part_objects(xml, false);
         assert_eq!(parts.len(), 1);
         let part = &parts[0];
         let bow = part.rot * Vec3::Y;
