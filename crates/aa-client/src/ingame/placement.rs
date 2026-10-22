@@ -1728,9 +1728,8 @@ fn input(
         if let Some(seconds) = cooldown {
             notify(rt.as_deref(), cooldown_message(seconds));
         } else if let Some(reason) = session.invalid {
-            let text = if reason == Invalid::WrongCategory {
-                localized_error(rt.as_deref(), "HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA")
-                    .or_else(|| error_message(reason).map(str::to_string))
+            let text = if session.is_house() {
+                house_error_text(rt.as_deref(), reason)
             } else {
                 error_message(reason).map(str::to_string)
             };
@@ -1816,6 +1815,28 @@ fn error_message(reason: Invalid) -> Option<&'static str> {
         Invalid::OutOfRange => None,
         Invalid::WrongCategory => Some("Building doesn't fit in this area."),
         _ => Some("Can't be installed here."),
+    }
+}
+
+/// The `ERROR_MSG` key of a house / farm placement error, the retail builder's `ui_texts[code + 1]` row (the codes 0x70..0x78
+/// family, `FUN_393363b0`), with the English text used when no UI runtime is there: 0x70 `HOUSE_CANNOT_LOCATE_INVALID_AREA`,
+/// 0x71 `..OVERLAP_HOUSE`, 0x72 `..OVERLAP_UNIT`, 0x9a `TOO_FAR_AWAY`, 0x244 `HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA`.
+fn house_error_key(reason: Invalid) -> Option<(&'static str, &'static str)> {
+    match reason {
+        Invalid::OutsideHousingArea => Some(("HOUSE_CANNOT_LOCATE_INVALID_AREA", "You can't construct a building here.")),
+        Invalid::Overlap => Some(("HOUSE_CANNOT_LOCATE_OVERLAP_HOUSE", "You can't construct a building here: it would overlap another structure.")),
+        Invalid::Player => Some(("HOUSE_CANNOT_LOCATE_OVERLAP_UNIT", "You can't construct a building here: obstacles block the way.")),
+        Invalid::OutOfRange => Some(("TOO_FAR_AWAY", "Too far away.")),
+        Invalid::WrongCategory => Some(("HOUSE_CANNOT_LOACATE_INVALID_CATEGORY_AREA", "Building doesn't fit in this area.")),
+        _ => None,
+    }
+}
+
+/// The text the retail builder prints for a refused house / farm click.
+fn house_error_text(rt: Option<&aa_ui::UiRuntime>, reason: Invalid) -> Option<String> {
+    match house_error_key(reason) {
+        Some((key, english)) => localized_error(rt, key).or_else(|| Some(english.to_string())),
+        None => error_message(reason).map(str::to_string),
     }
 }
 
@@ -2896,5 +2917,37 @@ mod tests {
                 assert!(dds_image(&format!("ui/cursor/{name}.dds")).is_some(), "{name}.dds is in the 1.2 pak");
             }
         }
+    }
+
+    #[test]
+    fn house_errors_use_the_retail_ui_text_rows_by_code() {
+        // `ui_texts[code + 1]`: 0x70 -> row 113 ... 0x72 -> row 115, 0x9a -> row 155
+        assert_eq!(house_error_key(Invalid::OutsideHousingArea).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_INVALID_AREA"));
+        assert_eq!(house_error_key(Invalid::Overlap).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_OVERLAP_HOUSE"));
+        assert_eq!(house_error_key(Invalid::Player).map(|k| k.0), Some("HOUSE_CANNOT_LOCATE_OVERLAP_UNIT"));
+        assert_eq!(house_error_key(Invalid::OutOfRange).map(|k| k.0), Some("TOO_FAR_AWAY"));
+        assert_eq!(house_error_text(None, Invalid::OutsideHousingArea).as_deref(), Some("You can't construct a building here."));
+        assert_eq!(house_error_text(None, Invalid::OutOfRange).as_deref(), Some("Too far away."));
+        // the keys exist in the database at those rows
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        if let Ok(conn) = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            for (reason, code) in [(Invalid::OutsideHousingArea, 0x70), (Invalid::Overlap, 0x71), (Invalid::Player, 0x72), (Invalid::OutOfRange, 0x9a)] {
+                let key: String = conn.query_row("SELECT key FROM ui_texts WHERE id = ?1", [code + 1], |r| r.get(0)).unwrap();
+                assert_eq!(Some(key.as_str()), house_error_key(reason).map(|k| k.0), "code {code:#x}");
+            }
+        }
+    }
+
+    /// An invalid click on a house prints the per-check text through the real input system.
+    #[test]
+    fn an_invalid_house_click_sends_nothing_and_stays_in_free_placement() {
+        let mut app = house_app();
+        {
+            let mut placement = app.world_mut().resource_mut::<Placement>();
+            placement.session.as_mut().unwrap().invalid = Some(Invalid::OutsideHousingArea);
+        }
+        click(&mut app, MouseButton::Left);
+        assert!(sent(&mut app).is_empty());
+        assert!(!session_of(&app).locked(), "an invalid spot cannot be locked");
     }
 }
