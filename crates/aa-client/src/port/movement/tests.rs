@@ -458,9 +458,9 @@ fn phase_b_sequences_match_goldens() {
             for off in [0x24usize, 0x28, 0x2c] {
                 let got = f32::from_le_bytes(got_s[off..off + 4].try_into().unwrap());
                 let want = f32::from_le_bytes(want_s[off..off + 4].try_into().unwrap());
-                let scale = want.abs().max(1.0);
-                assert!(
-                    (got - want).abs() <= 1e-6 * scale,
+                assert_eq!(
+                    got.to_bits(),
+                    want.to_bits(),
                     "{name} step {i}: state float 0x{off:02x} got {got:?} want {want:?}"
                 );
             }
@@ -600,6 +600,7 @@ fn actor_from(bytes: &[u8], desired: [f32; 3]) -> RotationActor {
         on_ladder: false,
         stance: 0,
         ground_factor: 0.0,
+        ground_cvar: [0.0; 2],
     }
 }
 
@@ -673,14 +674,57 @@ fn phase_c_rotation_normal_matches_goldens() {
         let actor = actor_from(&hex_bytes(case["actor_before"].as_str().unwrap()), desired);
         let mut rot = rotation_from(&before);
         rot.process_normal(&actor);
-        // ProcessNormal's yaw-axis normalisation is still being aligned with
-        // the original; the port matches to the 5e-3 level (see unknowns).
-        assert_q_tol(name, "q40", rot.q40, q_at(&want, 0x40), 5e-2);
-        assert_q_tol(name, "q20", rot.q20, q_at(&want, 0x20), 5e-2);
+        assert_q_tol(name, "q40", rot.q40, q_at(&want, 0x40), 0.0);
+        assert_q_tol(name, "q20", rot.q20, q_at(&want, 0x20), 0.0);
         assert_q(name, "q50", rot.q50, q_at(&want, 0x50));
     }
 }
 
+
+#[test]
+fn phase_c_rotation_clamp_matches_goldens() {
+    let doc = phase_c();
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("rot_clamp_") {
+            continue;
+        }
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        let pin = &case["params_in"];
+        let mut params = ClampParams {
+            dir: [
+                f32_of(&pin["40"]),
+                f32_of(&pin["44"]),
+                f32_of(&pin["48"]),
+            ],
+            yaw_wrap: f32_of(&pin["52"]),
+            pitch_wrap: f32_of(&pin["56"]),
+            pitch_low: f32_of(&pin["60"]),
+            pitch_high: f32_of(&pin["64"]),
+        };
+        let anim = hex_bytes(case["anim"].as_str().unwrap());
+        let mut actor = actor_from(&hex_bytes(case["actor_before"].as_str().unwrap()), [0.0; 3]);
+        actor.anim_4 = f_at(&anim, 0x04);
+        actor.anim_a8 = anim[0xa8];
+        actor.stance = case["stance"].as_u64().unwrap() as u32;
+        actor.on_ladder = case["ladder"].as_u64().unwrap() != 0;
+        actor.ground_align = case["ground"].as_u64().unwrap() != 0;
+        actor.ground_factor = 0.85;
+        actor.ground_cvar = [
+            f32_of(&case["ground_cvar"][0]),
+            f32_of(&case["ground_cvar"][1]),
+        ];
+        let mut rot = rotation_from(&before);
+        rot.clamp_angles(&actor, &mut params);
+        for (i, what) in ["pitch", "mid", "yaw"].iter().enumerate() {
+            // The original tail uses __libm_sse2_asinf; the last bit of the
+            // inverse/asin chain is 1 ulp off in a few cases (U15).
+            assert_near(name, what, rot.move_rot[i], f_at(&want, 0x14 + i * 4));
+        }
+    }
+
+}
 
 #[test]
 fn phase_c_mover_matches_goldens() {

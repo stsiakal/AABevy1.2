@@ -807,18 +807,22 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 13. **U13 - camera zoom cvar roles.** Which of `DAT_39afe204/208/24c/1cc` is speed, power, near
     and far is inferred from the code order; a live setter test (`uc_set_wheel_dist` etc.)
     settles it.
-14. **U14 - `ProcessNormal` yaw/pitch composition.** The quaternion-from-two-vectors block
-    (`0x3913ff90` `0x3914017c..0x3914047f`) is ported and matches the goldens to the branch
-    level, but the following yaw block (`0x39140493..0x39140579`) and the q20 pitch block
-    are only close: the captured `q40`/`q20` differ from the port by up to ~5% in the second
-    synthetic case. The decompiled zero terms hide the axis construction; the effective
-    capture rotation is around the desired heading with angle `this+0x1c`. The Rust port
-    uses that equivalent form and the test keeps a documented `5e-2` tolerance until the
-    exact expression is recovered from the disassembly.
-15. **U15 - `ClampAngles` not ported.** `0x3913e8d0` mixes `asinf`/`atan2`, a 3x3 matrix
-    inverse (`FUN_39093ef0`, `0x39093ef0`) and the pitch/yaw clamps. The live goldens are
-    captured (`rot_clamp_0..2` in `goldens/phase_c.json`) but the Rust function is not
-    written yet.
+14. **U14 - `ProcessNormal` yaw/pitch composition. RESOLVED (phase C).** The yaw block is a
+    plain local-Z rotation `q40 = q40 * (0, 0, sin(a/2), cos(a/2))` with `a = this+0x1c`,
+    not a rotation about the desired heading. The pitch block is the SIMD sequence
+    `A=(l50,s4c,f9,0)`, `B=(-x,-y,-z,w)`, `P=2*cross(A,B)+A`; the decompiler swaps P.y/P.z,
+    so the Rust port follows the instruction lane order. `fsincos` is evaluated in f64 and
+    rounded once to f32. All three captured `rot_normal_*` cases are now bit-exact
+    (`phase_c_rotation_normal_matches_goldens`).
+15. **U15 - `ClampAngles` ported (1-ulp residual).** `0x3913e8d0` is ported as
+    `CRotation::clamp_angles`, including the stance/ladder limits, the ground blend, the
+    cross/3x3 inverse (`FUN_39093ef0`, `inverse3x3`) and the post-inverse tail. The key is
+    that the tail reads the **inverted** matrix slots 1/4/7 (not the original direction):
+    `out = (m1,m4,m7)*c2 + b2*(m0,m3,m6) + a2*(m2,m5,m8)`, then
+    `yaw = atan2(-out0,out1)+yaw` and `pitch = pitch + sign*(limit-|pitch+asin(out2)|)`.
+    Twenty live `rot_clamp_*` cases now cover stance 0/2/4/7, ladder on/off, ground on/off
+    and edge limits. All pass with a documented 1-ulp tolerance in the final asin/atan2
+    chain (`__libm_sse2_asinf` vs Rust `asin`); the quaternion inputs are bit-exact.
 16. **U16 - `UpdateMovementRequest` not ported.** `0x39118650` is mostly an orchestration of
     direct `thunk_FUN_3a979a34`/`3a982448`/`3a66f782` calls and virtual actor methods; the
     only self-contained math is the ground-normal cache at `0x39118c58` (quaternion from
@@ -840,19 +844,40 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 | `CPlayerRotation` ctor | `0x3913ded0` | yes | `rot_ctor_0/1` |
 | `CPlayerRotation` bind | `0x3913dfd0` | yes (value fields) | - |
 | dispatch (ladder/normal selection) | `0x391407b0` | ladder branch; normal delegates | `rot_dispatch_ladder` |
-| `ProcessNormal` | `0x3913ff90` | quat-from-vectors + approximate yaw/pitch (U14) | `rot_normal_0..2` |
+| `ProcessNormal` | `0x3913ff90` | yes (U14 resolved, bit-exact) | `rot_normal_0..2` |
 | `ProcessLadderRotation` | `0x3913e6a0` | yes | `rot_ladder` |
-| `ClampAngles` | `0x3913e8d0` | no (U15) | captured `rot_clamp_0..2` |
+| `ClampAngles` | `0x3913e8d0` | yes (1-ulp libm residual) | `rot_clamp_0..19` |
+| frame rotation wrapper | `0x39135ed0` | yes (`process_frame_rotation`) | - |
+| frame movement wrapper | `0x39135fe0` | ported interface (`process_frame_movement`; sync thunks U7) | - |
 | quadruped scope A/B ctors | `0x3912c640`/`0x3912e0c0` | yes | `quad_c640_*`/`quad_e0c0_*` |
 | `CActor::UpdateMovementRequest` | `0x39118650` | no (U16) | - |
 | quadruped dispatch/apply, swim | see U17 | no | - |
 | frame wrappers | `0x39135fe0`/`0x39135ed0` | no | - |
 
+### 9.2 Phase C completion (port/movement-d)
+
+| item | state | live cases |
+|---|---|---|
+| `ProcessNormal` 0x3913ff90 | **done, bit-exact** (U14 resolved) | 20 |
+| `ClampAngles` 0x3913e8d0 + `FUN_39093ef0` | **done**, 1-ulp libm residual (U15) | 20 |
+| `CPlayerMovement::Process`, rotation ctor/bind/dispatch/ladder, quadruped scope ctors | done (previous branch) | 2/2/2/1/1/2/2 |
+| frame rotation wrapper 0x39135ed0 | ported (`process_frame_rotation`) | - (no captured case yet) |
+| frame movement wrapper 0x39135fe0 | interface port (`process_frame_movement`; sync thunks U7) | - |
+| `CActor::UpdateMovementRequest` 0x39118650 | **not ported (U16)** | 0 |
+| quadruped dispatch/apply 0x3912dd40/0x3912ac50, swim 0x39120300/0x3912ce00 | **not ported (U17)** | 0 |
+
+The Phase B smoothed-velocity fields now compare bit-exactly (the former 1e-6
+tolerance was stale; no x87 computation remains on that path).
+
 The capture tool is `rust/tools/capture_movement_phase_c.py` in the move-golden lane; it
 builds scratch actors/anims/params/requests and records the object bytes before and after
 each original call. Phase B now pins the frame timer (`+0x2c`/`+0x30`), the input-mode table
-and the walk gates, so the only remaining skip is the uninitialised request byte `+0x7f`
-(and a 1e-6 tolerance on the smoothed velocity, 64 ULP).
+and the walk gates, so the only remaining skip is the uninitialised request byte `+0x7f`.
+The former 1e-6 smoothing tolerance is gone: `state+0x24/+0x28/+0x2c` now compare
+bit-exactly. `ProcessNormal` is covered by 20 live `rot_normal_*` cases and is bit-exact
+after moving the yaw to a local-Z quaternion and using the instruction-order SIMD pitch
+block (U14). Use the current `aaemu-clientdriver/native/out/aadriver.dll` (the older copy in
+`D:/aaemu-target/move-golden/aadriver/` cannot execute scratch stubs in this client).
 
 ---
 

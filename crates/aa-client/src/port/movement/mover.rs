@@ -132,3 +132,50 @@ impl QuadrupedScopeB {
         *input
     }
 }
+
+/// The actor fields `FUN_39135fe0` (`CPlayer::ProcessFrameMovement`) writes at
+/// `actor+0x308..0x330` after the two engine sync thunks
+/// (`thunk_FUN_3a98bb00`, `thunk_FUN_3a9918bb`, U7).  The thunks themselves are
+/// engine callbacks and are exposed as the two flags below; everything else is
+/// the stack-object copy performed by the wrapper.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameMovementActor {
+    /// `actor+0x308` and `+0x30c`: first copy (`local_84/local_80`).
+    pub field_308: [u32; 3],
+    /// `actor+0x314..0x324`.
+    pub field_314: [u32; 5],
+    /// `actor+0x328`.
+    pub field_328: u8,
+    /// `actor+0x32c`.
+    pub field_32c: u32,
+    /// `actor+0x330`.
+    pub field_330: u8,
+}
+
+/// `FUN_39135fe0` wrapper result: the mover object, the two sync-thunk outputs
+/// (recorded as bytes; U7) and the actor field copy.
+pub fn process_frame_movement(
+    input: &MoverInput,
+    sync_a: [u8; 4],
+    sync_b: [u8; 4],
+) -> (CPlayerMovement, FrameMovementActor) {
+    let mover = CPlayerMovement::process(input);
+    let actor = FrameMovementActor {
+        field_308: [
+            mover.dt.to_bits(),
+            mover.request[0],
+            mover.request[1],
+        ],
+        field_314: [
+            mover.request[2],
+            mover.request[3],
+            mover.request[4],
+            mover.request[5],
+            sync_a[0] as u32,
+        ],
+        field_328: sync_a[1],
+        field_32c: sync_b[0] as u32,
+        field_330: sync_b[1],
+    };
+    (mover, actor)
+}
