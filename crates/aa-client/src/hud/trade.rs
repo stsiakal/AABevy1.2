@@ -11,7 +11,11 @@ use aa_ui::UiRuntime;
 use bevy::prelude::*;
 use mlua::{Lua, ObjectLike, Table};
 
-use super::api::{HudBridge, Shared};
+use super::api::{HudBridge, Shared, distance_to};
+
+/// How near the other player must be to start a trade: `DAT_39ac9b84 = 25.0` squared, i.e. 5 m
+/// (`FUN_394fd9a0` / `FUN_394fddf0`).
+const TRADE_RANGE: f32 = 5.0;
 
 pub(super) mod fixture;
 #[cfg(test)]
@@ -116,6 +120,9 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
             else {
                 return Ok(false);
             };
+            if d.target_pos.is_some_and(|at| distance_to(d.pos, d.player_radius, at, d.target_radius) > TRADE_RANGE) {
+                return Ok(false);
+            }
             let mut v = s.0.borrow_mut();
             if v.trade.active {
                 return Ok(false);

@@ -65,10 +65,19 @@ fn target_request_uses_native_faction_categories_and_actual_character_identity()
             combat_relation: "neutral",
             ..default()
         });
+        d.target_pos = Some(d.pos + Vec3::new(4.0, 0.0, 0.0));
     }
     state.0.borrow_mut().trade.active = false;
     rt.lua.load("assert(X2:GetTargetFactionRelationship()==2); HUD.target={relation='hostile'}; assert(X2:GetTargetFactionRelationship()==1); HUD.target={relation='friendly'}; assert(X2:GetTargetFactionRelationship()==3); HUD.target=nil; assert(X2:GetTargetFactionRelationship()==2); assert(X2Trade:RequestTrade())").exec()?;
     assert_eq!(state.0.borrow_mut().commands.pop().unwrap().command, TradeCommand::Invite { obj_id: 200 });
+    // 5 m trade-start range (`DAT_39ac9b84 = 25.0` squared)
+    let (pos, radius) = {
+        let d = bridge.borrow();
+        (d.pos, d.player_radius)
+    };
+    bridge.borrow_mut().target_pos = Some(pos + Vec3::new(6.0 + radius, 0.0, 0.0));
+    rt.lua.load("assert(not X2Trade:RequestTrade())").exec()?;
+    bridge.borrow_mut().target_pos = Some(pos + Vec3::new(4.0, 0.0, 0.0));
     bridge.borrow_mut().panels.target.as_mut().unwrap().relation = "hostile";
     rt.lua.load("assert(not X2Trade:RequestTrade())").exec()?;
     bridge.borrow_mut().panels.target.as_mut().unwrap().relation = "friendly";
