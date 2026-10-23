@@ -23,7 +23,7 @@ use super::api::HudBridge;
 use super::data::{GameData, Snapshot};
 use super::usable::{Env, InFlight};
 use crate::ingame::ground_target::SkillPressed;
-use crate::ingame::placement::{HousePressed, PlantPressed};
+use crate::ingame::placement::{DecorationPressed, HousePressed, PlantPressed};
 
 /// One action bar slot (or bag slot).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -535,7 +535,7 @@ pub struct Changed {
 /// refused (no target, too far, no mana ...) is not sent: the alert says why instead ([`UseFailed`]). A press that waits for
 /// the global cooldown, the cast it repeats or the answer to the last press is dropped without an alert ([`Env::held_back`]).
 #[allow(clippy::too_many_arguments)]
-pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, failed: &mut MessageWriter<UseFailed>) {
+pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, deco: &mut MessageWriter<DecorationPressed>, failed: &mut MessageWriter<UseFailed>) {
     let Some(action) = bar.get(slot) else { return };
     let target_obj_id = target.obj_id.unwrap_or(0);
     match action.kind {
@@ -561,7 +561,7 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
                 failed.write(UseFailed { skill: 0, result: super::usable::code::NEED_REAGENT, value: action.item_template_id().unwrap_or(0), server: false });
                 return;
             };
-            use_item(item, env, flight, target_obj_id, net, plant, house, failed);
+            use_item(item, env, flight, target_obj_id, net, plant, house, deco, failed);
         }
         _ => {}
     }
@@ -569,14 +569,14 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
 
 /// Use a bag item (a right click in the bag window): its skill, on the target.
 #[allow(clippy::too_many_arguments)]
-pub fn use_bag_slot(slot: usize, env: &Env, flight: &InFlight, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, failed: &mut MessageWriter<UseFailed>) {
+pub fn use_bag_slot(slot: usize, env: &Env, flight: &InFlight, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, deco: &mut MessageWriter<DecorationPressed>, failed: &mut MessageWriter<UseFailed>) {
     if let Some(Some(item)) = inventory.bag.get(slot) {
-        use_item(item, env, flight, target.obj_id.unwrap_or(0), net, plant, house, failed);
+        use_item(item, env, flight, target.obj_id.unwrap_or(0), net, plant, house, deco, failed);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj_id: u32, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, failed: &mut MessageWriter<UseFailed>) {
+fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj_id: u32, net: &mut MessageWriter<SkillPressed>, plant: &mut MessageWriter<PlantPressed>, house: &mut MessageWriter<HousePressed>, deco: &mut MessageWriter<DecorationPressed>, failed: &mut MessageWriter<UseFailed>) {
     let skill_id = env.game.and_then(|g| g.items.get(&item.template_id)).map_or(0, |i| i.use_skill);
     if skill_id != 0 && env.held_back(skill_id, flight) {
         return;
@@ -592,6 +592,10 @@ fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj
     if let Some(game) = env.game {
         if game.housing_design_for_item(item.template_id).is_some() {
             house.write(HousePressed { item_id: item.id, item_template: item.template_id });
+            return;
+        }
+        if game.decoration_design_for_item(item.template_id).is_some() {
+            deco.write(DecorationPressed { item_id: item.id, item_template: item.template_id });
             return;
         }
         if game.doodad_for_item(item.template_id).is_some() {
@@ -619,13 +623,14 @@ pub fn action_keys(
     mut net: MessageWriter<SkillPressed>,
     mut plant: MessageWriter<PlantPressed>,
     mut house: MessageWriter<HousePressed>,
+    mut deco: MessageWriter<DecorationPressed>,
     mut failed: MessageWriter<UseFailed>,
 ) {
     if let Some(slot) = script.take_slot() {
         if let Some(slot) = bar.display_slot(slot.saturating_sub(1)) {
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
+            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut deco, &mut failed);
         }
     }
     if focus.0 {
@@ -653,7 +658,7 @@ pub fn action_keys(
             let Some(slot) = bar.display_slot(slot as usize - 1) else { continue };
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut failed);
+            use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut deco, &mut failed);
         }
     }
 }
@@ -684,6 +689,7 @@ mod tests {
             .add_message::<SkillPressed>()
             .add_message::<PlantPressed>()
             .add_message::<HousePressed>()
+            .add_message::<DecorationPressed>()
             .add_message::<UseFailed>()
             .add_systems(Update, action_keys);
         app.update();
@@ -698,6 +704,53 @@ mod tests {
         app.world_mut().insert_resource(prev);
         app.update();
         assert_eq!(app.world().resource::<ActionBar>().page(), 3);
+    }
+
+    #[test]
+    fn a_decoration_item_press_starts_the_decoration_builder() {
+        #[derive(Resource)]
+        struct DecoGame(GameData);
+        #[derive(Resource, Default)]
+        struct DecoSeen(bool);
+        fn press(
+            mut net: MessageWriter<SkillPressed>,
+            mut plant: MessageWriter<PlantPressed>,
+            mut house: MessageWriter<HousePressed>,
+            mut deco: MessageWriter<DecorationPressed>,
+            mut failed: MessageWriter<UseFailed>,
+            game: Res<DecoGame>,
+        ) {
+            let item = aa_net::model::Item { template_id: 107, id: 5, ..Default::default() };
+            let inventory = Inventory::default();
+            let me = Snapshot::default();
+            let env = Env {
+                game: Some(&game.0),
+                me: &me,
+                pos: Vec3::ZERO,
+                target: None,
+                target_pos: None,
+                skills: None,
+                buffs: &[],
+                inventory: Some(&inventory),
+            };
+            use_item(&item, &env, &InFlight::default(), 0, &mut net, &mut plant, &mut house, &mut deco, &mut failed);
+        }
+        fn see(mut events: MessageReader<DecorationPressed>, mut seen: ResMut<DecoSeen>) {
+            seen.0 |= events.read().next().is_some();
+        }
+        let mut game = GameData::default();
+        game.housing.decoration_design_by_item.insert(107, 10);
+        let mut app = App::new();
+        app.insert_resource(DecoGame(game))
+            .init_resource::<DecoSeen>()
+            .add_message::<SkillPressed>()
+            .add_message::<PlantPressed>()
+            .add_message::<HousePressed>()
+            .add_message::<DecorationPressed>()
+            .add_message::<UseFailed>()
+            .add_systems(Update, (press, see).chain());
+        app.update();
+        assert!(app.world().resource::<DecoSeen>().0, "item_housing_decorations uses the decoration builder");
     }
 
     #[test]
