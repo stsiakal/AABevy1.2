@@ -115,6 +115,8 @@ mod trial;
 mod usable;
 mod slave_equipment;
 mod transfer;
+mod user_music;
+pub(crate) use user_music::MusicItemUsed;
 mod vehicles;
 
 #[allow(dead_code)]
@@ -202,6 +204,12 @@ pub(crate) fn specialty_fixture() {
 pub(crate) fn crafting_fixture() {
     crafting::fixture::run();
 }
+
+#[allow(dead_code)]
+pub(crate) fn user_music_fixture() { user_music::fixture::run(); }
+
+#[allow(dead_code)]
+pub(crate) fn stored_music_fixture() { user_music::cache::fixture::run(); }
 
 #[allow(dead_code)]
 pub(crate) fn stablehand_fixture() {
@@ -467,6 +475,7 @@ impl Plugin for HudPlugin {
         crafting::plugin(app);
         look::plugin(app);
         services::plugin(app);
+        user_music::plugin(app);
         pets::plugin(app);
         vehicles::plugin(app);
         transfer::plugin(app);

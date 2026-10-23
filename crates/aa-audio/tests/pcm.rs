@@ -69,6 +69,42 @@ fn pcm_muted_and_refused_requests_complete_without_a_device() {
 
 #[test]
 #[ignore = "opens an audio device at master volume zero"]
+fn pcm_tracked_device_admission_and_completion_survive_global_drains() {
+    let engine = engine(64);
+    engine.set_volumes(Volumes { master: 0.0, user_music: 0.0, ..Volumes::default() });
+    let clip = PcmClip::mono(24_000, &[0.1; 4_800]).unwrap();
+    let opts = PcmOptions::new(Category::UserMusic);
+    let (first, observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+    if !device_ready(&engine, first) {
+        assert!(observer.is_finished() && !observer.was_started());
+        return;
+    }
+    assert!(until(|| observer.is_finished()), "{:?}", engine.stats());
+    assert!(observer.was_started(), "master/category zero still accepts a real Kira handle");
+    assert_finished_once(&engine, vec![first]);
+    assert!(observer.clone().is_finished() && observer.was_started());
+
+    let tiny = PcmClip::mono(24_000, &[0.1]).unwrap();
+    let (tiny_id, tiny_observer) = engine.play_pcm_tracked(&tiny, opts).unwrap();
+    assert_finished_once(&engine, vec![tiny_id]);
+    assert!(tiny_observer.is_finished() && tiny_observer.was_started());
+
+    let long = PcmClip::mono(24_000, &[0.1; 24_000]).unwrap();
+    let (stopped, stop_observer) = engine.play_pcm_tracked(&long, opts).unwrap();
+    assert!(until(|| stop_observer.was_started()));
+    engine.stop(stopped, true);
+    engine.stop_all();
+    assert_finished_once(&engine, vec![stopped]);
+    assert!(stop_observer.is_finished() && stop_observer.was_started());
+    assert_eq!((engine.stats().started, engine.stats().music_ended), (3, 0));
+    assert_eq!((engine.stats().cache_bytes, engine.stats().decoded_sounds), (0, 0));
+    eprintln!("Tracked PCM real-device lifecycle: {:?}", engine.stats());
+    drop(engine);
+    assert!(observer.is_finished() && observer.was_started());
+}
+
+#[test]
+#[ignore = "opens an audio device at master volume zero"]
 fn pcm_natural_completion_and_runtime_controls_release_quota() {
     let engine = engine(64);
     let short = PcmClip::mono(24_000, &vec![0.1; 4_800]).unwrap();
@@ -96,6 +132,42 @@ fn pcm_natural_completion_and_runtime_controls_release_quota() {
     assert_eq!(engine.stats().cache_bytes, 0);
     assert_eq!(engine.stats().decoded_sounds, 0);
     eprintln!("PCM natural/runtime lifecycle: {:?}", engine.stats());
+}
+
+#[test]
+#[ignore = "opens an audio device at master volume zero"]
+fn pcm_user_music_track_runs_silent_muted_and_stopped_voices_to_one_completion() {
+    let engine = engine(64);
+    engine.set_volumes(Volumes { master: 0.0, music: 0.0, sfx: 0.0, user_music: 0.3, ..Volumes::default() });
+    let clip = PcmClip::mono(24_000, &vec![0.1; 12_000]).unwrap();
+    let opts = PcmOptions::new(Category::UserMusic);
+    let own = engine.play_pcm(&clip, opts).unwrap();
+    if !device_ready(&engine, own) {
+        return;
+    }
+    let other = engine.play_pcm(&clip, opts).unwrap();
+    assert!(until(|| engine.stats().started == 2));
+    engine.set_voice_volume(other, 0.0);
+    engine.set_volumes(Volumes { master: 0.0, user_music: 0.0, ..Volumes::default() });
+    assert!(engine.is_playing(own));
+    assert!(engine.is_playing(other));
+    assert_finished_once(&engine, vec![own, other]);
+
+    // Native 30/50 endpoints can be supplied explicitly; PcmSpatial still has its documented linear policy.
+    let mut spatial = opts;
+    spatial.spatial = Some(PcmSpatial { position: Vec3::X * 60.0, min_distance: 30.0, max_distance: 50.0 });
+    let placed = engine.play_pcm(&clip, spatial).unwrap();
+    assert!(until(|| engine.stats().started == 3));
+    engine.set_position(placed, Vec3::X * 35.0);
+    engine.stop(placed, true);
+    engine.stop_all();
+    assert_finished_once(&engine, vec![placed]);
+    assert_eq!(engine.stats().started, 3);
+    assert_eq!(engine.stats().music_ended, 0);
+    assert!(engine.music_playing().is_none());
+    assert_eq!(engine.stats().decoded_sounds, 0);
+    assert_eq!(engine.stats().cache_bytes, 0);
+    eprintln!("PCM native user-music route lifecycle: {:?}", engine.stats());
 }
 
 #[test]

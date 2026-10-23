@@ -72,6 +72,74 @@ fn every_fev_in_the_pak_parses() {
 
 #[test]
 #[ignore = "needs the game pak"]
+fn original_pan_and_highpass_inventory() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let pak = aa_pak::Pak::global();
+    let (mut files, mut pan, mut distance) = (0, 0, 0);
+    let mut events = BTreeSet::new();
+    let mut projects = BTreeMap::new();
+    let mut highpass = Vec::new();
+    for name in pak.list("sounds/").filter(|n| n.ends_with(".fev")) {
+        files += 1;
+        let fev = Fev::parse(&pak.read(name).unwrap()).unwrap();
+        for ev in &fev.events {
+            let Body::Complex { layers, parameters, .. } = &ev.body else { continue };
+            for (li, layer) in layers.iter().enumerate() {
+                let mut layer_pan = 0;
+                for env in &layer.envelopes {
+                    if env.flags & 0x400 != 0 {
+                        assert!(ev.is_3d() && !env.points.is_empty(), "{name}:{} layer {li}", ev.path());
+                        assert_eq!(env.flags, 0x404);
+                        let param = &parameters[env.parameter as usize].name;
+                        if param == "distance" {
+                            distance += 1;
+                        } else {
+                            assert_eq!((fev.name.as_str(), ev.path(), param.as_str()),
+                                ("x2eventsounds", "weather/origin_continent_effect_weather".into(), "param01"));
+                        }
+                        pan += 1;
+                        layer_pan += 1;
+                        events.insert((name.to_owned(), ev.path()));
+                        *projects.entry(fev.name.clone()).or_insert(0) += 1;
+                    }
+                    if env.dsp == "FMOD Highpass" {
+                        assert_eq!((env.flags, env.dsp_param, env.points.len()), (4, 0, 1));
+                        highpass.push(format!("{}:{}", fev.name, ev.path()));
+                    }
+                }
+                assert!(layer_pan <= 1, "the original inventory has one pan curve per layer");
+            }
+        }
+    }
+    highpass.sort();
+    assert_eq!((files, pan, events.len(), projects.len(), distance), (69, 666, 655, 18, 665));
+    assert_eq!(highpass, ["x2ambience:login_stage/countryside02", "x2ambience:login_stage/mar03",
+        "x2ambience:world2_day/countryside02", "x2ambience:world2_night/wind_night1", "x2weapons:x2weapons/shield_metal"]);
+    eprintln!("original pan inventory: files={files} references={pan} file/events={} projects={} distance={distance} per_project={projects:?}; deferred high-pass={highpass:?}", events.len(), projects.len());
+}
+
+#[test]
+#[ignore = "needs the game pak"]
+fn original_playback_policy_survey() {
+    let pak = aa_pak::Pak::global();
+    let mut counts = [0usize; 6];
+    for name in pak.list("sounds/").filter(|n| n.ends_with(".fev")) {
+        let fev = Fev::parse(&pak.read(name).unwrap()).unwrap();
+        for e in &fev.events {
+            counts[e.playback_behaviour as usize] += 1;
+            if matches!(e.path().as_str(), "quest_elf/stone_mark_beam" | "prefab/mining_machinery_idle") {
+                eprintln!("policy {} max {} {name}:{} volume {} fade {}/{} category {} instance gains {:?}",
+                    e.playback_behaviour, e.max_playbacks, e.path(), e.volume, e.fade_in_ms, e.fade_out_ms,
+                    e.category, e.instances().iter().map(|i| f32::from_bits(i.raw[5])).collect::<Vec<_>>());
+            }
+        }
+    }
+    eprintln!("original playback policies 0..5: {counts:?}");
+    assert_eq!(counts, [0, 1514, 0, 476, 7152, 320]);
+}
+
+#[test]
+#[ignore = "needs the game pak"]
 fn skill_event_resolves_and_plans() {
     let lib = Library::global();
     let ev = lib.event("Sounds/X2Skills:Wild:Fire_Arrow_Form").expect("event");

@@ -463,7 +463,7 @@ pub fn set_value(ev: &Event, values: &mut [f32], name: &str, v: f32) -> bool {
 }
 
 /// Position of parameter `i` in its range, 0 to 1.
-fn normalized(ev: &Event, values: &[f32], i: usize) -> f32 {
+pub(crate) fn normalized(ev: &Event, values: &[f32], i: usize) -> f32 {
     let Body::Complex { parameters, .. } = &ev.body else { return 0.0 };
     match (parameters.get(i), values.get(i)) {
         (Some(p), Some(v)) if p.max > p.min => ((v - p.min) / (p.max - p.min)).clamp(0.0, 1.0),
@@ -511,6 +511,21 @@ pub fn layer_pitch(ev: &Event, values: &[f32], layer: usize) -> f32 {
     let Body::Complex { layers, .. } = &ev.body else { return 1.0 };
     let Some(l) = layers.get(layer) else { return 1.0 };
     l.envelopes.iter().filter(|e| e.flags & 0x10 != 0 && !e.points.is_empty()).map(|e| (e.at(normalized(ev, values, e.parameter as usize)).clamp(0.0, 1.0) * 8.0 - 4.0).exp2()).product()
+}
+
+/// Native sub_1001CB90 multiplies the event's pan level by the first 0x400
+/// envelope. A disabled first match falls back to the event, without scanning on.
+/// Kira accepts spatialization strength in 0..1; zero must remain undirectional.
+pub(crate) fn layer_pan(ev: &Event, values: &[f32], layer: usize) -> f32 {
+    let mut pan = ev.pan_level;
+    if let Body::Complex { layers, .. } = &ev.body
+        && let Some(env) = layers.get(layer).and_then(|l| l.envelopes.iter().find(|e| e.flags & 0x400 != 0))
+        && env.flags & 1 == 0
+    {
+        // The native evaluator returns zero for an empty curve (the pak has none).
+        pan *= if env.points.is_empty() { 0.0 } else { env.at(normalized(ev, values, env.parameter as usize)) };
+    }
+    pan.clamp(0.0, 1.0)
 }
 
 /// Cutoffs at or above this (Hz) are not worth a filter.
@@ -561,6 +576,37 @@ pub fn layer_cutoff(ev: &Event, values: &[f32], layer: usize) -> Option<f32> {
 
 /// Speed of sound (m/s) in FMOD's doppler model.
 pub const SPEED_OF_SOUND: f32 = 340.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Highpass {
+    pub cutoff: f32,
+    pub enabled: bool,
+}
+
+/// The proven original topology: one log-mapped cutoff root and its default-Q
+/// (constant-zero) resonance child. Other mapping/topology variants stay unsupported.
+pub(crate) fn layer_highpass(event: &EventRef, values: &[f32], layer: usize) -> Option<Highpass> {
+    let ev = event.event();
+    let Body::Complex { layers, .. } = &ev.body else { return None };
+    let envelopes = &layers.get(layer)?.envelopes;
+    let mut roots = envelopes.iter().enumerate().filter(|(_, e)| e.dsp == "FMOD Highpass");
+    let (ei, root) = roots.next()?;
+    if roots.next().is_some() || root.parent != -1 || root.dsp_param != 0 || root.flags & !3 != 4
+        || root.points.iter().any(|p| !p.y.is_finite() || !(0.0..=1.0).contains(&p.y))
+        || event.project.fev.highpass_mapping(event.index, layer, ei) != Some(1)
+    {
+        return None;
+    }
+    let mut children = envelopes.iter().filter(|e| e.parent == ei as i32);
+    if let Some(child) = children.next()
+        && (children.next().is_some() || !child.dsp.is_empty() || child.dsp_param != 1
+            || child.flags & 5 != 4 || child.points.is_empty() || child.points.iter().any(|p| p.y != 0.0))
+    {
+        return None;
+    }
+    let y = if root.points.is_empty() { 0.0 } else { root.at(normalized(ev, values, root.parameter as usize)) };
+    Some(Highpass { cutoff: dsp_cutoff(y), enabled: root.flags & 1 == 0 })
+}
 
 /// The playback rate factor of the doppler effect: the source moves with velocity `source`, the listener with `listener`,
 /// `to_source` is the vector from the listener to the source, `level` the event's doppler scale (0 off).
@@ -705,6 +751,46 @@ mod tests {
         let double = doppler_factor(2.0, ahead, Vec3::new(0.0, 0.0, -34.0), Vec3::ZERO);
         assert!((double - 340.0 / 272.0).abs() < 1e-4, "{double}");
         assert_eq!(doppler_factor(5.0, ahead, Vec3::new(0.0, 0.0, -600.0), Vec3::ZERO), 2.0);
+    }
+
+    #[test]
+    fn layer_pan_matches_original_instruction_goldens() {
+        use crate::fev::{Layer, Parameter};
+        let mut ev = Event {
+            name: String::new(), group: String::new(), flags: 0, guid: [0; 16], volume: 1.0,
+            pitch: 0.0, pitch_random: 0.0, volume_random: 0.0, priority: 128, max_playbacks: 1,
+            playback_behaviour: 4, mode: 0x10, min_distance: 0.0, max_distance: 35.0, flags2: 0,
+            speaker_levels: [1.0; 8], cone_inside: 360.0, cone_outside: 360.0, cone_outside_volume: 1.0,
+            doppler: 0.0, reverb_dry: 0.0, reverb_wet: 0.0, speaker_spread: 0.0, pan_level: 1.0,
+            fade_in_ms: 0, fade_out_ms: 0, spawn_intensity: 0.0, spawn_intensity_random: 0.0,
+            raw: [0; 4], category: String::new(), body: Body::Complex { layers: Vec::new(), parameters: Vec::new(), props: Vec::new() },
+        };
+        let mut cases = 0;
+        for row in include_str!("../tests/native_pan_cases.tsv").lines().filter(|r| !r.starts_with('#')) {
+            let fields: Vec<_> = row.split('\t').collect();
+            ev.pan_level = fields[1].parse().unwrap();
+            let x: f32 = fields[2].parse().unwrap();
+            let mut envelopes = Vec::new();
+            for encoded in fields[3].split(';').filter(|s| !s.is_empty()) {
+                let (flags, points) = encoded.split_once('@').unwrap();
+                let points = points.split(',').filter(|s| !s.is_empty()).map(|p| {
+                    let p: Vec<_> = p.split(':').collect();
+                    EnvPoint { x: p[0].parse().unwrap(), y: p[1].parse().unwrap(), curve: p[2].parse().unwrap() }
+                }).collect();
+                envelopes.push(Envelope { parent: -1, dsp: String::new(), dsp_param: 0, flags: flags.parse().unwrap(), flags2: 0, parameter: 0, points });
+            }
+            ev.body = Body::Complex {
+                layers: vec![Layer { flags: 0, priority: 0, control_parameter: 0, instances: Vec::new(), envelopes }],
+                // Use a non-normalized range to check parameter normalization too.
+                parameters: vec![Parameter { name: "distance".into(), min: 10.0, max: 45.0, velocity: 0.0,
+                    flags: 0, seek_speed: 0.0, raw_44: 0, sustain_points: Vec::new() }], props: Vec::new(),
+            };
+            let expected: f32 = fields[4].parse().unwrap();
+            assert!((layer_pan(&ev, &[10.0 + 35.0 * x], 0) - expected).abs() < 1e-6, "{}", fields[0]);
+            assert_eq!(layer_pan(&ev, &[], 99), ev.pan_level);
+            cases += 1;
+        }
+        assert_eq!(cases, 11);
     }
 
     #[test]

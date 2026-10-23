@@ -1,9 +1,63 @@
 # ArcheAge 1.2 feature parity
 
-Updated 2026-10-23. This is the working completion ledger for the original-client parity goal.
+Updated 2026-10-24. This is the working completion ledger for the original-client parity goal.
 
-Recovery checkpoint, 2026-10-23: the rebuilt client suite passes **595 tests, zero failures, 40 optional
-ignores** (114.04 s), including the recovered synchronous UI callbacks, sun-shaft integration and PCM dependency.
+## Latest integration check, 2026-10-23
+
+The caller now includes frozen Illum alpha source133712d/evidencea1bb831, qualified sea foam
+b64f71e and authored high-pass8d97fe4. Public material interfaces remain unchanged. The
+production LodIllumMaterial wrapper preserves the full native material token and inherits
+the custom prepass. Eighteen real GPU captures pass, with twelve exact RGBA image equalities
+across direct/nested materials and ordinary/bindless bindings. Original hammer AlphaTest.059
+on a vertex-alpha gradient gives the expected depth/normal bounds(38,26,230,230) at256x256;
+constant alpha.02 writes no color, depth or normal pixels. Every capture log is checked for
+warnings, lowercase shader errors and unresolved imports. Reproduce with
+`cargo build --locked -p aa-client --example material_alpha_integration`, then
+`python tools/verify_material_alpha.py target/debug/examples/material_alpha_integration.exe`.
+An additional active mesh-pair check uses `--lod-half --output shots/resume/alpha-active-lod`.
+The production MeshLodDither tag has level8 and is active; the direct control uses the same
+camera distance within Bevy's2..4m fade. Nine captures and six exact image equalities pass.
+The masked depth/normal coverage is19584 pixels versus39168 without fading, with the same
+alpha-cutoff bounds. The private native token survives nesting in both cases. Combined:
+27 captures and18 exact comparisons. These controls verify the actual production wrapper
+and inherited prepass, without changing aa-world or aa-cry code.
+The original-asset bow comparison in README is a final-binary token-disabled control against
+authored flags, not a matched native-client scene.169 submaterials/15 masks are admitted;
+277 permutations and native deferred/shadow parity remain outside this implementation.
+
+The main client and offline world/stored-score callers rebuild successfully. Inspected court,
+sea, idle login and original bag captures exit0 without Lua/render warnings or errors. Court
+retains16 terrain patches/14visible/4858objectparts/9authored ratios; sea retains64/18/0/0.
+Shared-machine FPS ranges are50.4-101.5 court,117.0-253.7 sea,230.5-318.7 idle login and
+445.8-474.6 stored score. Loading samples are included; these are not isolated benchmarks.
+`--login-screen --mute` leaves the Connect form idle. The other examples create no Session.
+Hashes, logs and raw FPS are in `data/local/resume/caller-alpha-validation.json` and
+`shots/resume/alpha/validation.json`. White sea/reflection patterns remain visibly approximate.
+
+Native piano/drum overrides preserve equipment/proficiency admission and receipt-local
+ordering. Twelve executed original cases and25 focused application checks pass. Actual buff
+startup receipts replay after asynchronous catalog readiness; overflow/decode gaps stay
+unknown until a fresh own snapshot. The broader client suite passes613 tests/53optional
+ignores before the final decode-forwarding guard; the final focused run explicitly covers
+that guard, original UI, DLS and device cases. One scoped Clippy run exits0 with175 existing
+test-target warnings; none are introduced by the new voice or nested-material code.
+
+Audio's five supported high-pass roots pass93 owning-crate tests and native/captured-mixer
+controls. Qualified foam scalar lighting/camera fade has its owning native/GPU controls.
+These checks do not establish full FMOD output or native world-scene parity. An isolated
+server lane is being prepared for actual composition/playback settlement; that live result
+is not yet claimed. Placed-instrument admission is under read-only audit. Mount work is not deferred in
+this fork: the reverse-engineered owned-mount flow is implemented (see the fork deviations).
+
+## Earlier recovery checkpoints
+
+Recovery checkpoint, 2026-10-23: the rebuilt client suite passes **604 tests, zero failures, 42 optional
+ignores** (85.92 s). Ten focused music/chat checks also pass with original-asset checks included.
+These cover original composition controls, bounded PCM preview, confirmed captured cast/upload ordering,
+physical chat splitting/history/filter retention, fresh UI reload and allocation-write failure.
+Recovery checkpoint, 2026-10-23 (fork tree before this sync): the rebuilt client suite passes **595 tests,
+zero failures, 40 optional ignores** (114.04 s), including the recovered synchronous UI callbacks,
+sun-shaft integration and PCM dependency.
 The resource-harness failures and hit-particle/material-flash selection are fixed.
 UI-data is isolated by character, and receiving a cinema no longer reports unseen playback as completed.
 The original salon controls pass an additional all-eight-model appearance roundtrip; fresh live
@@ -13,12 +67,48 @@ server still requires that fix and remains running unchanged. See `aa-client-sal
 
 Housing preview/quote/cancel passes a 20-command live script; construction settlement and decoration remain
 open. Network, Illum, distant-object transitions, audio and UI callback recoveries have separate owned
-commits and checks in their crate notes. The distant sprite lighting is approximate. Current workers cover
-vegetation sprite defects, child-covered chat resize borders and the server's native uncached-score request.
+commits and checks in their crate notes. Distant sprite lighting remains approximate; unsupported leaf-only
+crowns retain their meshes to remove the flat olive patches. Brush mesh-pair dissolve passes 272 crate tests
+and 348,160 GPU coverage checks. Native chat caret/slide previews and release-time reorder pass
+271 toolkit checks and 32 original-code groups; the client already handles its same-owner attachment hook.
+The terrain forward composition now passes 275 world
+checks, 48 GPU controls and five original-code probes; its layer arrays add about 66 MB.
+Native deferred terrain, punctual terrain highlights and native shadows remain open.
+Forward Illum punctual highlights and authored per-light ratios pass 94 crate checks and 6,240 GPU
+samples, with bindless/fallback agreement; default opaque deferred/tiled lighting remains separate.
+Loaded-world distance refresh now passes 278 world checks; its actual loaded-scene regression
+goes from 3,373 stale ranges to zero and verifies restoration. Authored waterfall type-2 motion
+passes 98 crate checks, 36 native matrices and 728 GPU samples; dual passes/deformation remain open.
+Below-surface WaterSurface/refraction and plain volume fog pass 136 pixel controls and five pond
+crossing states. The dedicated player-music route passes 76 audio checks, 63 native probes and
+11 focused client checks; downstream total native master gain remains unresolved. Saved MIDI
+option startup/reset and nine existing settings checks pass separately.
+Current workers cover native tab-alpha behavior, forced particle generation and the ocean window.
 Native sun-shaft controls pass 20 original-code probes and six GPU controls. Outbound music packets pass
 698 network tests; adaptive ground decals pass 59 tests; PCM submission passes 64 device-inclusive audio tests;
-the MML/MIDI backend passes 31 tests including 54 native compiler cases. Client music UI/playback integration
-still remains. Mount work is not deferred in this fork: the reverse-engineered owned-mount flow is implemented (see the fork deviations).
+the MML/MIDI backend passes 31 tests including 54 native compiler cases. Music editor/preview integration
+is committed; normal/placed performance, score caching and live composition settlement remain open.
+Native quietest policies pass 73 audio checks; native bound timing passes 225 toolkit checks and 48 original-code groups.
+Server PR44 fixes uncached note requests with 9 focused checks, 3,596 full lane checks and 7 live response/buff cases;
+its lane is removed and the existing bevy server is unchanged. Mount work is not deferred in this fork: the
+reverse-engineered owned-mount flow is implemented (see the fork deviations).
+
+The integrated main executable builds successfully. Scoped client Clippy exits successfully with
+157 existing warnings and none in the new music or chat-transfer modules. The checks above are a
+recovery checkpoint; the remaining rows below still require implementation and live validation.
+
+The final light-texture/terrain/chat checkpoint rebuilds the main executable and the offline
+`world_rendering` example successfully. Its inspected 1280×720 capture has 16 terrain patches
+(14 visible), 4,894 object parts and nine authored-light ratio components; it exits 0 without
+render warnings/errors. Observed FPS is 87.5–117.9 with other builds active. The five client
+chat-transfer checks also pass after the toolkit's release-reorder update.
+
+The subsequent MIDI/waterfall/pond checkpoint rebuilds the main client in 4m59s and
+the offline world caller in 4.39s. Its final 30-second GPU run exits 0 with the same
+16/14 terrain counts, 4,894 object parts and nine light ratios, no render warnings/errors,
+and an inspected capture at `shots/resume/world-rendering-post-water.png`. Shared-load
+FPS ranges from 82.5 to 119.9. This verifies the combined caller graph; the waterfall
+and underwater pictures/controls above retain their separate exact scopes.
 
 The subsequent Illum doodad-highlight regression passes separately: highlighting copies the material for
 that instance, leaves another instance untouched, and restores the exact original handle on exit. This
@@ -313,7 +403,7 @@ state. A row is done only when all three fields are done.
 | Duels | Challenge from the target popup, challenge prompt (default dialog with the original `locale.duel` texts), accept/refuse, `STARTED_DUEL`/`ENDED_DUEL`, start text and result notice, temporary team factions on plates/target | Retail placement of the countdown text (system message here); the AAEmu server now sends `SCDuelStartCountdownPacket` at acceptance (NickMesser/AAEmu#15), so the countdown shows live; `SCAreaChatBubble` 0x153 (type 543, ignored) |
 | Achievements, ranking and trials | Original achievement UI over all1,743 descriptors, received native progress/rewards, six tracing slots and ordered completion/recent callbacks; guarded native type5 tracing hydration/save-before-leave; original physical controls passed; received crime/jury headers, queue request, original labels/hover/waiting tooltip and dishonor glyph; native19-key trial data, record pages, callback snapshots/ticks and actual Task6/7/8, Confirm/Cancel/Verdict controls; original ranking tabs/records/rewards over static catalog, received boards, independent streamed names, native calendar/locks and typed controls; bounty getters/setup/empty bulletin | English summary/description data, unsupported UI-data grammar and live achievement save/re-entry validation; ranking reward-mail formatter and live settlement, original nonempty bounty asset defect/payment lane gaps, trial spatial strings and mixed-subsystem ordering, crime reporting/prison and racing flows; paired live crime/jury settlement |
 | Music and other special systems | Audio playback and original music UI assets | Bard/song instruments, composition/playback UI, books/UCC/crest, portals, premium/shop services and other original content groups |
-| Options and UI toolkit | Implemented (partial) - per-character options/key bindings synced as native UI-data types 1/2 (request on the character list, `SCResponseUIData` merge, 500 ms save window and save-before-leave), saved `ui_scale` applied at every stage with `GetDefaultUIScaleByResolution` when absent, all `OPTION_ITEM_*` defaults registered; applied options/sound/key bindings (middle and side mouse buttons bind too) and bag persistence; the original screen and quality pages apply resolution, screen mode, vsync, gamma, draw distance, object/vegetation distance, shadows, clouds, effect quality, HDR, anti-aliasing and camera mode (`graphics.rs`); original Apply/Cancel/Default Keys plus restart/action-dispatch tests; native clipped chat captions and fixed/auto tab layout, flat/tree listboxes, state/separator art, row tooltips, dropdown mouse selection/layers, widget animation, Unicode clipboard, IME and keyboard capture | The lane's missing `CSRequestUIData`/`CSSaveUIData` handlers (opcodes defined, no packet registration), option/keybinding storage format and profile import, restart options, mouse-sensitivity range, `Reset` semantics, remaining mode/action consumers, the quality page's texture / terrain detail / character / water / DoF items (no renderer knob) live view-distance change for loaded cells and native global far clipping, scaled clipping/font calibration/layout persistence, listbox template/line-border variants and other native methods (`re-uitoolkit.md` gaps 4-8) |
+| Options and UI toolkit | Implemented (partial) - per-character options/key bindings synced as native UI-data types 1/2 (request on the character list, `SCResponseUIData` merge, 500 ms save window and save-before-leave), saved `ui_scale` applied at every stage with `GetDefaultUIScaleByResolution` when absent, all `OPTION_ITEM_*` defaults registered; applied options/sound/key bindings (middle and side mouse buttons bind too) and bag persistence; the original screen and quality pages apply resolution, screen mode, vsync, gamma, draw distance, object/vegetation distance, shadows, clouds, effect quality, HDR, anti-aliasing and camera mode (`graphics.rs`); loaded-world distance refresh from settings changes (d26c359; 278 checks); original Apply/Cancel/Default Keys plus restart/action-dispatch tests; native clipped chat captions and fixed/auto tab layout, flat/tree listboxes, state/separator art, row tooltips, dropdown mouse selection/layers, widget animation, Unicode clipboard, IME and keyboard capture | The lane's missing `CSRequestUIData`/`CSSaveUIData` handlers (opcodes defined, no packet registration), native binding blob storage format and profile import, restart options, `Reset` semantics, remaining mode/action consumers, the quality page's texture / terrain detail / character / water / DoF items (no renderer knob), native global far clipping, scaled clipping/font calibration/layout persistence, listbox template/line-border variants and other native methods (`re-uitoolkit.md` gaps 4-8) |
 
 ## Active ownership
 

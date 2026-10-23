@@ -2424,9 +2424,9 @@ CGA and vegetation mesh parts. Native `CVegetation::Render` `300F36E0`, render-n
 quality group enables `e_dissolve`. We use Bevy's 16-step ordered screen dither,
 including the vegetation custom forward shader, rather than the original noise texture.
 Distances are rounded to whole metres so Bevy's persistent 16-bit GPU range table
-shares slots. This is far-plane dissolve and the mesh/sprite handoff; ordinary
-mesh-to-mesh LOD replacements still swap completed sectors without the native 0.3 s
-transition (`e_dissolve_transition_time`). No temporal LOD-parity claim applies.
+shares slots. This is far-plane dissolve and the mesh/sprite handoff. The later
+brush mesh-pair implementation below corrects the earlier assumption that the
+registered `e_dissolve_transition_time` implied an active 0.3 s transition.
 
 `objects/sprites.rs/.wesl` now provides a worker-baked, alpha-tested 24-view atlas for
 supported `bUseSprites` groups. Source proof is retained under ignored
@@ -2532,6 +2532,118 @@ view 91 / 81, the town view 142 / 89 (rounds 88 / 161 / 142 against 84 / 148 / 8
 13212 -> 16506 (the trees seen 1.5 times farther), town view 3336 -> 3661; sectors roughly double (the far brush and tree sectors are
 sparse). The dense forest pays about 10 %, the rest is within the noise; no new hitches (frames over 20 ms comparable).
 
+#### Native brush mesh-pair dissolve (2026-10-23)
+
+`objects/lod_transition.rs` adds the proven ordinary-brush mesh-to-mesh path.
+The original Cry3DEngine DLL (SHA256
+`34d6b73690d1a9d8d0ea0f5eb743fd0624107cfda28c1302826b19a3bc9546de`)
+registers `e_dissolve_transition_time=.3` and `e_dissolve_transition_threshold=.05`,
+but a complete executable-section instruction scan finds only their registration
+addresses (`3000E1AC`, `3000E1ED`), with no reads of those fields. The traced
+normal brush caller `30111AE0` actually calls the **distance** state machine
+`301126F0`. Waiting with a stationary camera does not finish a dissolve. No
+unproven elapsed-time or camera-speed policy was added.
+
+The state retains starting distance and from/to LOD bytes. Outward motion uses
+`e_DissolveDistband=5m`; inward motion uses `min(5m, .4*startingDistance)`.
+Reference is `trunc(saturate(distanceDelta/band)*255)`. Reversing the request or
+crossing back over the start restores the original mesh. Completion is strictly
+`delta > band`, matching the original instruction boundary. The caller skips
+non-adjacent changes and rejects starts farther than 5m from
+`6 * worldAabbRadius * max(from,to) / (lodRatio*.01)^2` (`30112350`, x87 double
+intermediate). The existing source LOD formula and aa-cry's asset picker remain
+unchanged. Native narrow-FOV suppression is also retained: `30151DE8..1E34`
+increments a counter to four when the existing FOV scale is below .7, otherwise
+decrements toward zero; a nonzero counter settles pairs immediately. This is a
+FOV gate, not the unused `.05` speed setting.
+
+A replacement still builds hidden under the existing worker/spawn budgets. Once
+complete, unchanged or ineligible brushes swap, while eligible brushes retain
+both sets of parts. The old root remains until every pair settles; a reversal
+reparents the retained old mesh and repairs the sector's current/requested byte
+snapshot. The next bounded scan can then rebuild again. Cell/sector/world unload
+retires both roots through the existing ownership paths. Failed replacement
+geometry preserves the old parts. `ObjectStats::brush_lod_pairs` and
+`brush_lod_extra_parts` report the temporary extra geometry; `entities` retains
+its previous current-sector meaning. Loading latency still delays the start until
+the replacement is available; this is not native renderer streaming-time parity.
+
+`LodTransitionPlugin`, installed by `AaWorldPlugin`, wraps only brush Standard and
+Illum materials in a world-owned vertex extension. Their existing fragments,
+alpha tests and lighting remain in use. MeshTag holds one signed dither level per
+part; both members use complementary 16-step Bayer masks in forward, depth/normal
+prepasses and shadows. The native far-plane override keeps only the primary
+member. No per-frame material mutation or extra persistent visibility-range slots
+are created. Weak material-cache ids release after cell/world unload. No aa-cry
+or aa-client edits or integration changes are required. Vegetation mesh LODs,
+static entities and CGAs keep their previous replacement policy; the approved
+normal-mapped leaf-only crown/sprite correction is untouched.
+
+Native evidence and replay tools are committed under `crates/aa-world/tools/`:
+`native_lod_oracle.py --check` executes original instructions for 37 ordinary
+state updates, four suppressed updates and eleven FOV-counter frames. The checked
+JSON includes the DLL hash and field-reference scan. The Rust corpus checks every
+ordinary state/reference, with additional FOV, eligibility, complementary-mask,
+stationary hold, reversal and retirement regressions. Full disassembly for the
+four relevant functions is retained in `tools/lod_evidence/`; broader temporary
+research remains under ignored `data/extract/aa-world/mesh-lod-native/`.
+
+`lod_dissolve --grid` provides all 17 paired coverage levels; `--hard-switch` is
+the explicit prior-policy control, and `--opaque` enables opaque depth/normal
+prepass validation. `--illum` exercises the inherited Illum fragment. Without
+`--grid`, the original cliff rock renders its actual 320/168-triangle LODs at a
+fixed camera/light, with `--fraction`, `--hard-switch` and `--animate` controls.
+`object_lod --dissolve-check` uses original (9,12) brush6,
+`pepples_big_a_rock.cgf`: 2,484/1,004 triangles, compiled ratio150, maxview68.04484m,
+source switch11.2153m, inverse-boundary15.1211m. It moves the actual camera with
+streaming focus fixed, holds the halfway pair, reverses and completes; adding
+`--unload-check` also retires the real streamed cell.
+
+The physical GPU coverage controls use an RX9070XT/Vulkan. Each 1024x768 PNG has
+69,632 checked interior pixels across 17 tiles. `validate_lod_gpu.py` verifies the
+exact Bayer positions and red/green counts: **zero holes, double draws or mask
+mismatches** in Standard and Illum additive and opaque/prepass controls. The final
+controls place the secondary plane 1cm nearer: incorrect solid prepass depth would
+occlude the farther member's colour. These are coverage checks on overlapping
+projected footprints; different authored LOD silhouettes can still
+differ. Native uses a noise texture and 8-bit reference; our 16-step Bayer
+coverage is an explicit visual approximation. This is not an original-client
+transition capture or a complete native LOD usability/quality implementation.
+The shared prepass adapter is also used for shadows, but this task has no separate
+shadow-buffer readback control.
+
+Validation: final library suite **272 passed / 0 failed / 9 existing ignored**;
+native oracle replay and final `cargo check` of both examples passed. Clippy ran
+once and completed with existing warnings; new ECS-query complexity warnings were
+addressed without another clippy run. The final streamed lifecycle passes the
+held `[(0,8),(1,-8)]` pair, reversal, completion and cell unload. It tracks 47
+brushes (at most 47 checks here, still capped globally at 512), makes three sector
+replacements, retains cache21, and ends with zero sectors/parts/tracked brushes.
+No shader, GPU-validation or runtime errors occurred in the final captures.
+
+Inspected evidence is in `shots/aa-world/mesh_lod/`: `rock_before.png` /
+`rock_after.png`, `world_hold.png`, `world_final_unloaded.png`, and the five
+`grid_final_*.png` controls. The before images are explicit same-binary hard-switch
+controls, not immutable pre-change executable captures. Each final grid checks
+69,632 pixels (348,160 across the five PNGs), with zero mismatches. The original
+rock control submits one visible mesh/material draw group and 168 triangles before,
+two groups and 488 triangles during the held pair. The grid goes from 17 groups /
+34 triangles to 32 groups / 64 triangles, with 34 prepared parts in both cases.
+These are visible mesh/material groups, not a driver-wide GPU draw-call trace.
+The streamed pebble pair adds one part and temporarily draws 3,488 triangles.
+
+Matched isolated-rock aa-dev samples were **353.0-505.0 FPS before** and
+**336.4-497.8 FPS during the pair**. Logs, final grid/world FPS samples, binary and
+PNG hashes, and pixel counts are retained in `tools/lod_evidence/qa-summary.json`
+and ignored `data/extract/aa-world/mesh-lod-native/`. Final grid additive samples
+were 337.5-380.0 FPS before and 326.4-424.5 during paired coverage; Standard
+opaque/prepass was 226.0-248.5, Illum additive 313.1-377.4 and Illum prepass
+223.3-255.5. The final sparse world lifecycle logged 196.4-280.3 FPS.
+Other sessions/builds shared
+the machine: these are scene smoke observations, with no town-FPS or performance
+improvement inference. Only this task's copied executables are removed; evidence
+and the root-owned `tools/before` artifacts are retained.
+
 #### Native ordinary brush requested LOD (2026-10-18)
 
 Compiled `SBrushChunk` byte37 is retained as `Brush::lod_ratio` for exterior,
@@ -2562,8 +2674,8 @@ Native defaults are proven by3000DEC0: LOD sync1, min0, max6, min-triangles300,
 LODs1 and ratio6. Original `option_view_dist_ratio.cfg` default4 agrees; other
 quality settings change these values. This slice requests0..6 through the existing
 aa-cry external/embedded/missing-level picker. Native 300-triangle usability,
-quality-dependent max-view recomputation/min/max overrides, per-pass reflection
-scaling and mesh dissolve remain open; this is not a complete native LOD renderer.
+quality-dependent max-view recomputation/min/max overrides and per-pass reflection
+scaling remain open; the bounded brush mesh-pair dissolve is described below.
 
 Only exactly one active perspective Camera3d on the ordinary world layer drives
 these brush requests; cameras on portrait layers are excluded. Orthographic or
@@ -2578,7 +2690,8 @@ spawner admits instances. Completed sectors are checked round-robin with at most
 per instance in the update. After a complete changed scan, the requested levels
 are frozen and one replacement sector builds hidden under the same shared48-job
 and existing spawn/finish budgets. It cannot restart while hidden; old geometry
-remains until completion, then the roots swap atomically. Instance LOD metadata
+remains until completion. Ordinary brushes now retain eligible native mesh pairs
+until camera-distance dissolve completes; other replacements still swap atomically. Instance LOD metadata
 and both vectors retire with the sector/cell. Existing model caches remain shared;
 LOD keys are bounded to seven requests per model/material, without distance/time
 keys. This does not introduce global cache eviction. `BrushLodPart` records the
@@ -4242,18 +4355,16 @@ One fullscreen pass then replaces the tone mapping:
   at `Volumetric fog: Ramp start`, extinction `fog_ext` (0.04 / m at density 1) x `Global density` x layer density, colour from the layer colours
   (`Fog color`, `Fog color (top)`, mixed 60 % towards the sky horizon colour: the data fog colour is more saturated than the real haze) plus a
   sun glow; skipped beyond 0.9 `sky_radius` (the dome has its own haze),
-* **under water**, instead of the fog, when the camera is below the surface of the sea or of a water volume (`update_post` asks
-  `WaterQuery::body_at` for the camera position each frame; `PostUniform::under` / `under_color`): the engine's `OceanOutof` /
-  `WaterVolumeOutof` fog. Along the view ray the scene is dimmed by `exp(-k (path + depth of the thing seen))` and the water's own colour is
-  scattered towards the eye, `colour x exp(-k depth of the eye) x (exp(kt path) - 1) / kt x k`, `kt = k (dir.y - 1)`, so the light dims with
-  the depth and the sky above looks brighter. A ray that reaches the surface before the scene sees what is above only inside Snell's window
-  (`dir.y` above 0.62 to 0.72, 49 degrees around the vertical: the sky through a bright soft edged disc), outside it the surface is a mirror of
-  the water below (the pure water colour, as at the horizon). `k` is the zone's `Ocean fog density under water` (0.043, base 2) for the sea, the
-  volume's `density x water_absorb` for ponds (lake_tank: murky green within a few metres); the colour is the one the surface shows from above
-  (`sea_color` / `volume_color`). The water shader does not draw the surface from below (`discard`). Knobs `under_absorb` (extinction
-  multiplier), `under_scatter` (gain of the water colour). Not done: light shafts, caustics on the bed, refraction of the window, red absorbed
-  first, the transition at the surface line (the engine fades through the surface). Shots: `shots/water/uw1_0.png` (sea floor, 53 m deep),
-  `uw1_35.png` (looking up), `uw1_s.png` (8 m deep), `uw2_a.png` and `uw2_b.png` (the Nuian pond), `cli_uw.png` (the client on the sea floor).
+* **under water**, instead of atmosphere fog (`update_post` asks `WaterQuery::body_at` for each camera;
+  `PostUniform::under` / `under_color`). Volumes now use the original plain `WaterVolumeOutof` attenuation
+  `fog*(1-exp(-density*path))+scene*exp(-density*path)`, clipped at the surface, and qualified authored
+  `WaterSurface` materials render their underside (see WR4 below). The sea retains its earlier approximation:
+  `exp(-k*(path+receiver_depth))`, an analytic scatter integral and a smooth angular window at `dir.y=0.62..0.72`.
+  Its surface still discards from below. `under_absorb` scales extinction; `under_scatter` now applies to the sea only.
+  Native near-plane/surface-line clipping, separate fog/surface ordering, underwater shafts and the sea's surface
+  refraction remain open; no general crossing fade is inferred from the original source. Historical captures:
+  `shots/water/uw1_0.png` (sea floor), `uw1_35.png` (looking up), `uw1_s.png` (8 m deep),
+  `uw2_a.png` / `uw2_b.png` (old pond rendering), `cli_uw.png` (real client on the sea floor, not a surface-window reference).
 * **grade**: exposure, contrast around 0.18, colour balance, saturation (data `Saturation` x 0.85),
 * the engine's **film curve** (`postprocess.cfx`: `x (a 6.2 x + b 0.5) / (x (a 6.2 x + 1.7) + c 0.06)` with shoulder / midtones / toe scales from the
   data, divided by the same at the white point; its output is gamma encoded, so the pass raises it to 2.2 because the swap chain re-encodes), `Levels: min input` (in 0..255 as in the engine's `AdjustLevels`, so the data's 0.07 is a black point of 0.07 / 255, not 7 % of the range).
@@ -5567,8 +5678,8 @@ last packet, in `Screen::Loading` and `Screen::InGame`; nothing until the server
 ## 6. Known gaps
 
 * Terrain detail, differences to the real client (`shots/terrain/spawn.png` against `reference/ingame/spawn/real.png`): the real picture has a
-  cooler, less saturated grade (photofilter, film curve, exposure) and deeper shadows under bushes (SSAO is opt-in, see Post); the layers have no specular /
-  gloss (`_sp` maps: the ground is fully rough); diffuse maps below 512 px and normal maps below 256 px are skipped (the layer then
+  cooler, less saturated grade (photofilter, film curve, exposure) and deeper shadows under bushes (SSAO is opt-in, see Post). Authored directional
+  gloss/specular now has the bounded forward slice described in WR4 below; native deferred specular remains open. Diffuse maps below 512 px and normal maps below 256 px are skipped (the layer then
   has no colour / the vertex normal; 4 diffuse textures are missing from the pak). SID weights now follow the actual patch triangles/LOD;
   native joint vertex-stage axis/fade/frame evaluation, quality-dependent axis selection and separate material-pass order remain approximations;
   `terrain_tint` is a fudge for the missing exposure. Roads, forward decals and the deferred diffuse/opacity slice
@@ -5579,8 +5690,8 @@ last packet, in `Screen::Loading` and `Screen::InGame`; nothing until the server
   owner's (the cover colour is a flat teal where the real bed is darker and greener), sloped surfaces/physical currents remain open, the sun glint of the real frames
   is not visible (the sun is low and to the left there), the sea's foam, beach gradient and caustics follow the original data (see "Native ocean foam and caustics") but are not compared with a
   real capture (none of the coast exists); the deep sea's look changed with the clear zone density (seabed visible through haze), the crest
-  foam of the DX11 tessellated ocean never runs in the D3D10 client and lake / river caustics are not in the engine; the sea has a sine swell instead of the FFT displacement (see the 2026-10-23 section at the end); waterfalls are aa-cry / aa-fx work; no light shafts under water, refraction of the surface window seen from
-  below or the transition at the surface line. The underwater colours are plausible, not fitted (no reference capture).
+  foam of the DX11 tessellated ocean remains outside this default-off supported slice, and lake / river caustics are not in the engine; the sea has a sine swell instead of the FFT displacement (see the 2026-10-23 section at the end); waterfalls are aa-cry / aa-fx work. WR4 below restores qualified authored-volume underside refraction and plain Outof fog.
+  Underwater shafts, the sea's surface window/refraction and native near-plane/surface-line clipping remain open. Underwater colours remain unfitted; no matched original surface-window capture is available.
 * Not rendered: native MRT normal/specular decal effects, voxel projected specular detail/atlases and type 14, unsupported CGA curves / named clips and skinned `entities.xml` render slots, indirect/cubemap local lights and the unsupported projector variants listed above.
   Interior supported placements render/collide through the existing paths, including the supported voxel base and projected diffuse/normal/detail-normal; voxel specular detail/atlases, distant clouds, portal occlusion, area sky/fog/light flags and light confinement remain unsupported.
   Hidden cinematic actors/targets remain aa-client's screen-flow responsibility. Also missing: original cloud reference brightness calibration,
@@ -5699,8 +5810,17 @@ Amplitude and wave set are a plausible reading, not the FFT's. `AA_TUNE sea_wave
 and `*_sbs.png` (same cameras: `calib`, `spawn150` / `spawn180` with `--zone`, `forest`, `forest_night`, `sky_up`, `coast`, `beach`,
 `sealow`). Frame rate, `fly --spawn nuian --hour 9 --bench 15` on the shared machine (release): 91 / 94 fps average before,
 89 / 90 after (the sea swell adds 94 k vertices, the grading a handful of ALU in the final pass; the noise is larger than the cost).
-**No crest foam**: the branch with `FoamCrestAmount` sits in the `WATER_TESSELLATION_DX11` (hull / domain) path, which the D3D10
-client never runs, so the 1.2 whitecaps are the non-tessellated flecks already done ("Native ocean foam and caustics").
+**Crest foam remains unsupported here**: `FoamCrestAmount` is read only in the
+`WATER_TESSELLATION_DX11` hull/domain path. The original renderer registers
+`r_WaterTessellationHW` at **383B1530** with default **0**; the original
+`config/cvargroups/option_water.cfg` does not enable it. The DLL named
+`cryrenderd3d10.dll` also resolves `D3D11CreateDevice` and contains the
+`$HW_WaterTessellation` dependency and ocean patch-topology paths. Its name
+does not establish a universal inability to tessellate. Runtime overrides and
+hardware capability are unaudited; the bounded supported path is the
+non-tessellated foam described in "Native ocean foam and caustics". Original
+disassembly/config evidence is retained under ignored
+`data/extract/aa-world/ocean-foam-audit/`.
 
 **Caustics on lakes and rivers do not exist in the engine.** Both caustics passes (`CommonCausticsPass`'s `g_fWaterLevel`,
 `deferredcaustics.cfx`) use the ocean level and the `<Ocean CausticDepth ...>` of `env.xml`; no water volume shader mentions them.
@@ -5824,8 +5944,717 @@ same-dev-binary `shaft_off.png` remain diagnostic artifacts and are not used as 
 sample lists are in `data/extract/aa-world/wr3/`, including `fps.json`. Our WR3 copied executables were removed after comparisons;
 root's `tools/before` artifacts and the earlier distance-task copies were left untouched.
 
-The prior distance/sprite change still has a separate visual regression: inspected
+At the time of WR3, the prior distance/sprite change still had a separate visual regression: inspected
 `shots/aa-world/distance/recovered/bush_compare.png` and the elf BEFORE/FINAL captures show conspicuous flat olive patches.
 The isolated controls matched sprite footprint/center and the exact dissolve handoff dither, but the CPU atlas/shading lacks
 native self-lighting/backlighting and volume. This is a likely cause, not proof excluding a placement-specific bounds or
 handoff defect. Those captures are not an unqualified visual improvement. WR3 does not modify that subsystem.
+
+
+## Bounded correction for the Elf bush sprite regression (2026-10-23)
+
+The flat olive patches around the central hut/right path are corrected by retaining the
+existing meshes for **normal-mapped, leaf-only models**. This is an explicit limit on
+our approximate atlas admission, not a recovered native admission rule or native sprite
+lighting parity. `bUseSprites` remains enabled. Models with any drawn non-leaf part
+(including woody tree parts), and leaf cards without a normal/bump map, retain the
+previous atlas path. Only used, drawn LOD0 subsets count; NoDraw/Cut proxies, unused
+material slots, empty subsets and skipped skinned meshes cannot qualify as woody parts.
+`shaders/vegetation.ext` identifies `%LEAVES` as `0x100`; the shader name alone includes
+trunks. The declined bake is cached as `None` in the existing per-world cache, so all
+its LODs retain the mesh's original far range, shading, AO, shadows and wind.
+
+The concrete identified placement is **cell `(10,15)`, vegetation index 5449** (zero
+based, `parse_vegetation_dat` order), record offset **348868**, group **107**:
+
+* Model: `objects/env/05_nature/08_cry_source/bushes/cliffbush/cliff_bush_green_mini.cgf`.
+* Material: `objects/env/05_nature/08_cry_source/bushes/cliffbush/cliff_bush_green.mtl`;
+  its only drawn material is `leaf`, `Vegetation`, GenMask `80070100`, AlphaTest `0.5`,
+  with `temp_tree_ashtree02_df.dds`, `temp_tree_ashtree02_ddn.dds` and an authored
+  opacity/back-light map. The NoDraw bending/AI proxies are not opaque trunk geometry.
+* World position `(10339,16064.625,359.1430969)`, scale `0.369469136`, yaw byte **221**,
+  zero X/Y tilt. It projects around `(1287,685)` in the Elf capture.
+* Quad half-width/half-height/centre-Z before scale: `9.192006 / 3.4976263 / 1.0576552`.
+  Actual camera-to-origin distance is `100.36425 m`. Native group/instance switch
+  probes return `198.54735 / 73.35712 m` at 1920px, well outside the 2m transition band.
+  Scale is inside the existing clamp. The sprite remains an upright, correctly sized
+  crown here; a partial handoff or a grossly flattened/misplaced quad does not explain
+  this patch. The native full XYZ bound-centre versus current Z-only centre remains
+  an independent small offset limitation; it was not silently declared equivalent.
+
+Native evidence is retained in ignored `data/extract/aa-world/sprite-fix/`:
+`native-placement.py/.json` execute original `30109F70` and `300F0C10` in Unicorn at
+1920/1024/800 widths; only the CStatObj radius getters are mocked with this model's
+measured radii. All **3 probes** pass. Native `MakeSprites` **380EC320** renders the
+stat object's root mesh/subobjects (`380EB430`), using a `2 * r_VegetationSpritesTexRes`
+capture viewport before its flush/resample (`380EBD00`). `GenerateObjSprites`
+**380EDBE0** obtains the sun direction through 3DEngine vslot636, compares it with the
+cached vector and requests regeneration when it changes. The original `vegetation.cfx`
+`VegetationPS` `%_RT_SPRITE` writes albedo/material/vertex-AO in RGB and **per-leaf sun
+contribution** in alpha; `fraglib.cfi` samples the normal map and `fartreesprites.cfx`
+combines that alpha with current sun RGB plus deferred ambient. The CPU atlas instead
+stores coverage in alpha and averaged view normals in RG, without the leaf normal map
+or this sun-aware capture/cache. An RGB tint cannot restore that missing signal.
+`renderer-bake.txt`, `renderer-parts.txt`, `group-native.txt` and `metrics.json` preserve
+the decompilation and original DLL SHA256s. No original DLL/database was modified.
+
+Isolation used the existing `vegetation_sprites` example with both depth and normal
+prepasses: original mesh versus approximate atlas, no-normal-map mesh, unlit albedo,
+and mip0-only atlas. Removing the normal map alone leaves mesh cutouts/detailed
+structure; unlit and mip0-only atlas controls still show the dense/coarse crown. The
+limitation exists in capture/representation, before world fog/post or handoff. A
+per-triangle filtered/authored-mip experiment also failed to restore the bushes and
+was **reverted**, including its proposed public helper; its source/logs/PNGs remain as
+negative evidence. The safe correction declines this unsupported model class rather
+than claiming a completed native leaf shader/capture port. Trees that still use sprites
+retain their documented lighting, self-shadow, normal, elevation-view and volume limits.
+The native generator also has a 60-degree view bank; the current 24 side views do not.
+
+The example adds `--scale`, `--yaw`, `--azimuth`, `--elevation`, `--fov`,
+`--no-normal-map`, `--unlit-mesh`, `--albedo` and `--atlas-lod0` controls. `--albedo`
+uses the previously unused `SpriteParams.surface.w=1` diagnostic branch; production
+materials leave it zero. **No Rust public API, struct layout or client integration
+change is required.** Public `bake` remains an explicitly approximate diagnostic bake;
+the production model-worker cache applies admission before baking/uploading.
+`fly --sprite-counts` reports prepared and frustum/range-active supported vegetation
+mesh/sprite draw entities. Active means ViewVisibility plus a nonempty distance fade,
+not a count of every object/terrain draw or GPU surviving pixels.
+
+Matched release captures use `fly --spawn elf --hour 10 --sprite-counts --shot-after 30`
+at **1920x1080**, with `--no-sprites` only on the separate mesh control. Inspected PNGs
+are under `shots/aa-world/sprite-fix/`: `elf_before_counts.png`, `elf_final.png`,
+`elf_meshes.png`, and their `_bush.png` crops. AFTER restores dark detailed bushes in
+the reported area and closely follows the mesh-only input there. Other retained
+sprites remain approximations. Both world runs finish with **zero pending instances/
+sectors and zero warnings/errors**. BEFORE was built from current main before this
+admission change, including the committed shaft task; no legacy root executable was
+needed. This task does not alter shafts, terrain, water, aa-client, audio or UI.
+
+| Release capture | Prepared mesh/sprite | Active mesh/sprite | Shared sprite models | Total object entities | Last 5 aa-dev FPS |
+|---|---:|---:|---:|---:|---|
+| BEFORE | 3939 / 6510 | 179 / 80 | 28 | 17235 | 96.4, 93.3, 91.9, 90.8, 100.8 (mean 94.6) |
+| AFTER | 7468 / 2159 | 256 / 1 | 23 | 16423 | 113.5, 102.6, 112.4, 104.2, 113.9 (mean 109.3) |
+| Mesh-only control | 9296 / 0 | 256 / 0 | 0 | 16506 | 102.7, 115.2, 109.3, 112.3, 97.4 (mean 107.4) |
+
+Five model atlases are declined in these surroundings; 23 remain prepared, including
+the original river tree checked by the regression test. The shared box ran concurrent
+builds/sessions: these FPS samples are observations, not an isolated performance claim.
+
+Validation: `cargo test -p aa-world --lib` passed **265 tests, 9 ignored**, including
+new real-placement admission and drawn-subset/proxy/unmapped-leaf/tree controls.
+The release builds of `fly` and `vegetation_sprites` passed, as did
+`cargo check -p aa-world --lib --example fly --example vegetation_sprites` (the shared
+build lock was waited out). No clippy/workspace/client build was run by this task.
+
+All six final isolated GPU captures use `vegetation_sprites --prepass --shot-after 6`
+at 1920x1080. Each PNG was opened: `leaf_full.png` (defaults), `leaf_no_normal.png`
+(`--no-normal-map`), `leaf_albedo.png` (`--albedo`), `leaf_dissolve.png` (`--view 43`),
+`leaf_handover.png` (`--appear 43`) and `tree_full.png` (`--model` the river-tree path
+above). The standalone bake deliberately exposes the rejected approximation for
+comparison; it is not evidence that a rejected atlas is used by production. The
+native 2m dissolve/handoff check (`validate_dissolve.py`) again reports **zero Bayer
+mask mismatches** in both ROIs: full mesh/sprite 45642/49763 pixels, dissolve
+2859/3105, handoff 2859/46658. Thus the changed production admission did not disguise
+a dither regression. These six control logs contain no shader/GPU warnings/errors;
+aa-dev samples span **249.6-385.8 FPS**. Earlier `albedo.png`/`albedo_lod0.png` are
+pixel-identical negative mip-selection controls; `placement_before.png` uses the
+identified scale/yaw/view geometry, and the filtered-capture experiment is retained
+as `elf_filtered.png`/`albedo_filtered.png`, explicitly not the shipped result.
+
+`admission.log` lists the five declined models in this camera's loaded surroundings:
+`cliff_bush_green_mini`, `cliff_bush_grey_big`, `cliff_bush_green_big`,
+`gw_plants_leaf_d`, and `small_leaves_yellow_bunch_big_b` (all CGF). The predicate is
+based on drawn material features, not these names or group IDs. No per-path blacklist,
+new distance/tint threshold, global sprite disable or public API was added.
+
+Cleanup removed this task's copied executables and two copied IDA projects after
+verification. Small source/native evidence, logs, targeted asset extracts and PNGs
+remain in `data/extract/aa-world/sprite-fix/` and `shots/aa-world/sprite-fix/`.
+Root's `tools/before` executables/drivers were not used or deleted and may be cleaned
+by root. All task-started Bevy/IDA processes exited normally.
+
+## Authored punctual specular ratios (2026-10-23)
+
+World point lights and all three RGB projector-channel spot lights now carry
+`aa_cry::shade::illum::IllumLightSpecular(PlacedLight.specular_multiplier)`.
+This consumes aa-cry's additive export from `a1b6cb1`; it does not change caller
+APIs, Illum material structs, diffuse intensity, radius, cookie or shadow budgets.
+The authored ratio is passed unchanged, including finite zero. Removing a point's
+render component also removes its ratio; projector child destruction removes both.
+Ratio-only changes and missing-component repairs refresh independently of PointLight
+fields on the existing selection cycle. The regression changes only the near point's
+ratio to zero, removes that component, and checks repair without changing point fields.
+
+The existing `objects::lights::tests` lifecycle controls check point ratios 0.5,
+1/3 and explicit zero with positive diffuse intensity, point-budget deactivation,
+and the same authored ratio on all three channels of original `Light_587` before
+root unload. Run `cargo test -p aa-world --lib objects::lights::tests`.
+aa-cry owns GPU index/extraction and highlight validation. This bridge does not
+claim native opaque deferred illumination: the audited original Light.lua flags
+request deferred lights, whose pass remains a separate renderer gap.
+
+## WR4: authored terrain gloss and forward directional specular (2026-10-23)
+
+This implements the verified **non-DJ1 forward Terrain.Layer** specular equation on
+the existing one-pass terrain renderer. It is not native opaque deferred terrain parity.
+Original `terrain.cfx` enables deferred specular; `fraglib.cfi` reads the scene specular
+accumulation buffer in that path, and `deferredshading.cfx` uses normalized Blinn.
+Our forward Phong slice and Bevy shadows do not reproduce that buffer/pass.
+The earlier deferred/no-specular notes above describe the pre-WR4 implementation.
+
+Source contract and authored data:
+
+* `terrain.cfx::frag_custom_begin` samples gloss at **diffuse baseTC.xy**, independently
+  of TS_BUMP, with white when GLOSS_MAP is absent. `frag_custom_per_light` uses
+  `pow(saturate(dot(V,reflect(-L,N))), MatSpecColor.w)`, without an N.L factor or
+  normalized BRDF gain, and shadow factor `0.8*shadow+0.2`. `frag_custom_end`
+  multiplies by gloss RGB and authored `MatSpecColor.rgb`.
+* The layer's own base normal plus native detail-XY addition supplies N before
+  evaluating its Phong term. Highlights follow the existing ordered source-alpha
+  layer blend, including attenuation by a later matte layer. Exponents are never
+  averaged or replaced by a uniform terrain roughness. The old uniform PBR
+  reflectance is removed when this path is enabled; terrain tint affects diffuse only.
+* The small 601-file `materials/aa_terrain/` extraction's **600 well-formed files** contain **710 Terrain.Layer
+  projections**, 564 with a Specular texture and 552 with nonzero Specular RGB.
+  **39 nonzero projections have no map** and retain native white gloss. The values
+  already include SpecularLevel; it is not multiplied again. These counts include
+  materials not referenced by main_world and submaterials, unlike the old file-level audit.
+  One malformed `canyon/tr_wt_dirt3d_300a.mtl` is explicitly reported/excluded by
+  this XML census. Runtime material loading still uses aa-cry's existing repair path;
+  the census figures do not claim to cover that malformed file's repaired records.
+* Four projections use GLOSS_DIFFUSEALPHA; their specular slice is declined because
+  the existing BC1 diffuse arrays do not retain authored BC3 diffuse alpha. They are
+  `tr_af_tile_300a`, `tr_field_dirt_240a_02`, `river_mud_wet`, `tr_mix_mu_di_201a`.
+  No surveyed projection enables SPECULARPOW_GLOSSALPHA. That unsupported permutation
+  is also declined, rather than inventing an exponent signal.
+
+`tools/terrain_specular_source.py` reads the original four shader files through the pak
+CLI, checks the relevant equations and records SHA256s in ignored `source-contract.json`.
+It is a source check, not execution of original GPU bytecode. `tools/terrain_specular_native.py`
+executes original x86 TOD7 loading at **300A6130**, dispatch at **300A72EF**, and the
+real C3DEngine setter **30137970** (vtable 30263718 +4AC). All **5 probes** store the
+float bit-exactly at engine +444, including zero and -1; no mocked call or fitted gain.
+This proves binding/storage, not the native renderer's complete sun-colour producer.
+The shader uses current directional-light RGB / PI, exposure, and the sampled TOD sun
+specular multiplier through the existing world lux/exposure bridge. That bridge's
+colour, horizon/day scaling and photometric calibration remain existing approximations.
+
+Array/API handoff: `LAYER_ARRAYS` is **7** (the original five, then gloss/more-gloss).
+Two independent 512px BC3 arrays admit up to 510 maps without displacing diffuse or
+normal slots. BC3 blocks/alpha remain intact; BC1 RGB is promoted only when its used
+palette entries agree exactly with BC3, supplying opaque alpha. Unsafe three-colour
+promotions and unavailable authored maps disable that projection's specular, never
+substitute untextured white. A 256px source repeats 2x2 with matching UV flags;
+larger sources use their 512px mip. Alpha is not consumed by the supported slice.
+`TerrainParams` adds two Vec4s per projection and a lighting/control Vec4;
+`TerrainExt` adds bindings 110/111. **TerrainExt::new retains its three arguments.**
+aa-client's scenery uses LAYER_ARRAYS/BuiltLayers.images, so no caller edit was made;
+rebuild callers. No dependency, lockfile, aa-client or aa-cry change belongs to WR4.
+
+Main_world admits **358 textured, 21 white-gloss and 113 matte/unsupported projections**,
+with 187 unique gloss maps. The existing 214/54/1 diffuse and 233/0 normal counts are
+unchanged. Compressed array storage rises from about **159 to 225 MB** (187 gloss layers
+add 65,360,240 bytes). The fragment adds a gloss fetch for each contributing supported
+layer, Phong math, and directional shadow sampling in addition to PBR diffuse lighting.
+It adds no geometry, draw pass or timer. Original deferred lighting, terrain punctual
+specular, cubemap specular, DJ1 high-quality specular, prepass encoding/quantization,
+native pass ordering, native shadows and alpha-driven permutations remain open.
+
+Validation: `cargo test -p aa-world --lib` passes **275 tests, 9 ignored**; the new tests
+cover authored/matte/white-gloss table data, independent overflow admission, block
+preservation and rejection of unsafe BC1 promotion. Dev builds of `fly` and
+`terrain_specular`, release `fly`, and final crate/example check pass. Clippy was run
+once for this library and these two examples; it completed with existing repository
+warnings. Its new chunks_exact suggestion was applied using the existing as_chunks
+API, followed by the final check. Source-contract and 5 original-code probes pass.
+
+All final GPU controls use aa-dev at **960x600**, `--shot-after 6`, and were opened:
+`shots/aa-world/terrain-spec/gpu_probe.png` (default known 100-unit irradiance probe),
+`gpu_flat.png` (`--flat`), `gpu_dark.png` (`--dark`), and `gpu_mapless.png`
+(`--mapless --unit`). Each checks 12 pixels against an independent original-DDS/CPU
+evaluation, tolerance <=3 RGB8 counts: **48/48 pass**. BC colour interpolation is
+rounded independently; the generic RGBA8 CPU decoder truncates and caused a rejected
+early bright-probe comparison. The 100-unit probe is an explicit fixture light,
+not a production gain. Controls cover actual paving, wet sand and rock X/Z samples,
+native detail normals, copied 256px gloss, second-array routing, white gloss and matte
+zeros. Logged aa-dev samples span **172.4-376.1 FPS**, with no shader/GPU errors.
+
+World captures under the same shot directory are **1920x1080** and all were inspected:
+
+| Pair/control | Reproduction | Last-five aa-dev FPS mean |
+|---|---|---:|
+| `court_before.png` / `court_after.png` | `fly --pos 13831,10866,172.29433 --look 13822,10878,166.29433 --radius 180 --hour 10 --no-objects --shot-after 25` | 184.7 / 191.7 |
+| `sun_off.png` / `sun_after.png` | Same camera, AA_TUNE=`sun_az=-36.869898,sun_el=21.801409`; OFF adds `--terrain-specular-off` | 231.8 / 133.9 |
+| `reference_before.png` / `reference_after.png` | `fly --camera-json reference/ingame/spawn/camera.json --shift 11264,11264,0 --hour 19.166172 --shot-after 30` | 91.3 / 81.8 |
+
+The legacy `court` prefix is a terrain-only canyon control, not an object-rendered
+court yard. The final same-binary sun OFF/AFTER pair holds arrays, geometry and
+dependencies constant and exposes fine highlights on the cliff; ground changes are
+subtle. `sun_before.png` is an additional pre-task-artifact control, not the matched
+same-binary OFF. Terrain counts agree at **16 prepared / 6 visible patch entities**
+for sun OFF/AFTER; spawn AFTER has **576 / 121**, 36 materials. These count visible
+entities, not GPU surviving pixels or every scene draw. The new counter avoids
+accessing CPU mesh indices after Bevy has moved them to RenderWorld.
+
+Concurrent builds/GPU sessions caused large stalls (sun AFTER samples include 27.1
+and 49.6 FPS between 185.9 and 211.9). These observations do **not** establish an
+isolated performance gain or regression. Pre-task release BEFORE has no asserted
+embedded revision and shared dependency integration also changed between builds;
+the same-binary OFF is the stronger feature control. Both spawn runs log the existing
+deferred-decal receiver-budget warning at (14,13). Original `reference/ingame/spawn/real.png`
+was also inspected: composition is retained, but water, vegetation, shadows and grade
+still differ, and there is no matched original-client canyon highlight capture.
+The pictures therefore do not prove native deferred terrain appearance.
+
+Logs, all sample lists, source hashes, native disassembly/probes and the small material
+extraction remain in ignored `data/extract/aa-world/terrain-spec/`; PNGs remain in
+`shots/aa-world/terrain-spec/`. Copied task executables and temporary incorrect native
+search output were removed after verification. The original DLL/pak are unchanged.
+
+## H12: changing distances in an already-loaded world (2026-10-23)
+
+The stale-distance claim was reproduced in a real streamed `main_world` palace cell
+(13,10). The `draw_distance` aa-dev example waits for placement/models/sectors to
+finish, retains the terrain roots, then changes `WorldConfig` from high to low:
+brush 2000 -> 600 m, object scale 1.5 -> 0.75, vegetation 220 -> 110 m and trees
+1000 -> 500 m. The pre-fix executable found **3373 stale ranges out of 3373 drawn
+brush parts** three seconds after that save, with no pending models/sectors.
+
+Loaded placement cells now refresh their cached `ViewLimits` and per-sector maxima
+on a distance change. Drawn brush, vegetation mesh/sprite, static entity and playing
+rigid parts retain authored distance inputs and refresh their existing visibility
+ranges in place. Roads/decals retain their authored distance/radius and existing
+20 m AABB margin; voxel base/detail meshes retain their existing abrupt AABB range.
+Placement finishing after a save is normalized to current limits before admission.
+There are no new settings, dependencies, public resource types or required caller edits.
+
+Unchanged limits return before scanning cells/parts. Static geometry and model caches
+are retained. Brush native LOD-pair state and in-progress spawn indices remain valid:
+sector/bin membership stays fixed for the lifetime of the cell, even if its current
+range crosses a near/far or vegetation/tree classification threshold. The current
+range and sector reach change; this does not promise cold-load-equivalent vegetation
+LOD band classification after such a threshold crossing. Vegetation sectors whose
+handoff inputs changed use the existing budgeted hidden replacement: old geometry
+remains until the replacement is ready. Later saves during a hidden replacement
+are picked up after it completes, without restarting it every frame.
+
+The existing native far dissolve is retained (`clamp(0.025 * view, 2, 8)` metres,
+whole-metre shared range slots), as are complementary mesh/sprite switch bands and
+brush mesh-pair transitions. Saving options immediately moves the distance boundary;
+no invented time-based fade was added. Increasing reach admits sectors through the
+existing loading/spawn budgets rather than rebuilding all static content.
+
+Terrain streaming was already live: `stream_cells` reads current `load_radius` and
+`unload_radius` each frame and `update_patch_lod` uses current camera distance. A new
+loaded-terrain regression verifies the hysteresis region and immediate removal of
+a loaded cell and its patch child when the unload radius shrinks. The refresh does
+not rebuild terrain meshes or gloss arrays from the prior WR4 work.
+
+Read-only producer/source audit and limits:
+
+* `aa-client::graphics::Graphics::apply_world` already writes these four fields on
+  saved-option changes. No extra wiring is needed for this refresh. There is no
+  `WorldSettings` resource in this checkout; the existing resource is `WorldConfig`.
+* `tools/draw_distance_source.py` reads the original tables through `tools/aa-pak.exe`
+  and records hashes/copies in ignored `draw-distance/source/`. The **config64** view
+  table is 600/1000/1500/2000 m; the **config** table is 500/600/700/800 m. Both have
+  object ratios 30/30/40/60 and vegetation ratios 30/40/50/60. The producer's values
+  correspond to config64. No claim is made that the different 32-bit table is active.
+* Native registration calls `e_max_view_dst` a **far clipping plane distance**.
+  Native object and vegetation ratios are independent, and the prior recovered
+  `300F0C30` vegetation path reads the vegetation cvar independently. The source tool
+  retains those excerpts and checks the strings against the unchanged shipping DLL;
+  this is a source check, not a new native execution oracle.
+* The existing API is narrower: `brush_distance` caps brush/entity/road/decal/voxel
+  ranges; it does not drive the camera far plane, terrain visibility, sky radius,
+  water or unit rendering. The producer does not change terrain load radii. Native
+  global far-plane/fog/pool behavior therefore remains open. Do not replace the
+  camera far plane with `brush_distance` without handling the existing 9000 m sky.
+* Existing `ViewLimits` policy is preserved, including the shared object/vegetation
+  `view_dist_scale` and unscaled compiled distance for small vegetation. Exact native
+  independent vegetation-ratio semantics would need an explicit producer/API decision;
+  this task does not add one or claim full Options parity. Terrain detail, water
+  quality and other H12 renderer knobs remain outside this refresh.
+
+Validation: `cargo check -p aa-world --example draw_distance` and
+`cargo test -p aa-world --lib` pass (**278 passed, 9 ignored**). New tests cover
+loaded range shrink/restore without changing real mesh handles or roots, late
+placement admission without rebinning, and terrain unload hysteresis.
+The example build and one `cargo clippy -p aa-world --lib --example draw_distance`
+also pass; clippy reports existing crate/dependency warnings and none in the new
+distance module or example. An initial private system-query type compile error was
+fixed by making the internal `ViewDistance` component `pub(crate)`; the successful
+check/test/build/clippy results include that fix.
+
+The unattended aa-dev controls use 1280x720, `--shot-after 30 --exit-after 45`:
+
+| Capture in `shots/aa-world/draw-distance/` | Result | Last-five aa-dev FPS mean (full sample range) |
+|---|---|---:|
+| `before.png` (pre-fix binary, `--stale`) | Low save retains 3373/3373 stale brush ranges | 80.7 (64.7-97.2) |
+| `after.png` | Low save has 0/3190 stale ranges; distant castle disappears | 194.4 (63.0-220.5) |
+| `restored.png` (`--restore`) | Low then high, 0/3373 stale ranges after restore; castle returns | 70.1 (31.5-163.3) |
+
+All three PNGs were opened. Checks retain the terrain roots; model cache count stays
+599 and pending models/sectors are zero at each check. Counts are drawn brush-part
+entities, not GPU draw calls or surviving pixels. These runs share the machine with
+other builds/GPU work and change visible content; the FPS samples do not establish
+an isolated performance gain. The new aerial palace camera is a controlled settings
+regression, not a matched native capture. The existing
+`reference/ingame/royal_palace/real.png` courtyard capture was inspected too; camera,
+lighting, fog, terrain detail and water differ, so these pictures do not claim native
+far-plane or lighting parity. `terrain_detail` and shadows are off in this small
+fixture to keep the distance check independent of their existing rendering work.
+
+Reproduce with `cargo build -p aa-world --example draw_distance`, copy the executable
+to an ignored owned scratch path and run it with the flags above and `--shot <path>`.
+`--restore` returns to high after the low check. `--stale` is solely the assertion for
+the pre-fix executable and is expected to fail with the current implementation.
+Logs, executable hashes, all FPS samples/checks (`validation.json`), original option
+copies and source hashes remain under ignored `data/extract/aa-world/draw-distance/`.
+Task-owned executable copies were removed after verification. No server, client data,
+foreign process or other crate was changed.
+
+## WR4: authored water underside and volume Outof (2026-10-23)
+
+This bounded slice restores the underside of the existing authored `WaterSurface`
+path (`WaterParams.motion.x`: authored UV, cube or 2D environment modes), with
+the required depth prepass and transmission colour copy. The sea, missing pipeline
+inputs, unqualified/missing materials and their existing underside discard are unchanged.
+No lake/river caustics, DX11 crest foam, new water assets or procedural replacement
+is introduced. No dependency, public type layout or caller signature changes;
+callers must rebuild to embed the changed shaders.
+
+Original 1.2 evidence, retained under ignored
+`data/extract/aa-world/underwater-window/`:
+
+* `watersurface.cfx::WaterSurfacePS` uses `abs(dot(viewVec,bumpNormal))` with
+  the explicit comment that refraction should work inside water. `General` sets
+  `CullMode=None`. Its POINT/CLAMP screen lookup and strict depth mask do not
+  change below the surface. The sun term alone multiplies by zero when
+  `viewVec.z<0`. This closes the unsupported unconditional underside discard.
+* `watervolume.cfx::WaterVolumeOutofPS` limits the view ray to the water plane
+  and opaque depth, then blends `fog*(1-T)+scene*T`. It has no angular window,
+  receiver-depth absorption or ocean scatter integral. The original
+  `materials/fog/watervolumeoutof.mtl` selects `WaterVolume.Outof`.
+  Renderer **380BF61C..380BF646** uploads the serialized volume density times
+  **382E6E4C = 1.4426950216293335**, the original f32 `log2(e)`. Its `exp2`
+  therefore becomes `exp(-density*path)`: no extra `ln(2)` belongs on the
+  volume extinction. Existing colour/exposure/extinction tuning remains.
+* Engine **300E7993 -> 300E7730** obtains signed plane distance. The Outof
+  selection at **300E79D0..300E79EF** requires camera containment and distance
+  **<=0**. Volumes now use that surface boundary instead of the inherited
+  2 cm dead band. The sea keeps its previous boundary. Existing `WaterQuery`
+  containment/floor/overlap rules remain an approximation of native discovery.
+
+The surface now retains its source-qualified refraction/reflection/edge alpha
+below water, suppresses below-surface sun glint, and skips the above-water
+`WaterVolumeInto` absorption there. The post pass uses the unused alpha of
+`under_color` as an internal volume/sea selector. Volume Outof applies the
+plain fog over the eye-to-receiver segment, capped at the surface for upward
+rays. The existing ocean shader branch is retained without arithmetic changes.
+
+Limits remain explicit. Native **300E7A39** tests strict `abs(distance)<0.5`
+and **300E7A54** tests squared distance to the individual volume AABB `<9`;
+renderer **380BFAF3** uses both flags to disable surface clipping/depth rejection.
+Style-batched water meshes do not retain those per-volume bounds, so this change
+does not widen that gate or claim the native near-plane/surface-line transition.
+Sloped volume planes, exact native containment/lifetime and the separate native
+fog/surface submission order remain open. Here volume Outof still runs in the
+post pass after the combined surface, so native framebuffer-copy/fog order and
+reflection fogging are not closed. The sea's underside/window/refraction and
+crossing behavior are outside this slice. No matched original underwater capture
+exists under `reference/`; the real pond images are integration controls, not a
+claim of fitted native underwater colour or complete WR4 water parity.
+
+Validation uses the actual production depth/transmission and post pipelines:
+
+* `water_refraction`: **96/96 GPU controls pass** across eight runs: authored
+  underside, above-water, subviewport, orthographic, below-surface sun, nonzero
+  Into absorption, unqualified material, and missing depth. The pre-edit underside
+  shows unshifted opaque receivers; the corrected controls exercise strict
+  foreground/equal/behind masking, clear depth, shallow/deep offsets, POINT
+  sampling, signed XY and viewport clamp. The above-water PNG is pixel-identical
+  to its freshly built pre-edit control, and the unqualified underside PNG is
+  pixel-identical to the pre-edit discard image.
+* `water_underwater`: **40/40 GPU pixel controls pass**, maximum RGB error **1**
+  out of 255 against an independent f64 segment/plane intersection and literal
+  original upload-plus-exp2 formula. Cases cover upward and horizontal/downward
+  rays, 1 cm below, exactly on the surface, opaque geometry before the surface,
+  empty depth, dry view and the retained ocean arithmetic control. The old ocean
+  arithmetic block also compares equal to the saved pre-edit source.
+* `water_underwater --world-pond`: the real `WaterQuery` and environment/post
+  update pass five camera steps at Cry Z **127.03 / 127.01 / 127 / 126.99 / 126.97**.
+  Only the last three select volume Outof, including equality and the former
+  1 cm dead band. This tests camera state, not the unresolved clipping exception.
+* Builds of `water_refraction`, `water_underwater` and `fly` exit zero;
+  `cargo test -p aa-world --lib` passes **278 tests, 9 ignored**. Prior commits
+  d26c359/3498eeb/ab918ae/b690462/6855713/2bf76a0/54309c7 remain ancestors.
+
+Captures are under `shots/aa-world/underwater-window/`; all final PNGs were opened.
+Every run uses aa-dev, **960x540**, with a 6 s capture delay for numeric controls,
+8 s for world/crossing controls. Observed full aa-dev FPS sample ranges:
+
+| Control | Before | After |
+|---|---:|---:|
+| `refraction-before.png` / `refraction-after.png` | 148.3-252.1 | 397.5-451.6 |
+| `pond-before.png` / `pond-after.png` | 81.7-173.8 | 166.7-251.2 |
+| `pond-window-before.png` / `pond-window-after.png` | 186.8-212.9 | 260.4-276.7 |
+
+The eight post pixel runs span **212.9-376.6 FPS**; the real five-step crossing
+run spans **193.6-222.6 FPS**. All runs share CPU/GPU/memory with other builds
+and sessions, and the fixtures change visible work. These samples establish no
+isolated performance gain or full-client FPS claim. The world views disable
+objects, use a 256 m load radius and keep the original pond material. Cry XY is
+**15549.375,15380**, yaw **80**; the near-boundary pair uses Z **126.99**, pitch
+**55**, and the lower window pair Z **126.75**, pitch **8**. The lower pair shows
+banks/sky through plain volume fog instead of the inherited cone's solid colour.
+World baselines use the retained existing `fly` build from before this task;
+the exact pixel regressions use the freshly built pre-edit numeric executable.
+The native above-water `reference/ingame/spawn/real.png` and historical sea-floor
+`shots/water/cli_uw.png` were inspected; neither supplies a matched volume window.
+
+Reproduce: build the three examples with `cargo build -p aa-world --example
+water_refraction --example water_underwater --example fly`, copy the executables
+aside and run `water_refraction --below --shot <png> --shot-after 6 --size 960x540`
+or `water_underwater --shot <png> --shot-after 6 --size 960x540`.
+The flags at each example's top reproduce the other controls; `--baseline`
+logs an old binary without asserting the corrected expectation. Logs, executable
+and source hashes, original shader/material/native evidence, capture commands
+and every FPS/control sample remain in the ignored `underwater-window/` evidence
+directory. Task-owned executable copies were removed after verification.
+
+## WR4: qualified sea underside sampling (2026-10-23)
+
+This follow-on is bounded to the existing sea renderer: source-qualified underside
+refraction and signed Fresnel, and removal of the invented angular post mask for
+that qualified sea. The authored WaterSurface underside/plain volume Outof from
+227d2f3 is retained. Above-water sea arithmetic, calibrated ocean colour/scatter,
+unqualified and missing-depth fallbacks remain on their previous branches. No
+public fields, uniform layouts, dependencies, caller signatures or public mode
+constants were added. Callers need a rebuild to embed the shaders.
+
+Original pak and shipping D3D10/engine audit evidence is retained under ignored
+`data/extract/aa-world/ocean-window/`:
+
+* `water.cfx::WaterPS` and technique `Water` are two-sided (`CullMode=None`).
+  The original signed incidence is `dot(view,fullNormal)*sign(view.z)`, followed
+  by `shadelib.cfi::GetFresnel`. It is distinct from WaterSurface's absolute dot
+  with a compressed bump. The real `ocean.mtl` supplies FresnelBias **0.05**,
+  FresnelPower **4**, RefractionBumpScale **0.05**, SoftIntersectionFactor **0.2**.
+* The non-tessellated D3D10 refraction offset is full normalized Cry XY normal
+  times that refraction scale, axial-depth softness and `screenProj.z` attenuation.
+  The depth mask is strict (`surfaceDepth < candidateDepth` in native linear
+  depth); POINT/CLAMP scene sampling rejects equal/foreground candidates and
+  accepts clear depth. The Bevy bridge uses the corresponding reverse-Z predicate,
+  physical viewport coordinates and viewport edge clamp.
+* `watervolume.cfx::OceanOutofPS` caps the view segment at the water plane and
+  opaque scene, then uses its scatter/receiver-depth and shallow-colour terms.
+  It has **no angular cone mask**. Only the qualified sea bypasses the old
+  `smoothstep(.62,.72,dir.y)` post mask here. Its existing calibrated scatter and
+  extinction arithmetic is retained; this does not port the native scatter.
+* Engine `300CF5F0` gates ocean submission on the ocean node and `e_water_ocean`.
+  `300E5CF0` submits the sea surface from both camera sides. Mode 2 is the native
+  **fast path with merged fog**, not a shader-quality identifier: its above-water
+  merge gate uses the camera/plane distance and ocean animation extent; otherwise
+  it submits the separate fog through `300E5560`. That path selects OceanOutof
+  at strict camera-plane distance **<0**, and renderer `380BF691..380BF913`
+  uploads the separate ocean fog data. Native disassembly and DLL hashes are
+  retained alongside the decompiled gate excerpts; no native execution is claimed.
+
+The private source bundle is admitted only after loading the world's original
+`Water` material and the existing original bump source. Only BUMP_MAP, SUN_SHINE
+and FOAM permutations are admitted; volume, cube, fake camera movement,
+tessellation, unknown bits, absent parameters and nonfinite/out-of-range values
+decline. Qualification clears on a failed world-source load. The exact private
+`motion.x==-1` tag reserves the sea-unused `motion.y`, `foam.w`, `caustics.zw`
+for refraction scale, softness and Fresnel bias/power. An audit of all crate
+consumers found these lanes unused outside positive authored modes. The shader
+also requires bounded values, depth and the colour copy, and reads the bundle
+only below the surface. Authored modes **0/1/2/3** retain their old meanings.
+Post alpha **-1** selects cone-free sea; **0** retains the old sea fallback and
+**1** retains plain volume Outof. No new angular threshold or physical Snell-cone
+substitute was introduced.
+
+Remaining limits: generated ocean normal/parallax and FFT displacement, exact
+reflection/gloss/specular/foam composition, native fog colour/scatter and shallow
+colour, separate fog/surface order, and the sea's existing 2 cm camera boundary
+are open. Native vertex interpolation of `screenProj.z` for clip distances below
+1 m and interpolated vertex side-sign through a displaced wave crossing remain
+part of the unresolved near-surface path; the numeric controls use axial depth
+8 m (clip W=8 perspective / W=1 orthographic), with constant attenuation 0.85. No mesh/output layout was
+changed to carry another interpolant. Per-volume nearclip/AABB gates, sloped
+containment and volume submission order from the previous section remain open.
+No lake caustics, DX11 crest foam or replacement FFT was added. These are controlled
+regressions using original assets, not a matched native underwater scene or full
+water parity.
+
+Validation: final `cargo check -p aa-world --lib --example water_refraction
+--example water_underwater --example fly`, all three example builds, the final
+fresh `fly` rebuild and `cargo test -p aa-world --lib` exit zero (**281 passed,
+9 ignored**). New tests reject unsupported source permutations/values, preserve
+normal modes 0/1/2/3 and NO_FLOW, clear failed world qualification, and compare
+all old uniform bits after excluding only the five documented private lanes.
+One `cargo clippy -p aa-world --lib --example water_refraction --example
+water_underwater --example fly --no-deps` exits zero with existing warnings and
+one new argument-count warning. The latter was removed by grouping the private
+water inputs, followed by the final check/tests/fresh world render; Clippy was
+not repeated. No source shader arithmetic changed after the numeric controls.
+
+The actual production material/post pipelines pass **179 GPU points**, maximum
+RGB error **1** out of 255 against independent literal CPU calculations:
+
+* **144 surface points** across qualified underside, unchanged above-water,
+  subviewport, orthographic, signed Fresnel/internal reflection, unsupported
+  mode 0, missing depth, invalid private encoding, pond below/above, and authored
+  modes 2/3. Refraction controls include strict foreground/equal/behind masks,
+  shifted/base clear depth, shallow/middle/deep axial softness, a one-texel POINT
+  receiver, source scale independent of fitted `misc.y`, signed XY and clamp edges.
+  Three negative signed incidences saturate to full reflection in the diagnostic.
+* **35 post points** cover cone-free upward and horizontal rays, a 1 cm eye
+  depth, empty depth, dry view, unchanged legacy selector 0 and volume selector 1.
+  These prove removal of the cone while holding the calibrated scatter fixed;
+  they are not an oracle for native OceanOutof scatter or colour.
+* **11 full-PNG identity checks** pass: above-water sea, unqualified/missing-depth/
+  invalid-encoding fallbacks, authored pond below/above, legacy ocean post, volume
+  post, dry view, and authored modes 2/3 against the pre-edit mode-1 control.
+  The first surface oracle was rejected because it omitted the source Fresnel
+  blend into the fixture's zero reflection. The independent CPU composition was
+  corrected; the production shader was unchanged. That rejected log is retained.
+
+Final PNGs under `shots/aa-world/ocean-window/` were opened. Numeric runs use
+aa-dev at **960x540**, `--shot-after 6`; surface samples span **262.3-454.0 FPS**,
+post samples **213.9-389.8 FPS**. Real original-asset sea views keep the same
+camera/flags before and after, original material, hour 10, radius 256 and no
+objects; they capture after 10 seconds at the same resolution:
+
+| Capture prefix | Cry camera / yaw / pitch | Before aa-dev FPS range | Final after range |
+|---|---|---:|---:|
+| `sea-window` | 12428,10430,99.5 / 53.3 / 40 | 203.1-290.1 | 175.4-223.4 |
+| `sea-low` | 12428,10430,98 / 53.3 / 8 | 163.7-292.3 | 174.1-237.2 |
+| `sea-above` | 12428,10430,102 / 53.3 / -8 | 230.5-300.1 | 160.0-217.3 |
+
+All three final world runs exit zero without render warnings/errors. The underside
+now shows its rippled surface, refraction/reflection and inherited dense foam.
+That foam and the calibrated blue fog are visibly approximate; the above-water
+original `reference/ingame/spawn/real.png` was inspected, but supplies no matched
+native sea underside. The real world PNGs animate and are not the exact pixel
+identity oracle. The baseline world executable is the retained prior `fly`
+artifact with its hash recorded, not an asserted embedded revision; numeric
+BEFORE executables were freshly built with the pre-edit shaders. Shared GPU/build
+load and additional shaded underside work prevent an isolated performance claim.
+
+Reproduce with the two numeric examples (`water_refraction --ocean --below`,
+`--fresnel`, `--viewport`, `--ortho`, `--unsupported`, `--no-depth`,
+`--invalid-ocean`; `water_underwater --ocean --pitch 40`) and the camera flags
+above on `fly`. Add aa-dev `--shot <png> --shot-after 6 --size 960x540` (10 s for
+world views), running copied built executables. Audit/capture scripts, native and
+original source hashes, commands, every control/FPS sample, identity results and
+executable hashes remain in the ignored evidence directory. Prior commits
+227d2f3/d26c359/3498eeb/ab918ae/b690462/6855713/2bf76a0/54309c7 remain ancestors.
+Only task-owned executable copies were removed; no foreign processes, original
+client/server files, other crates or manifests were changed.
+
+## WR4: qualified ocean foam light and camera fade (2026-10-23)
+
+This follow-up changes two fragment-stage operations for the existing
+source-qualified sea: scalar red-channel foam lighting replicated to RGB, and
+`saturate(screenProj.w-.33)` camera fading. Foam remains supported on **both**
+camera sides. The existing private tag/bounded material bundle and depth/colour
+copy requirements qualify the change above and below; only the already supported
+underside reads the source refraction/Fresnel bundle. Public APIs, uniform layout,
+dependencies, authored parameters and gain defaults are unchanged. Callers must
+rebuild to embed `water.wesl`.
+
+Original `water.cfx` **1469-1504** has no above/below foam switch. Its `half fFoam`
+is scalar: the light multiply at **1497** takes the red component of
+`Sun*saturate(NdotL)*fSunShadow+Sky`, then **1499** multiplies by
+`saturate(IN.screenProj.w-.33)` and **1502** adds that scalar to all RGB channels.
+This is confirmed by original cached shader instructions, including the scalar
+constant-buffer reads and replicated final multiply-add. The port's former RGB
+light addition and absent camera fade differed from these operations.
+Fragment reciprocal clip W supplies `screenProj.w` as `1/frag.w`; orthographic
+projection therefore keeps the native clip W of **1** and fade **.67**, rather
+than substituting axial scene depth. The foam texture/shape formula is retained.
+
+The new `tools/native_ocean_foam/decode.py` reads the two original `Water` shader
+caches through the prebuilt aa-pak tool into ignored
+`data/extract/aa-world/ocean-foam-audit/`: **357 PS records /119 unique DXBC** and
+**71 VS records /21 unique DXBC**. `native_ps_warp.cpp` executes the **unmodified**
+shipping non-tessellated, planar-reflection/SUN_SHINE/FOAM, non-fog `WaterPS`
+variant **1BAEA2AD** using CPU-only D3D11 WARP. Constant interpolants and synthetic
+1x1 textures isolate foam by subtracting FoamAmount **0** from **2**. Unequal
+Sun **(2,9,13)** and Sky **(.25,.7,1.2)** distinguish scalar-red truncation from
+RGB lighting. Its **1,350 cases** cover both sides, five clip depths, five
+receiver gaps, three foam values, three gloss values and three reflection values;
+maximum absolute error against independent literal source arithmetic is
+**5.82e-7**, with exactly identical above/below foam deltas at fixed inputs.
+The **450 reflection=1** controls saturate the native shadow factor to one,
+isolating the two operations changed here. This is a controlled shader-stage
+oracle, not proof of native runtime scene inputs or the active runtime cache key.
+
+The new aa-dev example `water_ocean_foam` exercises the **production** material
+pipeline. Each run checks 72 points: perspective depths **.1/.33/.5/1/1.33/8**,
+four unequal-channel light cases (including zero red and zero NdotL), and three
+foam/gloss combinations. It has above/below, orthographic, subviewport, rejected
+encoding, missing-depth, missing-transmission, legacy, foam-off and authored
+modes 1/2/3 controls. Across 18 runs, all **1,296 GPU points pass**, maximum RGB
+error **1/255**. Thirteen full-PNG before/after controls are byte-identical:
+legacy above/below, invalid encoding above/below, missing depth above/below,
+missing transmission above/below, foam-off above/below and authored modes 1/2/3.
+Existing `water_refraction` runs add **60 passing points** and five further
+byte-identical images: pond above/below, qualified sea refraction and authored
+cube/2D modes. The static PNG controls establish fallback identity independently
+of live world animation.
+
+Both before and after world executables were freshly built around the shader
+edit; the before baseline records HEAD **682c606**.
+Original-sea pairs under `shots/aa-world/ocean-foam-light/` use main_world,
+Cry camera XY **12428,10430**, yaw **53.3**, hour **10**, radius **256**, no objects,
+**960x540**, screenshot after 10 seconds. All pairs were opened and inspected:
+
+| Pair | Camera Z / pitch | Before aa-dev FPS | After aa-dev FPS |
+|---|---|---:|---:|
+| `sea-window` | 99.5 /40 | 178.5-203.0 | 146.3-233.0 |
+| `sea-low` | 98 /8 | 137.6-232.9 | 212.4-235.4 |
+| `sea-above` | 102 /-8 | 201.5-237.0 | 173.7-208.7 |
+| `sea-window-nofoam` | 99.5 /40 | 226.3-285.8 | 201.3-222.7 |
+
+The visual change is subtle; dense white structures and dark reflection remain.
+The `AA_TUNE=sea_foam=0` control, also opened before/after, retains the broad
+white patterns, placing those features outside this foam contribution.
+These pairs match cameras/settings, but their live wave clocks are not locked,
+so image differences cannot be attributed solely to foam. There is no matched
+native sea underside reference here, and no claim of full scene parity or a
+complete visual correction. Shared CPU/GPU load prevents a causal performance
+comparison. Production cost is scalar lighting/fade arithmetic, including one
+reciprocal; there are **no additional texture taps, uniform bytes, textures,
+draws, dependencies or per-frame CPU work**.
+
+Remaining limits are separate: perturbed receiver-depth selection for foam,
+reflection-derived shadowing, native normal/parallax/phase, exact reflection and
+sun-specular composition, native colour/scatter and fog/surface order. The port
+retains its existing shadow=1 and sun/day gating/radiance conversion. No crest
+foam, lake/river caustics, replacement FFT or aesthetic calibration is added.
+The earlier universal D3D10/crest claim above is corrected: the native hardware
+tessellation cvar defaults to 0, but the renderer contains D3D11 machinery;
+runtime overrides/capability are not established by the DLL filename.
+
+Validation: `cargo test -p aa-world --lib` gives **281 passed, 9 ignored, 0 failed**.
+`cargo check` and one `cargo clippy --no-deps`, both scoped to aa-world lib and
+`water_ocean_foam`/`water_refraction`/`fly`, exit 0. Clippy reports existing library
+and fly warnings, none in the new example. Runtime captures have no warnings or
+errors. The source freeze, shader/source/executable hashes, commands, complete
+logs, native summary, FPS samples and identity results are retained under ignored
+`data/extract/aa-world/ocean-foam-light/`. `LodDither` delegation and
+COLOR/UV/instance forwarding were not changed; root's caller rebuild and combined
+nested Illum depth/normal-prepass verification remain a separate integration step.
+
+Reproduce with `cargo run -p aa-world --example water_ocean_foam -- --below
+--shot shots/aa-world/ocean-foam-light/check.png --shot-after 4 --size 960x540`;
+add `--ortho`, `--viewport`, `--legacy`, `--invalid`, `--no-depth`,
+`--no-transmission`, `--foam-off` or `--mode 1/2/3` for the controls above.
+For the native probe run `python crates/aa-world/tools/native_ocean_foam/decode.py`,
+then compile `native_ps_warp.cpp` with MSVC `/EHsc /std:c++17`, linking
+`d3d11.lib d3dcompiler.lib`, with outputs in the ignored audit directory. Pass
+that directory to the executable. Repeated Bevy captures use copied executables;
+only task-owned copies are removed after their hashes/logs are retained.

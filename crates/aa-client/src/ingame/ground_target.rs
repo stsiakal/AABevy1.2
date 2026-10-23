@@ -300,6 +300,7 @@ struct ReticleAssets {
 pub fn plugin(app: &mut App) {
     app.add_message::<SkillPressed>()
         .add_message::<crate::hud::PortalBookUsed>()
+        .add_message::<crate::hud::MusicItemUsed>()
         .init_resource::<Aiming>()
         .init_resource::<ReticleAssets>()
         .init_resource::<InFlight>()
@@ -542,9 +543,14 @@ fn route(
     mut player: Query<&mut Mover, With<LocalPlayer>>,
     mut net: MessageWriter<NetCommand>,
     mut flight: ResMut<InFlight>,
-    (keys, mut book, emotes, db): (Res<ButtonInput<KeyCode>>, MessageWriter<crate::hud::PortalBookUsed>, Option<Res<super::emote::Emotes>>, Option<Res<super::data::Db>>),
+    (keys, mut book, mut music, emotes, db): (Res<ButtonInput<KeyCode>>, MessageWriter<crate::hud::PortalBookUsed>, MessageWriter<crate::hud::MusicItemUsed>, Option<Res<super::emote::Emotes>>, Option<Res<super::data::Db>>),
 ) {
     for press in pressed.read() {
+        // Native394eaac0 opens paper locally or looks up a stored score; neither casts here.
+        if let Some((item_id, 27902 | 28051)) = press.item {
+            music.write(crate::hud::MusicItemUsed(item_id));
+            continue;
+        }
         // the emote skills of the skill book (`/sad`, `/clap` ...) are expressed emotions: the server announces them to everyone in range
         if press.item.is_none()
             && let Some(emotion_id) = emotes.as_ref().and_then(|e| e.skill(press.skill))
@@ -980,6 +986,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills::default())
             .init_resource::<Aiming>()
@@ -1009,6 +1016,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills::default())
             .init_resource::<Aiming>()
@@ -1070,6 +1078,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills(HashMap::from([(15802, GroundSkill { mode: Mode::Water, radius: 0.0, min_range: 0.0, max_range: 0.0 })])))
             .insert_resource(SummonItems(HashMap::from([(18660, (60, true)), (18000, (22, false))])))
@@ -1120,6 +1129,33 @@ mod tests {
         app.update();
         let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
         assert!(matches!(sent.as_slice(), [Command::UseItem { template_id: 18000, .. }]), "{sent:?}");
+    }
+
+    #[test]
+    fn music_paper_and_sheet_use_local_controller_before_any_cast() {
+        let mut app = App::new();
+        app.add_message::<SkillPressed>()
+            .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
+            .add_message::<NetCommand>()
+            .insert_resource(GroundSkills::default())
+            .init_resource::<Aiming>()
+            .init_resource::<HudPointerOverUi>()
+            .init_resource::<InFlight>()
+            .init_resource::<Script>()
+            .init_resource::<Target>()
+            .init_resource::<Units>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Sent>()
+            .add_systems(Update, (route, collect).chain());
+        for template in [27902, 28051] {
+            app.world_mut().write_message(SkillPressed { skill: 22215, item: Some((9_007_199_254_740_993, template)), target_obj_id: 0, gcd: true, water: false, caster: None });
+            app.update();
+            assert!(app.world().resource::<Sent>().0.is_empty());
+            let opened: Vec<_> = app.world_mut().resource_mut::<Messages<crate::hud::MusicItemUsed>>().drain().collect();
+            assert!(matches!(opened.as_slice(), [crate::hud::MusicItemUsed(9_007_199_254_740_993)]));
+        }
+        assert!(!app.world().resource::<InFlight>().pending(&default(), std::time::Instant::now()));
     }
 
     #[test]

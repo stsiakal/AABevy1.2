@@ -629,23 +629,22 @@ Do not layer `CharMaterial` over Illum; its shader already adds the back lights.
 anim or client files were edited here.
 
 Limits: Full still uses the shadow-casting directional light as sun; the stage's synthetic
-fill/rim and world punctual lights remain in Bevy's diffuse/ambient estimate, without a native
-per-punctual-light Phong port. This estimate subtracts a Lambert sun term from white-albedo
+fill/rim remain in Bevy's diffuse/ambient estimate. The follow-up below moves punctual lights
+to recovered forward composition. The estimate subtracts a Lambert sun term from white-albedo
 PBR, so it is not an exact replacement for the native deferred ambient/SSDO buffers. Native
-actor balance, rim/decal accumulation, specular UV animation, anisotropic Illum, blend layers,
-`VERTALPHA` and `ALPHAGLOW` are separate gaps. Skin shader/face calibration was not changed.
-In particular `ALPHAGLOW` adds `diffuse.a * diffuse.rgb * AmbientMultiplier` **after** vertex
-RGB, and replaces output alpha with vertex alpha outside diffuse blending; treating it as
-ordinary emissive would be wrong. Waterfall UV/material animation remains separate work.
+actor balance, rim/decal accumulation, specular UV animation, anisotropic Illum and blend layers
+remain separate gaps. Ordinary `VERTALPHA` / `ALPHAGLOW`, including authored masks, are covered
+by the bounded follow-up below; compound permutations remain excluded. Skin shader/face
+calibration was not changed.
 
 Targeted waterfall follow-up: `objects/effects/waterfall/waterfall_size_15.mtl` is blended
 Illum, opacity 0.7, diffuse TileV 0.3 / V oscillator type 2 / rate 0.25 / amplitude -3;
 its Custom texture has a separate type-2 V oscillator (rate 1, amplitude -0.4), an alpha
 opacity map, a `_second` dual material and type-1 vertex deformation. The water subset in
 `objects/env/02_harihara/01_ma/ma_waterfall_a.mtl` similarly uses opacity 0.34 and type-2
-V animation (rate 0.25, amplitude -0.7). Oscillator attributes are retained in
-`Texture.tex_mod.unhandled`; native oscillator timing, dual-material passes and deformation
-need implementation/reverse engineering before these waterfalls can be called animated.
+V animation (rate 0.25, amplitude -0.7). The narrow type-2 motion/opacity slice below now
+animates these materials. Dual-material passes, object-space perturbation and vertex deformation
+remain separate; this does not establish complete waterfall or material parity.
 
 Visual controls: `viewer --full --stage --yaw 180` uses the character-stage rig. Set
 `AA_ILLUM_LEGACY=1` for the previous Full metallic/roughness approximation, then unset it for
@@ -678,6 +677,174 @@ Validation: `cargo check -p aa-cry` and
 exhaustive material survey ignored. This includes bindless descriptors, native masks/defaults,
 material sharing and exclusion of Basic brushes from character lighting, mirrored compaction,
 real Palace material overrides and distinct cube encodings. `git diff --check` is clean.
+
+## Punctual Illum forward composition (2026-10-23)
+
+`illum.wesl` now visits Bevy's clustered point and spot ranges (not rect lights/probes).
+Full Illum removes their white-albedo PBR contribution from the ambient estimate, then adds
+the original **forward** `illum.cfx:frag_custom_per_light` diffuse and highlight:
+`saturate(N.L) * shadow * light * falloff * filter` and
+`pow(saturate(R.L), Shininess) * (0.8*shadow+0.2) * light * falloff * filter`.
+Both join the existing material/gloss/HDR composition and the light-modulated cube reflection.
+There is no additional N.L, BRDF normalization, inverse-square falloff, bulb-size broadening
+or fitted brightness on this direct term. Basic Illum's PBR path is unchanged.
+
+The radial function is `shadelib.cfi:GetAttenuation`: `saturate(1-d²/r²)`. The existing caller
+bridge supplies Bevy luminous intensity I and range r. Bevy's illuminance at r/2 is
+`I/r² * 4*(15/16)²`; dividing by native forward falloff 3/4 gives amplitude
+`I/r² * 75/16`, then `/pi` for the material's Lambert units. This **preserves the existing
+half-radius anchor**, without a tuned gain or caller changes. In particular aa-world's
+point conversion `I=.16*r²*lux` yields forward amplitude `.75*lux`; its projector conversion
+`I=(16/75)*r²*lux` yields amplitude `lux`. The fx bridge `I=.25*r²*lux` yields
+`75/64*lux`. These are parameter bridges, not recovery of each source light's native amplitude.
+
+Spot lights use Bevy's packed direction/inner-outer cone and scalar cookie atlas. Existing
+aa-world projectors split their RGB cookie into three coloured lights, so multiplying each
+channel preserves that reconstruction. Projected UVs behind/outside the frustum contribute
+zero. Point and spot shadow maps (and optional contact shadows) feed the original occlusion
+composition, including the 20% highlight floor. These are **Bevy shadows and cone geometry**,
+not the native shadow-mask/NVSSAO buffers or original square-projector parameter setup.
+
+Public `IllumParams`, `IllumExt`, `IllumMaterial`, material/loader APIs, existing bindless indices
+and the `fragment` entrypoint are unchanged. The aa-world dissolve wrappers keep importing that
+entrypoint. Private light-table texture binding/index 55 is appended (index range 50..56).
+No caller, root manifest or lockfile was edited. aa-cry's Bevy **dev dependency** enables
+`pbr_light_textures` and `pbr_clustered_decals` for standalone GPU checks, matching aa-world's
+existing feature selection; otherwise attaching a cookie to the harness silently omits it.
+
+### Source oracle and pass limits
+
+`python crates/aa-cry/tools/illum_source_oracle.py --check` executes the extracted original
+`GetAttenuation`, `Phong`, `frag_custom_per_light` and `frag_custom_end` bodies using a small
+HLSL-to-Python translation and numpy vector arithmetic. It checks **189** radial/filter/shadow
+cases, the shadow floor without an N.L specular mask, **nine** algebraic intensity mappings,
+and executes the distinct deferred attenuation/Blinn functions. Source hashes, flags and
+results are retained in `tools/illum_source_golden.json`; translated executed bodies remain
+under ignored `data/extract/aa-cry/punctual/`. This is execution of original **source**, not
+of the shipped GPU bytecode or renderer DLL. The composition oracle selects non-low quality,
+split gloss, HDR modifier, no anisotropy/actor balance/rim/decal accumulation.
+
+Native opaque deferred parity remains open. Illum sets `bDeferredSpecularShading=true`;
+`fraglib.cfi:frag_get_light_buffers` imports the deferred accumulators. The separate
+`deferredshading.cfx:LightPassPS` uses **normalized Blinn**, N.L/shadow on specular and squared
+point falloff `(1-d²/r²)²` (projectors linear). Its `LightingTiledPS` has a different clipped
+polynomial highlight. At half range the source oracle distinguishes forward/projector .75
+from deferred point .5625. Porting forward Phong to this Bevy material does not establish
+the original opaque client's pass choice or reproduce either deferred implementation.
+Native forward `fraglib.cfi` also declares a four-entry light-type table; the renderer's
+per-object light selection/priority is not recovered here. This bridge evaluates the
+current Bevy cluster's point/spot set. The 32-light fixtures stress the bridge and cost,
+not native forward light-admission parity.
+
+### Authored specular-multiplier audit: release limitation
+
+`python crates/aa-cry/tools/audit_light_specular.py --check` reads ten targeted original XML
+cells through `aa-pak`: dock/airport neighbours, three known lamp cells, and login2. The
+hashes and all **291** rows are retained in `tools/punctual_evidence/authored_light_audit.json`.
+This is a risk sample, not a world census or a visible-light count.
+
+Original `Light.lua` defaults `fDiffuseMultiplier=1`, `fSpecularMultiplier=1`, and
+`Options.bDeferredLight=1`. It sends `specular_multiplier=specular/diffuse` when diffuse is
+nonzero, else 1. `SimpleLight.lua` defaults `fSpecularPercentage=100` and sends percentage/100.
+The 290 sampled Light rows request deferred: 280 explicitly, ten by default. The remaining
+SimpleLight has no deferred property in that Lua schema. Thus these isolated forward captures
+do **not** validate the pass requested by ordinary authored opaque world lights.
+
+Of 291 sampled lights, **268 have non-one specular ratios**, 23 have ratio one, none default
+the authored specular field. Ratios 1/3 and 1/2 each occur 85 times; five are .02. A static
+active/nonhidden/positive-diffuse/supported-flag approximation admits 289, of which 266 are
+non-one; distance, light budget, cookies and runtime visibility are not evaluated. All 32
+dock-cell 018_007 lights are non-one: 30 have ratio 1/3, `Light_116` has ratio .5
+(`fSpecularMultiplier=1`, diffuse multiplier 2). The one zero is active `Light_268`,
+GUID `4ff59a69200592a5`, cell 021_008, raw specular 0/diffuse -1; its entirely negative diffuse
+is excluded by current aa-world's `p.diffuse.max_element() <= 0` admission check. The sample
+does not prove the absence of eligible zero multipliers elsewhere.
+
+**Bevy's ordinary light record drops this multiplier. Assuming 1 for authored world lights
+is a material release limitation:** the sampled dock highlights would be roughly 2–3 times
+too strong before other composition. Root approved the additive bridge below; aa-world's
+separate attachment/ratio-only repair landed in `ab918ae` / `b690462`. Authored-light
+publication needs both halves. There is no full opaque-lighting completion claim.
+
+`aa_cry::shade::illum::IllumLightSpecular(pub f32)` now attaches to actual PointLight/SpotLight
+entities, absent = 1 for existing programmatic/fx lights. aa-world must attach/update
+`PlacedLight.specular_multiplier` on each point and each of the three projector channels.
+The component uses Bevy extraction/sync so removal also removes its render-world copy.
+aa-cry builds a private GPU lookup indexed by the current **render-entity**
+`GlobalClusterableObjectMeta.entity_to_index`, in `RenderSystems::PrepareResources` explicitly
+**after `prepare_lights`** (which clears/sorts/rebuilds that map in CreateViews). Only local
+highlight is scaled; diffuse, ambient and material reflection are independent.
+
+Every update fills the current/high-water prefix with 1 before applying component values;
+missing, dead, newly mapped and reused entities cannot inherit a stale zero/scale. Finite
+values, including exact zero, are retained without clamping; nonfinite input falls back to 1.
+One stable 256 KiB linear RGBA8 texture holds the exact four bytes of each of 65,536
+f32 slots, shared by all Illum materials. textureLoad and byte reconstruction avoid filtering,
+sRGB conversion and half-float rounding; only changed row-aligned prefixes are uploaded.
+IDs beyond that capacity explicitly return 1, not an out-of-bounds fetch. GPU resource initialization follows RenderStartup/device recovery.
+
+A private AsBindGroup adapter supplies the shared texture while preserving all public
+`IllumExt` fields. Existing indices 50..54 stay put. The extension needs the same texture-array capability as StandardMaterial for bindless,
+and its ordinary-binding fallback uses the same table. It does not add a buffer-array
+requirement: the initial raw-buffer design exposed Bevy's mixed-capability ExtendedMaterial
+layout bug (retained buffer-array-layout-failure.txt), so that private design was replaced.
+There is no overloading of intensity, range, colour, or Bevy flag bits. Optional
+`AA_ILLUM_LIGHT_TRACE=1` logs main entity bits, current GPU index and effective multiplier
+when mapping/values change, for checking extraction/reindex timing during a running fixture.
+
+### GPU checks, matched captures and cost
+
+`illum_lights` is an aa-dev example with a fixed orthographic plane, optional original
+castle/twocrowns or Saint armour model, and separate point/spot/directional controls. It
+supports range, position, projected aim, black/checker cookies, shadows, highlight/diffuse/
+reflection isolation, explicit specular ratios, 32-light stress cases and a live churn case.
+All authored-material captures use **explicit ratio .5**, taken from `Light_116`; there is no
+assumed-one authored-light comparison. The lamp is an analytic fixture, not the full native
+world/stage rig. The original Palace and character-create references were inspected again;
+these isolated dark/no-ambient fixtures do not reproduce those references' scene or exposure.
+
+Reproduce current captures with `cargo build -p aa-cry --example illum_lights`, copy the exe
+to `data/extract/aa-cry/punctual/illum-after.exe`, then
+`python crates/aa-cry/tools/capture_illum.py after`. The script closes every window. The
+pre-change executable's captured PNGs/logs are retained, but its scratch exe is not delivered.
+`tools/punctual_evidence/provenance.json` records its hash and predecessor shader ref, the
+final shader/binary hashes, exact arguments and baseline projector-feature limitation.
+
+`python crates/aa-cry/tools/validate_illum_gpu.py` passes **6,240** pixel samples against
+executed original forward bodies: maximum error **0.5744 sRGB step**. This includes
+point and spot ratios **0, .02, 1/3, .5, 1**, near/range changes, and cone/aim controls.
+Zero highlight is exactly black. Missing component equals explicit one pixel for pixel;
+changing specular leaves isolated diffuse and material reflection pixel-identical. Black
+projectors contribute zero; the checker controls the projected footprint. No-light and
+directional-only renders are pixel-identical to before. Point and spot shadow fixtures
+contain 223 / 118 pixels at the original 20% highlight floor (within quantization tolerance).
+
+The live GPU churn trace records initial scales `0,.5,1/3`, then reindexed `.5,1,0`
+(including component removal/default reset), then `1/3,.02,.5` after despawn/reuse. Its final
+PNG is pixel-identical to a separately built static final state. Three compilation/binding
+permutations agree pixel for pixel: normal bindless, buffer arrays disabled while texture
+arrays stay enabled (**still bindless**), and both array features disabled (**ordinary
+bindings**). Public material fields and the imported fragment entrypoint stay unchanged.
+
+Inspected matched PNGs and all logs live in `crates/aa-cry/tools/punctual_evidence/`:
+`point-{before,after}.png`, `palace-{point,spot}-{before,after}.png`,
+`armour-{point,spot}-{before,after}.png`, plus the authored `*-point-highlight-*` isolates.
+The latter show the restored armour/masonry highlight directly; non-Illum skin remains
+visible in the armour's before isolate. `validation.json` contains pixel counts and FPS
+ranges; the whole source/capture/filter/shadow/default/churn matrix is retained.
+
+Observed aa-dev FPS (1280x720, Vulkan RX 9070 XT, copied dev exe): one point **286–346 before /
+302–340 after**, one spot **378–466 / 271–431**; 32 points **305–457 / 247–302**, 32 spots
+**264–316 / 292–332**. Palace with one point: **282–336 / 303–473**; Saint armour with one
+point: **285–356 / 249–335**. CPU builds and other sessions ran throughout; these are
+observations, not a controlled performance comparison. The shader adds direct-light work;
+integrated world profiling remains necessary.
+
+Final validation: crate build/check pass; **88 unit tests + 6 real-pak loader tests pass**, one
+exhaustive survey ignored. The scoped all-target Clippy run completed once with existing
+warnings retained in `clippy.log`; its new trace-tuple complexity warning was factored into
+a type alias and checked, without running Clippy a second time. Source oracle, ten-cell
+authored audit, GPU validator and `git diff --check` pass. No push or foreign-path edits.
 
 ## Costume gloss and stage lighting (previous approximation)
 
@@ -1002,3 +1169,239 @@ Screenshots: `shots/aa-cry/` (`inn.png`, `castle.png`, `tree.png`, `elf_login001
   sampled files, e.g. `beach_rock_med_e.cgf`; meshes are never shared between nodes).
   Placement code that mirrors whole instances (negative scale) must do the same, with
   `scene::subset_mesh_with(.., flip_winding: true)`.
+
+## Waterfall type-2 texture motion and opacity (2026-10-23)
+
+This is a material slice in `aa-cry`, automatically used by `CryPlugin`/the normal loader.
+The actual original `objects/effects/waterfall/waterfall_size_15.cgf` and its same-name Illum
+material were static. Its diffuse map authors TileV .3, V oscillator type 2, rate .25,
+amplitude -3; `objects/env/02_harihara/01_ma/ma_waterfall_a.mtl`'s water subset authors
+TileV 1.5, rate .25, amplitude -.7. Neither is a lake/river caustic or an invented foam effect.
+
+`tools/waterfall_source_oracle.py` executes the **shipped original x86 machine code** at
+`cryrenderd3d10.dll:0x3822BEB0` (14,267 bytes), including its original matrix multiplication
+routine, under Unicorn. The DLL SHA256 is retained in `tools/waterfall_evidence/native_oracle.json`.
+The material loader `cry3dengine.dll:0x301A6230` maps oscillator types to modifier offsets 4/5,
+rates to 88/92, amplitudes to 96/100 and phases to 104/108. The renderer's type-2 cases write
+`amplitude * (rate * seconds)` to matrix translation, then multiply by static tiling and offset.
+Phase is not read for type 2. Thus size15's final V translation at 1/2/4 seconds is
+-.225/-.45/-.9, **not** -.75/-1.5/-3. The retained oracle passes 36 original matrices,
+including signed two-axis/phase controls and 3599.75/3600.25/3601/7201 seconds, with zero
+translation error. This is offline matrix execution with explicit native time argument `a4`,
+default coordinate generation and zero rotation, not execution of the native GPU draw.
+
+Original shader ownership is explicit:
+
+* `VertexLib.cfi:vs_shared_output` transforms diffuse through `_TCModify`, but initializes
+  `opacSpecTC` from **raw `IN.baseTC`**. Ordinary `OPACITY_MAP` leaves those opacity coordinates
+  untouched, even when the Opacity slot has a TexMod. `X2_PARTICLE_DARK_MAP` is a distinct path.
+* `fraglib.cfi:frag_unify` sets `bumpTC=baseTC`; ordinary gloss also samples baseTC. Consequently
+  the diffuse input shift correctly moves the existing normal/gloss inputs together.
+  Separate `SPECULAR_UV_ANIMATION` and diffuse-blend permutations decline this slice.
+* `illum.cfx:frag_custom_begin` multiplies alpha by
+  `saturate(dot(opacityChannelMask, opacityMap))`, in addition to diffuse alpha and authored
+  material opacity. `fxsamplerdefs.cfi:OPACITYMAP` has no sRGB lookup. The opacity image is
+  therefore loaded linear and sampled at raw mesh UV, independent of moving diffuse UV.
+  Missing channel mask uses the source default (0,0,0,1).
+
+Only blended Illum with effective nonzero type-2 diffuse motion is opted in. Types 0/2 are
+accepted per axis; other oscillator types, nonzero rotation, nondefault coordinate generation,
+unknown modifier attributes and the conflicting shader permutations decline. Attributes stay
+in `TexMod::unhandled`, so existing static Eye/UCC bake rejection and the public parser layout
+are unchanged. Basic/Full blended surfaces keep their existing PBR lighting approximation;
+this does not opt them into Full Illum's native forward lighting.
+
+Public `IllumParams`, `IllumExt`, `IllumLightBuffer`, `IllumLightSpecular`, loader/part APIs and
+`fragment` are unchanged. The previously unused `params.vertex.w` is a private registry token;
+all existing programmatic constructors use zero. Token zero and invalid/fractional/nonfinite
+values resolve to disabled motion/opacity. No new material component or caller integration is
+required, including the world's Illum dissolve wrapper. Private GPU data adds the oscillator,
+mask and enable flags. Existing binding/index 55 and the light table's encoding/mapping are
+unchanged; 56/57 add opacity texture/sampler and 58 adds a **separate** shared 1x1 RGBA8 clock
+texture, with the exact four bytes of unwrapped `Time::elapsed_secs()`. No clock is packed into
+the light lookup. The native negative-time fallback reads the render-thread's current time;
+this bridge uses elapsed Bevy render time with an independent startup epoch, no fitted speed
+or phase. `globals.time` is deliberately avoided because its default one-hour wrap would
+jump nonperiodic authored motion. Parameters/material assets are not rewritten every frame;
+one four-byte clock upload serves every material. Both bindless and ordinary bindings use it.
+
+The `waterfall` aa-dev example fixes only render-world time with `--time`; main-world time
+continues for screenshot-and-exit and FPS logging. `--quad --unlit` shows the **original
+material/maps** on a diagnostic UV square, with no substitute waterfall texture. The mesh
+fixture uses the original geometry and `--yaw -90`; camera, source, time, binary and screenshot
+hashes plus FPS samples are retained in `tools/waterfall_evidence/captures.json`.
+`AA_ILLUM_MOTION_LEGACY=1` retains the pre-slice conversion; `--token-zero` explicitly exercises
+the existing-material path in the same final binary. Reproduce via:
+
+```text
+cargo build -p aa-cry --example waterfall --example illum_lights --example illum_colors
+# copy the three executables to data/extract/aa-cry/waterfall/{waterfall,lights,colors}-after.exe
+python crates/aa-cry/tools/capture_waterfall.py after
+python crates/aa-cry/tools/capture_waterfall.py after colors light-point light-spot
+python crates/aa-cry/tools/waterfall_source_oracle.py --check
+python crates/aa-cry/tools/validate_waterfall_gpu.py
+```
+
+Limits: size15 also authors independently animated Custom perturbation (type-2 V rate 1,
+amplitude -.4, TileV .8), `OBJECT_SPACE_DEFORMATION`, type-1 `VertexDeform` (WaveX amplitude .6)
+and `waterfall_size_15_second` as DualMaterial. Ma's water has WaveX amplitude .2 and
+`si_rock_01_mossy_water_dual`. Those passes/deformations are not implemented here. The simpler
+`waterfall_second.mtl` diagnostic (TileV 1.3, rate .32, amplitude -1) has neither a dual pass
+nor vertex deformation, and provides the nonperiodic one-hour clock control. Waterfall particles
+and placements/streaming remain `aa-fx`/`aa-world` work. No matched real-client waterfall scene
+capture exists in `reference/`; native comparison here is the executable timing oracle and
+original shader composition evidence. Native opaque deferred/tiled lighting remains open.
+
+Validation and inspected evidence:
+
+* `cargo check -p aa-cry --examples` and the three-example build pass.
+  `cargo test -p aa-cry --lib --test loader`: **92 unit + 6 loader tests pass**;
+  one exhaustive 38k-material survey is ignored. No Clippy run was needed.
+* `validate_waterfall_gpu.py` passes **728** primary original-map pixel samples at
+  t=0/1/2/4: maximum error **1.696 sRGB steps**, mean per time .497-.527. Timing offsets
+  are obtained by executing the original x86 matrix routine; colour/alpha expectations
+  use the original DDS, native opacity law and the fixed unlit camera. BC3 decode/filter
+  rounding remains in the error, rather than being fitted away.
+* Moving opacity with diffuse is explicitly rejected: mean error **19.452** versus
+  **.497** for raw opacity UV at t=2. Static tiling alone fails: the original-mesh
+  t=0/t=2 baseline changes **0 pixels**, final motion changes **168,483**; the UV square
+  changes **233,122** pixels. The opacity fade stays attached to the mesh.
+* Bindless and ordinary captures are pixel-identical at t=2 and **3600.25 seconds**.
+  Token-zero equals the original pre-change UV-square capture exactly. Existing
+  `illum_colors` and point/spot fixtures (explicit specular .5) are pixel-identical
+  before/after, preserving the punctual-light work and no-motion path.
+* The nonperiodic second material is captured at .25, 3599.75, 3600.25 and 3601.25 seconds.
+  At 3600.25 the unwrapped/native base-mip model has mean error **1.505**, whereas the
+  incorrect one-hour-wrapped model has **36.981**. This is a clock discriminator, not
+  an exact anisotropic minification oracle (maximum correct-model error 8.539).
+* Actual mesh captures `tools/waterfall_evidence/mesh-yaw-90-t{0,2}-{before,after}.png`
+  were inspected, as were the opacity/ordinary-binding and >3600-second controls.
+  aa-dev observed **285.4-347.8 FPS before**, **329.7-401.2 after** on the original mesh,
+  Vulkan/RX 9070 XT, copied dev executables, 960x720. Other sessions/builds make this
+  unsuitable as a controlled performance comparison. All capture processes exited;
+  copied executables, temporary IDA databases and scratch scripts were removed.
+  PNGs, commands/FPS/hashes, source provenance and native/GPU validation JSON remain
+  under `crates/aa-cry/tools/waterfall_evidence/`; small extracted source/assembly stays
+  under ignored `data/extract/aa-cry/waterfall/`. `git diff --check` is clean.
+
+
+## Ordinary Illum vertex alpha and diffuse-alpha glow
+
+Original `game/shaders/illum.ext` assigns `VERTALPHA=0x400`, `ALPHAGLOW=0x2000`,
+`VERTCOLORS=0x400000`. `illum.cfx:873-899` proves the output-alpha precedence:
+start with diffuse-map alpha; `VERTALPHA` multiplies interpolated vertex alpha;
+`ALPHAGLOW` replaces that result with vertex alpha outside `DIFFUSE_TEX_BLEND`;
+material opacity follows. `fraglib.cfi:764-777` multiplies composed lighting by
+interpolated RGB squared, then **in the ambient pass only** adds raw diffuse-map
+RGB times raw diffuse-map alpha times `AmbientMultiplier` (default 1). This is
+independent of material Diffuse/HDR factors, vertex RGB and GlowAmount. The combined
+forward material adds it once before fog, in the existing engine light-unit bridge
+(`LIGHT_UNIT_LUX / pi = 998`, multiplied by view exposure).
+
+The loader now supplies original normalized RGBA for admitted Illum subsets in both
+Basic and Full shading. Absent streams retain white vertex defaults. The public
+`insert_illum_vertex_colors` stays RGB-only with alpha 1; `uses_vertex_color` still
+means only VERTCOLORS. Private registry data uses the existing loader token in
+`IllumParams.vertex.w`; zero/invalid tokens disable alpha/glow and motion. Public
+`IllumParams`, `IllumExt`, light types, material factories and `fragment` signatures
+are unchanged. The live specular lookup, private waterfall clock and bindings 55-58
+are unchanged. Basic keeps PBR lighting; Full keeps its existing forward composition.
+
+A private `illum_bindings.wesl::compose_alpha` is shared by the colour fragment and
+`illum_prepass.wesl`, including shadow alpha discard. The latter retains Bevy 0.20's
+normal-map and motion-vector outputs and calls the stock prepass for disabled tokens.
+It uses Bevy's alpha-test thresholds; it does not attempt native shadow filtering or
+native deferred lighting. Diffuse-only all-mip opacity proofs no longer remove masks
+from admitted materials because vertex alpha can still cut them out. The shader library
+is loaded permanently in rendered apps; CPU-only CryPlugin conversion remains usable.
+
+The world `LodDither` material needs no API change: its default prepass fragment delegates
+to the embedded Illum material. Its existing prepass vertex forwards colour, UV and
+instance index. Root must verify the nested `LodIllumMaterial` after rebuilding; no world
+files were edited here. To obtain an original tagged material for that test, load
+`objects/effects/haje_hammer.cgf` with material override
+`objects/effects/haje_hammer_second1.mtl` and Full shading, take the first loaded part's
+StandardMaterial handle, and let CryPlugin swap it to IllumMaterial. Preserve the complete
+extension (including vertex.w) when wrapping it. The authored material has ALPHAGLOW and
+AlphaTest .059; a rectangle with an X vertex-alpha gradient is a useful controlled mesh.
+
+The full pak-derived material inventory contains **446** flagged Illum submaterials:
+188 VERTALPHA, 262 ALPHAGLOW, with four overlaps. Original candidate `.mtl` files were
+re-read using `tools/aa-pak.exe` and retained with hashes. This slice admits **169**
+(29 with VERTALPHA, 142 with ALPHAGLOW, two overlaps), including **15 authored alpha tests**.
+The remaining **277** keep the previous path: 269 have unaudited generation bits and
+eight have unaudited diffuse TexMod attributes. The explicit ordinary mask allows only
+HDR/gloss/reflection, these three vertex/alpha flags, DISABLE_RAIN_PASS and inactive
+ALLOW_POM. OPACITY_MAP, diffuse blending, outline/dark/UCC/dye/decal layers, active
+POM/tessellation, anisotropy, unknown bits, rotated/animated diffuse coordinates and
+missing diffuse slots decline. `tools/illum_alpha_evidence/inventory.json` lists every
+flagged row, admission/exclusion reason, alpha test, opacity and original source hash.
+This is bounded progress, not closure of every authored Illum permutation.
+
+Reproduce from copied executables (normal shared target, no alternative build target):
+
+```text
+cargo build -p aa-cry --example illum_alpha --example illum_colors --example illum_lights --example waterfall
+# copy target/debug/examples/{illum_alpha,illum_colors,illum_lights,waterfall}.exe
+# to data/extract/aa-cry/illum-alpha/<name>-after.exe
+python crates/aa-cry/tools/illum_alpha_source.py
+python crates/aa-cry/tools/audit_illum_alpha.py
+python crates/aa-cry/tools/capture_illum_alpha.py after
+python crates/aa-cry/tools/validate_illum_alpha.py
+cargo run -p aa-cry --example illum_alpha -- --asset hammer --quad --unlit --prepass --shot shots/aa-cry/illum-alpha-mask.png --shot-after 5
+```
+
+The aa-dev example fixes render time at 2 seconds while main-world screenshot/FPS time
+continues. It displays the original bow/hammer/coral meshes or original maps on a UV
+square. The plant trunk uses the original combined VERTCOLORS+VERTALPHA+ALPHAGLOW material
+with AmbientMultiplier 2.13; the road isolates authored opacity .723 and VERTALPHA;
+the hammer isolates ALPHAGLOW with AlphaTest .059; coral isolates VERTALPHA with AlphaTest
+.5. `--uv-window .25` magnifies original mip0 for tighter numeric tests. `--prepass` adds
+depth, normal and motion prepasses; `--shadows`, `--dissolve`, `--no-colors`, `--token-zero`
+and `--no-bindless` provide bounded controls. The capture tool rejects shader warnings
+containing unresolved imports or lowercase errors as well as ordinary errors/panics.
+
+Source/GPU validation results and before/after picture/FPS evidence are retained under
+`crates/aa-cry/tools/illum_alpha_evidence/`; exact commands, executable/PNG hashes and
+all aa-dev FPS samples are in `captures.json`. No matched real-client scene for these
+assets exists in `reference/`; native comparison executes selected original HLSL alpha
+and composition statements (144 cases), with original DDS samples for the fixed-camera
+GPU checks. It does not execute compiled native GPU shaders or reproduce deferred buffers,
+lighting, dual-material passes or native shadow filtering.
+
+
+Validated source freeze: `133712d7d6f7e8f5bd025878e10e49ef1f3b853e` (no push).
+The 144 original-source statement cases and **3,360** fixed-camera original-DDS samples
+pass: maximum **2.373 / 255** sRGB error, per-fixture means **.074-.504**. The .25-window
+road, plant and coral checks have max errors .786, 1.724 and 1.202 respectively. A wrong
+material-factored glow model is retained as a numerical discriminator, not fitted away.
+
+Exact pixel-equality controls pass for both mask flags (hammer ALPHAGLOW, coral VERTALPHA)
+with/without depth+normal+motion prepasses, bindless/ordinary prepasses, masked visibility
+dissolve with/without prepasses, and token-zero masked prepasses. Existing vertex RGB,
+point-light specular .5 and waterfall time 3600.25 captures remain pixel-identical to the
+pre-change executable. Original bow/hammer mesh captures with the final zero token are
+also pixel-identical to their immutable pre-change binary captures. The side-view original
+bow pair (same binary, disabled token versus authored glow) changes **16,261** pixels;
+full-UV bow/road/hammer diagnostic before/after pairs change 105,268 / 222,480 / 216,702.
+The imported library was initially only embedded; invalid unresolved-import captures were
+rejected, overwritten and replaced with clean captures after permanent shader-library loading.
+No retained capture log contains a shader error or unresolved import.
+
+Observed aa-dev FPS on original geometry, Vulkan/RX 9070 XT, 960x720 dev executables:
+bow **190.7-247.8 before**, **254.9-324.7 after**; hammer **214.2-477.0 before**,
+**263.3-293.9 after**. The clearer bow side-view control observes 286.0-309.6 with token
+zero and 244.1-302.9 with authored glow. Other sessions/builds share the machine, so these
+are observations, not evidence of a speed improvement/regression. Actual screenshots,
+including both mask fixtures, were inspected. The self-contained `comparison.html` preserves
+the side-view comparison; per-capture commands, binary/image hashes and FPS remain in JSON.
+
+Checks: `cargo check -p aa-cry --examples` passes; final `cargo test -p aa-cry --lib --tests`
+passes **94 unit + 7 loader + 2 quick pak** tests, with three exhaustive tests ignored;
+the five doctests pass on retry (the first full run hit a missing shared `.rlib` extern).
+The single strict `cargo clippy -p aa-cry --all-targets -- -D warnings` attempt fails on
+existing aa-dev `headless.rs:68` unnecessary ownership and broad aa-cry lint diagnostics
+(50 library errors, including old enum/type complexity and constant chunk iteration).
+No unrelated lint cleanup or second Clippy run was performed. No dependencies, manifests,
+lock file, client/world sources or other owner paths were changed. All capture processes
+exited; copied executables and scratch were removed while source/PNG/numeric evidence remains.

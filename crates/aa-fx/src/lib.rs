@@ -683,6 +683,7 @@ fn apply(
             }
             let emitter = if effect.plays_once(&d.name) { d.first_cycle().map_or_else(|| fe.def.clone(), Arc::new) } else { fe.def.clone() };
             let mut st = EmitterState::new(emitter, fe.parent, material, 1.0, hash_seed(entity, i), mesh);
+            st.target_quality = settings.quality;
             st.pending_geom = pending_geom;
             if drawn && !d.has_geometry && !d.material.is_empty() {
                 st.mat_tint = assets.illum_tint(&d.material).unwrap_or(Vec3::ONE);
@@ -748,6 +749,7 @@ fn bind_geometry(
                     e.material = slot;
                     e.mesh = mesh;
                     e.set_geom(g);
+                    e.set_pieces(assets.pieces(&key));
                     if let Some(h) = run.meshes.get_mut(i) {
                         *h = Some((mesh, mesh_handle));
                     }
@@ -1063,7 +1065,12 @@ fn upload(
             if let Some(VertexAttributeValues::Float32x4(v)) = mesh.attribute_mut(Mesh::ATTRIBUTE_COLOR) {
                 std::mem::swap(v, &mut e.col);
             }
-            if run.uploaded_units[i] != e.units
+            if e.has_pieces() {
+                if let Some(Indices::U32(idx)) = mesh.indices_mut() {
+                    std::mem::swap(idx, &mut e.piece_indices);
+                }
+                run.uploaded_units[i] = e.units;
+            } else if run.uploaded_units[i] != e.units
                 && let Some(Indices::U32(idx)) = mesh.indices_mut()
             {
                 // the triangles of one quad or one mesh copy, shifted by its vertices

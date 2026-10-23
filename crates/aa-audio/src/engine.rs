@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::Resource;
 use kira::listener::ListenerHandle;
+use kira::effect::filter::{FilterBuilder, FilterHandle, FilterMode};
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings};
 use kira::sound::streaming::{StreamingSoundData, StreamingSoundHandle};
@@ -32,10 +33,11 @@ use crate::cache::{Key, Sample, SampleCache};
 use crate::fev::Body;
 use crate::fsb5::{Codec, Error};
 use crate::mood::{Mix, MoodTable};
-use crate::pcm::{MAX_PCM_VOICES, PcmClip, PcmError, PcmOptions, valid_volume};
+use crate::pcm::{MAX_PCM_VOICES, PcmClip, PcmError, PcmOptions, PcmPlaybackObserver, valid_volume};
+use crate::playback::{self, Candidate};
 use crate::muffle::{MuffleBuilder, MuffleHandle};
 use crate::reverb::{Params as ReverbParams, Presets, ReverbBuilder, ReverbHandle};
-use crate::library::{EventRef, Library, PickState, Planned, Project, Rng, active_instances, distance_gain, distance_parameters, doppler_factor, initial_values, layer_cutoff, layer_filtered, layer_gain, layer_pitch, plan, set_value, start_part};
+use crate::library::{EventRef, Highpass, Library, PickState, Planned, Project, Rng, active_instances, distance_gain, distance_parameters, doppler_factor, initial_values, layer_cutoff, layer_filtered, layer_gain, layer_highpass, layer_pan, layer_pitch, plan, set_value, start_part};
 use crate::stream::StreamDecoder;
 use crate::vorbis;
 
@@ -43,6 +45,8 @@ use crate::vorbis;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
     Music,
+    /// Player scores (native sound semantic 8), independent of BGM and SFX.
+    UserMusic,
     Sfx,
     Ambience,
     Voice,
@@ -72,6 +76,8 @@ impl Category {
 pub struct Volumes {
     pub master: f32,
     pub music: f32,
+    /// Native `s_MIDIVolume` / option 40. Master still applies; BGM and SFX do not.
+    pub user_music: f32,
     pub sfx: f32,
     pub ambience: f32,
     pub voice: f32,
@@ -80,7 +86,7 @@ pub struct Volumes {
 
 impl Default for Volumes {
     fn default() -> Volumes {
-        Volumes { master: 1.0, music: 1.0, sfx: 1.0, ambience: 1.0, voice: 1.0, ui: 1.0 }
+        Volumes { master: 1.0, music: 1.0, user_music: 1.0, sfx: 1.0, ambience: 1.0, voice: 1.0, ui: 1.0 }
     }
 }
 
@@ -88,6 +94,7 @@ impl Volumes {
     pub fn get(&self, c: Category) -> f32 {
         match c {
             Category::Music => self.music,
+            Category::UserMusic => self.user_music,
             Category::Sfx => self.sfx,
             Category::Ambience => self.ambience,
             Category::Voice => self.voice,
@@ -210,6 +217,8 @@ struct Shared {
     /// Voices asked for and not ended yet ([`Engine::is_playing`]).
     live: Mutex<HashSet<Voice>>,
     pcm_slots: Arc<AtomicUsize>,
+    /// Only tracked audible requests not yet claimed by the player (at most eight).
+    pcm_pending: Arc<Mutex<HashMap<Voice, PcmPlaybackObserver>>>,
 }
 
 impl Shared {
@@ -219,23 +228,51 @@ impl Shared {
             sent: AtomicU64::new(0), handled: AtomicU64::new(0),
             stats: Mutex::new(Stats { audible, ..Stats::default() }),
             finished: Mutex::new(Vec::new()), pcm_slots: Arc::new(AtomicUsize::new(0)),
+            pcm_pending: Arc::default(),
         }
     }
 }
 
 /// Follows a submission from the channel through playback; every failure/drop releases it.
-struct PcmPermit(Arc<AtomicUsize>);
+struct PcmPermit {
+    slots: Arc<AtomicUsize>,
+    tracking: Option<PcmTracking>,
+}
 
 impl Drop for PcmPermit {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
+        // Remove pending registration before another submitter can reuse this slot.
+        drop(self.tracking.take());
+        self.slots.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Moves with the command/permit until terminal drop; the observer itself owns no engine data.
+struct PcmTracking {
+    id: Voice,
+    observer: PcmPlaybackObserver,
+    pending: Arc<Mutex<HashMap<Voice, PcmPlaybackObserver>>>,
+}
+
+impl PcmTracking {
+    /// Removing under the same lock as stop establishes the pending cancellation boundary.
+    fn claim(&self) -> bool {
+        self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.id);
+        !self.observer.cancelled()
+    }
+}
+
+impl Drop for PcmTracking {
+    fn drop(&mut self) {
+        self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.id);
+        self.observer.finish();
     }
 }
 
 enum Cmd {
     Play { id: Voice, path: String, at: Option<Vec3>, opts: PlayOptions },
     Pcm { id: Voice, clip: PcmClip, opts: PcmOptions, permit: PcmPermit },
-    MutedPcm { id: Voice },
+    MutedPcm { id: Voice, tracking: Option<PcmTracking> },
     Move { id: Voice, at: Vec3 },
     Param { id: Voice, name: String, value: f32 },
     VoiceVolume { id: Voice, volume: f32 },
@@ -352,19 +389,47 @@ impl Engine {
     /// playing through mixer completion (including the 20 ms stop ramp). Use `is_playing` to track
     /// your own voice: `take_finished` is a shared drain also consumed by the Bevy plugin.
     pub fn play_pcm(&self, clip: &PcmClip, opts: PcmOptions) -> Result<Voice, PcmError> {
+        self.submit_pcm(clip, opts, None)
+    }
+
+    /// Like [`Engine::play_pcm`], with sticky per-request admission and terminal status installed
+    /// before submission. Kira handle acceptance is the start boundary, not first callback,
+    /// native FMOD sound creation or audibility. Poll `is_finished()` before `was_started()`.
+    ///
+    /// A tracked request stopped while still pending is cancelled without mixer admission. The
+    /// player claims it before admission/device setup; a concurrent stop after that claim can
+    /// still follow an accepted handle, even before the first callback. Muted/refused/failed
+    /// requests finish without starting. Observers survive `take_finished` and engine teardown,
+    /// retain no clip/engine, and do not distinguish completion reasons or send network events.
+    pub fn play_pcm_tracked(&self, clip: &PcmClip, opts: PcmOptions) -> Result<(Voice, PcmPlaybackObserver), PcmError> {
+        let observer = PcmPlaybackObserver::new();
+        let id = self.submit_pcm(clip, opts, Some(observer.clone()))?;
+        Ok((id, observer))
+    }
+
+    fn submit_pcm(&self, clip: &PcmClip, opts: PcmOptions, observer: Option<PcmPlaybackObserver>) -> Result<Voice, PcmError> {
         opts.validate()?;
         let permit = if self.shared.audible {
             self.shared.pcm_slots.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
                 (n < MAX_PCM_VOICES).then_some(n + 1)
             }).map_err(|_| PcmError::Busy)?;
-            Some(PcmPermit(self.shared.pcm_slots.clone()))
+            Some(PcmPermit { slots: self.shared.pcm_slots.clone(), tracking: None })
         } else {
             None
         };
         let id = self.voice();
+        let tracking = observer.map(|observer| {
+            if permit.is_some() {
+                self.shared.pcm_pending.lock().unwrap_or_else(|e| e.into_inner()).insert(id, observer.clone());
+            }
+            PcmTracking { id, observer, pending: self.shared.pcm_pending.clone() }
+        });
         let cmd = match permit {
-            Some(permit) => Cmd::Pcm { id, clip: clip.clone(), opts, permit },
-            None => Cmd::MutedPcm { id },
+            Some(mut permit) => {
+                permit.tracking = tracking;
+                Cmd::Pcm { id, clip: clip.clone(), opts, permit }
+            }
+            None => Cmd::MutedPcm { id, tracking },
         };
         self.shared.sent.fetch_add(1, Ordering::SeqCst);
         if self.tx.send(cmd).is_err() {
@@ -393,10 +458,16 @@ impl Engine {
     /// Stops a voice, letting it fade out when `fade` (the event's fade out time).
     /// PCM uses a 20 ms anti-click ramp for either value (no authored event fade).
     pub fn stop(&self, voice: Voice, fade: bool) {
+        if let Some(observer) = self.shared.pcm_pending.lock().unwrap_or_else(|e| e.into_inner()).get(&voice) {
+            observer.cancel();
+        }
         self.send(Cmd::Stop { id: voice, fade });
     }
 
     pub fn stop_all(&self) {
+        for observer in self.shared.pcm_pending.lock().unwrap_or_else(|e| e.into_inner()).values() {
+            observer.cancel();
+        }
         self.send(Cmd::StopAll);
     }
 
@@ -489,6 +560,7 @@ struct Audio<B: kira::backend::Backend = DefaultBackend> {
     manager: AudioManager<B>,
     listener: ListenerHandle,
     music: TrackHandle,
+    user_music: TrackHandle,
     sfx: TrackHandle,
     ambience: TrackHandle,
     voice: TrackHandle,
@@ -498,7 +570,7 @@ struct Audio<B: kira::backend::Backend = DefaultBackend> {
     reverb: ReverbHandle,
     /// Sub tracks of a group that send to the reverb at a wet level (whole dB), for sounds on no spatial track of their own.
     buses: HashMap<(Category, i16), TrackHandle>,
-    /// The low-pass filters of the groups (all but the UI).
+    /// The broad mood low-pass filters (UI and player scores have none).
     muffles: HashMap<Category, MuffleHandle>,
 }
 
@@ -506,6 +578,7 @@ impl<B: kira::backend::Backend> Audio<B> {
     fn track(&mut self, c: Category) -> &mut TrackHandle {
         match c {
             Category::Music => &mut self.music,
+            Category::UserMusic => &mut self.user_music,
             Category::Sfx => &mut self.sfx,
             Category::Ambience => &mut self.ambience,
             Category::Voice => &mut self.voice,
@@ -537,7 +610,7 @@ impl<B: kira::backend::Backend> Audio<B> {
 
     fn apply(&mut self, v: &Volumes) {
         self.manager.main_track().set_volume(db(v.master), Tween::default());
-        for c in [Category::Music, Category::Sfx, Category::Ambience, Category::Voice, Category::Ui] {
+        for c in [Category::Music, Category::UserMusic, Category::Sfx, Category::Ambience, Category::Voice, Category::Ui] {
             self.track(c).set_volume(db(v.get(c)), Tween::default());
         }
         for ((c, wet), bus) in self.buses.iter_mut() {
@@ -614,9 +687,13 @@ struct Part {
     /// The low-pass of the layer's curves (occlusion by distance, the DSP filters), and the cutoff last given to it.
     filter: Option<MuffleHandle>,
     cutoff: Option<f32>,
+    highpass: Option<FilterHandle>,
+    highpass_state: Option<Highpass>,
     last_db: f32,
     /// The playback rate last given to the sound (pitch, pitch curves and doppler).
     rate: f32,
+    /// Spatial strength last sent to the part's track (event times layer pan curve).
+    pan: f32,
     /// Reverb wet level of the part's event, dB.
     wet_db: f32,
     /// Started by the spawning of its sound definition, not by the instance: it is a copy that plays once.
@@ -643,8 +720,11 @@ impl Part {
             flat_track: None,
             filter: None,
             cutoff: None,
+            highpass: None,
+            highpass_state: None,
             last_db: 0.0,
             rate: 1.0,
+            pan: 1.0,
             wet_db,
             spawned: false,
             next_spawn: None,
@@ -660,6 +740,8 @@ impl Part {
 
 struct ActiveVoice {
     id: Voice,
+    /// Stable per-event FMOD pool order, inherited when this slot is stolen.
+    playback_slot: usize,
     event: EventRef,
     category: Category,
     /// The last part of the event's mixer category (`footsteps`): what the mood mixes it by.
@@ -733,6 +815,21 @@ struct PcmVoice {
     _permit: PcmPermit,
 }
 
+impl PcmVoice {
+    fn begin<B: kira::backend::Backend>(
+        audio: &mut Audio<B>, clip: &PcmClip, opts: PcmOptions, listener: Vec3, permit: PcmPermit,
+    ) -> Result<Self, String> {
+        let (handle, track) = begin_pcm(audio, clip, opts, listener)?;
+        if let Some(tracking) = &permit.tracking {
+            tracking.observer.start();
+        }
+        Ok(Self {
+            opts, handle, track, requested: Instant::now(), stopping: false,
+            last_db: db(opts.gain(listener)).0, _permit: permit,
+        })
+    }
+}
+
 struct Player {
     settings: Settings,
     shared: Arc<Shared>,
@@ -744,6 +841,8 @@ struct Player {
     cache: SampleCache,
     pending: HashMap<Key, Vec<Voice>>,
     voices: HashMap<Voice, ActiveVoice>,
+    /// Last idle slot used by each event; native fixed pools start this cursor at zero.
+    playback_cursor: HashMap<(usize, usize), usize>,
     pcm_voices: HashMap<Voice, PcmVoice>,
     pick: PickState,
     rng: Rng,
@@ -796,6 +895,7 @@ impl Player {
             volumes: Volumes::default(),
             pending: HashMap::new(),
             voices: HashMap::new(),
+            playback_cursor: HashMap::new(),
             pcm_voices: HashMap::new(),
             pick: PickState::default(),
             rng: Rng::from_time(),
@@ -877,8 +977,9 @@ impl Player {
                     self.finish(id);
                 }
             }
-            Cmd::MutedPcm { id } => {
+            Cmd::MutedPcm { id, tracking } => {
                 self.stats.requested += 1;
+                drop(tracking);
                 self.finish(id);
             }
             Cmd::Move { id, at } => {
@@ -996,12 +1097,13 @@ impl Player {
             let mut muffles = HashMap::new();
             let mut group = |manager: &mut AudioManager<DefaultBackend>, c: Category| {
                 let mut builder = TrackBuilder::new();
-                if c != Category::Ui {
+                if !matches!(c, Category::Ui | Category::UserMusic) {
                     muffles.insert(c, builder.add_effect(MuffleBuilder));
                 }
                 manager.add_sub_track(builder).map_err(|e| e.to_string())
             };
             let music = group(&mut manager, Category::Music)?;
+            let user_music = group(&mut manager, Category::UserMusic)?;
             let sfx = group(&mut manager, Category::Sfx)?;
             let ambience = group(&mut manager, Category::Ambience)?;
             let voice = group(&mut manager, Category::Voice)?;
@@ -1009,7 +1111,7 @@ impl Player {
             let mut send = SendTrackBuilder::new();
             let reverb = send.add_effect(ReverbBuilder);
             let reverb_send = manager.add_send_track(send).map_err(|e| e.to_string())?;
-            Ok(Audio { manager, listener, music, sfx, ambience, voice, ui, reverb_send, reverb, buses: HashMap::new(), muffles })
+            Ok(Audio { manager, listener, music, user_music, sfx, ambience, voice, ui, reverb_send, reverb, buses: HashMap::new(), muffles })
         })();
         match built {
             Ok(mut a) => {
@@ -1126,20 +1228,37 @@ impl Player {
 
     fn play_pcm(&mut self, id: Voice, clip: PcmClip, opts: PcmOptions, permit: PcmPermit) {
         self.stats.requested += 1;
+        if permit.tracking.as_ref().is_some_and(|t| !t.claim()) {
+            return;
+        }
         if !self.settings.audible || !self.admit_voice(opts.priority) || !self.ensure_audio() {
             return;
         }
-        let gain = opts.gain(self.listener.0);
-        match begin_pcm(self.audio.as_mut().expect("opened"), &clip, opts, self.listener.0) {
-            Ok((handle, track)) => {
-                self.pcm_voices.insert(id, PcmVoice {
-                    opts, handle, track, requested: Instant::now(), stopping: false,
-                    last_db: db(gain).0, _permit: permit,
-                });
+        match PcmVoice::begin(self.audio.as_mut().expect("opened"), &clip, opts, self.listener.0, permit) {
+            Ok(voice) => {
+                self.pcm_voices.insert(id, voice);
                 self.stats.started += 1;
             }
             Err(e) => tracing::debug!("aa-audio: cannot play PCM: {e}"),
         }
+    }
+
+    /// Evaluate admission from current controls, including commands received since
+    /// the last 16 ms tick. Never decode, pick a random wave or use mixer fade state.
+    fn playback_gain(&self, event: &EventRef, values: &[f32], at: Option<Vec3>, volume: f32, category: Category) -> f32 {
+        let ev = event.event();
+        let distance = at.map(|p| p.distance(self.listener.0));
+        let mut values = values.to_vec();
+        if let (Some(d), Body::Complex { parameters, .. }) = (distance, &ev.body) {
+            for i in distance_parameters(ev) {
+                values[i] = d.clamp(parameters[i].min.min(parameters[i].max), parameters[i].min.max(parameters[i].max));
+            }
+        }
+        let leaf = ev.category.rsplit('/').next().unwrap_or_default().to_ascii_lowercase();
+        let mood = self.mood_cur.get(&leaf).copied().unwrap_or_else(|| self.mix.gain(&leaf));
+        let category_gain = playback::authored_category_gain(&event.project.fev.categories, &ev.category)
+            * mood * self.volumes.get(category) * self.volumes.master;
+        playback::audibility(ev, &values, distance, volume, category_gain)
     }
 
     fn play(&mut self, id: Voice, path: &str, at: Option<Vec3>, opts: PlayOptions) {
@@ -1165,28 +1284,42 @@ impl Player {
             return;
         }
 
-        // Most playbacks of one event.
-        let same: Vec<Voice> = {
-            let mut v: Vec<&ActiveVoice> = self.voices.values().filter(|v| v.event.key() == ekey && !v.stopping).collect();
-            v.sort_by_key(|v| v.requested);
-            v.iter().map(|v| v.id).collect()
-        };
-        if same.len() >= ev.max_playbacks as usize {
-            match ev.playback_behaviour {
-                4 | 5 => {
-                    self.stats.refused += 1;
-                    return;
+        let at = if is_3d { at } else { None };
+        let values = initial_values(ev, distance, &opts.params);
+        let category = opts.category.unwrap_or_else(|| Category::of_mixer(&ev.category));
+        let quietest = matches!(ev.playback_behaviour, 3 | 5);
+        let mut same: Vec<Candidate> = self.voices.values()
+            .filter(|v| v.event.key() == ekey && !v.stopping)
+            .map(|v| Candidate { id: v.id, slot: v.playback_slot, requested: v.requested, gain: 0.0 })
+            .collect();
+        let playback_slot = if same.len() >= ev.max_playbacks as usize {
+            if quietest {
+                for candidate in &mut same {
+                    let v = &self.voices[&candidate.id];
+                    candidate.gain = self.playback_gain(&v.event, &v.values, v.at, v.volume, v.category);
                 }
-                2 => self.stop_voice(*same.last().unwrap(), false),
-                _ => self.stop_voice(same[0], false),
             }
+            let incoming = if quietest { self.playback_gain(&event, &values, at, opts.volume, category) } else { 0.0 };
+            let Some(victim) = playback::victim(ev.playback_behaviour, &same, incoming) else {
+                self.stats.refused += 1;
+                return;
+            };
+            let slot = self.voices[&victim].playback_slot;
+            // Native steals dispatch stop(immediate=true), bypassing authored
+            // fades. Preserve our existing 20 ms anti-click ramp.
+            self.stop_voice(victim, false);
             self.stats.stolen += 1;
-        }
+            slot
+        } else {
+            let cursor = self.playback_cursor.get(&ekey).copied().unwrap_or(0);
+            let slot = playback::free_slot(ev.max_playbacks as usize, cursor, &same);
+            self.playback_cursor.insert(ekey, slot);
+            slot
+        };
         if !self.admit_voice(ev.priority) || !self.ensure_audio() {
             return;
         }
 
-        let values = initial_values(ev, distance, &opts.params);
         let parts = match &ev.body {
             Body::Simple(_) => vec![(0, 0)],
             Body::Complex { layers, .. } => layers.iter().enumerate().flat_map(|(l, layer)| (0..layer.instances.len()).map(move |i| (l, i))).collect(),
@@ -1199,11 +1332,12 @@ impl Player {
         let persistent = !ev.one_shot() && matches!(&ev.body, Body::Complex { parameters, .. } if (0..parameters.len()).any(|i| !distance_params.contains(&i)));
         let mut voice = ActiveVoice {
             id,
+            playback_slot,
             event: event.clone(),
-            category: opts.category.unwrap_or_else(|| Category::of_mixer(&ev.category)),
+            category,
             leaf: leaf.clone(),
             mood: self.mood_gain(&leaf),
-            at: if is_3d { at } else { None },
+            at,
             moved: false,
             velocity: Vec3::ZERO,
             moved_at: Instant::now(),
@@ -1567,6 +1701,8 @@ impl Player {
                 part.track = None;
                 part.flat_track = None;
                 part.filter = None;
+                part.highpass = None;
+                part.highpass_state = None;
                 part.state = PartState::Done;
                 // a looping playlist goes on with the next pick of its definition
                 if !voice.stopping && !part.spawned && part.planned.as_ref().is_some_and(|p| p.looping && p.playlist) {
@@ -1576,10 +1712,16 @@ impl Player {
             }
             let target = voice.target_gain(&voice.parts[i], listener);
             let rate = part_rate(voice, &voice.parts[i], (listener, listener_velocity));
+            let pan = layer_pan(voice.event.event(), &voice.values, voice.parts[i].layer);
             let cutoff = if voice.parts[i].filter.is_some() { layer_cutoff(voice.event.event(), &voice.values, voice.parts[i].layer) } else { None };
+            let highpass = layer_highpass(&voice.event, &voice.values, voice.parts[i].layer);
             let part = &mut voice.parts[i];
             if moved && let (Some(at), Some(track)) = (voice.at, &mut part.track) {
                 track.set_position(at, Tween::default());
+            }
+            if pan != part.pan && let Some(track) = &mut part.track {
+                track.set_spatialization_strength(pan, tween_ms(30));
+                part.pan = pan;
             }
             let new_db = db(target).0;
             if (new_db - part.last_db).abs() > 0.2 {
@@ -1600,6 +1742,15 @@ impl Player {
             {
                 f.set(cutoff);
                 part.cutoff = cutoff;
+            }
+            if let (Some(state), Some(previous), Some(filter)) = (highpass, part.highpass_state, &mut part.highpass) {
+                if state.cutoff != previous.cutoff {
+                    filter.set_cutoff(f64::from(state.cutoff), tween_ms(0));
+                }
+                if state.enabled != previous.enabled {
+                    filter.set_mix(if state.enabled { kira::Mix::WET } else { kira::Mix::DRY }, tween_ms(0));
+                }
+                part.highpass_state = Some(state);
             }
         }
         voice.parts.retain(|p| !(p.spawned && p.state == PartState::Done));
@@ -1809,14 +1960,18 @@ fn begin_pcm<B: kira::backend::Backend>(
 
 /// Starts the sound of part `i`: on a spatial track for a 3D voice, on its group's track (or the reverb bus of its wet level)
 /// otherwise, on a track of its own when its layer has a low-pass. Both send to the reverb by the event's wet level.
-fn begin_part(audio: &mut Audio, voice: &mut ActiveVoice, i: usize, listener: (Vec3, Vec3), volumes: &Volumes) {
+fn begin_part<B: kira::backend::Backend>(audio: &mut Audio<B>, voice: &mut ActiveVoice, i: usize, listener: (Vec3, Vec3), volumes: &Volumes) {
     let gain = voice.target_gain(&voice.parts[i], listener.0);
     let rate = part_rate(voice, &voice.parts[i], listener);
     let ev = voice.event.event();
-    let pan = ev.pan_level.clamp(0.0, 1.0).max(0.2);
     let layer = voice.parts[i].layer;
+    let pan = layer_pan(ev, &voice.values, layer);
     let filtered = layer_filtered(ev, layer);
     let cutoff = if filtered { layer_cutoff(ev, &voice.values, layer) } else { None };
+    let highpass_state = layer_highpass(&voice.event, &voice.values, layer);
+    let highpass_builder = highpass_state.map(|s| FilterBuilder::new().mode(FilterMode::HighPass)
+        .cutoff(f64::from(s.cutoff)).resonance(1.0 / 1.9)
+        .mix(if s.enabled { kira::Mix::WET } else { kira::Mix::DRY }));
     let category = voice.category;
     let at = voice.at;
     let part = &mut voice.parts[i];
@@ -1852,10 +2007,13 @@ fn begin_part(audio: &mut Audio, voice: &mut ActiveVoice, i: usize, listener: (V
     };
     part.last_db = db(gain).0;
     part.rate = rate;
+    part.pan = pan;
     let mut filter = None;
+    let mut highpass = None;
     let result = match at {
         Some(at) => {
             let mut builder = SpatialTrackBuilder::new().attenuation_function(None).spatialization_strength(pan).persist_until_sounds_finish(true);
+            if let Some(hp) = highpass_builder { highpass = Some(builder.add_effect(hp)); }
             if filtered {
                 filter = Some(builder.add_effect(MuffleBuilder));
             }
@@ -1872,9 +2030,10 @@ fn begin_part(audio: &mut Audio, voice: &mut ActiveVoice, i: usize, listener: (V
                 Err(e) => Err(e.to_string()),
             }
         }
-        None if filtered => {
+        None if filtered || highpass_builder.is_some() => {
             let mut builder = TrackBuilder::new().persist_until_sounds_finish(true);
-            filter = Some(builder.add_effect(MuffleBuilder));
+            if let Some(hp) = highpass_builder { highpass = Some(builder.add_effect(hp)); }
+            if filtered { filter = Some(builder.add_effect(MuffleBuilder)); }
             if wet_db > WET_OFF {
                 builder = builder.with_send(&audio.reverb_send, send_db(wet_db, volumes.get(category)));
             }
@@ -1898,6 +2057,8 @@ fn begin_part(audio: &mut Audio, voice: &mut ActiveVoice, i: usize, listener: (V
                 f.set(cutoff);
             }
             part.filter = filter;
+            part.highpass = highpass;
+            part.highpass_state = highpass_state;
             part.cutoff = cutoff;
             part.handle = Some(h);
             part.state = PartState::Playing;
@@ -1996,6 +2157,124 @@ mod tests {
         assert_eq!(slots.load(Ordering::SeqCst), 0);
     }
 
+    #[test]
+    fn tracked_pcm_pending_stop_and_stop_all_never_admit() {
+        let (engine, mut player, rx) = queued_engine(Settings::default());
+        let clip = PcmClip::mono(24_000, &[0.25]).unwrap();
+        let opts = PcmOptions::new(Category::UserMusic);
+        let (id, observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        let clone = observer.clone();
+        assert!(!observer.was_started() && !observer.is_finished());
+        assert_eq!(engine.shared.pcm_pending.lock().unwrap().len(), 1);
+        engine.clone().stop(id, false);
+        player.handle(rx.recv().unwrap());
+        assert!(clone.is_finished() && !clone.was_started());
+        player.handle(rx.recv().unwrap());
+        assert_eq!(engine.take_finished(), [id]);
+
+        let requests: Vec<_> = (0..MAX_PCM_VOICES).map(|_| engine.play_pcm_tracked(&clip, opts).unwrap()).collect();
+        assert_eq!(engine.shared.pcm_pending.lock().unwrap().len(), MAX_PCM_VOICES);
+        assert!(matches!(engine.play_pcm_tracked(&clip, opts), Err(PcmError::Busy)));
+        engine.stop_all();
+        while let Ok(cmd) = rx.try_recv() {
+            player.handle(cmd);
+        }
+        player.update();
+        assert!(requests.iter().all(|(id, o)| !engine.is_playing(*id) && o.is_finished() && !o.was_started()));
+        assert!(observer.is_finished() && !observer.was_started(), "preclaim cancel is permanently terminal");
+        assert_eq!(engine.take_finished(), requests.iter().map(|r| r.0).collect::<Vec<_>>());
+        assert!(engine.take_finished().is_empty());
+        assert!(engine.shared.pcm_pending.lock().unwrap().is_empty());
+        assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+        assert_eq!((player.stats.requested, player.stats.started, player.stats.refused), (9, 0, 0));
+        assert!(player.audio.is_none() && !player.device_failed);
+
+        // A later tracked request is not cancelled by an earlier stop_all. The old API
+        // does not register for pending cancellation and retains its original FIFO path.
+        let (_, later) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        let Cmd::Pcm { permit, .. } = rx.recv().unwrap() else { panic!("PCM expected") };
+        assert!(permit.tracking.as_ref().unwrap().claim());
+        drop(permit);
+        assert!(later.is_finished() && !later.was_started());
+        engine.play_pcm(&clip, opts).unwrap();
+        engine.stop_all();
+        let Cmd::Pcm { permit, .. } = rx.recv().unwrap() else { panic!("PCM expected") };
+        assert!(permit.tracking.is_none());
+    }
+
+    #[test]
+    fn tracked_pcm_failure_paths_finish_without_admission_or_retained_history() {
+        let clip = PcmClip::mono(24_000, &[0.25; 240]).unwrap();
+        let opts = PcmOptions::new(Category::UserMusic);
+        for (audible, max_voices, failed) in [(true, 0, false), (true, 64, true), (false, 64, false)] {
+            let (engine, mut player, rx) = queued_engine(Settings { audible, max_voices, ..Settings::default() });
+            player.device_failed = failed;
+            let mut observers = Vec::new();
+            for _ in 0..MAX_PCM_VOICES * 4 {
+                let (id, observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+                assert!(!observer.is_finished() && !observer.was_started());
+                assert_eq!(engine.shared.pcm_pending.lock().unwrap().len(), usize::from(audible));
+                player.handle(rx.recv().unwrap());
+                assert_eq!(engine.take_finished(), [id]);
+                assert!(observer.is_finished() && !observer.was_started());
+                assert!(engine.shared.pcm_pending.lock().unwrap().is_empty());
+                assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+                player.handle(Cmd::Stop { id, fade: true });
+                player.handle(Cmd::StopAll);
+                player.update();
+                assert!(engine.take_finished().is_empty());
+                assert_eq!(Arc::strong_count(&clip.0), 1);
+                observers.push(observer);
+            }
+            assert!(observers.iter().all(|o| o.is_finished() && !o.was_started()));
+            assert!(player.audio.is_none());
+            assert_eq!(player.stats.started, 0);
+            let mut invalid = opts;
+            invalid.volume = f32::NAN;
+            let next = engine.shared.next.load(Ordering::Relaxed);
+            assert!(matches!(engine.play_pcm_tracked(&clip, invalid), Err(PcmError::Options)));
+            assert_eq!(engine.shared.next.load(Ordering::Relaxed), next);
+        }
+    }
+
+    #[test]
+    fn tracked_pcm_queue_teardown_and_observers_retain_no_engine_or_clip() {
+        let (engine, player, rx) = queued_engine(Settings::default());
+        let clip = PcmClip::mono(24_000, &[0.25]).unwrap();
+        let weak_clip = Arc::downgrade(&clip.0);
+        let weak_shared = Arc::downgrade(&engine.shared);
+        let weak_guard = Arc::downgrade(&engine._guard);
+        let pending = engine.shared.pcm_pending.clone();
+        let opts = PcmOptions::new(Category::UserMusic);
+        let (id, observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        drop(clip);
+        drop(engine); // observer must not retain the last Engine guard
+        assert!(weak_guard.upgrade().is_none());
+        let cmd = rx.recv().unwrap();
+        assert!(matches!(cmd, Cmd::Pcm { .. }));
+        assert!(!observer.is_finished());
+        drop(cmd);
+        assert!(observer.is_finished() && !observer.was_started());
+        assert!(pending.lock().unwrap().is_empty());
+        assert!(weak_clip.upgrade().is_none());
+        assert!(matches!(rx.recv().unwrap(), Cmd::Quit));
+        assert!(!player.shared.live.lock().unwrap().is_empty());
+        drop(rx);
+        drop(player);
+        assert!(weak_shared.upgrade().is_none());
+        assert!(observer.clone().is_finished() && !observer.was_started(), "{id:?}");
+
+        let (engine, player, rx) = queued_engine(Settings::default());
+        drop(player);
+        drop(rx);
+        let clip = PcmClip::mono(24_000, &[0.25]).unwrap();
+        assert!(matches!(engine.play_pcm_tracked(&clip, opts), Err(PcmError::EngineStopped)));
+        assert!(engine.shared.pcm_pending.lock().unwrap().is_empty());
+        assert!(engine.shared.live.lock().unwrap().is_empty());
+        assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+        assert_eq!(Arc::strong_count(&clip.0), 1);
+    }
+
     struct CaptureBackend(Option<kira::backend::Renderer>);
 
     impl kira::backend::Backend for CaptureBackend {
@@ -2026,6 +2305,7 @@ mod tests {
         let mut manager = AudioManager::<CaptureBackend>::new(AudioManagerSettings::default()).unwrap();
         let listener = manager.add_listener(Vec3::ZERO, Quat::IDENTITY).unwrap();
         let music = manager.add_sub_track(TrackBuilder::new()).unwrap();
+        let user_music = manager.add_sub_track(TrackBuilder::new()).unwrap();
         let sfx = manager.add_sub_track(TrackBuilder::new()).unwrap();
         let ambience = manager.add_sub_track(TrackBuilder::new()).unwrap();
         let voice = manager.add_sub_track(TrackBuilder::new()).unwrap();
@@ -2033,12 +2313,495 @@ mod tests {
         let mut send = SendTrackBuilder::new();
         let reverb = send.add_effect(ReverbBuilder);
         let reverb_send = manager.add_send_track(send).unwrap();
-        Audio { manager, listener, music, sfx, ambience, voice, ui, reverb_send, reverb,
+        Audio { manager, listener, music, user_music, sfx, ambience, voice, ui, reverb_send, reverb,
             buses: HashMap::new(), muffles: HashMap::new() }
     }
 
     fn channel_mean(frames: &[f32], channel: usize) -> f32 {
         frames[frames.len() / 2..].chunks_exact(2).map(|f| f[channel].abs()).sum::<f32>() / (frames.len() / 4) as f32
+    }
+
+    fn housing_voice(distance: f32) -> ActiveVoice {
+        let event = Library::global().event("sounds/x2eventsounds:housing:housing_01").unwrap();
+        let values = initial_values(event.event(), Some(distance), &[]);
+        let planned = plan(&event, &values, &mut PickState::default(), &mut Rng::new(3)).remove(0);
+        let bank = Library::global().bank(&event.project, planned.bank).unwrap();
+        let pcm = Library::global().decode(&bank, planned.index as usize).unwrap();
+        assert!(pcm.rms() > 0.001, "the original housing wave is audible data");
+        let mut part = Part::new(0, 0, WET_OFF);
+        part.sample = Some(Arc::new(Sample::from_pcm(&pcm)));
+        part.planned = Some(planned);
+        ActiveVoice {
+            id: Voice(1), playback_slot: 0, category: Category::Sfx, leaf: "particle".into(), mood: 1.0,
+            at: Some(Vec3::X * distance), moved: false, velocity: Vec3::ZERO, moved_at: Instant::now(),
+            volume: 1.0, values, distance_params: distance_parameters(event.event()), dirty: false,
+            persistent: false, parts: vec![part], requested: Instant::now(), last_tick: Instant::now(),
+            started: true, stopping: false, event,
+        }
+    }
+
+    /// Optional PCM evidence from the actual manually-clocked mixer, without an OS device.
+    fn save_pan_capture(name: &str, frames: &[f32]) {
+        save_capture("AA_AUDIO_PAN_EVIDENCE", name, frames);
+    }
+
+    fn save_capture(variable: &str, name: &str, frames: &[f32]) {
+        let Some(dir) = std::env::var_os(variable) else { return };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let size = (frames.len() * 2) as u32;
+        let mut wav = Vec::with_capacity(44 + size as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&24_000u32.to_le_bytes());
+        wav.extend_from_slice(&96_000u32.to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&size.to_le_bytes());
+        for v in frames {
+            wav.extend_from_slice(&((v.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+        }
+        std::fs::write(dir.join(format!("{name}.wav")), wav).unwrap();
+    }
+
+    fn highpass_voice(path: &str) -> ActiveVoice {
+        let event = Library::global().event(path).unwrap();
+        let at = event.event().is_3d().then_some(Vec3::X * 3.0);
+        let daylight = if path.contains("world2_night") { 0.0 } else { 1.0 };
+        let values = initial_values(event.event(), at.map(|v| v.length()), &[("daylight".into(), daylight)]);
+        let planned = plan(&event, &values, &mut PickState::default(), &mut Rng::new(3)).into_iter().find(|p| p.layer == 0).unwrap();
+        let bank = Library::global().bank(&event.project, planned.bank).unwrap();
+        let pcm = Library::global().decode(&bank, planned.index as usize).unwrap();
+        assert!(pcm.rms() > 0.001, "original high-pass asset contains audible data");
+        let mut part = Part::new(0, planned.instance, WET_OFF);
+        part.sample = Some(Arc::new(Sample::from_pcm(&pcm)));
+        part.planned = Some(planned);
+        ActiveVoice {
+            id: Voice(1), playback_slot: 0, category: Category::Sfx, leaf: "particle".into(), mood: 1.0,
+            at, moved: false, velocity: Vec3::ZERO, moved_at: Instant::now(), volume: 1.0, values,
+            distance_params: distance_parameters(event.event()), dirty: false, persistent: false,
+            parts: vec![part], requested: Instant::now(), last_tick: Instant::now(), started: true, stopping: false, event,
+        }
+    }
+
+    /// Independent same-mixer control: original sample/rate/gain/LPF/pan, explicit native cutoff.
+    /// Reverb and the event's other layers are excluded to isolate the affected layer.
+    fn highpass_control(audio: &mut Audio<CaptureBackend>, voice: &ActiveVoice, hz: Option<f64>) {
+        use kira::effect::filter::{FilterBuilder, FilterMode};
+        let sample = voice.parts[0].sample.as_ref().unwrap();
+        let planned = voice.parts[0].planned.as_ref().unwrap();
+        let mut data = StaticSoundData { sample_rate: sample.rate, frames: sample.frames.clone(),
+            settings: StaticSoundSettings::default(), slice: None }
+            .volume(db(voice.target_gain(&voice.parts[0], Vec3::ZERO)))
+            .playback_rate(f64::from(part_rate(voice, &voice.parts[0], (Vec3::ZERO, Vec3::ZERO))));
+        if planned.looping { data = data.loop_region(loop_region(sample.loop_points)); }
+        if planned.fade_in_ms > 0 { data = data.fade_in_tween(tween_ms(planned.fade_in_ms)); }
+        let highpass = hz.map(|hz| FilterBuilder::new().mode(FilterMode::HighPass).cutoff(hz).resonance(1.0 / 1.9));
+        let filtered = layer_filtered(voice.event.event(), 0);
+        if let Some(at) = voice.at {
+            let mut builder = SpatialTrackBuilder::new().attenuation_function(None)
+                .spatialization_strength(layer_pan(voice.event.event(), &voice.values, 0)).persist_until_sounds_finish(true);
+            if let Some(hp) = highpass { builder.add_effect(hp); }
+            if filtered { builder.add_effect(MuffleBuilder).set(layer_cutoff(voice.event.event(), &voice.values, 0)); }
+            let mut track = audio.sfx.add_spatial_sub_track(audio.listener.id(), at, builder).unwrap();
+            track.play(data).unwrap();
+        } else {
+            let mut builder = TrackBuilder::new().persist_until_sounds_finish(true);
+            if let Some(hp) = highpass { builder.add_effect(hp); }
+            if filtered { builder.add_effect(MuffleBuilder).set(layer_cutoff(voice.event.event(), &voice.values, 0)); }
+            let mut track = audio.sfx.add_sub_track(builder).unwrap();
+            track.play(data).unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore = "needs the game pak; captures all five original high-pass layers without a device"]
+    fn original_highpass_assets_match_native_cutoff_mixer_controls() {
+        let paths = ["sounds/x2ambience:login_stage:countryside02", "sounds/x2ambience:login_stage:mar03",
+            "sounds/x2ambience:world2_day:countryside02", "sounds/x2ambience:world2_night:wind_night1",
+            "sounds/x2weapons:x2weapons:shield_metal"];
+        let mut errors = Vec::new();
+        for (path, row) in paths.into_iter().zip(include_str!("../tests/native_highpass_cases.tsv").lines().filter(|r| !r.starts_with('#'))) {
+            let fields: Vec<_> = row.split('\t').collect();
+            let hz = fields[2].parse().unwrap();
+            let mut voice = highpass_voice(path);
+            let mut audio = capture_audio();
+            let mut control = capture_audio();
+            let mut legacy = capture_audio();
+            highpass_control(&mut control, &voice, Some(hz));
+            highpass_control(&mut legacy, &voice, None);
+            begin_part(&mut audio, &mut voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+            let (actual, control, legacy) = (audio.capture(14_400), control.capture(14_400), legacy.capture(14_400));
+            let relative = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(a, b)| (a - b).abs()).sum::<f32>() / b.iter().map(|v| v.abs()).sum::<f32>();
+            let error = relative(&actual, &control);
+            let effect = relative(&legacy, &control);
+            eprintln!("original highpass {}: native_hz={hz} mean_abs_LR actual=({}, {}) control=({}, {}) legacy=({}, {}) relative_error={error} legacy_error={effect}",
+                fields[0], channel_mean(&actual, 0), channel_mean(&actual, 1), channel_mean(&control, 0), channel_mean(&control, 1), channel_mean(&legacy, 0), channel_mean(&legacy, 1));
+            assert!(control.iter().all(|v| v.is_finite()) && channel_mean(&control, 0) > 1e-6 && effect > 0.001);
+            for (suffix, out) in [("actual", &actual), ("native-cutoff-control", &control), ("legacy-control", &legacy)] {
+                save_capture("AA_AUDIO_HIGHPASS_EVIDENCE", &format!("{}-{suffix}", fields[0]), out);
+            }
+            errors.push(error);
+        }
+        assert_eq!(errors.len(), 5);
+        assert!(errors.iter().all(|e| *e < 0.0002), "native-cutoff mixer controls: {errors:?}");
+    }
+
+    #[test]
+    fn highpass_response_matches_original_core_coefficients() {
+        for row in include_str!("../tests/native_highpass_cases.tsv").lines().filter(|r| !r.starts_with('#')) {
+            let f: Vec<_> = row.split('\t').collect();
+            let hz: f64 = f[2].parse().unwrap();
+            let c: Vec<f64> = f[3..].iter().map(|v| v.parse().unwrap()).collect();
+            for multiplier in [0.25, 1.0, 4.0] {
+                let frequency = hz * multiplier;
+                let w = std::f64::consts::TAU * frequency / 24_000.0;
+                let power = |a: f64, b: f64, c: f64| (a + b * w.cos() + c * (2.0 * w).cos()).powi(2)
+                    + (b * w.sin() + c * (2.0 * w).sin()).powi(2);
+                let native = (power(c[0], c[1], c[2]) / power(1.0, c[3], c[4])).sqrt();
+                let mut audio = capture_audio();
+                let mut builder = TrackBuilder::new();
+                builder.add_effect(FilterBuilder::new().mode(FilterMode::HighPass).cutoff(hz).resonance(1.0 / 1.9));
+                let mut track = audio.sfx.add_sub_track(builder).unwrap();
+                let frames = (0..24_000).map(|i| kira::Frame::from_mono((0.125 * (w * i as f64).sin()) as f32)).collect::<Vec<_>>();
+                let input_power = frames[12_000..].iter().map(|v| f64::from(v.left).powi(2)).sum::<f64>();
+                let data = StaticSoundData { sample_rate: 24_000, frames: frames.into(), settings: StaticSoundSettings::default(), slice: None };
+                let _sound = track.play(data).unwrap();
+                let output = audio.capture(24_000);
+                let output_power = output[24_000..].as_chunks::<2>().0.iter().map(|v| f64::from(v[0]).powi(2)).sum::<f64>();
+                let measured = (output_power / input_power).sqrt();
+                assert!((measured / native - 1.0).abs() < 0.005, "{} frequency={frequency} native={native} Kira={measured}", f[0]);
+            }
+        }
+    }
+
+    /// Clone only test data; the original project and the pak remain unchanged.
+    fn highpass_fixture() -> ActiveVoice {
+        use crate::fev::EnvPoint;
+        let mut voice = highpass_voice("sounds/x2ambience:login_stage:mar03");
+        let mut fev = voice.event.project.fev.clone();
+        let Body::Complex { layers, .. } = &mut fev.events[voice.event.index].body else { unreachable!() };
+        layers[0].envelopes[0].points = vec![EnvPoint { x: 0.0, y: 0.25, curve: 2 }, EnvPoint { x: 1.0, y: 0.75, curve: 2 }];
+        voice.event.project = Arc::new(Project { name: voice.event.project.name.clone(), dir: voice.event.project.dir.clone(), fev });
+        voice.values[0] = 0.0;
+        voice
+    }
+
+    #[test]
+    #[ignore = "needs the game pak; dynamic cutoff/bypass are explicit test-fixture curves"]
+    fn highpass_runtime_controls_bypass_mute_clock_and_retirement() {
+        let mut audio = capture_audio();
+        let mut control_audio = capture_audio();
+        let mut voice = highpass_fixture();
+        let mut control_voice = highpass_fixture();
+        begin_part(&mut audio, &mut voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+        begin_part(&mut control_audio, &mut control_voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+        let (_engine, mut player, _rx) = queued_engine(Settings::default());
+        let (_control_engine, mut reference, _reference_rx) = queued_engine(Settings::default());
+        let id = voice.id;
+        player.voices.insert(id, voice);
+        reference.voices.insert(id, control_voice);
+        for (step, hz, enabled) in [(0, 68.48661, true), (1, 3212.3066, true), (2, 3212.3066, true),
+            (3, 3212.3066, false), (4, 469.04156, false), (5, 469.04156, true),
+            (6, 469.04156, true), (7, 469.04156, true)]
+        {
+            for p in [&mut player, &mut reference] {
+                match step {
+                    1 | 4 => p.handle(Cmd::Param { id, name: "daylight".into(), value: if step == 1 { 1.0 } else { 0.5 } }),
+                    2 => p.handle(Cmd::Listener { position: Vec3::X * 50.0, rotation: Quat::IDENTITY }),
+                    3 | 5 => {
+                        let index = p.voices[&id].event.index;
+                        let project = Arc::get_mut(&mut p.voices.get_mut(&id).unwrap().event.project).unwrap();
+                        let Body::Complex { layers, .. } = &mut project.fev.events[index].body else { unreachable!() };
+                        if step == 3 { layers[0].envelopes[0].flags |= 1; } else { layers[0].envelopes[0].flags &= !1; }
+                    }
+                    _ => {}
+                }
+            }
+            if step == 6 { player.handle(Cmd::VoiceVolume { id, volume: 0.0 }); }
+            if step == 7 { player.handle(Cmd::VoiceVolume { id, volume: 1.0 }); }
+            player.update();
+            reference.update();
+            let actual_state = player.voices[&id].parts[0].highpass_state.unwrap();
+            assert!((actual_state.cutoff / hz - 1.0).abs() < 1e-6 && actual_state.enabled == enabled);
+            let filter = reference.voices.get_mut(&id).unwrap().parts[0].highpass.as_mut().unwrap();
+            filter.set_cutoff(f64::from(hz), tween_ms(0));
+            filter.set_mix(if enabled { kira::Mix::WET } else { kira::Mix::DRY }, tween_ms(0));
+            let actual = audio.capture(4_800);
+            let expected = control_audio.capture(4_800);
+            if step == 6 {
+                assert!(channel_mean(&actual, 0) < 1e-7 && channel_mean(&expected, 0) > 1e-5);
+            } else {
+                // The existing voice gain has a 30 ms anti-click ramp. Compare the resumed
+                // steady tail to the continuously audible reference to verify clock continuity.
+                let from = if step == 7 { actual.len() / 2 } else { 0 };
+                let error = actual[from..].iter().zip(&expected[from..]).map(|(a, b)| (a - b).abs()).sum::<f32>()
+                    / expected[from..].iter().map(|v| v.abs()).sum::<f32>();
+                eprintln!("highpass dynamic step={step} native_hz={hz} enabled={enabled} relative_error={error}");
+                assert!(error < 0.0002, "step {step}: {error}");
+            }
+            assert_eq!(player.voices[&id].parts[0].handle.as_ref().unwrap().state(), PlaybackState::Playing);
+        }
+        player.handle(Cmd::Stop { id, fade: false });
+        audio.capture(4_800);
+        player.update();
+        assert!(!player.voices.contains_key(&id));
+        assert_eq!(*player.shared.finished.lock().unwrap(), [id]);
+        assert!(audio.capture(4_800).iter().all(|v| v.abs() < 1e-7));
+    }
+
+    #[test]
+    #[ignore = "needs the game pak; modified copies prove unsupported modes are skipped"]
+    fn highpass_unsupported_mapping_and_topologies_are_skipped() {
+        let mut bytes = aa_pak::Pak::global().read("sounds/x2ambience/x2ambience.fev").unwrap();
+        let needle = b"FMOD Highpass\0";
+        let at = bytes.windows(needle.len()).position(|w| w == needle).unwrap() + needle.len();
+        let points = u32::from_le_bytes(bytes[at + 12..at + 16].try_into().unwrap()) as usize;
+        let mapping = at + 20 + 4 * points;
+        assert_eq!(u32::from_le_bytes(bytes[mapping..mapping + 4].try_into().unwrap()), 1);
+        bytes[mapping..mapping + 4].copy_from_slice(&0u32.to_le_bytes());
+        let fev = crate::fev::Fev::parse(&bytes).unwrap();
+        let index = fev.event_index("login_stage/countryside02").unwrap();
+        let event = EventRef { index, project: Arc::new(Project { name: fev.name.clone(), dir: String::new(), fev }) };
+        assert_eq!(layer_highpass(&event, &[], 0), None);
+        for mode in 0..3 {
+            let mut voice = highpass_fixture();
+            let index = voice.event.index;
+            let project = Arc::get_mut(&mut voice.event.project).unwrap();
+            let Body::Complex { layers, .. } = &mut project.fev.events[index].body else { unreachable!() };
+            match mode {
+                0 => layers[0].envelopes[0].parent = 1,
+                1 => layers[0].envelopes[1].points[0].y = 0.5,
+                _ => { let duplicate = layers[0].envelopes[0].clone(); layers[0].envelopes.push(duplicate); }
+            }
+            assert_eq!(layer_highpass(&voice.event, &voice.values, 0), None);
+            let mut audio = capture_audio();
+            begin_part(&mut audio, &mut voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+            assert!(voice.parts[0].highpass.is_none());
+        }
+    }
+
+    #[test]
+    #[ignore = "needs the game pak; captures the original housing sample without a device"]
+    fn housing_pan_mixer_matches_original_near_ramp_and_far_controls() {
+        let capture = |distance, control| {
+            let mut audio = capture_audio();
+            let mut voice = housing_voice(distance);
+            begin_part(&mut audio, &mut voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+            assert_eq!(voice.parts[0].state, PartState::Playing);
+            if let Some(pan) = control {
+                voice.parts[0].track.as_mut().unwrap().set_spatialization_strength(pan, tween_ms(0));
+            }
+            audio.capture(14_400)
+        };
+        let mut errors = Vec::new();
+        for (name, distance, native_pan) in [("near", 3.5, 0.0), ("ramp", 9.6488, 0.323077), ("far", 17.5, 0.646154)] {
+            let actual = capture(distance, None);
+            let control = capture(distance, Some(native_pan));
+            let old = capture(distance, Some(1.0));
+            let error = actual.iter().zip(&control).map(|(a, b)| (a - b).abs()).sum::<f32>()
+                / control.iter().map(|v| v.abs()).sum::<f32>();
+            let lr = |out: &[f32]| (channel_mean(out, 0), channel_mean(out, 1));
+            eprintln!("housing pan {name}: distance={distance} native_pan={native_pan} mean_abs_LR actual={:?} native_control={:?} legacy_control={:?} relative_error={error}", lr(&actual), lr(&control), lr(&old));
+            save_pan_capture(&format!("housing-{name}"), &actual);
+            save_pan_capture(&format!("housing-{name}-native-coefficient-control"), &control);
+            save_pan_capture(&format!("housing-{name}-legacy-control"), &old);
+            assert!(channel_mean(&control, 1) > 0.001, "real sample produced nonzero mixer output");
+            errors.push(error);
+        }
+        assert!(errors.iter().all(|e| *e < 0.0001), "original pan coefficient controls: {errors:?}");
+    }
+
+    #[test]
+    #[ignore = "needs the game pak; captures original housing during live controls without a device"]
+    fn housing_pan_mixer_updates_on_source_listener_and_parameter_commands() {
+        let mut audio = capture_audio();
+        let mut control_audio = capture_audio();
+        let mut voice = housing_voice(3.5);
+        let mut control_voice = housing_voice(3.5);
+        begin_part(&mut audio, &mut voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+        begin_part(&mut control_audio, &mut control_voice, 0, (Vec3::ZERO, Vec3::ZERO), &Volumes::default());
+        let (_engine, mut player, _rx) = queued_engine(Settings::default());
+        let (_control_engine, mut control_player, _control_rx) = queued_engine(Settings::default());
+        let id = voice.id;
+        player.voices.insert(id, voice);
+        control_player.voices.insert(id, control_voice);
+        for (step, name, native_pan) in [(0, "near", 0.0), (1, "source_far", 0.646154),
+            (2, "listener_near", 0.0), (3, "parameter_far", 0.646154),
+            (4, "source_left", 0.646154), (5, "parameter_near", 0.0)]
+        {
+            for p in [&mut player, &mut control_player] {
+                match step {
+                    1 => p.handle(Cmd::Move { id, at: Vec3::X * 17.5 }),
+                    2 => p.handle(Cmd::Listener { position: Vec3::X * 14.0, rotation: Quat::IDENTITY }),
+                    3 => {
+                        // Isolate manual control from the automatic distance binding, retaining
+                        // the original parameter range, curve and decoded sample.
+                        p.voices.get_mut(&id).unwrap().distance_params.clear();
+                        p.handle(Cmd::Param { id, name: "distance".into(), value: 17.5 });
+                    }
+                    4 => p.handle(Cmd::Move { id, at: Vec3::X * 10.5 }),
+                    5 => p.handle(Cmd::Param { id, name: "distance".into(), value: 3.5 }),
+                    _ => {}
+                }
+                p.update();
+            }
+            if step == 2 {
+                // Players hold the default backend; mirror their listener command to captures.
+                audio.listener.set_position(Vec3::X * 14.0, tween_ms(0));
+                control_audio.listener.set_position(Vec3::X * 14.0, tween_ms(0));
+            }
+            assert!((player.voices[&id].parts[0].pan - native_pan).abs() < 1e-6, "{name}");
+            control_player.voices.get_mut(&id).unwrap().parts[0].track.as_mut().unwrap()
+                .set_spatialization_strength(native_pan, tween_ms(30));
+            let actual = audio.capture(4_800);
+            let control = control_audio.capture(4_800);
+            let error = actual.iter().zip(&control).map(|(a, b)| (a - b).abs()).sum::<f32>()
+                / control.iter().map(|v| v.abs()).sum::<f32>();
+            eprintln!("housing runtime {name}: native_pan={native_pan} mean_abs_LR=({}, {}) relative_error={error}",
+                channel_mean(&actual, 0), channel_mean(&actual, 1));
+            assert!(channel_mean(&control, 1) > 0.001 && error < 0.0001, "{name}: error={error}");
+        }
+        player.handle(Cmd::Stop { id, fade: false });
+        audio.capture(2_400);
+        player.update();
+        assert!(!player.voices.contains_key(&id), "stopped event still retires normally");
+    }
+
+    /// Route an actual queued request into a manually-clocked mixer using production admission,
+    /// voice construction and completion polling, without opening the OS output device.
+    fn capture_request(player: &mut Player, rx: &Receiver<Cmd>, audio: &mut Audio<CaptureBackend>) {
+        let Cmd::Pcm { id, clip, opts, permit } = rx.recv().unwrap() else { panic!("PCM expected") };
+        assert!(permit.tracking.as_ref().unwrap().claim());
+        assert!(player.admit_voice(opts.priority));
+        let voice = PcmVoice::begin(audio, &clip, opts, player.listener.0, permit).unwrap();
+        player.pcm_voices.insert(id, voice);
+    }
+
+    #[test]
+    fn tracked_pcm_capture_admission_tiny_completion_and_zero_gain_clock() {
+        // A single frame can end before the caller first reads its already-installed observer.
+        // Category and master zero are still real Kira admission/sample-clock completion.
+        for (samples, master, user_music) in [(1, 1.0, 1.0), (2_400, 1.0, 0.0), (2_400, 0.0, 1.0)] {
+            let (engine, mut player, rx) = queued_engine(Settings::default());
+            let mut audio = capture_audio();
+            audio.apply(&Volumes { master, user_music, ..Volumes::default() });
+            audio.capture(2_400); // settle Kira's fader tween before adding the request
+            let clip = PcmClip::mono(24_000, &vec![0.25; samples]).unwrap();
+            let (id, observer) = engine.play_pcm_tracked(&clip, PcmOptions::new(Category::UserMusic)).unwrap();
+            capture_request(&mut player, &rx, &mut audio);
+            assert!(engine.shared.pcm_pending.lock().unwrap().is_empty());
+            if samples > 1 {
+                assert!(observer.was_started() && !observer.is_finished(), "accepted before any mixer callback");
+                let out = audio.capture(120);
+                assert!(out.iter().all(|v| v.abs() < 0.00001));
+                player.update();
+                assert!(!observer.is_finished(), "a zero gain does not skip the sample clock");
+            }
+            audio.capture(4_800);
+            player.update();
+            assert_eq!(engine.take_finished(), [id]);
+            assert!(observer.is_finished() && observer.was_started());
+            let clone = observer.clone();
+            player.update();
+            assert!(engine.take_finished().is_empty());
+            assert!(clone.is_finished() && clone.was_started());
+            assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[test]
+    fn tracked_pcm_capture_stop_and_steal_finish_after_mixer_ramp() {
+        for stop_all in [false, true] {
+            let (engine, mut player, rx) = queued_engine(Settings::default());
+            let mut audio = capture_audio();
+            let clip = PcmClip::mono(24_000, &[0.25; 24_000]).unwrap();
+            let (id, observer) = engine.play_pcm_tracked(&clip, PcmOptions::new(Category::UserMusic)).unwrap();
+            capture_request(&mut player, &rx, &mut audio);
+            // Accepted but no callback has run. This is beyond the pending-cancel boundary.
+            if stop_all { engine.stop_all() } else { engine.stop(id, false) }
+            player.handle(rx.recv().unwrap());
+            player.update();
+            assert!(observer.was_started() && !observer.is_finished());
+            audio.capture(2_400);
+            player.update();
+            assert!(observer.is_finished() && observer.was_started());
+            assert_eq!(engine.take_finished(), [id]);
+            player.handle(Cmd::StopAll);
+            player.update();
+            assert!(engine.take_finished().is_empty());
+        }
+
+        let (engine, mut player, rx) = queued_engine(Settings { max_voices: 1, ..Settings::default() });
+        let mut audio = capture_audio();
+        let clip = PcmClip::mono(24_000, &[0.25; 24_000]).unwrap();
+        let opts = PcmOptions::new(Category::UserMusic);
+        let (first, first_observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        capture_request(&mut player, &rx, &mut audio);
+        let (second, second_observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        capture_request(&mut player, &rx, &mut audio);
+        assert_eq!(player.stats.stolen, 1);
+        assert!(!first_observer.is_finished());
+        audio.capture(2_400);
+        player.update();
+        assert_eq!(engine.take_finished(), [first]);
+        assert!(first_observer.is_finished() && first_observer.was_started());
+        assert!(second_observer.was_started() && !second_observer.is_finished());
+        engine.stop_all();
+        player.handle(rx.recv().unwrap());
+        audio.capture(2_400);
+        player.update();
+        assert_eq!(engine.take_finished(), [second]);
+        assert!(second_observer.is_finished() && second_observer.was_started());
+        assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn tracked_pcm_capture_mixer_refusal_and_active_teardown_are_terminal() {
+        let (engine, mut player, rx) = queued_engine(Settings::default());
+        let mut audio = capture_audio();
+        audio.user_music = audio.manager.add_sub_track(TrackBuilder::new().sound_capacity(1)).unwrap();
+        let clip = PcmClip::mono(24_000, &[0.25; 240]).unwrap();
+        let opts = PcmOptions::new(Category::UserMusic);
+        let occupant = begin_pcm(&mut audio, &clip, opts, Vec3::ZERO).unwrap();
+        let (id, observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        let Cmd::Pcm { clip: submitted, opts, permit, .. } = rx.recv().unwrap() else { panic!("PCM expected") };
+        assert!(permit.tracking.as_ref().unwrap().claim());
+        assert!(PcmVoice::begin(&mut audio, &submitted, opts, Vec3::ZERO, permit).is_err());
+        drop(submitted);
+        player.finish(id);
+        audio.capture(4_800);
+        player.update();
+        assert!(observer.is_finished() && !observer.was_started(), "Kira refused its sound capacity");
+        assert_eq!(engine.take_finished(), [id]);
+        assert!(engine.shared.pcm_pending.lock().unwrap().is_empty());
+        assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+        drop(occupant);
+        drop(audio);
+
+        let weak_clip = Arc::downgrade(&clip.0);
+        let mut audio = capture_audio();
+        let (id, active_observer) = engine.play_pcm_tracked(&clip, opts).unwrap();
+        drop(clip);
+        capture_request(&mut player, &rx, &mut audio);
+        assert!(active_observer.was_started() && !active_observer.is_finished());
+        drop(player); // accepted voices terminate even without another callback/update
+        assert!(active_observer.is_finished() && active_observer.was_started());
+        assert_eq!(engine.take_finished(), [id]);
+        assert!(engine.take_finished().is_empty());
+        assert_eq!(engine.shared.pcm_slots.load(Ordering::SeqCst), 0);
+        drop(audio); // Kira may retain retired frames until the mixer is dropped
+        assert!(weak_clip.upgrade().is_none());
+        let weak_shared = Arc::downgrade(&engine.shared);
+        drop(engine);
+        drop(rx);
+        assert!(weak_shared.upgrade().is_none());
+        assert!(active_observer.is_finished() && active_observer.was_started());
     }
 
     #[test]
@@ -2070,6 +2833,65 @@ mod tests {
         assert!(channel_mean(&audio.capture(4_800), 0) < 0.00001);
         audio.capture(8_000);
         assert_eq!(handle.state(), PlaybackState::Stopped, "silent PCM still ends naturally");
+    }
+
+    #[test]
+    fn pcm_user_music_uses_pre_device_goldens_with_once_master_policy() {
+        assert_eq!(Volumes::default().user_music, 1.0);
+        let clip = PcmClip::mono(24_000, &vec![0.25; 24_000]).unwrap();
+        let mut cases = 0;
+        for line in include_str!("../tests/native_user_music_cases.tsv").lines().skip(1) {
+            let fields: Vec<_> = line.split('\t').collect();
+            let values: Vec<f32> = fields[1..].iter().map(|v| v.parse().unwrap()).collect();
+            let mut audio = capture_audio();
+            let mut opts = PcmOptions::new(Category::UserMusic);
+            opts.volume = values[0];
+            let (handle, track) = begin_pcm(&mut audio, &clip, opts, Vec3::ZERO).unwrap();
+            assert!(track.is_none());
+            let volumes = Volumes { user_music: values[1], master: values[2], sfx: values[3], music: values[4], ..Volumes::default() };
+            assert_eq!(volumes.get(Category::UserMusic), values[1]);
+            audio.apply(&volumes);
+            let out = audio.capture(4_800);
+            // Preserve the engine's once-master policy. Native downstream FMOD total is unresolved.
+            assert!((channel_mean(&out, 0) - 0.25 * values[5]).abs() < 0.0001, "{}", fields[0]);
+            assert_eq!(channel_mean(&out, 0), channel_mean(&out, 1));
+            audio.capture(24_000);
+            assert_eq!(handle.state(), PlaybackState::Stopped, "{}", fields[0]);
+            cases += 1;
+        }
+        assert_eq!(cases, 12);
+    }
+
+    #[test]
+    fn pcm_user_music_runtime_mute_leaves_other_tracks_and_sample_clock_running() {
+        let mut audio = capture_audio();
+        let clip = PcmClip::mono(24_000, &vec![0.125; 48_000]).unwrap();
+        let (mut score, _) = begin_pcm(&mut audio, &clip, PcmOptions::new(Category::UserMusic), Vec3::ZERO).unwrap();
+        let (bgm, _) = begin_pcm(&mut audio, &clip, PcmOptions::new(Category::Music), Vec3::ZERO).unwrap();
+        let (sfx, _) = begin_pcm(&mut audio, &clip, PcmOptions::new(Category::Sfx), Vec3::ZERO).unwrap();
+        let mut volumes = Volumes { master: 0.5, user_music: 0.25, music: 0.0, sfx: 0.0, ..Volumes::default() };
+        audio.apply(&volumes);
+        assert!((channel_mean(&audio.capture(4_800), 0) - 0.015625).abs() < 0.0001);
+        volumes.user_music = 0.0;
+        volumes.music = 1.0;
+        volumes.sfx = 1.0;
+        audio.apply(&volumes);
+        assert!((channel_mean(&audio.capture(4_800), 0) - 0.125).abs() < 0.0001);
+        assert_eq!(score.state(), PlaybackState::Playing);
+        // Root owns actor/option identity: a zero per-voice factor silences only this score.
+        score.set_volume(db(0.0), tween_ms(30));
+        volumes.user_music = 1.0;
+        audio.apply(&volumes);
+        assert!((channel_mean(&audio.capture(4_800), 0) - 0.125).abs() < 0.0001);
+        score.set_volume(db(0.5), tween_ms(30));
+        assert!((channel_mean(&audio.capture(4_800), 0) - 0.15625).abs() < 0.0001);
+        volumes.master = 0.0;
+        audio.apply(&volumes);
+        assert!(channel_mean(&audio.capture(4_800), 0) < 0.00001);
+        audio.capture(48_000);
+        assert_eq!(score.state(), PlaybackState::Stopped);
+        assert_eq!(bgm.state(), PlaybackState::Stopped);
+        assert_eq!(sfx.state(), PlaybackState::Stopped);
     }
 
     #[test]

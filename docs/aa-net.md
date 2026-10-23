@@ -7979,6 +7979,8 @@ Original DLL image base38ff0000, SHA256
   A miss sends CS123 `(isTooltip, false)`; a cache-hit playing request sends
   `(false, true)` and copies cached notes for the coming performance. Tooltip
   hits need no request. Cache ownership/lifetime and deduplication stay in client.
+  Executed follow-up below corrects a key assumption: the DB key formats only
+  low32, while pending equality and outbound requests preserve the full u64.
 - Play/pause are existing skills, not additional music wire opcodes. In skill
   path `3939a810`, own-player special action93 calls `39083ba0` at `3939ae37`
   to compile staged notes and send CS121 (`397acd00` / serializer`397b1400`).
@@ -7988,6 +7990,8 @@ Original DLL image base38ff0000, SHA256
 - `TestPlayNotes39079b90` compiles and starts a **local preview**, while
   `StopPlayNotes390797f0` calls `390840f0` to stop that local voice. Neither is
   a network play/pause command. The composition OnHide invokes StopPlayNotes.
+  This describes entry/explicit stop only: natural preview completion **does**
+  send CS124 through the shared manager, as executed in the follow-up below.
 - Request constructor`397acd70` and serializer`397b1480` prove independent bool
   flag bytes. `End` uses empty serializer`3901c170`. Original SC1e0 handler
   `391e169b` widens its received signed32 note ID before the local cache callback;
@@ -7998,8 +8002,8 @@ Read-only lane references (under `D:/aaemu-wt/bevy/rust/crates/aaemu-game/src/`)
 note writer; `systems/services/mod.rs` registers CS121..124; `opcodes.rs` names
 the offsets; `systems/skills/effects/special/items.rs` actions93/94/97 consume the
 cached performance/upload and broadcast genuine notices; `systems/skills/packets_special.rs`
-writes SC1df/1e1. The server must have the queued upload/MIDI before its later
-consuming skill effects; the native skill callbacks above explain the timing.
+writes SC1df/1e1. The native upload callback is a received-fire callback, not a
+pre-CS052 hook; the distinction and exact handoff are detailed below.
 No server source or running lane was edited, built, started or stopped here.
 
 Known original/server differences, deliberately preserved:
@@ -8009,6 +8013,8 @@ Known original/server differences, deliberately preserved:
   **Native playing cache miss `(false,false)=0` is currently ignored by the lane**,
   as is257. It truncates the u64 request ID to u32 for lookup and hardcodes the
   returned tooltip flag to true. Net does not rewrite these native request flags.
+  This is the inspected pre-fix bevy checkout. PR44 fixes the reply/flag branch;
+  the executed follow-up below distinguishes it from native pending/key behavior.
 - The lane ignores CS122 declared byte count and bag/slot (`value2`) and queues
   by item ID. It performs actual sheet creation in the item-skill effect; upload
   alone is not a save receipt. CS121 only caches bytes; actual PlayUserMusic
@@ -8063,3 +8069,278 @@ and live composition/audio verification remain root's client integration work.
 No Cargo.lock, other-crate, server, README or game-asset edits, Ghidra project
 copies, scratch executables, alternate targets, workspace runs or process kills
 were used. Native fixtures and the reproducible oracle remain as evidence.
+
+## Captured native composition cast and received-fire handoff (2026-10-23)
+
+Public API:
+
+```rust
+let request = aa_net::MusicComposeRequest::new(
+    aa_net::item_effect::CapturedBagItem { slot: physical_bag_slot, item: received_item },
+    grade, // u8, selected from actual music_note_limits rows
+)?;
+let command = aa_net::Command::ComposeMusic { character_id, request };
+```
+
+`MusicComposeRequest` retains the complete source capture and grade with full
+`Clone + Eq` semantics. Its accessors are `source()`, `grade()`, `skill_id()`
+(always22215); `recheck_native(&NativeItemRecords)` checks the actual main-bag
+physical slot. `write(&mut Writer, self_obj_id)` and
+`game::ClientMsg::ComposeMusic { self_obj_id, request }` are the typed low-level
+CS052 writer. Existing no-object casts and all four `MusicCommand` variants are
+unchanged. There is no generic arbitrary SkillObject/packet escape hatch.
+
+`Command::ComposeMusic` uses the ItemEffect request boundaries: InWorld,
+nonzero matching selected persistent character ID, actual selected header,
+nonzero BC3-representable own actor, matching native record owner, and equality
+of every field of the captured Item at its enabled main-bag slot. Unknown,
+invalidated, empty, moved, bank-only or changed records reject before any
+write; the legacy Inventory is never a fallback. The complete item UID stays
+u64, including values above2^53. `MusicComposeRequested { character_id,
+request }` means **only a successful local CS052 socket write**.
+`MusicComposeRejected { character_id, request, message }` covers guard,
+missing-connection and write failures, preserving the exact request for caller
+matching. No receipt, saved success, item mutation, score cache, automatic
+upload, MIDI or End packet is produced.
+
+Native SaveNotes39079640 checks nonempty item/title/text, own actor, actual
+main-bag item lookup3961e9a0, proficiency length39082130, and successful local
+stage/compile39083c60. It builds the complete item caster39044360, self unit
+target, and SkillObject local147=1, local144=5, local140[0]=39081f80(notes),
+then calls the ordinary skill planner thunk3ab63fb7. That planner is not
+implemented by this transport. The application owns compilation, actual table
+lookup, proficiency, confirmation and local staging. Grade selector39081f80
+uses **XlStringLen**, walks the ordered music_note_limits table, and returns
+the first row step whose note_length is at least that character length (or0
+if none); this is separate from the CS122 UTF-8 byte counts. Restricting the
+transport to Music Paper27902/use_skill22215 and supplied grade0..10 is a
+deliberate boundary for the currently verified original rows. Native SaveNotes
+does not itself impose this numeric grade range or compare all captured Item
+fields; the full-record/owner/phase guards are defensive stale-input checks.
+No speculative musical skill variants are admitted.
+
+The exact CS052 body is u32(22215), item-caster type2, BC3 own actor,
+u64 source Item.id, u32 source template27902, **u8 source Item.grade**,
+u32 source Item.made_unit_id, self-target type0 + BC3 own actor, then object
+flag5 + **u32 composition grade**. Item grade and composition grade are
+independent. Original397cad20 invokes397c85b0/397bfa90/397bfd50;
+type5 branches to397bff73 and archive primitive+4c for the four-byte grade.
+Executing those original x86 bytes, including39044360, supplies22 retained
+full-body goldens across grades0..10, a nonzero item grade/maker, maximum item
+grade/maker, large and maximum u64 UID, and BC3 maximum actor. The actual
+read-only lane SkillObject::read maps flag5 to Unk5(read_i32); its extracted
+reader and exact primitive methods run against these goldens in Rust tests.
+This cross-check proves framing, not server save semantics.
+
+**Timing: CS052 first, actual received SCSkillFired, then CS122.** The retained
+registration391eb9d0 passes handler391d58a0 to391bf000; packet factory391ab7c0
+sets opcode0xa2. That handler
+reads received packet members and calls3939b010 at391d5931. Its own-player
+special-action97 branch at3939b5e1..3939b5fa calls39081e60 to upload the staged
+score. It is not a pre-send planner hook. The later own callback is the call
+at3939b77d (return address3939b782) to3939ce90, the existing cooldown producer;
+it does **not** send CS052. A nonzero received result code exits3939b010 before
+the action loop; upload requires the successful received-fire path. By
+comparison, received-start handler391d57f0 calls
+3939a810 at391d586e; that path runs action93 compiled CS121 and action94 End.
+Function names alone do not establish this ordering: received packet member
+loads, handler registration, exact calls and own-actor/action conditions are
+retained in tests/fixtures/music/native-compose-source.txt.
+
+Consequently this API sends only the type5 CS052 cast. Do not bundle CS122
+before CS052 or upload in response to MusicComposeRequested/SkillStarted.
+The application retains its staged score and sends existing
+Command::Music(UploadNotes) at the matching actual own item-caster SkillFired
+boundary with result.code0. Native3939b010 can also synthesize missing local *skill presentation*
+through3939a810 while handling a received fire; this is still after the server
+receipt, never a reason to pre-send a score. Matching casts, pending UI state,
+and reacting to actual save/inventory receipts remain application-owned. A
+server that consumes the uploaded notes synchronously before this callback
+needs a server timing fix; changing the native client sequence would hide the
+mismatch. No server/lane source, process or runtime was changed in this task.
+
+Retained reproduction: `python crates/aa-net/tests/music_compose_oracle.py`
+(reads the original DLL only; pefile/unicorn/capstone required for RE, not
+normal builds). Fixtures include native-compose.tsv, native-compose-source.txt
+and lane-skill-object.rs under crates/aa-net/tests/fixtures/music/. The oracle
+mocks archive primitives and BC3 only; it does not execute the protected skill
+planner, proficiency/table catalog, compiler, server or whole live callbacks.
+Loopback tests assert exact frames and sequence counters, received-start vs
+received-fire forwarding with no automatic output, explicit later CS122,
+complete stale-item/physical-slot/main-bag guards, all non-world phases,
+identity/header/owner/actor guards, missing/closed writes, full rejection
+request equality and absence of synthetic success. No live save transaction or
+visual deliverable is claimed. Validation: `cargo test -p aa-net` passed 682 unit
+and 5 integration tests (nine live-lane tests ignored), including all seven new
+compose tests; the executed-x86 oracle passed 22 cases.
+`cargo check -p aa-net --features bevy` and owned-path whitespace validation
+also passed. No clippy run or additional build target directory was needed.
+
+## Executed stored-score, preview End and Started dispatch corrections (2026-10-23)
+
+Research only: no net API, application caller, server or audio-device changes. Run
+`python -B tools/user_music_lifecycle_oracle.py` and
+`python -B tools/user_music_catalog_oracle.py`. Retained results and original
+disassembly are in `tools/evidence/user_music_lifecycle/`. The lifecycle oracle
+passes **142 original-instruction cases**; the catalog oracle executes four real
+music rows through each of three original loaders and the actual attachment loop.
+The x2game input is SHA256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+SDK, LevelDB, SQLite, allocation/index construction, presentation endpoints and
+the compiler body are explicit fixtures. These results assert client control
+flow, memory mutation and packet-sink arguments, not successful live wire/audio,
+protected initialization, a complete timeline manager, or server settlement.
+
+**Correction: the disk cache key is low32, not full64.** Actual
+`xlcommon!XlFormatString3301b6a0` and its native formatter execute, with only CRT
+memcpy/memset substituted. Both `39082550` and `39082260` use
+`user_music_%02x_%016lx`; Windows `long` consumes the low32 argument and ignores
+the separately pushed high32. For world255 and note`fedcba9876543210`, the actual
+key is `user_music_ff_0000000076543210`. This is observed at the DB endpoint,
+not generated by a substitute formatter. An earlier exploratory fixture that
+formatted both words as a u64 was wrong and is superseded by these goldens.
+
+Pending equality in `39082550`/`39082200` still compares **both** words, and
+actual constructor`397acd70` retains both for CS123. Consequently high64 aliases
+share DB contents but remain distinct pending requests. SC1e0 callback`391e1640`
+uses CDQ at`391e1691` to sign-extend raw32. A zero-extended request`0000000080000000`
+and reply`ffffffff80000000` therefore share the same DB key, but receipt does not
+remove that original pending request. A later hit succeeds and emits buff-only
+with the original full request ID; it does not repair pending. The pending list
+also has no world byte in its comparison. **Claims that IDs>=2^31 cannot hit the
+native cache because of sign extension are incorrect.** Earlier client notes or
+PR discussions describing that as a general cache limit must be read with this
+correction; the pending-cleanup mismatch and low32 aliasing are the real limits.
+
+**Receipt does not retry use or create a buff/skill.** Cache misses send
+CS123`(isTooltip,false)` once per full pending ID, including deduplication across
+tooltip/use overlap. Complete executed `391e1640 ->39082260` receipts format the
+key, zero scratch, copy title/notes, save, unlink the exact pending ID and copy
+notes into manager+28. The `isTooltip` and declared noteLen arguments are unused.
+Failed DB saves still unlink/copy, with no follow-up CS123, CS052, MIDI, End or
+Lua callback. Actual CopyString byte limits are96/12000, stopping at NUL; a
+boundary can split a UTF-8 sequence. The persisted value is97 fixed title bytes
+plus notes bytes excluding the notes NUL. Later tooltip hits are quiet; later
+use hits send`(false,true)` and stage the cached notes. Full-u64 pending and
+low32 DB alias cases are retained separately in `native-cases.json`.
+
+The inspected old C# and pre-fix bevy handlers only handle packed1/256, ignoring
+the native miss0. [PR44](https://github.com/NickMesser/AAEmu/pull/44) fixes independent
+flags and returns notes for miss0, but its handler still adds ScoreMemorized6010
+only for showBuffOnly. Thus that fixed server's miss response alone does not
+grant the score skills; a later native use hit or a separate authoritative buff
+receipt is still needed. The actual compact `buff_skills` rows476/477/478 bind
+6010 to22213/22214/22217. This establishes the remaining first-use behavior of
+that server implementation. It does **not** establish an official-server rule
+that justifies adding an automatic client retry or an invented local buff.
+No running server was contacted, changed or restarted for this investigation.
+
+**Natural preview completion does send End.** Preview`39079b90` and received
+music`390824e0` both load singleton`39ae4674` and call the same `390846d0`.
+Constructor`39084890` stores this singleton at`3908496b`; its caller stores the
+same returned pointer into game+44 at`390f758d`. MainGame entry`390f6a20` begins
+with a protected jump; vtable slot`399a646c` identifies it independently of the
+sparse sweep index. Its plaintext continuation calls game+44's `390844a0` at
+`390f6c96`. First, framework+20 must return true at`390f6bf1`, or the frame
+returns before music update. Then engine virtual+a8 mode must differ from2.
+Both gates execute in the oracle. The protected prologue is not emulated. Earlier
+sweep-based labels390f5800 and an exploratory390f5910 label are incorrect;
+390f5910 is the unrelated CustomizeEntityToNpc function.
+
+Actual preview entry, manager admission, native tree helpers and update execute
+together. When an admitted own voice is absent at SDK lookup, update sends one
+CS124 then stops/removes that actor's entry; the next frame sends none. There is
+no preview marker or preview exception. Both current-player and fallback identity
+comparisons remain native. Actual StopPlayNotes`390797f0 ->390840f0` stops/removes
+directly, so later update sends none. Replacement removes the old entry before
+trying the new create; failed creation or missing actor leaves no entry and no
+End. Successful replacement sends no End for the old voice. Mere actor registry
+loss while a sound still exists leaves its tracked entry alive. `native-cases.json`
+includes received/preview entry cases, own/other removal, replacement failures
+and both framework admission outcomes with caller modes0/1/2/3. A blanket application rule that preview
+completion never generates wire output is not native fidelity. The application
+owns that distinction; aa-audio must continue to emit no network commands.
+
+**Catalog dispatch comes from skill_effects, without an application-method filter.**
+Read-only Ghidra exports `catalog-decompiled.c` and
+`catalog-binding-decompiled.c` accompany the executed `native-catalog.json`:
+
+- `39730ee0` loads `skill_effects`. SELECT column2 application_method_id becomes
+  row+4, column8 effect_id resolves the generic effect pointer at row+1c, and
+  column15 skill_id becomes row+30. Rows have stride54.
+- `39730620` loads `effects(id,actual_type,actual_id)`. Its literal
+  SpecialEffect branch`39730b74..99` writes category24 and resolves actual_id
+  through`396e8d40`. `3972c390` loads special_effects, whose20-byte payload is
+  special_effect_type_id followed by value1..4.
+- `39731870`'s actual loop`39732e50..39732f0c` walks every loaded skill-effect
+  row, resolves row+30 through the skill catalog and appends that row pointer
+  into SkillDesc+1e8..1ec. No application_method filter is present.
+
+The source-backed SQL join is therefore `skill_effects.skill_id = receivedSkillId`,
+`effects.id = skill_effects.effect_id AND effects.actual_type='SpecialEffect'`,
+then `special_effects.id = effects.actual_id`. It does not select a skills.effect_id
+or skill_fx_group. Current rows are24560/22213/action93/method3,
+24561/22214/action94/method3,24817/22217/action94/method3, and
+24814/22215/action97/method1. Native Started's loop itself only checks category24
+and action93/94. Executed method0/1/2/3/4/5 variants reach the same callbacks.
+The C# and Rust application-method enums call3 **SourceOnce**, a targeting rule,
+not OnStart. It must not determine received Started versus Fired timing.
+
+Complete `391d57f0 ->3939a810` execution verifies result.code0, valid skill
+descriptor, ordinary nonzero timeline and successful local timeline construction
+before the action loop. Raw caster0/3 resolves object+8; type2 resolves object+14;
+types1/4 use sentinel0. The resolved pointer must equal actual game+10c for93/94.
+An item/mount raw caster resolving to that own actor can pass; a legacy projected
+own object ID from type1/4 cannot. Failed results, foreign/missing actors, invalid
+effect category and failed descriptor/timeline fixtures send none. Timeline
+construction is a fixture here; this does not prove duplicate/admission semantics
+of a complete timeline manager. Action97 sends no upload on Started: preserve
+the existing successful received-Fired CS122 handoff.
+
+Normal action93 calls original `39083ba0` synchronously at`3939ae37`. It reads
+the **current** manager+28 staged notes, checks XlStringLen>0, calls`39083960`
+with MIDI capacity32768 and parameter`[39ac37a0]=33`, constructs397acd00/CS121
+and sends. Action94 calls39081e30/CS124 at`3939ae12`; this also covers Close the
+Score22217, not just Pause22214. The parameter33, preview0, bypass0 and fallback
+instrument constants80/81 are retained from the pre-existing read-only
+`D:/aa-re/housing-audit/native12-data-readonly.bin` (.data base39ac3000,
+SHA256`7082573df48d7d5229e1f909845733f0cf9ded6ea1a4e3c41a5e276fccde8c9e`).
+Every researched x2game instruction range also matches that capture's text;
+no live process access was required.
+
+Instrument fallback follow-up is executed in ten cases in `native-instruments.json`.
+`39695dc0` resolves the **general ItemDesc** by equipped template, not an
+ItemWeapon/holdable descriptor. Original items SQL`39a00d90` column9 is
+`items.category_id`; `396cb5b3..b8` writes local-128, and copy constructor
+`396ba730` copies rowbase-140+18 into ItemDesc+18 at`396ba772..75`. The native
+wrapper compares this field to categories80/81. It does not read holdable_id or
+holdables.slot_type_id for fallback. Read-only decompilation is retained in
+`instrument-decompiled.c`; the column/store/copy/general-item lookup and actual
+instrument-map lookup all execute before the wrapper's compiler sink.
+
+Actual instrument_sounds lookup uses ItemDesc.id, loaded from SQL`39a08240`
+`SELECT item_id,midi FROM instrument_sounds`. A nonzero mapped MIDI overrides
+the fallback; missing mapping or exactly0 falls back. The static native table
+`399a1e94..399a1ea0` is program106/bank0 for category80, program73/bank0 for81;
+other categories report error1 and return0. It is a nonzero check, not a native
+signed-positive/range-validation check. Native compiler-body admissibility for
+arbitrary invalid program integers is not asserted by this wrapper oracle.
+
+Actual DB examples34598/category80/holdable21 and34599/category81/holdable23
+have no instrument_sounds rows and execute those106/73 fallbacks. Category96
+examples6183/holdable21 and14047/holdable23 fail with error1. Item6177 has MIDI24,
+which takes precedence over its category80 fallback. Holdable21 maps to111
+category80 items **and18 category96 items**; holdable23 maps to90 category81
+and12 category96 items. Therefore the old21/23 fallback shortcut is not the
+native catalog rule, even though it agrees for ordinary instrument categories.
+
+Inside39083960, actual `xlcommon!XlMultiToWide3301a100` receives3001 **u32** slots.
+It strips one leading UTF-8 BOM, decodes at most3000 code points, appends u32 NUL
+and returns storedCount+1. Supplementary characters occupy one slot. The wrapper
+ignores its return and compiles the converted prefix; cached notes can exceed
+that prefix's byte/character length. It does not perform UTF-8 validity checks.
+Nine direct conversion cases and five normal-entry/wrapper cases retain empty,
+BOM, embedded-NUL, Unicode and truncation boundaries. Compiler-body fixtures
+only establish arguments/order; original MML synthesis fidelity remains the
+separate aa-midi oracle's responsibility. No Cargo build, clippy, window or
+visual/FPS claim applies to this research-only change.

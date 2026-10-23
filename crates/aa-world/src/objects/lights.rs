@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use aa_cry::shade::illum::IllumLightSpecular;
 use bevy::light::SpotLightTexture;
 use bevy::prelude::*;
 
@@ -145,6 +146,7 @@ fn update_lights(
     mut stats: ResMut<LocalLightStats>,
     focus: Query<&GlobalTransform, With<WorldFocus>>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
+    specular_ratios: Query<&IllumLightSpecular>,
     slots: Query<(
         Entity,
         &LocalLight,
@@ -244,7 +246,9 @@ fn update_lights(
     for (entity, slot, _, current, projected) in &slots {
         if !chosen.contains(&entity) {
             if current.is_some() {
-                commands.entity(entity).remove::<PointLight>();
+                commands
+                    .entity(entity)
+                    .remove::<(PointLight, IllumLightSpecular)>();
             }
             if let Some(projected) = projected {
                 for child in projected.0 {
@@ -286,6 +290,7 @@ fn update_lights(
                     SpotLightTexture {
                         image: images[channel].clone(),
                     },
+                    IllumLightSpecular(p.specular_multiplier),
                 ));
             }
             continue;
@@ -298,13 +303,18 @@ fn update_lights(
                 || old.intensity != intensity
                 || old.shadow_maps_enabled != shadows
         }) {
-            commands.entity(entity).insert(PointLight {
-                color,
-                intensity,
-                range: p.radius,
-                shadow_maps_enabled: shadows,
-                ..default()
-            });
+            commands.entity(entity).insert((
+                PointLight {
+                    color,
+                    intensity,
+                    range: p.radius,
+                    shadow_maps_enabled: shadows,
+                    ..default()
+                },
+                IllumLightSpecular(p.specular_multiplier),
+            ));
+        } else if !specular_ratios.get(entity).is_ok_and(|ratio| ratio.0 == p.specular_multiplier) {
+            commands.entity(entity).insert(IllumLightSpecular(p.specular_multiplier));
         }
     }
     result.shadowed = shadowed.len();
@@ -321,9 +331,9 @@ mod tests {
     #[test]
     fn local_light_budget_honors_inactive_hidden_slots_and_releases_render_components() {
         let source = r#"<Mission><Objects>
-          <Entity Name="near" EntityClass="Light" Pos="1,0,0"><Properties Radius="5"><Options bCastShadow="1"/></Properties></Entity>
-          <Entity Name="second" EntityClass="Light" Pos="3,0,0"><Properties Radius="8"><Options bCastShadow="1"/></Properties></Entity>
-          <Entity Name="far" EntityClass="Light" Pos="10,0,0"><Properties Radius="6"/></Entity>
+          <Entity Name="near" EntityClass="Light" Pos="1,0,0"><Properties Radius="5"><Color fDiffuseMultiplier="2" fSpecularMultiplier="1"/><Options bCastShadow="1"/></Properties></Entity>
+          <Entity Name="second" EntityClass="Light" Pos="3,0,0"><Properties Radius="8"><Color fDiffuseMultiplier="3" fSpecularMultiplier="1"/><Options bCastShadow="1"/></Properties></Entity>
+          <Entity Name="far" EntityClass="Light" Pos="10,0,0"><Properties Radius="6"><Color fSpecularMultiplier="0"/></Properties></Entity>
           <Entity Name="inactive" EntityClass="Light"><Properties bActive="0"/></Entity>
           <Entity Name="hidden" EntityClass="Light" HiddenInGame="1"><Properties/></Entity>
           <Entity Name="projector" EntityClass="Light"><Properties><Projector texture_Texture="textures/lights/pattern.dds"/></Properties></Entity>
@@ -353,19 +363,42 @@ mod tests {
         app.update();
         let world = app.world_mut();
         let drawn: Vec<_> = world
-            .query::<(&Name, &PointLight)>()
+            .query::<(&Name, &PointLight, &IllumLightSpecular)>()
             .iter(world)
-            .map(|(n, p)| (n.as_str().to_string(), p.range, p.shadow_maps_enabled))
+            .map(|(n, p, s)| (n.as_str().to_string(), p.range, p.shadow_maps_enabled, s.0))
             .collect();
         assert_eq!(drawn.len(), 2);
-        assert!(drawn.contains(&("near".to_string(), 5.0, true)));
-        assert!(drawn.contains(&("second".to_string(), 8.0, false)));
+        assert!(drawn.contains(&("near".to_string(), 5.0, true, 0.5)));
+        assert!(drawn.contains(&("second".to_string(), 8.0, false, 1.0 / 3.0)));
         assert_eq!(world.resource::<LocalLightStats>().authored, 7);
         assert_eq!(world.resource::<LocalLightStats>().unsupported, 2);
+        let near = world.query::<(Entity, &Name)>().iter(world)
+            .find(|(_,name)|name.as_str()=="near").unwrap().0;
+        let point_fields = |light: &PointLight| (light.color, light.intensity, light.range, light.shadow_maps_enabled);
+        let original_point = point_fields(world.get::<PointLight>(near).unwrap());
+        world.get_mut::<LocalLight>(near).unwrap().placement.specular_multiplier = 0.0;
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(world.get::<IllumLightSpecular>(near).unwrap().0, 0.0,
+            "ratio-only changes must refresh even when PointLight fields are unchanged");
+        assert_eq!(point_fields(world.get::<PointLight>(near).unwrap()), original_point);
+        world.entity_mut(near).remove::<IllumLightSpecular>();
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(world.get::<IllumLightSpecular>(near).unwrap().0, 0.0,
+            "missing ratios must be restored, including explicit zero");
+        assert_eq!(point_fields(world.get::<PointLight>(near).unwrap()), original_point);
+        world.resource_mut::<LocalLightSettings>().max_lights = 3;
+        app.update();
+        let world = app.world_mut();
+        assert!(world.query::<(&Name, &PointLight, &IllumLightSpecular)>().iter(world)
+            .any(|(name, light, specular)| name.as_str() == "far" && light.intensity > 0.0 && specular.0 == 0.0),
+            "explicit zero suppresses specular while retaining the point's diffuse light");
         world.resource_mut::<LocalLightSettings>().enabled = false;
         app.update();
         let world = app.world_mut();
         assert_eq!(world.query::<&PointLight>().iter(world).count(), 0);
+        assert_eq!(world.query::<&IllumLightSpecular>().iter(world).count(), 0);
         assert_eq!(
             world.query::<&LocalLight>().iter(world).count(),
             7,
@@ -383,6 +416,7 @@ mod tests {
             .unwrap();
         let source = crate::entities::parse_lights(std::str::from_utf8(&xml).unwrap());
         let light = source.into_iter().find(|p| p.name == "Light_587").unwrap();
+        let specular_ratio = light.specular_multiplier;
         let position = light.matrix.w_axis.truncate();
         let mut second = light.clone();
         second.guid += 1;
@@ -442,11 +476,11 @@ mod tests {
         );
         let spots: Vec<_> = app
             .world_mut()
-            .query::<&SpotLight>()
+            .query::<(&SpotLight, &IllumLightSpecular)>()
             .iter(app.world())
             .collect();
         assert_eq!(spots.len(), 3);
-        assert!(spots.iter().all(|light| !light.shadow_maps_enabled));
+        assert!(spots.iter().all(|(light, specular)| !light.shadow_maps_enabled && specular.0 == specular_ratio));
         let roots: Vec<_> = app
             .world_mut()
             .query_filtered::<Entity, With<LocalLight>>()
