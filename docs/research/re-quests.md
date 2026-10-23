@@ -346,22 +346,21 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
    `HUD.quest_left_time`, ticks `Quest.time_left_ms` against `accept_time` once a second, raises
    `QUEST_LEFT_TIME_UPDATED(qtype, remaining_ms)` when at least 1000 ms are left and leaves the
    getter at ≤0 under that, so `X2Quest.GetQuestContextLeftTime` and the notifier hide the clock.
-2. **Only three quest marks instead of the original 15 stypes.** Original:
-   15 prefabs selected by `FUN_393821f0`, including green/yellow/repeat "!", blue/yellow/
-   green/half/more "?", huntsign and two flower marks. Bevy: `Mark` has only
-   Available/Ready/InProgress (`quests.rs:47-55`) and `marks.rs:54-56` hard-codes three
-   models/materials. Fix: port the stype table and compute each NPC's stype from its
-   start/ready/talk lists and quest detail type.
+2. **Done (`f79ebe4`): the original 15 quest-mark stypes.** `Mark` now carries every style
+   code `FUN_393821f0` selects (green/yellow/repeat "!", blue/green/yellow/more/half "?",
+   the red/blue 70 marks, huntsign and the two flower marks), `QuestTables::mark` derives it
+   from the NPC's offer, ready and talk lists and each quest's detail type (`FUN_393838f0`),
+   and `marks.rs` draws each style with its original prefab model, material, scale and `.cdf`
+   effect.
 3. **Done (`a41e134`): multi-objective talks advance every objective.** Original loops every talk
    objective and calls `CallQuestTalk` for each (`npc_interaction.alb:220-234`). Bevy's
    `CallQuestTalk` now raises `PROGRESS_TALK_QUEST_CONTEXT` for every call, so each
    `(qtype, ctype, atype)` sends its own `CSQuestTalkMade`.
-4. **NPC service windows incomplete.** Original maps 16 kinds to windows, including skill
-   trainer, teleporter, specialty, dominion, expedition, look converter, recruiter, trader
-   backpack (`npc_interaction.alb:3-105, 268-306`). Bevy's service router covers store, bank,
-   auction, repair, ability, stable, priest and the quest action (`services.rs:98-170`,
-   `:442`); the others are absent or open nothing. Fix: add the missing `What` variants and
-   bind the original windows.
+4. **Done (`0e42647`): all 16 NPC service windows.** The service router now maps the
+   original kinds and windows (`npc_interaction.alb:3-105, 268-306`), including skill trainer,
+   teleporter, recruiter, priest recover-exp, territory/dominion, expedition and the item-look
+   converter, from the server's skill ids and the client's `npcs` flags; a lone recruiter still
+   passes the battlefield module's level check.
 5. **Requirement kinds mostly default to true.** Original runs all `unit_reqs` kinds and
    reports `UNIT_REQS_OR_FAIL` / `TOO_FAR_RANGE` (`FUN_39897990`). Bevy's `PlayerFacts::holds`
    implements only level/race/gender/equip/item/skill/buff/quest/faction/honor/vocation/max
