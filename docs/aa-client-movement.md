@@ -60,9 +60,12 @@ screen's edges in `aa_world`'s post pass (`PostUniform::motion`) can fade in and
 
 ## Collision (`aa_world::WorldCollision`)
 
-Every step: `slide` the capsule (radius 0.35, height 1.8, step 0.5) along walls, then stand on the highest surface under it (`ground_below`: terrain or brush,
-bridges and stairs) within the step height; further down is a fall. Terrain that rises faster than tan 50 degrees (`physics_living_max_climb_angle`) over the
-next half metre is not walked up (the mesh facets are rougher than that, so a facet normal is no measure). The first step waits (at most 5 s) until the
+Every step: `slide` the stance's capsule along walls, then stand on the highest surface under it (`ground_below`: terrain or brush,
+bridges and stairs) within the step height; further down is a fall. The capsule comes from the actor's `game_stances` row (`Stances::load`): radius
+`size_x`, top `height_collider - height_pivot + size_z` (+ `size_x` for a capsule cap), step the gap under the collider. The relaxed Nuian male row
+(74) gives radius 0.4, height 1.92 and step 0.48; swim (75) radius 0.65. Terrain that rises faster than the row's
+`physics_living_max_climb_angle` (50 degrees) over the next half metre is not walked up (the mesh facets are rougher than that, so a facet normal is no
+measure). The first step waits (at most 5 s) until the
 collision cells within 24 m are built; after the wait or a teleport a landing is not reported for 1.5 s (the server applies fall damage from it). The
 saved height of the server is kept at spawn (a deck, not the river bed under it).
 
@@ -106,12 +109,19 @@ The zoom is 1.2's `camera::update_distance` (`zoom_notch`, `approach_distance`, 
 * **Start**: at world entry, by the race and gender the server sent (Nuian 4.0 m for a man, 3.2 for a woman; Elf 3.8 / 3.4; Hariharan 3.6 / 3.2;
   Ferre 4.0 / 3.4; any other 10), set at once. The log says `camera start distance 4.00 m (race 1, gender 1)`. `--cam-dist` overrides it.
 * **Notch**: the wanted distance moves by 0.5 x clamp(0.3 x wanted, 1, 20), so 0.5 m under 3.33 m and 0.15 x the distance above; it is held
-  between 0 and 10 m (the far limit a running 1.2 shows). Under 1 m it snaps to 0, first person, or to 1 m when zooming out. From a Nuian man's
-  start the 6th notch in is first person; 14 notches take first person out to 10 m. A touchpad's fractions add up to whole notches.
+  between 0 and the active mode's `camera_max_dist`: 10 m for action (option 65 = 1), 18 m for classic (option 65 = 2, the running client's
+  default). Under 1 m it snaps to 0, first person, or to 1 m when zooming out. From a Nuian man's start the 6th notch in is first person;
+  14 notches take first person out to 10 m (action), 18 to classic's 18 m. A touchpad's fractions add up to whole notches.
 * **Settle**: the drawn distance follows the wanted one at 5 + gap^1.8 m/s, never past it, by the frame time capped at 33 ms (1.2's camera
   update caps it so): a 0.5 m notch settles in about 0.1 s.
 * **First person**: while the wanted distance is under 1 m the own character (and what it carries) is hidden; the camera stands on the pivot,
   where there is no arm to sweep.
+* **Free camera**: `screenshotcamera` enters `CameraMode::Free` (the manager's mode 2, `FUN_391632d0`), keeping the pose. `np_add` / `np_subtract`
+  (or W / S) fly forward and back, A / D strafe, `np_multiply` / `np_divide` (or Space / X, Home / End) rise and sink, the mouse turns it and Shift
+  uses the fast scales: 40 m/s and 60 degrees a second, x3 and x2 fast, from the `fr_*` cvars (`FUN_390f7b40:28-49`). The key again returns to the
+  unit camera. Modes 3-6 are the original's unnamed ones and keep the unit camera.
+* **Under water**: the camera dives (`camera_dive_enable` 1) to `camera_dive_pitch` 20 degrees down on entering the water and may not look further
+  down than `camera_dive_angle` 30 degrees; `camera_target_ground_align` 1 keeps it over the terrain (`FUN_390f7b40:543-551,608`).
 
 The arm from the pivot (1.754 m over the feet) to the wanted camera position is swept with a sphere of 0.3 m against the terrain and the structures
 (`clip_camera`, `Mask::CAMERA`: barrels and fences do not stop it). The camera stops short of the hit at once and comes back out smoothly
