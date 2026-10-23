@@ -339,22 +339,31 @@ Bevy uses a fixed 0.004 rad/count mouse sensitivity (`camera.rs:55`); the origin
    Bevy only has skill ground targeting. Fix: setting 54, ground click raycast, path with the
    normal controller, cancel on movement/attack.
 
-3. **Camera far limit ignores the active mode.** Classic mode is 18 m
-   (`option_camera_fov_set.cfg:8-10`) while `MAX_DISTANCE` is 10 in `camera.rs:41`. If option 65
-   is 2 (the running-client default recorded in `settings.rs:95-101`), zoom stops 8 m short.
-   Fix: read `camera_max_dist` from the active cfg group; keep 10 for action, 18 for classic.
+3. **Camera far limit ignores the active mode - done in `5ea2227`.** Classic mode is 18 m
+   (`option_camera_fov_set.cfg:8-10`) while `MAX_DISTANCE` was 10 in `camera.rs:41`. If option 65
+   is 2 (the running-client default recorded in `settings.rs:95-101`), zoom stopped 8 m short.
+   `camera::mode_max_distance` now reads `camera_max_dist` from the cfg group option 65 picks
+   (`ACTION_MAX_DISTANCE` 10, `CLASSIC_MAX_DISTANCE` 18) and `zoom_notch_with` / `start_distance` /
+   `follow_player` hold the wanted and drawn distances to it; the running default zooms out to 18 m.
 
-4. **Camera modes and underwater camera are missing.** Original `CameraManager::Update` has six
-   modes including a free camera with its own move/turn speeds (`FUN_3916aab0`,
-   `FUN_391632d0`, `FUN_390f7b40:28-49`) and dive/ground-align cvars
-   (`FUN_390f7b40:543-551,608`). Bevy has one orbit camera plus fixed views (`camera.rs`). Fix:
-   implement mode 2 free camera and the dive pitch/angle; hook the six mode actions.
+4. **Camera modes and underwater camera are missing - done in `5ea2227`.** Original
+   `CameraManager::Update` has six modes including a free camera with its own move/turn speeds
+   (`FUN_3916aab0`, `FUN_391632d0`, `FUN_390f7b40:28-49`) and dive/ground-align cvars
+   (`FUN_390f7b40:543-551,608`). `camera::CameraMode` names all six bytes (3-6 fall back to the unit
+   camera, as their behaviour is unnamed); `screenshotcamera` toggles mode 2 `FreeCamera`, which flies
+   at the `fr_*` defaults (40 m/s, 60 deg/s, x3 / x2 with Shift) with `np_*`, WASD and mouse look.
+   Under water `dive_pitch` snaps to `camera_dive_pitch` 20 degrees down and holds
+   `camera_dive_angle` 30; `CAMERA_TARGET_GROUND_ALIGN` keeps the ground clamp.
 
-5. **Collision capsule is hardcoded, not the stance data.** Bevy uses radius 0.35, height 1.8,
-   step 0.5, drop 0.6 (`player.rs:74-77`); the client holds per-stance `heightCollider`,
-   `heightPivot`, `size`, `modelOffset`, `useCapsule` (`FUN_3911a5a0:135-226`; DB row 74:
-   height 1.2, size 0.4/0.4/0.32, capsule true) and CryPhysics 45/50/50 angles
-   (`actor_models`). Fix: load the stance block and use its capsule/step.
+5. **Collision capsule is hardcoded, not the stance data - done in `0fb4ba6`.** Bevy used radius
+   0.35, height 1.8, step 0.5, drop 0.6 (`player.rs:74-77`); the client holds per-stance
+   `heightCollider`, `heightPivot`, `size`, `modelOffset`, `useCapsule` (`FUN_3911a5a0:135-226`; DB
+   row 74: height 1.2, size 0.4/0.4/0.32, capsule true) and CryPhysics 45/50/50 angles
+   (`actor_models`). `player::Stances` loads the actor model's rows: `StanceBody` takes radius
+   `size_x`, top `height_collider - height_pivot + size_z` (+ the cap radius) and step the gap under
+   the collider (relaxed: 0.4 / 1.92 / 0.48; swim: 0.65), and `climb_tan` comes from
+   `physics_living_max_climb_angle`. The relaxed and swim bodies are used by `control_player` and
+   the glider; `StanceBody::default` keeps the old capsule only when the database has no row.
 
 6. **Air movement is fully authoritative and has no momentum.** Bevy applies the full input
    vector every airborne frame (`player.rs:494-510`), so releasing a key stops horizontal motion

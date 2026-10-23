@@ -617,11 +617,12 @@ pub fn control_glide(
     mut state: ResMut<SendState>,
     mut input_state: ResMut<PlayerInput>,
     mut cameras: Query<&mut OrbitCamera>,
-    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion)>,
+    mut player: Query<(&LocalPlayer, &mut Mover, &mut Transform, &mut Motion, Option<&player::Stances>)>,
     mut out: MessageWriter<NetCommand>,
 ) {
     let Some(mut active) = gliding.active.filter(|a| a.after.is_none()) else { return };
-    let Ok((local, mut mover, mut transform, mut motion)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, stances)) = player.single_mut() else { return };
+    let body = stances.map_or_else(player::StanceBody::default, |s| s.get(2));
     let dt = time.delta_secs().min(0.1);
     let t = state.advance_clock(dt);
     let typing = typing.is_some_and(|f| f.0);
@@ -644,7 +645,7 @@ pub fn control_glide(
     }
     // along the facing, walls slide the glider
     let ahead = player::forward(mover.facing) * step.speed * dt;
-    let moved = player::move_candidate(&terrain, &collision, old, ahead, false, false);
+    let moved = player::move_candidate(&terrain, &collision, old, ahead, false, false, body);
     let mut pos = Vec3::new(moved.x, moved.y, old.z + step.vz * dt);
     let floor = player::floor_at(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z.max(pos.z)), GROUND_REACH);
     let mut touched = false;

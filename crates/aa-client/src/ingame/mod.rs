@@ -165,7 +165,9 @@ impl Plugin for InGamePlugin {
                 (
                     (player::spawn_player, camera::spawn_camera).chain(),
                     (
+                        camera::toggle_free_camera.run_if(in_state(Screen::InGame)),
                         camera::orbit_input.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
+                        camera::free_camera_input.run_if(in_state(Screen::InGame)),
                         player::follow_server,
                         sprint::drive_sprint.run_if(in_state(Screen::InGame)),
                         glide::redirect_use_glider.run_if(in_state(Screen::InGame)),

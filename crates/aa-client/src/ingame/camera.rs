@@ -3,8 +3,8 @@
 //! * hold the left mouse button and drag: orbit the camera around the character
 //! * hold the right mouse button and drag: orbit and turn the character with the camera
 //! * wheel: zoom, as 1.2's `camera::update_distance` does it ([`zoom_notch`], [`approach_distance`]): a notch moves the wanted
-//!   distance by 0.5 x clamp(0.3 x wanted, 1, 20) between 0 and [`MAX_DISTANCE`]; under 1 m it is first person and the own
-//!   character is hidden; the camera follows the wanted distance at 5 + gap^1.8 m/s
+//!   distance by 0.5 x clamp(0.3 x wanted, 1, 20) between 0 and the active mode's far limit ([`mode_max_distance`]); under
+//!   1 m it is first person and the own character is hidden; the camera follows the wanted distance at 5 + gap^1.8 m/s
 //!
 //! The view at world entry (the real client's spawn camera, `reference/ingame/spawn/camera.json`) stands level with the pivot
 //! `PIVOT_HEIGHT` above the feet, vertical field of view 42.75 degrees, at 1.2's start distance by race and gender
@@ -16,6 +16,9 @@
 //!
 //! Blows and spells shake it: [`CameraShake`] holds the shakes of the effect data (`fx_shake_cameras`), `follow_player` adds
 //! their sum to the pose.
+//!
+//! The mode byte of [`CameraMode`] picks the camera (`CameraManager::Update`): `screenshotcamera` enters the free camera
+//! (mode 2), and under the water the camera dives to `camera_dive_pitch`, held at `camera_dive_angle`.
 
 use aa_ui::UiBackgroundCamera;
 use aa_ui::render::UiCamera;
@@ -36,9 +39,10 @@ use crate::Screen;
 pub const PIVOT_HEIGHT: f32 = 1.754;
 /// The distance without a character to take it from (the prewarm camera): 1.2's start for a Nuian man.
 pub const DEFAULT_DISTANCE: f32 = 4.0;
-/// The far limit, as a running 1.2 shows it: `camera_max_dist` reads 10 there, in the world and at character select, although the
-/// code registers 18 (what sets it to 10 is not read, F192).
-pub const MAX_DISTANCE: f32 = 10.0;
+/// The action camera mode's `camera_max_dist` (`option_camera_fov_set.cfg` group 1, `FUN_3915e7a0`).
+pub const ACTION_MAX_DISTANCE: f32 = 10.0;
+/// The classic camera mode's `camera_max_dist` (group 2): the running client's option 65 is 2, so this is its far limit.
+pub const CLASSIC_MAX_DISTANCE: f32 = 18.0;
 /// Under this wanted distance the camera is first person and the own character is hidden (`tw_first_person_dist`).
 pub const FIRST_PERSON_BELOW: f32 = 1.0;
 /// 1.2's camera update caps its frame step at 33 ms (`CameraManager::Update`): the zoom never settles faster after a long frame.
@@ -54,7 +58,131 @@ const ACTION_FOV_DEG: f32 = 60.0;
 /// Radians per mouse count.
 const MOUSE_SENSITIVITY: f32 = 0.004;
 
-#[derive(Component)]
+/// The six camera modes of `X2::GameClient::CameraManager::Update` (`FUN_3916aab0`), by the byte at `+4`: 1 is the unit
+/// third-person camera (`FUN_39169860`), 2 the free camera (`FUN_391632d0`); 3-6 (`FUN_3916a260`, `FUN_39164100`, no per-frame
+/// update, `FUN_39166390`) are unnamed and keep the unit camera here.
+#[allow(dead_code)] // modes 3-6 are the original's unnamed ones; only 1 and 2 have behaviour here
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CameraMode {
+    #[default]
+    Unit,
+    Free,
+    Mode3,
+    Mode4,
+    Mode5,
+    Mode6,
+}
+
+#[allow(dead_code)] // the mode byte, used by the tests and the manager hook
+impl CameraMode {
+    /// The manager's mode byte.
+    pub fn number(self) -> u8 {
+        match self {
+            CameraMode::Unit => 1,
+            CameraMode::Free => 2,
+            CameraMode::Mode3 => 3,
+            CameraMode::Mode4 => 4,
+            CameraMode::Mode5 => 5,
+            CameraMode::Mode6 => 6,
+        }
+    }
+
+    /// The mode of a manager byte; 1-6 are the original's, anything else the unit camera.
+    pub fn from_number(number: u8) -> Self {
+        match number {
+            2 => CameraMode::Free,
+            3 => CameraMode::Mode3,
+            4 => CameraMode::Mode4,
+            5 => CameraMode::Mode5,
+            6 => CameraMode::Mode6,
+            _ => CameraMode::Unit,
+        }
+    }
+}
+
+/// The camera manager's current mode, on the world camera.
+#[derive(Component, Default)]
+pub struct CameraModeState(pub CameraMode);
+
+/// The free camera (manager mode 2): its own position and look, detached from the character (`FUN_391632d0`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct FreeCamera {
+    /// Game position (metres, Cry axes).
+    pub pos: Vec3,
+    /// Game yaw (radians counter-clockwise from north), as the orbit camera's.
+    pub yaw: f32,
+    /// Radians, positive looks up.
+    pub pitch: f32,
+}
+
+impl FreeCamera {
+    fn transform(self) -> Transform {
+        let rotation = Quat::from_rotation_y(self.yaw) * Quat::from_rotation_x(self.pitch);
+        Transform { translation: cry_to_bevy(self.pos), rotation, scale: Vec3::ONE }
+    }
+}
+
+/// `fr_xspeed`, `fr_yspeed`, `fr_zspeed`, `fr_speed_scale` and `fr_fspeed_scale` (`FUN_390f7b40:28-49`): 40 m/s, 3x while Shift.
+pub const FREE_X_SPEED: f32 = 40.0;
+pub const FREE_Y_SPEED: f32 = 40.0;
+pub const FREE_Z_SPEED: f32 = 40.0;
+pub const FREE_SPEED_SCALE: f32 = 1.0;
+pub const FREE_FAST_SPEED_SCALE: f32 = 3.0;
+/// `fr_xturn`, `fr_yturn`, `fr_turn_scale` and `fr_fturn_scale`: 60 degrees a second, 2x while Shift.
+pub const FREE_X_TURN: f32 = 60.0;
+pub const FREE_Y_TURN: f32 = 60.0;
+pub const FREE_TURN_SCALE: f32 = 1.0;
+pub const FREE_FAST_TURN_SCALE: f32 = 2.0;
+/// `camera_dive_enable`, `camera_dive_angle` and `camera_dive_pitch` (`FUN_390f7b40:543-551`): under the surface the camera
+/// pitches to 20 degrees down, no further down than `camera_dive_angle` (30 degrees).
+pub const CAMERA_DIVE_ENABLE: bool = true;
+pub const CAMERA_DIVE_ANGLE_DEG: f32 = 30.0;
+pub const CAMERA_DIVE_PITCH_DEG: f32 = 20.0;
+/// `camera_target_ground_align` (1): the camera stays over the terrain (the clamp [`follow_player`] always had).
+pub const CAMERA_TARGET_GROUND_ALIGN: bool = true;
+
+/// One frame of the free camera: the axis inputs (-1..1), the keyboard turns (-1..1) and the mouse motion in counts.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FreeInput {
+    pub forward: f32,
+    pub right: f32,
+    pub up: f32,
+    pub turn: f32,
+    pub look: f32,
+    pub mouse: Vec2,
+    pub fast: bool,
+}
+
+/// One free-camera step (`FUN_391632d0`): the axes move at their cvar speeds and the mouse/keyboard turns at the turn speeds,
+/// both scaled while Shift is held. `dt` is the frame's, in seconds.
+pub fn free_camera_step(pos: Vec3, yaw: f32, pitch: f32, input: FreeInput, dt: f32) -> (Vec3, f32, f32) {
+    let speed = if input.fast { FREE_FAST_SPEED_SCALE } else { FREE_SPEED_SCALE } * dt;
+    let turn = if input.fast { FREE_FAST_TURN_SCALE } else { FREE_TURN_SCALE } * dt;
+    let f = super::player::forward(yaw);
+    let r = super::player::right(yaw);
+    let mut pos = pos;
+    pos += Vec3::new(f.x, f.y, 0.0) * (input.forward * FREE_Y_SPEED * speed);
+    pos += Vec3::new(r.x, r.y, 0.0) * (input.right * FREE_X_SPEED * speed);
+    pos.z += input.up * FREE_Z_SPEED * speed;
+    let yaw = yaw - input.mouse.x * MOUSE_SENSITIVITY + input.turn * FREE_X_TURN.to_radians() * turn;
+    let pitch = (pitch - input.mouse.y * MOUSE_SENSITIVITY + input.look * FREE_Y_TURN.to_radians() * turn).clamp(-1.3, 1.45);
+    (pos, yaw, pitch)
+}
+
+/// The dive camera's pitch (`camera_dive_*`): entering the water snaps to [`CAMERA_DIVE_PITCH_DEG`] down, afterwards looking
+/// down is held at [`CAMERA_DIVE_ANGLE_DEG`]; out of the water the orbit's own pitch is used untouched.
+pub fn dive_pitch(pitch: f32, underwater: bool, entered: bool) -> f32 {
+    if !CAMERA_DIVE_ENABLE || !underwater {
+        return pitch;
+    }
+    if entered {
+        -CAMERA_DIVE_PITCH_DEG.to_radians()
+    } else {
+        pitch.max(-CAMERA_DIVE_ANGLE_DEG.to_radians())
+    }
+}
+
+#[derive(Component, Clone, Copy)]
 pub struct OrbitCamera {
     /// Heading in game terms: radians counter-clockwise from north (the character's yaw).
     pub yaw: f32,
@@ -74,7 +202,7 @@ impl Default for OrbitCamera {
 }
 
 /// 1.2's distance at world entry (`camera::start_dist_by_race` x2game+0x9c0c58, indexed race x 3 + gender with the server's race
-/// and gender numbers): set at once, no easing, never past the far limit. Every other row, gender 0 too, is 10 m.
+/// and gender numbers): set at once, no easing, never past the active mode's far limit. Every other row, gender 0 too, is 10 m.
 pub fn start_distance(race: u8, gender: u8) -> f32 {
     use aa_net::model::{gender::*, race::*};
     let start = match (race, gender) {
@@ -88,18 +216,35 @@ pub fn start_distance(race: u8, gender: u8) -> f32 {
         (FERRE, FEMALE) => 3.4,
         _ => 10.0,
     };
-    f32::min(start, MAX_DISTANCE)
+    f32::min(start, mode_max_distance())
+}
+
+/// The far limit of the active camera mode: `camera_max_dist` from the cfg group option 65 picks (`option_camera_fov_set.cfg`,
+/// `FUN_3915e7a0`): 10 m for the action mode (1) and 18 m for classic (2, the running client's default).
+pub fn mode_max_distance() -> f32 {
+    mode_max_distance_for(crate::settings::option_number("n:65").or_else(|| crate::settings::native_default(65)))
+}
+
+/// The far limit of a mode number (1 action, 2 classic), the option's value without the store.
+pub fn mode_max_distance_for(mode: Option<f64>) -> f32 {
+    if mode.is_some_and(|m| m.round() as i64 == 1) { ACTION_MAX_DISTANCE } else { CLASSIC_MAX_DISTANCE }
 }
 
 /// The wanted distance after one wheel notch (`camera::update_distance` x2game+0x16c2b0, a notch being one frame of the action):
 /// `notch` 1 zooms in (1.2's `zoom_in`, an input of -0.5), -1 out. The step is 0.5 x clamp(0.3 x wanted, 1, 20), the result held
-/// between 0 and [`MAX_DISTANCE`]; under [`FIRST_PERSON_BELOW`] it snaps to 0 (first person), or to 1 m when zooming out.
+/// between 0 and the active mode's far limit ([`mode_max_distance`]); under [`FIRST_PERSON_BELOW`] it snaps to 0 (first person),
+/// or to 1 m when zooming out.
 pub fn zoom_notch(wanted: f32, notch: f32) -> f32 {
+    zoom_notch_with(wanted, notch, mode_max_distance())
+}
+
+/// [`zoom_notch`] with the far limit given (the action mode's 10 m or classic's 18 m).
+pub fn zoom_notch_with(wanted: f32, notch: f32, max: f32) -> f32 {
     if notch == 0.0 {
         return wanted;
     }
     let input = -0.5 * notch.signum();
-    let next = (wanted + input * (0.3 * wanted).clamp(1.0, 20.0)).clamp(0.0, MAX_DISTANCE);
+    let next = (wanted + input * (0.3 * wanted).clamp(1.0, 20.0)).clamp(0.0, max);
     match next < FIRST_PERSON_BELOW {
         true if notch < 0.0 => FIRST_PERSON_BELOW,
         true => 0.0,
@@ -181,6 +326,7 @@ pub fn spawn_camera(
         info!("camera start distance {start:.2} m (race {race}, gender {gender})");
         start
     });
+    let distance = distance.min(mode_max_distance());
     let orbit = OrbitCamera {
         yaw: mover.facing + dev.cam_yaw.unwrap_or(0.0),
         pitch: dev.cam_pitch.unwrap_or(0.0),
@@ -195,6 +341,7 @@ pub fn spawn_camera(
         transmission(),
         transform,
         orbit,
+        CameraModeState::default(),
     ));
     if *screen.get() == Screen::Loading
         && let Ok(window) = windows.single()
@@ -273,7 +420,7 @@ pub fn orbit_input(
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     actions: Res<crate::settings::Actions>,
-    mut cameras: Query<&mut OrbitCamera>,
+    mut cameras: Query<(&mut OrbitCamera, Option<&FreeCamera>)>,
     mut window: Query<&mut CursorOptions, With<PrimaryWindow>>,
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     mut notches: Local<f32>,
@@ -284,7 +431,11 @@ pub fn orbit_input(
     keys: Res<ButtonInput<KeyCode>>,
     scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
 ) {
-    let Ok(mut orbit) = cameras.single_mut() else { return };
+    let Ok((mut orbit, free)) = cameras.single_mut() else { return };
+    // the free camera (manager mode 2) reads the same keys and mouse itself
+    if free.is_some() {
+        return;
+    }
     // the fixed views: the yaw is set at once relative to the character's heading
     if let Ok(mover) = player.single() {
         let mut set = None;
@@ -333,6 +484,78 @@ pub fn orbit_input(
         }
     }
     // the pointer disappears and stays put while a button drags the view, like the real client
+    if let Ok(mut cursor) = window.single_mut() {
+        let want = if dragging { (CursorGrabMode::Locked, false) } else { (CursorGrabMode::None, true) };
+        if cursor.grab_mode != want.0 || cursor.visible != want.1 {
+            cursor.grab_mode = want.0;
+            cursor.visible = want.1;
+        }
+    }
+}
+
+/// `screenshotcamera` enters and leaves the free camera of the manager's mode 2 (`FUN_391632d0`), keeping the pose it had.
+pub fn toggle_free_camera(
+    actions: Res<crate::settings::Actions>,
+    typing: Option<Res<crate::hud::HudKeyboardFocus>>,
+    mut commands: Commands,
+    mut cameras: Query<(Entity, &mut CameraModeState, &OrbitCamera, &Transform, Option<&FreeCamera>)>,
+) {
+    if typing.is_some_and(|f| f.0) || !actions.just_pressed("screenshotcamera", 0) {
+        return;
+    }
+    let Ok((entity, mut state, orbit, transform, free)) = cameras.single_mut() else { return };
+    if free.is_some() {
+        state.0 = CameraMode::Unit;
+        commands.entity(entity).remove::<FreeCamera>();
+        info!("camera: mode 1 (unit camera)");
+    } else {
+        state.0 = CameraMode::Free;
+        let camera = FreeCamera { pos: bevy_to_cry(transform.translation), yaw: orbit.yaw, pitch: orbit.pitch };
+        commands.entity(entity).insert(camera);
+        info!("camera: mode 2 (free camera) at ({:.1}, {:.1}, {:.2})", camera.pos.x, camera.pos.y, camera.pos.z);
+    }
+}
+
+/// The free camera's keys (`FUN_391632d0`): `np_add` / `np_subtract` (and W / S) forward and back, A / D strafe, `np_multiply`
+/// / `np_divide` (and Space / X, Home / End) up and down, Shift fast, the mouse turns it.
+#[allow(clippy::too_many_arguments)]
+pub fn free_camera_input(
+    actions: Res<crate::settings::Actions>,
+    keys: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    motion: Res<AccumulatedMouseMotion>,
+    typing: Option<Res<crate::hud::HudKeyboardFocus>>,
+    over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
+    time: Res<Time>,
+    mut cameras: Query<(&mut FreeCamera, &mut Transform)>,
+    mut window: Query<&mut CursorOptions, With<PrimaryWindow>>,
+) {
+    let Ok((mut free, mut transform)) = cameras.single_mut() else { return };
+    let typing = typing.is_some_and(|f| f.0);
+    let over_ui = over_ui.is_some_and(|o| o.0);
+    let held = |action: &str| !typing && actions.pressed(action, 0);
+    let key = |code: KeyCode| !typing && keys.pressed(code);
+    let axis = |plus: bool, minus: bool| plus as i32 as f32 - minus as i32 as f32;
+    let forward = axis(held("moveforward") || key(KeyCode::NumpadAdd) || key(KeyCode::KeyW), held("moveback") || key(KeyCode::NumpadSubtract) || key(KeyCode::KeyS));
+    let right = axis(held("moveright") || key(KeyCode::KeyD), held("moveleft") || key(KeyCode::KeyA));
+    let up = axis(
+        held("jump") || key(KeyCode::NumpadMultiply) || key(KeyCode::Home),
+        held("down") || key(KeyCode::NumpadDivide) || key(KeyCode::End),
+    );
+    let dragging = !over_ui && (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right));
+    let fast = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let input = FreeInput {
+        forward,
+        right,
+        up,
+        turn: 0.0,
+        look: 0.0,
+        mouse: if dragging { motion.delta } else { Vec2::ZERO },
+        fast,
+    };
+    let (pos, yaw, pitch) = free_camera_step(free.pos, free.yaw, free.pitch, input, time.delta_secs());
+    *free = FreeCamera { pos, yaw, pitch };
+    *transform = free.transform();
     if let Ok(mut cursor) = window.single_mut() {
         let want = if dragging { (CursorGrabMode::Locked, false) } else { (CursorGrabMode::None, true) };
         if cursor.grab_mode != want.0 || cursor.visible != want.1 {
@@ -478,14 +701,24 @@ pub fn follow_player(
     chase: Option<Res<Chase>>,
     rel: Option<Res<CamRel>>,
     mut player: Query<(&Mover, &mut Visibility), With<LocalPlayer>>,
-    mut camera: Query<(&mut OrbitCamera, &mut Transform)>,
+    mut camera: Query<(&mut OrbitCamera, &mut Transform, Option<&FreeCamera>)>,
     terrain: Res<TerrainQuery>,
     collision: Res<WorldCollision>,
+    water: Res<aa_world::WaterQuery>,
     lag: Option<Res<super::skill_motion::CameraLag>>,
     mut clip: Local<ArmClip>,
     mut hidden: Local<bool>,
+    mut underwater: Local<bool>,
 ) {
-    let (Ok((mover, mut visibility)), Ok((mut orbit, mut transform))) = (player.single_mut(), camera.single_mut()) else { return };
+    let (Ok((mover, mut visibility)), Ok((mut orbit, mut transform, free))) = (player.single_mut(), camera.single_mut()) else { return };
+    // the free camera (mode 2) writes its own pose; the orbit stays where it was for the way back
+    if free.is_some() {
+        return;
+    }
+    // a mode change can lower the far limit under the wanted distance
+    let max = mode_max_distance();
+    orbit.wanted = orbit.wanted.min(max);
+    orbit.distance = orbit.distance.min(max);
     // the zoom settles at 1.2's pace; in first person the own character is hidden (only this system's own decision is written)
     let distance = approach_distance(orbit.distance, orbit.wanted, time.delta_secs());
     if distance != orbit.distance {
@@ -507,8 +740,17 @@ pub fn follow_player(
         orbit.yaw = mover.facing + rel.0.to_radians();
         orbit.pitch = 0.0;
     }
-    let orbit = &*orbit;
-    let mut t = camera_transform(orbit, pivot_pos);
+    let mut orbit = *orbit;
+    let mut t = camera_transform(&orbit, pivot_pos);
+    // underwater the camera dives: entering snaps its pitch down, afterwards it may not look further down than the dive angle
+    let camera_game = bevy_to_cry(t.translation);
+    let wet = water.water_at(camera_game).is_some_and(|(surface, _)| camera_game.z < surface);
+    let pitch = dive_pitch(orbit.pitch, wet, wet && !*underwater);
+    *underwater = wet;
+    if pitch != orbit.pitch {
+        orbit.pitch = pitch;
+        t = camera_transform(&orbit, pivot_pos);
+    }
     // the arm from the pivot above the head to the wanted place stops before the first wall
     let pivot_game = pivot_pos + Vec3::Z * PIVOT_HEIGHT;
     let pivot = cry_to_bevy(pivot_game);
@@ -532,7 +774,7 @@ pub fn follow_player(
     }
     // not below the terrain (bevy y = game z), whatever the sweep did on a steep slope
     let ground = height_or(&terrain, t.translation.x, -t.translation.z, mover.pos.z) + 0.15;
-    if t.translation.y < ground {
+    if CAMERA_TARGET_GROUND_ALIGN && t.translation.y < ground {
         t.translation.y = ground;
         // look at the pivot from the corrected position (on the pivot, first person, the orbit's own rotation stays)
         if t.translation.distance(pivot) > 1e-3 {
@@ -609,29 +851,47 @@ mod zoom_tests {
             assert_eq!(start_distance(race, MALE), male, "race {race} male");
             assert_eq!(start_distance(race, FEMALE), female, "race {race} female");
         }
-        // any other row of the table, gender 0 too, is 10 m, never past the far limit
+        // any other row of the table, gender 0 too, is 10 m, never past the active mode's far limit
         assert_eq!(start_distance(2, MALE), 10.0);
         assert_eq!(start_distance(NUIAN, 0), 10.0);
-        assert!(start_distance(0, 0) <= MAX_DISTANCE);
+        assert!(start_distance(0, 0) <= mode_max_distance());
+    }
+
+    #[test]
+    fn the_far_limit_is_the_active_modes_camera_max_dist() {
+        // option 65: 1 is the action mode's 10 m, 2 (the running client's default) classic's 18 m
+        assert_eq!(mode_max_distance_for(Some(1.0)), ACTION_MAX_DISTANCE);
+        assert_eq!(mode_max_distance_for(Some(2.0)), CLASSIC_MAX_DISTANCE);
+        assert_eq!(mode_max_distance_for(None), CLASSIC_MAX_DISTANCE);
+        assert_eq!(zoom_notch_with(9.5, -1.0, CLASSIC_MAX_DISTANCE), 10.925);
+        let mut wanted = 9.5;
+        for _ in 0..40 {
+            wanted = zoom_notch_with(wanted, -1.0, CLASSIC_MAX_DISTANCE);
+        }
+        assert_eq!(wanted, CLASSIC_MAX_DISTANCE, "classic zooms out to 18 m");
+        for _ in 0..40 {
+            wanted = zoom_notch_with(wanted, -1.0, ACTION_MAX_DISTANCE);
+        }
+        assert_eq!(wanted, ACTION_MAX_DISTANCE, "action stops at 10 m");
     }
 
     #[test]
     fn a_notch_steps_as_a_running_1_2_showed_it() {
         // every value of 1.2's camera floats sampled notch by notch (2026-10-20): one in from 3.6, out to the far limit, in to
-        // first person, out twice
-        let mut wanted = zoom_notch(3.6, 1.0);
+        // first person, out twice (the action mode's 10 m)
+        let mut wanted = zoom_notch_with(3.6, 1.0, ACTION_MAX_DISTANCE);
         assert!((wanted - 3.06).abs() < 0.002, "{wanted}");
         for expected in [3.56, 4.094, 4.708, 5.414, 6.226, 7.160, 8.235, 9.470, 10.0] {
-            wanted = zoom_notch(wanted, -1.0);
+            wanted = zoom_notch_with(wanted, -1.0, ACTION_MAX_DISTANCE);
             assert!((wanted - expected).abs() < 0.002, "{wanted} against 1.2's {expected}");
         }
-        assert_eq!(zoom_notch(wanted, -1.0), MAX_DISTANCE, "the far limit holds");
+        assert_eq!(zoom_notch_with(wanted, -1.0, ACTION_MAX_DISTANCE), ACTION_MAX_DISTANCE, "the far limit holds");
         for expected in [8.5, 7.225, 6.141, 5.220, 4.437, 3.772, 3.206, 2.706, 2.206, 1.706, 1.206, 0.0] {
-            wanted = zoom_notch(wanted, 1.0);
+            wanted = zoom_notch_with(wanted, 1.0, ACTION_MAX_DISTANCE);
             assert!((wanted - expected).abs() < 0.002, "{wanted} against 1.2's {expected}");
         }
         for expected in [1.0, 1.5] {
-            wanted = zoom_notch(wanted, -1.0);
+            wanted = zoom_notch_with(wanted, -1.0, ACTION_MAX_DISTANCE);
             assert!((wanted - expected).abs() < 0.002, "{wanted} against 1.2's {expected}");
         }
     }
@@ -639,29 +899,29 @@ mod zoom_tests {
     #[test]
     fn first_person_is_a_snap_under_one_metre() {
         // 1.2: 1.206 -> 0 zooming in; out of first person 0 -> 1.0 -> 1.5
-        assert_eq!(zoom_notch(1.206, 1.0), 0.0);
-        assert_eq!(zoom_notch(0.0, -1.0), 1.0);
-        assert_eq!(zoom_notch(1.0, -1.0), 1.5);
-        assert_eq!(zoom_notch(0.0, 1.0), 0.0);
+        assert_eq!(zoom_notch_with(1.206, 1.0, CLASSIC_MAX_DISTANCE), 0.0);
+        assert_eq!(zoom_notch_with(0.0, -1.0, CLASSIC_MAX_DISTANCE), 1.0);
+        assert_eq!(zoom_notch_with(1.0, -1.0, CLASSIC_MAX_DISTANCE), 1.5);
+        assert_eq!(zoom_notch_with(0.0, 1.0, CLASSIC_MAX_DISTANCE), 0.0);
         assert!(first_person(0.0) && !first_person(1.0));
     }
 
     #[test]
-    fn from_a_nuian_mans_start_the_sixth_notch_in_is_first_person_and_fourteen_take_it_out_to_ten_metres() {
+    fn from_a_nuian_mans_start_the_sixth_notch_in_is_first_person_and_the_notches_take_it_out_to_the_far_limit() {
         let mut wanted = start_distance(aa_net::model::race::NUIAN, aa_net::model::gender::MALE);
         for notch in 1..=6 {
-            wanted = zoom_notch(wanted, 1.0);
+            wanted = zoom_notch_with(wanted, 1.0, CLASSIC_MAX_DISTANCE);
             assert_eq!(first_person(wanted), notch == 6, "notch {notch}: {wanted}");
         }
         let mut notches = 0;
-        while wanted < MAX_DISTANCE {
-            wanted = zoom_notch(wanted, -1.0);
+        while wanted < CLASSIC_MAX_DISTANCE {
+            wanted = zoom_notch_with(wanted, -1.0, CLASSIC_MAX_DISTANCE);
             notches += 1;
             if notches == 13 {
                 assert!((wanted - 9.310).abs() < 0.002, "{wanted}");
             }
         }
-        assert_eq!(notches, 14, "first person (0 m) to the far limit");
+        assert_eq!(notches, 18, "first person (0 m) to classic's 18 m");
     }
 
     #[test]
@@ -713,6 +973,48 @@ mod zoom_tests {
         }
         assert!(close(seen[0], 3.0 * FRAC_PI_2) && close(seen[1], PI) && close(seen[2], FRAC_PI_2));
         assert!(close(cycle_view(BACK_VIEW, false), FRAC_PI_2));
+    }
+
+    #[test]
+    fn the_six_manager_modes_round_trip_their_bytes() {
+        let modes = [CameraMode::Unit, CameraMode::Free, CameraMode::Mode3, CameraMode::Mode4, CameraMode::Mode5, CameraMode::Mode6];
+        for (i, mode) in modes.iter().enumerate() {
+            assert_eq!(mode.number(), i as u8 + 1);
+            assert_eq!(CameraMode::from_number(i as u8 + 1), *mode);
+        }
+        assert_eq!(CameraMode::from_number(0), CameraMode::Unit);
+        assert_eq!(CameraMode::from_number(7), CameraMode::Unit);
+    }
+
+    #[test]
+    fn the_free_camera_moves_and_turns_at_its_cvars() {
+        let at = Vec3::new(100.0, 200.0, 10.0);
+        let input = FreeInput { forward: 1.0, right: 0.0, up: 0.5, ..Default::default() };
+        let (pos, yaw, pitch) = free_camera_step(at, 0.0, 0.0, input, 1.0);
+        assert!((pos.y - (200.0 + FREE_Y_SPEED)).abs() < 1e-4, "{pos:?}");
+        assert!((pos.z - (10.0 + FREE_Z_SPEED * 0.5)).abs() < 1e-4, "{pos:?}");
+        assert_eq!((yaw, pitch), (0.0, 0.0));
+        // Shift is the fast scale on every axis
+        let (fast, _, _) = free_camera_step(at, 0.0, 0.0, FreeInput { fast: true, ..input }, 1.0);
+        assert!((fast.y - (200.0 + FREE_Y_SPEED * FREE_FAST_SPEED_SCALE)).abs() < 1e-4, "{fast:?}");
+        // a mouse drag turns it; 1000 counts is 4 radians at 0.004
+        let (_, yaw, pitch) = free_camera_step(at, 0.0, 0.0, FreeInput { mouse: Vec2::new(1000.0, 0.0), ..Default::default() }, 0.016);
+        assert!((yaw + 4.0).abs() < 1e-4, "{yaw}");
+        assert_eq!(pitch, 0.0);
+        // the keyboard turn speed: a whole second of a held turn is 60 degrees
+        let (_, yaw, _) = free_camera_step(at, 0.0, 0.0, FreeInput { turn: 1.0, ..Default::default() }, 1.0);
+        assert!((yaw - FREE_X_TURN.to_radians()).abs() < 1e-4, "{yaw}");
+    }
+
+    #[test]
+    fn underwater_the_camera_dives_to_the_dive_pitch_and_holds_the_dive_angle() {
+        assert_eq!(dive_pitch(0.4, false, false), 0.4, "dry: untouched");
+        let entering = dive_pitch(0.4, true, true);
+        assert!((entering + CAMERA_DIVE_PITCH_DEG.to_radians()).abs() < 1e-6, "{entering}");
+        let limit = -CAMERA_DIVE_ANGLE_DEG.to_radians();
+        assert_eq!(dive_pitch(-1.2, true, false), limit, "no further down than the dive angle");
+        let up = 0.7;
+        assert_eq!(dive_pitch(up, true, false), up, "looking up stays free");
     }
 
     #[test]
