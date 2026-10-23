@@ -54,6 +54,10 @@ const KEYS: usize = 4;
 /// doodad's origin, a big model is touched from further away), metres.
 const BASE_REACH: f32 = 4.0;
 const REACH_SLACK: f32 = 1.0;
+/// `max_interaction_doodad_distance`: the workbench use/window gate, surface distance (`FUN_39093800`).
+pub(super) const INTERACTION_DISTANCE: f32 = 2.1;
+/// `dynamic_action_bar_distance`: the bar still offers a workbench from here (`FUN_390f7b40`).
+const CRAFT_BAR_DISTANCE: f32 = 25.0;
 /// How much further away a doodad right behind the player may be than one in front of it and still be preferred, metres.
 const BEHIND: f32 = 3.0;
 /// How far a right click or the pointer picks doodads, metres.
@@ -64,6 +68,8 @@ const CLICK_SLOP: f32 = 6.0;
 const NAVI_ID: i64 = 1 << 32;
 /// Interaction-list ids of `DoodadFuncPurchase` rows: `COIN_ID + doodad_funcs.id`.
 const COIN_ID: i64 = 1 << 33;
+/// Interaction-list id of a workbench's craft action (the Folio).
+const CRAFT_ID: i64 = 1 << 34;
 /// The icon the dynamic action bar shows for G (the craft window) of a finished farm ("Craft Fabric", the generic
 /// crafting icon of the 1.2 skills table); the second action is never cast as a skill.
 const CRAFT_ICON_SKILL: u32 = 14579;
@@ -92,6 +98,8 @@ pub(super) struct Uses {
     pub navi: Vec<Navi>,
     /// `DoodadFuncPurchase` ids (`doodad_funcs.id`), in func order.
     pub purchases: Vec<u32>,
+    /// A `DoodadFuncCraftStart` / `DoodadFuncCraftPack` opens the Folio for this phase.
+    pub craft: bool,
 }
 
 /// One `DoodadFuncPurchase`: the item it sells and the coin item it spends.
@@ -113,6 +121,10 @@ pub(super) struct Tables {
     purchases: HashMap<u32, Purchase>,
     /// `doodad_almighties.id` -> English name.
     names: HashMap<u32, String>,
+    /// `doodad_func_group_id` -> the first func's `perm_id` (`DoodadFuncPermission`).
+    perms: HashMap<u32, u8>,
+    /// `doodad_almighties.id` -> `sim_radius`.
+    radii: HashMap<u32, f32>,
 }
 
 impl Tables {
@@ -145,6 +157,19 @@ impl Tables {
             t.purchases.insert(purchase.func_id, purchase.clone());
             t.uses.entry(super::data::any_int(r, 1)? as u32).or_default().purchases.push(purchase.func_id);
         }
+        let mut q = conn.prepare("SELECT doodad_func_group_id, perm_id FROM doodad_funcs ORDER BY doodad_func_group_id, id")?;
+        let mut rows = q.query([])?;
+        while let Some(r) = rows.next()? {
+            // The server reads the first func of the current phase (`craft.rs`), not the craft func's own row.
+            t.perms
+                .entry(super::data::any_int(r, 0)? as u32)
+                .or_insert(super::data::any_int(r, 1)?.clamp(0, 255) as u8);
+        }
+        let mut q = conn.prepare("SELECT id, sim_radius FROM doodad_almighties")?;
+        let mut rows = q.query([])?;
+        while let Some(r) = rows.next()? {
+            t.radii.insert(super::data::any_int(r, 0)? as u32, super::data::any_int(r, 1)? as f32);
+        }
         let mut q = conn.prepare("SELECT idx, en_us FROM localized_texts WHERE tbl_name = 'doodad_almighties' AND tbl_column_name = 'name' AND en_us <> ''")?;
         let mut rows = q.query([])?;
         while let Some(r) = rows.next()? {
@@ -163,10 +188,13 @@ impl Tables {
             "DoodadFuncNaviOpenPortal" => Some(Navi::OpenPortal),
             _ => None,
         };
-        if skill == 0 && navi.is_none() {
+        // The craft funcs have no skill: they open the Folio from the bar, like a house workbench's G.
+        let craft = matches!(kind, "DoodadFuncCraftStart" | "DoodadFuncCraftPack");
+        if skill == 0 && navi.is_none() && !craft {
             return;
         }
         let uses = self.uses.entry(group).or_default();
+        uses.craft |= craft;
         if skill != 0 {
             if !HIDDEN_SKILLS.contains(&skill) && !uses.skills.contains(&skill) {
                 uses.skills.push(skill);
@@ -182,7 +210,7 @@ impl Tables {
     pub(super) fn uses(&self, group: u32) -> Option<&Uses> {
         self.uses
             .get(&group)
-            .filter(|u| !u.skills.is_empty() || !u.navi.is_empty() || !u.purchases.is_empty())
+            .filter(|u| !u.skills.is_empty() || !u.navi.is_empty() || !u.purchases.is_empty() || u.craft)
     }
 
     pub(super) fn purchase(&self, func_id: u32) -> Option<&Purchase> {
@@ -191,6 +219,16 @@ impl Tables {
 
     pub(super) fn name(&self, template_id: u32) -> Option<&str> {
         self.names.get(&template_id).map(String::as_str)
+    }
+
+    /// `DoodadFuncPermission` of the phase (the first func's `perm_id`).
+    pub(super) fn permission(&self, group: u32) -> u8 {
+        self.perms.get(&group).copied().unwrap_or(0)
+    }
+
+    /// `doodad_almighties.sim_radius` (metres).
+    pub(super) fn radius(&self, template: u32) -> f32 {
+        self.radii.get(&template).copied().unwrap_or(0.0)
     }
 }
 
@@ -208,10 +246,12 @@ struct Focus {
     skills: Vec<u32>,
     dist: f32,
     /// `Some` for a house: unfinished, the bar's first skill builds it and the second opens the info window; finished,
-    /// F (the first) opens the info window and G (the second, own house only) the craft window of `craft`.
+    /// F (the first) opens the info window and G (the second) the craft window of `craft`.
     house: Option<HouseState>,
-    /// A finished own house with a workbench doodad on it (a farm's bundle crafting): its object id and template.
+    /// The workbench doodad `(object, template)` a craft action opens (a world doodad's craft func or a house's bench).
     craft: Option<(u32, u32)>,
+    /// The `skills` index of the craft action (`CRAFT_ICON_SKILL`); `None` when the phase has no craft func.
+    craft_index: Option<usize>,
 }
 
 /// One row of the interaction list.
@@ -269,12 +309,45 @@ fn to_vec(p: aa_net::Pos) -> Vec3 {
     Vec3::new(p.x, p.y, p.z)
 }
 
+/// The original interaction distance: the centre distance minus both actors' radii, clamped at 0.
+pub(super) fn surface_distance(data: &HudData, o: &aa_net::model::Doodad) -> f32 {
+    let radius = data
+        .game
+        .get()
+        .map_or(0.0, |g| g.doodad.radius(o.template_id) * o.scale.max(0.0));
+    (data.pos.distance(to_vec(o.pos)) - data.player_radius - radius).max(0.0)
+}
+
+/// Whether the workbench `object` is within the 2.1 m interaction distance.
+pub(super) fn interaction_in_reach(data: &HudData, doodads: &Doodads, object: u32) -> bool {
+    doodads.by_id.get(&object).is_some_and(|o| surface_distance(data, o) <= INTERACTION_DISTANCE)
+}
+
 /// Whether the doodad is a use for this player now: a storage chest for a trade pack only when one is worn or the chest was
 /// picked with the right click.
 fn usable_without_pack(data: &HudData, obj_id: u32, skills: &[u32]) -> bool {
     !skills.contains(&TRADE_PACK_STORAGE_SKILL)
         || data.doodad.preferred == Some(obj_id)
         || super::enchant::equipment(data, aa_net::model::slot::BACKPACK as u8).is_some()
+}
+
+/// Whether the owner's `DoodadFuncPermission` admits this visitor to a house workbench. The server
+/// re-checks SameAccount and ZoneResidents on every craft (`craft.rs`); a client-side allowed offer
+/// is not a permission grant.
+fn bench_permitted(data: &HudData, game: &super::data::GameData, bench: &aa_net::model::Doodad, house: &HouseState, houses: &Houses) -> bool {
+    if house.owner_id != 0 && house.owner_id == data.character_id {
+        return true;
+    }
+    match game.doodad.permission(bench.func_group_id) {
+        // Any
+        0 => true,
+        // SameAccount: the house row names the owner's account.
+        6 => data.account_id != 0 && houses.by_tl_id.get(&house.tl_id).is_some_and(|h| h.snapshot.account_id == data.account_id),
+        // ZoneResidents: the account has a house (same zone group is the server's final check).
+        8 => data.account_id != 0 && houses.by_tl_id.values().any(|h| h.snapshot.account_id == data.account_id),
+        // OwnerOnly, OwnerRaidMembers and the unused modes cannot be proven from the client state.
+        _ => false,
+    }
 }
 
 /// The doodad in reach whose phase has a skill to use that the bar is about: the one last right clicked, else the
@@ -285,7 +358,9 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
     let forward = Vec2::new(-data.yaw.sin(), data.yaw.cos());
     let doodad_candidates = doodads.by_id.values().filter_map(|o| {
         let uses = game.doodad.uses(o.func_group_id)?;
-        if uses.skills.is_empty() || !usable_without_pack(data, o.obj_id, &uses.skills) {
+        // A house's own workbench is offered through the house (G), not as a doodad of its own.
+        let craft = uses.craft && super::crafting::is_bench(data, o.template_id) && owning_house(o, units, houses).is_none();
+        if (uses.skills.is_empty() && !craft) || !usable_without_pack(data, o.obj_id, &uses.skills) {
             return None;
         }
         // the info use of a doodad on a house is the house's own (F opens the maintain window)
@@ -293,12 +368,24 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
             return None;
         }
         let dist = data.pos.distance(to_vec(o.pos));
-        if dist > reach(data, uses) {
+        if dist > if craft { CRAFT_BAR_DISTANCE } else { reach(data, uses) } {
             return None;
         }
         let toward = (to_vec(o.pos) - data.pos).truncate().normalize_or_zero();
         let score = if data.doodad.preferred == Some(o.obj_id) { f32::MIN } else { dist + BEHIND * 0.5 * (1.0 - forward.dot(toward)) };
-        Some((score, Focus { obj_id: o.obj_id, skills: uses.skills.clone(), dist, house: None, craft: None }))
+        let mut skills = uses.skills.clone();
+        let craft_index = craft.then(|| {
+            skills.push(CRAFT_ICON_SKILL);
+            skills.len() - 1
+        });
+        Some((score, Focus {
+            obj_id: o.obj_id,
+            skills,
+            dist,
+            house: None,
+            craft: craft.then_some((o.obj_id, o.template_id)),
+            craft_index,
+        }))
     });
     let house_candidates = units.iter().filter_map(|u| {
         let aa_net::model::UnitKind::Housing { tl_id, .. } = u.kind else { return None };
@@ -307,27 +394,37 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         let skill = if finished { INFO_SKILL } else { step_skill(game, state.template_id, state.current_actions)? };
         let range = game.skills.get(&skill).map_or(0.0, |s| s.max_range as f32);
         let dist = data.pos.distance(to_vec(u.pos));
-        if dist > if range > 0.0 { range + REACH_SLACK } else { BASE_REACH } {
-            return None;
-        }
-        let toward = (to_vec(u.pos) - data.pos).truncate().normalize_or_zero();
-        let score = dist + BEHIND * 0.5 * (1.0 - forward.dot(toward));
-        // a finished house: F is its info window; G (the craft window of a workbench on it) is the owner's only
-        let craft = (finished && state.owner_id != 0 && state.owner_id == data.character_id)
+        // A finished house with a permitted workbench keeps its bar up to the action-bar distance.
+        let bench = finished
             .then(|| {
                 doodads
                     .by_id
                     .values()
                     .find(|o| super::crafting::is_bench(data, o.template_id) && owning_house(o, units, houses) == Some(u.obj_id))
-                    .map(|o| (o.obj_id, o.template_id))
             })
             .flatten();
-        let skills = match (finished, craft) {
-            (true, None) => vec![INFO_SKILL],
-            (true, Some(_)) => vec![INFO_SKILL, CRAFT_ICON_SKILL],
-            (false, _) => vec![skill, INFO_SKILL],
+        let craft = bench
+            .filter(|o| bench_permitted(data, game, o, &state, houses))
+            .map(|o| (o.obj_id, o.template_id));
+        let limit = if craft.is_some() {
+            CRAFT_BAR_DISTANCE
+        } else if range > 0.0 {
+            range + REACH_SLACK
+        } else {
+            BASE_REACH
         };
-        Some((score, Focus { obj_id: u.obj_id, skills, dist, house: Some(state), craft }))
+        if dist > limit {
+            return None;
+        }
+        let toward = (to_vec(u.pos) - data.pos).truncate().normalize_or_zero();
+        let score = dist + BEHIND * 0.5 * (1.0 - forward.dot(toward));
+        // a finished house: F is its info window; G (the craft window of a workbench on it) follows the permission
+        let (skills, craft_index) = match (finished, craft) {
+            (true, None) => (vec![INFO_SKILL], None),
+            (true, Some(_)) => (vec![INFO_SKILL, CRAFT_ICON_SKILL], Some(1)),
+            (false, _) => (vec![skill, INFO_SKILL], None),
+        };
+        Some((score, Focus { obj_id: u.obj_id, skills, dist, house: Some(state), craft, craft_index }))
     });
     doodad_candidates.chain(house_candidates).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
 }
@@ -797,7 +894,7 @@ fn right_click(d: &mut HudData, doodads: &Doodads, obj_id: u32) -> bool {
     let Some(uses) = game.doodad.uses(o.func_group_id).cloned() else { return false };
     let name = game.doodad.name(o.template_id).unwrap_or("?").to_string();
     let dist = d.pos.distance(to_vec(o.pos));
-    let reach = reach(d, &uses);
+    let reach = if uses.craft { CRAFT_BAR_DISTANCE } else { reach(d, &uses) };
     d.doodad.preferred = Some(obj_id);
     if dist > reach {
         info!("doodad: {name} ({obj_id}) is too far away to use ({dist:.1} m, reach {reach:.1} m)");
@@ -815,11 +912,19 @@ fn right_click(d: &mut HudData, doodads: &Doodads, obj_id: u32) -> bool {
         let name = game.items.get(&purchase.item_id).map(|i| i.named.name.clone()).unwrap_or_else(|| format!("item {}", purchase.item_id));
         entries.push(Entry { id: COIN_ID + i64::from(*func), name });
     }
+    if uses.craft && super::crafting::is_bench(d, o.template_id) {
+        entries.push(Entry { id: CRAFT_ID, name: "Craft".into() });
+    }
     if entries.is_empty() {
         return false;
     }
     if entries.len() == 1 {
         let entry = entries[0].clone();
+        if entry.id == CRAFT_ID {
+            d.doodad.menu = Some((obj_id, entries));
+            d.doodad.chosen.push(entry.id);
+            return false;
+        }
         if entry.id >= COIN_ID {
             if let Some(purchase) = game.doodad.purchase((entry.id - COIN_ID) as u32).cloned() {
                 d.doodad.coin = Some(CoinShop { doodad_obj_id: obj_id, purchase });
@@ -867,14 +972,24 @@ fn execute(
         let Some(f) = focus.as_ref() else { continue };
         if let Some(state) = &f.house {
             if !state.under_construction() {
-                // a finished house or farm: F is the info (maintain) window, G the owner's craft window
+                // a finished house or farm: F is the info (maintain) window, G the workbench's craft window
                 if i == 1 {
-                    maintain = Some(f.obj_id);
+                    // the bar may still show F from the action-bar distance; the info skill keeps its own reach
+                    let range = d.game.get().and_then(|g| g.skills.get(&INFO_SKILL)).map_or(0.0, |s| s.max_range as f32);
+                    let limit = if range > 0.0 { range + REACH_SLACK } else { BASE_REACH };
+                    if f.dist <= limit {
+                        maintain = Some(f.obj_id);
+                    } else {
+                        info!("housing: {} ({}) info is out of reach ({:.1} m, {limit:.1} m)", state.name, f.obj_id, f.dist);
+                    }
                 } else if i == 2
                     && let Some((object, template)) = f.craft
-                    && let Some(count) = super::crafting::open_bench(&mut d, object, template)
                 {
-                    craft_opened = Some((object, count));
+                    if !interaction_in_reach(&d, &doodads, object) {
+                        info!("housing: workbench {object} is out of the {INTERACTION_DISTANCE:.1} m interaction distance");
+                    } else if let Some(count) = super::crafting::open_bench(&mut d, object, template) {
+                        craft_opened = Some((object, count));
+                    }
                 }
                 continue;
             }
@@ -897,6 +1012,16 @@ fn execute(
             }
             continue;
         }
+        if f.craft_index == Some(i.wrapping_sub(1)) {
+            if let Some((object, template)) = f.craft {
+                if !interaction_in_reach(&d, &doodads, object) {
+                    info!("doodad: workbench {object} is out of the {INTERACTION_DISTANCE:.1} m interaction distance");
+                } else if let Some(count) = super::crafting::open_bench(&mut d, object, template) {
+                    craft_opened = Some((object, count));
+                }
+            }
+            continue;
+        }
         if let Some(&skill_id) = f.skills.get(i.wrapping_sub(1)) {
             commands.push((f.obj_id, Command::UseDoodadSkill { skill_id, doodad_obj_id: f.obj_id }));
         }
@@ -905,6 +1030,17 @@ fn execute(
         && let Some((obj_id, _)) = d.doodad.menu.take()
     {
         for id in chosen {
+            if id == CRAFT_ID {
+                let template = doodads.by_id.get(&obj_id).map(|o| o.template_id);
+                if !interaction_in_reach(&d, &doodads, obj_id) {
+                    info!("doodad: workbench {obj_id} is out of the {INTERACTION_DISTANCE:.1} m interaction distance");
+                } else if let Some(template) = template
+                    && let Some(count) = super::crafting::open_bench(&mut d, obj_id, template)
+                {
+                    craft_opened = Some((obj_id, count));
+                }
+                continue;
+            }
             if id >= COIN_ID {
                 let func = (id - COIN_ID) as u32;
                 if let Some(purchase) = d.game.get().and_then(|g| g.doodad.purchase(func)).cloned() {
@@ -964,7 +1100,7 @@ fn execute(
     if let Some((object, count)) = craft_opened
         && let Some(rt) = rt.as_deref()
     {
-        info!("housing: G on house workbench {object}: {count} recipes");
+        info!("doodad: workbench {object}: {count} recipes");
         rt.fire_event("CRAFTING_START", (object.to_string(), count as i64));
     }
     if opened.is_some()
@@ -1071,7 +1207,7 @@ mod tests {
         game.skills.get_mut(&18553).unwrap().max_range = 10;
         game.skills.insert(INFO_SKILL, Default::default());
         game.skills.get_mut(&INFO_SKILL).unwrap().max_range = 6;
-        game.doodad.uses.insert(5, Uses { skills: vec![INFO_SKILL], navi: vec![], purchases: vec![] });
+        game.doodad.uses.insert(5, Uses { skills: vec![INFO_SKILL], navi: vec![], purchases: vec![], craft: false });
         game.housing.housings.insert(267, Default::default());
         let template = game.housing.housings.get_mut(&267).unwrap();
         template.garden_radius = 4.0;
@@ -1272,7 +1408,14 @@ mod tests {
 
     /// A finished farm of the character 7 with a workbench doodad (template 973) hanging on it.
     fn finished_farm(owner: u32) -> (HudData, Doodads, Units, Houses) {
-        let (mut data, units, mut houses) = house_game_with(|g| g.crafting.with_bench(973, &[1, 2]));
+        finished_farm_with(owner, 0)
+    }
+
+    fn finished_farm_with(owner: u32, perm: u8) -> (HudData, Doodads, Units, Houses) {
+        let (mut data, units, mut houses) = house_game_with(|g| {
+            g.crafting.with_bench(973, &[1, 2]);
+            g.doodad.perms.insert(0, perm);
+        });
         data.character_id = owner;
         let snapshot = &mut houses.by_tl_id.get_mut(&13).unwrap().snapshot;
         snapshot.current_actions = snapshot.all_actions;
@@ -1290,15 +1433,33 @@ mod tests {
         let focus = find_focus(&data, &doodads, &units, &houses).expect("the farm is in reach");
         assert_eq!(focus.skills, vec![INFO_SKILL, CRAFT_ICON_SKILL], "F info, G craft");
         assert_eq!(focus.craft, Some((38485, 973)));
-        // someone else's farm: the info window only
+        assert_eq!(focus.craft_index, Some(1));
+        // someone else's farm: G follows the bench's DoodadFuncPermission (Any here)
         let (data, doodads, units, houses) = finished_farm(8);
         let focus = find_focus(&data, &doodads, &units, &houses).expect("the farm is in reach");
-        assert_eq!(focus.skills, vec![INFO_SKILL], "no G on a farm of somebody else");
-        assert_eq!(focus.craft, None);
+        assert_eq!(focus.skills, vec![INFO_SKILL, CRAFT_ICON_SKILL], "Any admits the visitor");
+        assert_eq!(focus.craft, Some((38485, 973)));
         // an own house without a workbench has no G either
         let (data, _, units, houses) = finished_farm(7);
         let focus = find_focus(&data, &Doodads::default(), &units, &houses).unwrap();
         assert_eq!(focus.skills, vec![INFO_SKILL]);
+    }
+
+    #[test]
+    fn another_players_bench_follows_same_account_zone_residents_and_owner_only() {
+        let focus_with = |perm: u8, account: u32| {
+            let (mut data, doodads, units, houses) = finished_farm_with(8, perm);
+            data.account_id = account;
+            find_focus(&data, &doodads, &units, &houses)
+        };
+        // SameAccount (6): the house row names account 1.
+        assert!(focus_with(6, 1).is_some_and(|f| f.craft.is_some()));
+        assert!(focus_with(6, 2).is_some_and(|f| f.craft.is_none()));
+        // ZoneResidents (8): the account owns a house (the server checks the same zone group).
+        assert!(focus_with(8, 1).is_some_and(|f| f.craft.is_some()));
+        assert!(focus_with(8, 2).is_some_and(|f| f.craft.is_none()));
+        // OwnerOnly (3) never admits a visitor.
+        assert!(focus_with(3, 1).is_some_and(|f| f.craft.is_none()));
     }
 
     #[test]
@@ -1326,10 +1487,89 @@ mod tests {
     }
 
     #[test]
-    fn g_does_nothing_on_a_farm_of_somebody_else() {
-        let (mut data, doodads, units, houses) = finished_farm(8);
+    fn g_on_another_players_farm_opens_a_permitted_bench_only() {
+        for (perm, opens) in [(0u8, true), (6, false), (3, false)] {
+            let (mut data, doodads, units, houses) = finished_farm_with(8, perm);
+            data.doodad.focus = find_focus(&data, &doodads, &units, &houses);
+            data.doodad.execute.push(2);
+            let bridge = Rc::new(RefCell::new(data));
+            let mut app = App::new();
+            app.insert_non_send(HudBridge(bridge.clone()))
+                .insert_resource(doodads)
+                .insert_resource(units)
+                .insert_resource(houses)
+                .add_message::<NetCommand>()
+                .add_message::<super::super::alerts::UseFailed>()
+                .add_systems(Update, execute);
+            app.update();
+            let d = bridge.borrow();
+            assert_eq!(super::super::crafting::active_bench(&d).is_some(), opens, "permission {perm}");
+            assert!(d.house.maintain_house.is_none());
+        }
+    }
+
+    /// A world workbench (no skill func, no house): a craft-only phase from the game database.
+    fn world_bench(distance: f32) -> (HudData, Doodads, Units, Houses) {
+        let (mut data, _, _) = house_game_with(|g| {
+            g.crafting.with_bench(4238, &[1, 2]);
+            g.doodad.uses.insert(
+                0,
+                Uses { skills: vec![], navi: vec![], purchases: vec![], craft: true },
+            );
+        });
+        data.pos = Vec3::ZERO;
+        data.player_radius = 0.0;
+        let mut doodads = Doodads::default();
+        let mut bench = scarecrow_doodad(0);
+        bench.obj_id = 500;
+        bench.template_id = 4238;
+        bench.func_group_id = 0;
+        bench.pos = aa_net::Pos::new(distance, 0.0, 0.0);
+        doodads.by_id.insert(500, bench);
+        (data, doodads, Units::default(), Houses::default())
+    }
+
+    #[test]
+    fn a_world_workbench_offers_g_up_to_the_action_bar_distance() {
+        let (data, doodads, units, houses) = world_bench(2.0);
+        let focus = find_focus(&data, &doodads, &units, &houses).expect("the anvil is in reach");
+        assert_eq!(focus.obj_id, 500);
+        assert_eq!(focus.skills, vec![CRAFT_ICON_SKILL], "a skill-less craft func still gets the bar");
+        assert_eq!(focus.craft, Some((500, 4238)));
+        assert_eq!(focus.craft_index, Some(0));
+        let (data, doodads, units, houses) = world_bench(20.0);
+        assert!(find_focus(&data, &doodads, &units, &houses).is_some(), "the bar is offered at 25 m");
+        let (data, doodads, units, houses) = world_bench(26.0);
+        assert!(find_focus(&data, &doodads, &units, &houses).is_none());
+    }
+
+    #[test]
+    fn a_world_workbench_opens_only_within_the_interaction_distance() {
+        for (distance, opens) in [(2.0f32, true), (2.2, false)] {
+            let (mut data, doodads, units, houses) = world_bench(distance);
+            data.doodad.focus = find_focus(&data, &doodads, &units, &houses);
+            data.doodad.execute.push(1);
+            let bridge = Rc::new(RefCell::new(data));
+            let mut app = App::new();
+            app.insert_non_send(HudBridge(bridge.clone()))
+                .insert_resource(doodads)
+                .insert_resource(units)
+                .insert_resource(houses)
+                .add_message::<NetCommand>()
+                .add_message::<super::super::alerts::UseFailed>()
+                .add_systems(Update, execute);
+            app.update();
+            let d = bridge.borrow();
+            assert_eq!(super::super::crafting::active_bench(&d).is_some(), opens, "distance {distance}");
+        }
+    }
+
+    #[test]
+    fn a_single_craft_right_click_offers_the_folio_entry() {
+        let (mut data, doodads, units, houses) = world_bench(2.0);
+        assert!(!right_click(&mut data, &doodads, 500), "one entry: no interaction list");
+        assert_eq!(data.doodad.chosen, vec![CRAFT_ID], "the craft action is the entry");
         data.doodad.focus = find_focus(&data, &doodads, &units, &houses);
-        data.doodad.execute.push(2);
         let bridge = Rc::new(RefCell::new(data));
         let mut app = App::new();
         app.insert_non_send(HudBridge(bridge.clone()))
@@ -1340,8 +1580,7 @@ mod tests {
             .add_message::<super::super::alerts::UseFailed>()
             .add_systems(Update, execute);
         app.update();
-        let d = bridge.borrow();
-        assert!(super::super::crafting::active_bench(&d).is_none() && d.house.maintain_house.is_none());
+        assert_eq!(super::super::crafting::active_bench(&bridge.borrow()), Some((500, 4238, 2)));
     }
 
     #[test]
@@ -1355,10 +1594,14 @@ mod tests {
         t.add(5, 1351, 0, "DoodadFuncNaviNaming");
         t.add(6, 7851, 15193, "DoodadFuncNaviTeleport");
         t.add(7, 9, 10994, "DoodadFuncUse");
-        assert_eq!(t.uses(13066), Some(&Uses { skills: vec![14602], navi: vec![], purchases: vec![] }));
+        t.add(8, 10, 0, "DoodadFuncCraftStart");
+        t.add(9, 11, 0, "DoodadFuncCraftPack");
+        assert_eq!(t.uses(10), Some(&Uses { skills: vec![], navi: vec![], purchases: vec![], craft: true }), "skill-less craft func");
+        assert_eq!(t.uses(11), Some(&Uses { skills: vec![], navi: vec![], purchases: vec![], craft: true }), "craft pack func");
+        assert_eq!(t.uses(13066), Some(&Uses { skills: vec![14602], navi: vec![], purchases: vec![], craft: false }));
         assert_eq!(t.uses(13067), None);
-        assert_eq!(t.uses(1351), Some(&Uses { skills: vec![], navi: vec![Navi::Teleport, Navi::OpenPortal], purchases: vec![] }));
-        assert_eq!(t.uses(7851), Some(&Uses { skills: vec![15193], navi: vec![], purchases: vec![] }));
+        assert_eq!(t.uses(1351), Some(&Uses { skills: vec![], navi: vec![Navi::Teleport, Navi::OpenPortal], purchases: vec![], craft: false }));
+        assert_eq!(t.uses(7851), Some(&Uses { skills: vec![15193], navi: vec![], purchases: vec![], craft: false }));
         assert_eq!(t.uses(9), None, "the bar hides skill 10994");
     }
 
@@ -1366,13 +1609,13 @@ mod tests {
     fn purchase_funcs_load_as_coin_shop_rows() {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(
-            "CREATE TABLE doodad_funcs(id INT, doodad_func_group_id INT, actual_func_id INT, actual_func_type TEXT, func_skill_id INT);
+            "CREATE TABLE doodad_funcs(id INT, doodad_func_group_id INT, actual_func_id INT, actual_func_type TEXT, func_skill_id INT, perm_id INT);
              CREATE TABLE doodad_func_purchases(id INT, item_id INT, count INT, coin_item_id INT, coin_count INT, currency_id INT);
-             CREATE TABLE doodad_almighties(id INT, name TEXT);
+             CREATE TABLE doodad_almighties(id INT, name TEXT, sim_radius INT);
              CREATE TABLE localized_texts(tbl_name TEXT, tbl_column_name TEXT, idx INT, en_us TEXT);
-             INSERT INTO doodad_funcs VALUES(10117,11355,41,'DoodadFuncPurchase',17537);
+             INSERT INTO doodad_funcs VALUES(10117,11355,41,'DoodadFuncPurchase',17537,0);
              INSERT INTO doodad_func_purchases VALUES(41,23614,1,23633,15,0);
-             INSERT INTO doodad_funcs VALUES(10118,11355,42,'DoodadFuncUse',0);",
+             INSERT INTO doodad_funcs VALUES(10118,11355,42,'DoodadFuncUse',0,0);",
         )
         .unwrap();
         let t = Tables::load(&db).unwrap();
@@ -1388,7 +1631,7 @@ mod tests {
     #[test]
     fn a_single_purchase_right_click_opens_the_coin_dialog_state() {
         let mut game = super::super::data::GameData::default();
-        game.doodad.uses.insert(5, Uses { skills: vec![], navi: vec![], purchases: vec![9] });
+        game.doodad.uses.insert(5, Uses { skills: vec![], navi: vec![], purchases: vec![9], craft: false });
         game.doodad.purchases.insert(
             9,
             Purchase { func_id: 9, item_id: 100, count: 1, coin_item_id: 200, coin_count: 7, currency_id: 0 },

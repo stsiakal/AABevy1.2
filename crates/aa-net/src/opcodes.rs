@@ -192,6 +192,7 @@ opcodes! {
         CSChangeMateUserStatePacket = 0x0aa,
         CSBuyItemsPacket = 0x0ae,
         CSBuyCoinItemPacket = 0x0af,
+        CSSellBackpackGoodsPacket = 0x042,
         CSSellItemsPacket = 0x0b0,
         CSListSoldItemPacket = 0x0b1,
         CSBuyPriestBuffPacket = 0x0b2,

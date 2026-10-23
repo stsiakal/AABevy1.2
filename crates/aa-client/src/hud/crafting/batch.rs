@@ -197,6 +197,10 @@ fn command(data: &HudData, doodads: &Doodads, owner: u32, request: Request) -> O
     if actual.template_id != bench.template {
         return None;
     }
+    // The Folio stays open, but a craft is still a 2.1 m workbench interaction.
+    if !super::super::doodad::interaction_in_reach(data, doodads, bench.object) {
+        return None;
+    }
     let game = data.game.get()?;
     let definition = game.crafting.recipes.get(&recipe)?;
     if !game.crafting.craft_skills.contains(&definition.skill) {
@@ -342,6 +346,33 @@ mod tests {
     use super::*;
     use aa_net::buff::BuffCaster;
     use aa_net::skill::{SkillFired, SkillStarted, SkillTarget};
+
+    #[test]
+    fn craft_submission_requires_the_workbench_interaction_distance() {
+        let mut data = HudData {
+            pos: bevy::prelude::Vec3::ZERO,
+            player_radius: 0.0,
+            ..Default::default()
+        };
+        let mut game = super::super::super::data::GameData::default();
+        game.crafting.benches.insert(568, [5557].into_iter().collect());
+        game.crafting.recipes.insert(5557, super::super::data::Recipe { skill: 21787, ..Default::default() });
+        game.crafting.craft_skills.insert(21787);
+        assert!(data.game.0.set(game).is_ok());
+        data.crafting.current = super::super::bench::Current {
+            active: Some(Bench { object: 300, template: 568 }),
+            recipes: [5557].into_iter().collect(),
+        };
+        let quote = Request::Start { owner: 47, bench: Bench { object: 300, template: 568 }, recipe: 5557, count: 1 };
+        data.character_id = 47;
+        let mut doodads = Doodads::default();
+        let mut bench = super::super::fixture::doodad();
+        bench.pos = aa_net::Pos::new(2.0, 0.0, 0.0);
+        doodads.by_id.insert(300, bench);
+        assert!(command(&data, &doodads, 47, quote).is_some(), "2.0 m is inside 2.1 m");
+        doodads.by_id.get_mut(&300).unwrap().pos = aa_net::Pos::new(2.2, 0.0, 0.0);
+        assert!(command(&data, &doodads, 47, quote).is_none(), "an open Folio cannot craft from 2.2 m");
+    }
 
     #[test]
     fn failure_notice_item_links_preserve_duplicates_and_do_not_change_batch() {

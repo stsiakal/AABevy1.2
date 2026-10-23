@@ -61,6 +61,8 @@ pub enum Request {
     SecureItem { request: aa_net::secure::ItemSecurityRequest, lock: bool },
     /// `X2Equipment:SecurityLock` / `SecurityUnlock`: the equipment-wide request.
     SecureEquipments { lock: bool },
+    /// `X2Store:SellBackPackGoods`: sell the worn trade pack at the current specialty/trader NPC.
+    SellBackpackGoods { npc_obj_id: u32 },
     /// `HUD.request("farm_list")` / `X2.RequestRuntimeCommonFarmDoodadInfo`: ask for `SCResponseCommonFarmList`.
     FarmList,
     /// The original build window's Build button (`X2House:NextStepFromBuildCheck`).
@@ -173,6 +175,8 @@ pub struct HudData {
     pub(super) enchant: super::enchant::View,
     pub party_pushed: Option<aa_net::Party>,
     pub character_id: u32,
+    /// The login account id (the house `SameAccount` / `ZoneResidents` bench permission).
+    pub account_id: u32,
     pub store: super::store::View,
     /// The NPC function menu and the priest blessing requests (`services.rs`).
     pub(super) services: super::services::View,
@@ -251,6 +255,7 @@ impl Default for HudData {
             enchant: Default::default(),
             party_pushed: None,
             character_id: 0,
+            account_id: 0,
             store: Default::default(),
             services: Default::default(),
             look: Default::default(),
@@ -774,6 +779,10 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
     super::pvp::refresh(world, &mut data, &spawn);
     super::radar::refresh(world, &mut data, &spawn);
     data.character_id = spawn.character().id;
+    data.account_id = world
+        .get_resource::<aa_net::state::Worlds>()
+        .and_then(|w| w.account.as_ref().map(|a| a.account_id))
+        .unwrap_or(0);
     super::battlefield::refresh(world, &mut data, &spawn);
     super::expansion::refresh(world, &mut data);
     super::repair::refresh(world, &mut data);
@@ -993,6 +1002,7 @@ pub fn handle_requests(
             Request::Party(command) => { net.write(NetCommand(Command::Party(command))); }
             Request::Friend(command) => { net.write(NetCommand(Command::Friend(command))); }
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
+            Request::SellBackpackGoods { npc_obj_id } => { net.write(NetCommand(Command::SellBackpackGoods { npc_obj_id })); }
             Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
             Request::SecureItem { request, lock } => { net.write(NetCommand(Command::ItemSecurity { request, lock })); }
             Request::SecureEquipments { lock } => { net.write(NetCommand(Command::EquipmentsSecurity { lock })); }
