@@ -3,10 +3,11 @@
 //! The database is the server's plain SQLite copy (`compact.sqlite3`, read only). Results are
 //! cached: a town has a few dozen distinct templates and hundreds of instances.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use aa_anim::GameDb;
+use aa_net::model::Equipment;
 use bevy::prelude::*;
 use rusqlite::{Connection, OpenFlags, params};
 
@@ -23,6 +24,8 @@ pub struct Db {
     lookups: Arc<Mutex<Lookups>>,
     /// The file the lookups were opened from (the indexed copy when it could be built).
     path: String,
+    /// `slave_attach_points.json` next to the original database (the server's copy of the client data).
+    attach_points_path: Option<String>,
 }
 
 struct Lookups {
@@ -47,6 +50,13 @@ struct Lookups {
     ship_bodies: HashMap<u32, ShipBody>,
     ship_floors: HashMap<u32, Option<Arc<ShipFloor>>>,
     ships: HashMap<u32, bool>,
+    ship_variants: HashMap<u32, ShipVariants>,
+    ship_equip_slots: HashMap<u32, Vec<ShipEquipSlot>>,
+    ship_doodad_bindings: HashMap<u32, Vec<ShipDoodadBinding>>,
+    doodad_ship_parts: HashMap<u32, Vec<ShipPart>>,
+    item_slave_doodads: HashMap<u32, Option<u32>>,
+    /// `slave_attach_points.json` by model id, read once (empty when the file is absent).
+    ship_attach_points: std::sync::OnceLock<HashMap<u32, HashMap<u8, ShipAttach>>>,
     /// `slaves.slave_kind_id` by slave template.
     slave_kinds: HashMap<u32, u32>,
     seats: HashMap<(u32, u8), Seat>,
@@ -276,6 +286,13 @@ impl Db {
     pub fn open() -> Option<Db> {
         let original = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
         let path = indexed_database(&original);
+        let attach_points_path = std::env::var("AA_SLAVE_ATTACH_POINTS").ok().filter(|p| std::path::Path::new(p).exists()).or_else(|| {
+            std::path::Path::new(&original)
+                .parent()
+                .map(|dir| dir.join("slave_attach_points.json"))
+                .filter(|p| p.exists())
+                .map(|p| p.to_string_lossy().into_owned())
+        });
         let game = match GameDb::open_path(&path) {
             Ok(g) => g,
             Err(e) => {
@@ -293,6 +310,7 @@ impl Db {
         Some(Db {
             game: Arc::new(Mutex::new(game)),
             path: path.clone(),
+            attach_points_path,
             lookups: Arc::new(Mutex::new(Lookups {
                 conn,
                 actor_files: HashMap::new(),
@@ -313,6 +331,12 @@ impl Db {
                 ship_bodies: HashMap::new(),
                 ship_floors: HashMap::new(),
                 ships: HashMap::new(),
+                ship_variants: HashMap::new(),
+                ship_equip_slots: HashMap::new(),
+                ship_doodad_bindings: HashMap::new(),
+                doodad_ship_parts: HashMap::new(),
+                item_slave_doodads: HashMap::new(),
+                ship_attach_points: std::sync::OnceLock::new(),
                 slave_kinds: HashMap::new(),
                 seats: HashMap::new(),
             })),
@@ -408,9 +432,141 @@ impl Db {
     }
 
     /// The brushes a ship model is drawn from (hull, rudder, cannons, cargo), empty for a model that is not a ship.
+    #[cfg(test)]
     pub fn ship_parts(&self, model_id: u32) -> Vec<ShipPart> {
         let l = self.lookups.lock().unwrap();
         ship_parts_of(&l.conn, model_id)
+    }
+
+    /// The damage-state prefabs of a ship model (`ship_models`).
+    pub fn ship_variants(&self, model_id: u32) -> ShipVariants {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(v) = l.ship_variants.get(&model_id) {
+            return v.clone();
+        }
+        let variants = l
+            .conn
+            .query_row(
+                "SELECT h.normal, h.damaged25, h.damaged50, h.damaged75, h.dead \
+                 FROM models m JOIN ship_models h ON h.id = m.sub_id AND m.sub_type = 'ShipModel' WHERE m.id = ?1",
+                params![model_id],
+                |r| {
+                    let p = |i: usize| r.get::<_, Option<String>>(i).map(|v| v.map(|p| p.trim().to_string()).filter(|p| !p.is_empty()));
+                    Ok(ShipVariants { normal: p(0)?, damaged25: p(1)?, damaged50: p(2)?, damaged75: p(3)?, dead: p(4)? })
+                },
+            )
+            .unwrap_or_default();
+        l.ship_variants.insert(model_id, variants.clone());
+        variants
+    }
+
+    /// The equipment slots a slave template declares (`slave_equip_slots`), 0-based as the wire.
+    pub fn ship_equip_slots(&self, template_id: u32) -> Vec<ShipEquipSlot> {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(s) = l.ship_equip_slots.get(&template_id) {
+            return s.clone();
+        }
+        let mut out = Vec::new();
+        if let Ok(mut st) = l.conn.prepare(
+            "SELECT attach_point_id, equip_slot_id FROM slave_equip_slots WHERE slave_id = ?1 ORDER BY equip_slot_id, attach_point_id",
+        ) {
+            let rows = st.query_map(params![template_id], |r| {
+                Ok(ShipEquipSlot { attach: r.get::<_, i64>(0)? as u8, slot: r.get::<_, i64>(1)? as u8 })
+            });
+            if let Ok(rows) = rows {
+                out.extend(rows.filter_map(Result::ok));
+            }
+        }
+        l.ship_equip_slots.insert(template_id, out.clone());
+        out
+    }
+
+    /// The default doodads a slave model carries (`slave_doodad_bindings`).
+    pub fn ship_doodad_bindings(&self, template_id: u32) -> Vec<ShipDoodadBinding> {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(b) = l.ship_doodad_bindings.get(&template_id) {
+            return b.clone();
+        }
+        let mut out = Vec::new();
+        if let Ok(mut st) = l.conn.prepare(
+            "SELECT attach_point_id, doodad_id, scale FROM slave_doodad_bindings \
+             WHERE owner_id = ?1 AND lower(owner_type) = 'slave' ORDER BY attach_point_id, id",
+        ) {
+            let rows = st.query_map(params![template_id], |r| {
+                Ok(ShipDoodadBinding {
+                    attach: r.get::<_, i64>(0)? as u8,
+                    doodad: r.get::<_, i64>(1)? as u32,
+                    scale: r.get::<_, Option<f64>>(2)?.unwrap_or(1.0) as f32,
+                })
+            });
+            if let Ok(rows) = rows {
+                out.extend(rows.filter_map(Result::ok).filter(|b| b.doodad != 0));
+            }
+        }
+        l.ship_doodad_bindings.insert(template_id, out.clone());
+        out
+    }
+
+    /// The doodad an item installs in a slave slot (`item_slave_equipments.doodad_id`).
+    pub fn item_slave_doodad(&self, item_id: u32) -> Option<u32> {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(d) = l.item_slave_doodads.get(&item_id) {
+            return *d;
+        }
+        let doodad = l
+            .conn
+            .query_row(
+                "SELECT doodad_id FROM item_slave_equipments WHERE item_id = ?1 AND doodad_id > 0 ORDER BY id LIMIT 1",
+                params![item_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok()
+            .map(|d| d as u32);
+        l.item_slave_doodads.insert(item_id, doodad);
+        doodad
+    }
+
+    /// The model brushes of a ship doodad (`doodad_almighties.model`): a prefab's objects or a single
+    /// `.cgf` / `.chr`; empty for an unknown doodad.
+    pub fn ship_doodad_parts(&self, doodad_id: u32) -> Vec<ShipPart> {
+        let mut l = self.lookups.lock().unwrap();
+        if let Some(p) = l.doodad_ship_parts.get(&doodad_id) {
+            return p.clone();
+        }
+        let parts = ship_doodad_parts_of(&l.conn, doodad_id);
+        l.doodad_ship_parts.insert(doodad_id, parts.clone());
+        parts
+    }
+
+    /// The attach point `point` of a ship model (`slave_attach_points.json`), cry space and yaw in radians.
+    pub fn ship_attach_point(&self, model_id: u32, point: u8) -> Option<ShipAttach> {
+        let l = self.lookups.lock().unwrap();
+        let all = l.ship_attach_points.get_or_init(|| {
+            self.attach_points_path.as_deref().map(load_attach_points).unwrap_or_default()
+        });
+        all.get(&model_id).and_then(|m| m.get(&point)).copied()
+    }
+
+    /// The brushes and particle effects a ship draws in `state` with its installed parts: the variant prefab
+    /// plus one doodad per equipped slot (or the default binding at points no slot owns).
+    pub fn ship_visual(&self, template_id: u32, model_id: u32, state: u8, equipped: &Equipment) -> ShipVisualBuild {
+        let variants = self.ship_variants(model_id);
+        let path = variants.path(state).map(str::to_string);
+        let mut parts = path.as_deref().map(prefab_brushes).unwrap_or_default();
+        let effects = path.as_deref().map(prefab_effects_of).unwrap_or_default();
+        // The dead prefab is the whole sunken hull (`galleon_dead.cgf` + its water): it carries no
+        // equipment, so a wreck does not keep its masts and sails.
+        if state != 6 {
+            let slots = self.ship_equip_slots(template_id);
+            let bindings = self.ship_doodad_bindings(template_id);
+            let doodads = resolve_ship_doodads(&slots, &bindings, equipped, |item| self.item_slave_doodad(item));
+            for doodad in doodads {
+                let Some(at) = self.ship_attach_point(model_id, doodad.attach) else { continue };
+                let local = self.ship_doodad_parts(doodad.doodad);
+                parts.extend(place_ship_doodad(local, at, doodad.scale));
+            }
+        }
+        ShipVisualBuild { parts, effects }
     }
 
     /// The parts of a transfer's `vehicle_models.normal` prefab (an airship's body, wings and propellers):
@@ -991,6 +1147,91 @@ pub struct ShipPart {
     pub scale: Vec3,
 }
 
+/// The model variants of a ship (`ship_models.normal` / `damaged25` / `damaged50` / `damaged75` / `dead`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShipVariants {
+    pub normal: Option<String>,
+    pub damaged25: Option<String>,
+    pub damaged50: Option<String>,
+    pub damaged75: Option<String>,
+    pub dead: Option<String>,
+}
+
+impl ShipVariants {
+    fn of(&self, state: u8) -> Option<&str> {
+        match state {
+            1 => self.normal.as_deref(),
+            2 => self.damaged25.as_deref(),
+            3 => self.damaged50.as_deref(),
+            4 => self.damaged75.as_deref(),
+            6 => self.dead.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The prefab of damage state `state`. `FUN_397a7980` walks down from the wanted state until a
+    /// variant exists, so a missing `damaged25` falls back to the whole hull.
+    pub fn path(&self, state: u8) -> Option<&str> {
+        (1..=state.min(6)).rev().find_map(|s| self.of(s)).or(self.normal.as_deref())
+    }
+}
+
+/// The visual model state of a ship from its health (`FUN_3989f8b0`): 1 normal, 2 damaged25,
+/// 3 damaged50, 4 damaged75, 6 dead. Zero health (or an unknown maximum) is the dead hull.
+pub fn ship_damage_state(hp: i32, max_hp: i32) -> u8 {
+    if hp == 0 || max_hp == 0 {
+        return 6;
+    }
+    let pct = (i64::from(hp) * 100 / i64::from(max_hp)) as i32;
+    if pct > 75 {
+        1
+    } else if pct > 50 {
+        2
+    } else if pct < 26 {
+        4
+    } else {
+        3
+    }
+}
+
+/// A declared equipment slot of a slave template (`slave_equip_slots`): the part slot and the
+/// attach point its doodad sits on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShipEquipSlot {
+    pub attach: u8,
+    pub slot: u8,
+}
+
+/// A default doodad of a slave model at an attach point (`slave_doodad_bindings`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipDoodadBinding {
+    pub attach: u8,
+    pub doodad: u32,
+    pub scale: f32,
+}
+
+/// A doodad the hull shows at an attach point: an equipped slot's part or a default binding.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipDoodad {
+    pub attach: u8,
+    pub doodad: u32,
+    pub scale: f32,
+}
+
+/// One attach point of a ship model (`slave_attach_points.json`), cry space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipAttach {
+    pub pos: Vec3,
+    pub yaw: f32,
+}
+
+/// The parts and effects of one ship damage state plus the installed equipment.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShipVisualBuild {
+    pub parts: Vec<ShipPart>,
+    pub effects: Vec<aa_world::placement::PlacedEffect>,
+}
+
 /// The walkable surface of a ship hull: the upward-facing triangles of its body brush in the ship's frame (cry space: x
 /// right, y forward, z up, origin at the hull root), bucketed by 1 m cells of the deck plane.
 #[derive(Debug, Default)]
@@ -1140,6 +1381,143 @@ fn ship_parts_of(conn: &Connection, model_id: u32) -> Vec<ShipPart> {
         .ok()
         .flatten();
     raw.map(|r| prefab_brushes(r.trim())).unwrap_or_default()
+}
+
+/// The doodads a hull shows: one per attach point an equipment slot owns (only when the slot holds
+/// a part), else the authored `slave_doodad_bindings` default. An empty slot clears the part, so
+/// the equipment really drives the visual.
+fn resolve_ship_doodads(
+    slots: &[ShipEquipSlot],
+    bindings: &[ShipDoodadBinding],
+    equipped: &Equipment,
+    item_doodad: impl Fn(u32) -> Option<u32>,
+) -> Vec<ShipDoodad> {
+    let owned: HashSet<u8> = slots.iter().map(|s| s.attach).collect();
+    let mut out: BTreeMap<u8, ShipDoodad> = BTreeMap::new();
+    for slot in slots {
+        let Some(template) = equipped.slots.get(usize::from(slot.slot)).and_then(Option::as_ref).map(|i| i.template_id) else { continue };
+        if let Some(doodad) = item_doodad(template) {
+            out.insert(slot.attach, ShipDoodad { attach: slot.attach, doodad, scale: 1.0 });
+        }
+    }
+    for binding in bindings {
+        if owned.contains(&binding.attach) || out.contains_key(&binding.attach) {
+            continue;
+        }
+        out.insert(binding.attach, ShipDoodad { attach: binding.attach, doodad: binding.doodad, scale: binding.scale });
+    }
+    out.into_values().collect()
+}
+
+/// Places a doodad's own brushes at an attach point: the point's yaw turns the doodad, and its
+/// scale applies to the doodad's local offsets and meshes.
+fn place_ship_doodad(parts: Vec<ShipPart>, at: ShipAttach, scale: f32) -> Vec<ShipPart> {
+    let turn = Quat::from_rotation_z(at.yaw);
+    parts
+        .into_iter()
+        .map(|p| ShipPart {
+            name: p.name,
+            path: p.path,
+            pos: at.pos + turn * (p.pos * scale),
+            rot: turn * p.rot,
+            scale: p.scale * scale,
+        })
+        .collect()
+}
+
+fn ship_doodad_parts_of(conn: &Connection, doodad_id: u32) -> Vec<ShipPart> {
+    let raw: Option<String> = conn
+        .query_row("SELECT model FROM doodad_almighties WHERE id = ?1", params![doodad_id], |r| r.get::<_, Option<String>>(0))
+        .ok()
+        .flatten();
+    let Some(raw) = raw.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) else { return Vec::new() };
+    if raw.to_ascii_lowercase().starts_with("prefab://") {
+        let parts = prefab_brushes(&raw);
+        if !parts.is_empty() {
+            return parts;
+        }
+    }
+    model_file(&raw).map(|path| vec![ShipPart { name: "doodad".into(), path, pos: Vec3::ZERO, rot: Quat::IDENTITY, scale: Vec3::ONE }]).unwrap_or_default()
+}
+
+/// `slave_attach_points.json` (the server's copy of the client data): model id -> point -> place.
+/// The file is JSON with `//` notes and trailing commas; a missing or broken file just leaves the
+/// hull without equipment doodads.
+fn load_attach_points(path: &str) -> HashMap<u32, HashMap<u8, ShipAttach>> {
+    let Ok(text) = std::fs::read_to_string(path) else { return HashMap::new() };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&relaxed_json(&text)) else {
+        warn!("slave attach points {path}: not JSON");
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for entry in json.as_array().into_iter().flatten() {
+        let Some(model) = entry.get("ModelId").and_then(serde_json::Value::as_u64) else { continue };
+        let mut points = HashMap::new();
+        for (key, p) in entry.get("AttachPoints").and_then(serde_json::Value::as_object).into_iter().flatten() {
+            let Ok(point) = key.parse::<u8>() else { continue };
+            let Some(x) = p.get("X").and_then(serde_json::Value::as_f64) else { continue };
+            let Some(y) = p.get("Y").and_then(serde_json::Value::as_f64) else { continue };
+            let Some(z) = p.get("Z").and_then(serde_json::Value::as_f64) else { continue };
+            let yaw = p.get("Yaw").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+            points.insert(point, ShipAttach { pos: Vec3::new(x as f32, y as f32, z as f32), yaw: yaw.to_radians() });
+        }
+        out.insert(model as u32, points);
+    }
+    out
+}
+
+/// The JSON dialect of the Cry prefab tools: `//` / `/* */` comments and trailing commas.
+fn relaxed_json(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            out.push(c);
+            i += 1;
+        } else if c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    let chars: Vec<char> = out.chars().collect();
+    let mut out = String::with_capacity(chars.len());
+    for (i, &c) in chars.iter().enumerate() {
+        if c == ',' {
+            let next = chars[i + 1..].iter().find(|c| !c.is_whitespace());
+            if matches!(next, Some(&'}') | Some(&']')) {
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// The model file of a prefab element path (`prefab://prefabs/interaction_e.xml/scarecrow.learning_scarecrow_02`): the
@@ -1384,6 +1762,116 @@ mod tests {
         let parts = db.ship_parts(393);
         assert!(parts.len() > 5 && parts.iter().any(|p| p.path.ends_with("galleon_rudder.cgf")), "{} parts", parts.len());
         assert!(parts.iter().all(|p| aa_pak::Pak::global().exists(&p.path)), "a part is missing from the pak");
+    }
+
+    /// `FUN_3989f8b0`: >75% normal, >50% damaged25, >25% damaged50, else damaged75; zero is dead.
+    #[test]
+    fn a_ships_damage_state_follows_the_original_thresholds() {
+        assert_eq!(ship_damage_state(100, 100), 1);
+        assert_eq!(ship_damage_state(76, 100), 1);
+        assert_eq!(ship_damage_state(75, 100), 2);
+        assert_eq!(ship_damage_state(51, 100), 2);
+        assert_eq!(ship_damage_state(50, 100), 3);
+        assert_eq!(ship_damage_state(26, 100), 3);
+        assert_eq!(ship_damage_state(25, 100), 4);
+        assert_eq!(ship_damage_state(1, 100), 4);
+        assert_eq!(ship_damage_state(0, 100), 6);
+        assert_eq!(ship_damage_state(10, 0), 6);
+        // integer division as in the original: 2/3 is 66%, not 66.6%
+        assert_eq!(ship_damage_state(2, 3), 2);
+    }
+
+    /// A variant the hull does not ship walks down to the less damaged prefab (`FUN_397a7980`), so a missing
+    /// `damaged25` still shows the hull.
+    #[test]
+    fn a_missing_damage_variant_falls_back_to_the_whole_hull() {
+        let v = ShipVariants { normal: Some("normal".into()), ..default() };
+        assert_eq!(v.path(2), Some("normal"));
+        assert_eq!(v.path(6), Some("normal"));
+        let v = ShipVariants { normal: Some("normal".into()), damaged50: Some("d50".into()), dead: Some("dead".into()), ..default() };
+        assert_eq!(v.path(4), Some("d50"));
+        assert_eq!(v.path(6), Some("dead"));
+        assert_eq!(ShipVariants::default().path(6), None);
+    }
+
+    /// Equipment owns its attach points: an installed part shows, an empty slot shows nothing, and the
+    /// authored binding only fills points no slot owns.
+    #[test]
+    fn a_ships_parts_follow_its_equipment_and_default_bindings() {
+        let slots = [
+            ShipEquipSlot { attach: 9, slot: 3 },
+            ShipEquipSlot { attach: 10, slot: 4 },
+            ShipEquipSlot { attach: 21, slot: 9 },
+        ];
+        let bindings = [
+            ShipDoodadBinding { attach: 9, doodad: 101, scale: 1.0 },
+            ShipDoodadBinding { attach: 21, doodad: 202, scale: 0.5 },
+            ShipDoodadBinding { attach: 35, doodad: 303, scale: 1.0 },
+        ];
+        let mut equipped = Equipment::default();
+        equipped.slots[4] = aa_net::model::Item::template_only(500);
+        let out = resolve_ship_doodads(&slots, &bindings, &equipped, |item| (item == 500).then_some(777));
+        assert_eq!(out, [ShipDoodad { attach: 10, doodad: 777, scale: 1.0 }, ShipDoodad { attach: 35, doodad: 303, scale: 1.0 }]);
+        // the helm binding matches the initial helm item, so a hull wearing it never shows both
+        let mut helm = Equipment::default();
+        helm.slots[2] = aa_net::model::Item::template_only(29726);
+        let bindings = [ShipDoodadBinding { attach: 35, doodad: 2374, scale: 1.0 }];
+        let slots = [ShipEquipSlot { attach: 35, slot: 2 }];
+        let out = resolve_ship_doodads(&slots, &bindings, &helm, |_| Some(2374));
+        assert_eq!(out, [ShipDoodad { attach: 35, doodad: 2374, scale: 1.0 }]);
+    }
+
+    /// A doodad's own offsets turn and scale with its attach point (the cannon yaw of the cutter is ±90°).
+    #[test]
+    fn a_ship_doodad_keeps_its_attach_point_and_yaw() {
+        let local = ShipPart { name: "brush".into(), path: "a/b.cgf".into(), pos: Vec3::new(1.0, 0.0, 0.0), rot: Quat::IDENTITY, scale: Vec3::ONE };
+        let at = ShipAttach { pos: Vec3::new(2.0, 3.0, 4.0), yaw: std::f32::consts::FRAC_PI_2 };
+        let out = place_ship_doodad(vec![local], at, 2.0);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].pos - Vec3::new(2.0, 5.0, 4.0)).length() < 1e-5, "{:?}", out[0].pos);
+        assert!((out[0].rot * Vec3::X - Vec3::Y).length() < 1e-5);
+        assert_eq!(out[0].scale, Vec3::splat(2.0));
+    }
+
+    /// The server's `slave_attach_points.json` uses `//` notes and trailing commas; it must still parse.
+    #[test]
+    fn ship_attach_points_are_relaxed_json() {
+        let text = r#"[{"Name":"x","ModelId":393,"AttachPoints":{"9":{ // Cannon0
+            "X":1.0,"Y":2.0,"Z":3.0,"Yaw":90.0,
+        },},},]"#;
+        let json = relaxed_json(text);
+        let value = serde_json::from_str::<serde_json::Value>(&json).expect("relaxed json");
+        assert_eq!(value[0]["AttachPoints"]["9"]["Yaw"], 90.0);
+    }
+
+    /// The cutter's cannon point 9 is authored in the json (position and ±90° yaw), and the dead hull is
+    /// `galleon_dead.cgf` with the original `caraval_water_destroy` water.
+    #[test]
+    fn the_cutter_has_attach_points_and_a_dead_hull() {
+        if !aa_cry::pak_available() {
+            return;
+        }
+        let Some(db) = Db::open() else { return };
+        if let Some(at) = db.ship_attach_point(393, 9) {
+            assert!((at.pos - Vec3::new(-4.29277, 2.22774, 4.42057)).length() < 1e-4, "{at:?}");
+            assert!((at.yaw.to_degrees() - 90.0).abs() < 1e-3, "{at:?}");
+        }
+        let dead = db.ship_visual(21, 393, 6, &Equipment::default());
+        assert!(dead.parts.iter().any(|p| p.path.ends_with("galleon_dead.cgf")), "{:?}", dead.parts.iter().map(|p| &p.path).collect::<Vec<_>>());
+        assert!(dead.effects.iter().any(|e| e.effect.ends_with("caraval_water_destroy")), "{:?}", dead.effects);
+        // the wreck is the dead prefab alone, not the live hull's masts, sails and cannon doodads
+        assert_eq!(dead.parts.len(), 1, "{:?}", dead.parts.iter().map(|p| &p.path).collect::<Vec<_>>());
+        let mut equipped = Equipment::default();
+        equipped.slots[2] = aa_net::model::Item::template_only(29726);
+        assert_eq!(db.ship_visual(75, 1205, 6, &equipped).parts.len(), 1);
+        // the same helm on the live merchant hull is the item's doodad at `$helms`
+        let live = db.ship_visual(75, 1205, 1, &equipped);
+        let helm = live.parts.iter().find(|p| p.path.ends_with("galleon_helms.cgf")).expect("the equipped helm doodad");
+        if let Some(at) = db.ship_attach_point(1205, 35) {
+            assert!((helm.pos - at.pos).length() < 1e-4, "{helm:?} at {at:?}");
+        }
+        let bare = db.ship_visual(75, 1205, 1, &Equipment::default());
+        assert!(!bare.parts.iter().any(|p| p.path.ends_with("galleon_helms.cgf")));
     }
 
     /// `Rotate="w,x,y,z"` and the cry -> Bevy conversion of a brush are the ones the world's dummies and effects use: a quarter turn

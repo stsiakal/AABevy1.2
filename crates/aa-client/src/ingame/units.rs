@@ -33,7 +33,7 @@ use super::doodad_visual::DoodadVisual;
 use super::idle::IdleClips;
 use super::mount::Rider;
 use super::player::{LocalPlayer, Mover, approach_angle, placement};
-use super::prepare::{DoodadBuild, UnitBuild, prepare_doodad, prepare_unit};
+use super::prepare::{DoodadBuild, ShipVisual, UnitBuild, prepare_doodad, prepare_unit};
 use super::remote::{self, Report, Track};
 use super::weapons;
 
@@ -265,6 +265,7 @@ pub fn sync_views(
     mut looks: Query<&mut appearance::LookSource>,
     characters: Query<&Character>,
     look_carried: Query<&weapons::LookCarried>,
+    ship_looks: Query<&ShipVisual>,
 ) {
     let (Some(db), Ok(me)) = (db, player.single()) else { return };
     let _t = timers.as_deref().map(|t| t.time("units.sync"));
@@ -315,6 +316,12 @@ pub fn sync_views(
                 if d > UNIT_RADIUS * 1.25 {
                     commands.entity(e).despawn();
                     view.entity = None;
+                } else if ship_looks.get(e).is_ok_and(|look| !look.matches(unit)) {
+                    // `SCUnitEquipmentsChanged` / `SCSlaveEquipmentChanged` or a health state change:
+                    // the original swaps the prefab brush / slot doodads, so rebuild from the new inputs.
+                    commands.entity(e).despawn();
+                    view.entity = None;
+                    wanted.push((d, *id));
                 }
             }
             None if !view.no_model && !view.preparing && d <= UNIT_RADIUS => {
@@ -594,13 +601,20 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
             let _t = aa_cry::prof::scope("unit.spawn_creature");
             creature::spawn(commands, cry, clips, &file, cdf.as_deref(), transform).ok_or_else(|| format!("{file} cannot be spawned (no skeleton model or unreadable)"))?
         }
-        UnitBuild::Ship { parts, models } => {
+        UnitBuild::Ship { parts, models, effects, visual } => {
             for m in models {
                 cry.finish_model(m);
             }
             let _t = aa_cry::prof::scope("unit.spawn_ship");
             let root = commands.spawn((transform, Visibility::default())).id();
             spawn_ship_parts(commands, cry, &parts, root);
+            for e in effects {
+                let effect = aa_fx::Effect { scale: e.scale, speed_scale: e.speed_scale, count_scale: e.count_scale, prime: e.prime, no_body: true, ..aa_fx::Effect::new(e.effect.clone()) };
+                commands.spawn((effect, Transform { translation: cry_to_bevy(e.pos), rotation: cry_rot_to_bevy(e.rot), ..default() }, ChildOf(root)));
+            }
+            if let Some(visual) = visual {
+                commands.entity(root).insert(visual);
+            }
             root
         }
         UnitBuild::Effects(effects) => {
@@ -652,7 +666,10 @@ pub fn ship_part_transform(part: &super::data::ShipPart) -> Transform {
 pub fn spawn_ship_parts(commands: &mut Commands, cry: &mut CryAssets, parts: &[super::data::ShipPart], root: Entity) {
     let options = ModelOptions::default();
     for part in parts {
-        let Ok(loaded) = cry.load_model(&part.path, &options) else { continue };
+        let Ok(loaded) = cry.load_model(&part.path, &options) else {
+            warn!("ship part {} ({}) cannot be loaded", part.path, part.name);
+            continue;
+        };
         let model = spawn_loaded(commands, &part.path, &loaded, &options);
         commands.entity(model).insert((ship_part_transform(part), ChildOf(root)));
     }
@@ -1036,6 +1053,19 @@ mod ship_tests {
 
     fn part(pos: Vec3, rot: Quat, scale: Vec3) -> ShipPart {
         ShipPart { name: "p".into(), path: "a/b.cgf".into(), pos, rot, scale }
+    }
+
+    /// A drawn ship is rebuilt when its damage state or any equipment template changes: those are the
+    /// inputs `prepare_unit` builds the hull brushes and slot doodads from.
+    #[test]
+    fn a_ship_visual_notices_equipment_and_health_changes() {
+        let visual = ShipVisual { model_id: 393, state: 1, equipment: [0; aa_net::model::slot::COUNT] };
+        assert!(visual.matches_inputs(393, 1, &[0; aa_net::model::slot::COUNT]));
+        let mut helm = [0; aa_net::model::slot::COUNT];
+        helm[2] = 29726;
+        assert!(!visual.matches_inputs(393, 1, &helm), "an equipped helm swaps the part");
+        assert!(!visual.matches_inputs(393, 2, &[0; aa_net::model::slot::COUNT]), "damage swaps the prefab");
+        assert!(!visual.matches_inputs(1205, 1, &[0; aa_net::model::slot::COUNT]));
     }
 
     /// The brush transform replaces the model root's `CRY_TO_BEVY`, so it must contain it: a hull mesh point at the cry bow
