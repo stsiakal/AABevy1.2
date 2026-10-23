@@ -722,5 +722,4 @@ fn slash_requests_use_the_native_admission_and_confirmation_tasks() {
     // A received leader cannot leave a multi-member expedition, as in the native planner.
     assert_eq!(slash_request(&mut data.expedition, 1, &[]), Err(0x136));
     assert!(data.expedition.requests.is_empty());
-    assert!(!tasks::pending(&data.expedition, 26));
 }

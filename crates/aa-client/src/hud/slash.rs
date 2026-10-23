@@ -104,6 +104,8 @@ pub(super) struct Target<'a> {
 pub(super) enum Notice {
     /// An `ErrorMessageType` (the original's `FUN_39425f50`/`FUN_39428370`).
     Error(i16),
+    /// An `ErrorMessageType` with its `$1`, e.g. the duplicate channel name (`FUN_393c2870`).
+    ErrorArg(i16, String),
     /// A `COMMUNITY_TEXT` key (the original's `FUN_393032f0`), with its `$1`.
     Community {
         key: &'static str,
@@ -166,13 +168,14 @@ fn party_invite(data: &HudData, name: &str, is_party: bool) -> Result<PartyComma
     if name.is_empty() {
         return Err(EXPEDITION_NO_TARGET);
     }
+    // The native type test runs before the self check (`FUN_39308ab0`).
+    if party.id != 0 && party.is_party != is_party {
+        return Err(not_in_team(is_party));
+    }
     if data.character_id != 0 && name.eq_ignore_ascii_case(&data.snapshot.name) {
         return Err(TEAM_YOURSELF);
     }
     if party.id != 0 {
-        if party.is_party != is_party {
-            return Err(not_in_team(is_party));
-        }
         if party.owner_id != data.character_id {
             return Err(TEAM_NO_RIGHTS);
         }
@@ -266,16 +269,20 @@ fn friend_block(data: &HudData, name: &str) -> Result<Option<FriendCommand>, Not
     }))
 }
 
-fn friend_unblock(data: &HudData, name: &str) -> Result<FriendCommand, Notice> {
+fn friend_unblock(data: &HudData, name: &str) -> Result<Option<FriendCommand>, Notice> {
+    if name.is_empty() {
+        // `FUN_39303d20` ignores an empty name.
+        return Ok(None);
+    }
     if !data.friends.is_blocked(name) {
         return Err(Notice::Community {
             key: "user_not_in_list",
             arg: Some(name.to_string()),
         });
     }
-    Ok(FriendCommand::Unblock {
+    Ok(Some(FriendCommand::Unblock {
         name: name.to_string(),
-    })
+    }))
 }
 
 /// `/dice [max]`: no or invalid argument means 100; values outside `2..=1000000` are ignored.
@@ -289,8 +296,9 @@ fn dice(args: &str) -> Option<i32> {
     }
 }
 
-fn channel_name(name: &str) -> String {
-    let mut end = name.len().min(48);
+/// `XlCopySafeUtf(dst, size, src)`: the longest prefix that fits `size - 1` bytes.
+fn truncate_bytes(name: &str, size: usize) -> String {
+    let mut end = name.len().min(size - 1);
     while !name.is_char_boundary(end) {
         end -= 1;
     }
@@ -333,7 +341,7 @@ pub(super) fn run(
                 Err(code) => Some(Outcome::error(code)),
             }
         }
-        // `/leave` (`FUN_393c1d90`): the current team type.
+        // `/leave` (`LAB_393c1d90`): the current team type.
         2 => Some(
             match party_leave(data, current_party) {
                 Ok(command) => Outcome {
@@ -383,7 +391,7 @@ pub(super) fn run(
                 .map_or_else(Outcome::error, |()| Outcome::default()))
             }
         }
-        // `/expeditionleave` (`FUN_393c2e30`): the native leave/dismiss task.
+        // `/expeditionleave` (`LAB_393c1df0`): the native leave/dismiss task.
         13 => Some(
             super::expedition::slash_request(&mut data.expedition, 1, &[])
                 .map_or_else(Outcome::error, |()| Outcome::default()),
@@ -405,10 +413,11 @@ pub(super) fn run(
         }),
         // `/unblock` (`FUN_39303d20`).
         16 => Some(match friend_unblock(data, args) {
-            Ok(command) => Outcome {
+            Ok(Some(command)) => Outcome {
                 notice: None,
                 commands: vec![Command::Friend(command)],
             },
+            Ok(None) => Outcome::default(),
             Err(notice) => Outcome {
                 notice: Some(notice),
                 commands: Vec::new(),
@@ -416,7 +425,7 @@ pub(super) fn run(
         }),
         // `/family_invite` (`FUN_393c86c0`): name and title are two tokens.
         18 => Some(family_action(data, 0, args, "invite_syntax")),
-        // `/family_leave` (`FUN_393c2da0`).
+        // `/family_leave` (`LAB_393c2da0`).
         19 => Some(
             super::family::slash_request(&mut data.family, 1, &[], &[])
                 .map_or_else(Outcome::error, |()| Outcome::default()),
@@ -442,7 +451,7 @@ pub(super) fn run(
                 Err(code) => Some(Outcome::error(code)),
             }
         }
-        // `/raidleave` (`FUN_393c1dd0`).
+        // `/raidleave` (`LAB_393c1dd0`).
         24 => Some(
             match party_leave(data, false) {
                 Ok(command) => Outcome {
@@ -478,7 +487,7 @@ pub(super) fn run(
                 Err(code) => Some(Outcome::error(code)),
             }
         }
-        // `/partyleave` (`FUN_393c1de0`).
+        // `/partyleave` (`LAB_393c1de0`).
         27 => Some(
             match party_leave(data, true) {
                 Ok(command) => Outcome {
@@ -540,16 +549,21 @@ fn family_action(data: &mut HudData, kind: u8, args: &str, syntax: &'static str)
 
 fn join_channel(args: &str, channels: &[ChatChannel], create: bool) -> Outcome {
     let mut words = args.split_whitespace();
-    let name = channel_name(words.next().unwrap_or(""));
-    let password = words.next().unwrap_or("");
-    if channels.iter().any(|c| c.name == name) {
-        return Outcome::error(CHAT_ALREADY_JOINED);
+    let raw_name = words.next().unwrap_or("");
+    if channels.iter().any(|c| c.name == raw_name) {
+        return Outcome {
+            notice: Some(Notice::ErrorArg(CHAT_ALREADY_JOINED, raw_name.to_string())),
+            commands: Vec::new(),
+        };
     }
+    // `FUN_397ab6c0`: name 0x31 bytes, password 7 bytes, then the create flag.
+    let name = truncate_bytes(raw_name, 0x31);
+    let password = truncate_bytes(words.next().unwrap_or(""), 7);
     Outcome {
         notice: None,
         commands: vec![Command::JoinUserChatChannel {
             name,
-            password: password.to_string(),
+            password,
             create,
         }],
     }
@@ -599,6 +613,10 @@ fn report(lua: &Lua, notice: Notice) {
     let value = match notice {
         Notice::Error(code) => match super::alerts::error_name(code) {
             Some(key) => localize(lua, "ERROR_MSG", key, None),
+            None => return,
+        },
+        Notice::ErrorArg(code, arg) => match super::alerts::error_name(code) {
+            Some(key) => localize(lua, "ERROR_MSG", key, Some(&arg)),
             None => return,
         },
         Notice::Community { key, arg } => localize(lua, "COMMUNITY_TEXT", key, arg.as_deref()),
@@ -677,7 +695,7 @@ mod tests {
 
     #[test]
     fn party_commands_use_the_target_and_the_original_refusals() {
-        let mut d = data(&[(1, "invite"), (2, "leave"), (3, "kick")]);
+        let mut d = data(&[(1, "invite"), (2, "leave"), (3, "kick"), (26, "partyinvite")]);
         let no_target = run(&mut d, "/invite", None, &[]).unwrap();
         assert_eq!(no_target.notice, Some(Notice::Error(0x1b3)));
         let target = Target { name: "Friend", is_player: true };
@@ -691,6 +709,9 @@ mod tests {
         let leave = run(&mut d, "/leave", None, &[]).unwrap();
         assert_eq!(leave.notice, Some(Notice::Error(CHAT_NOT_IN_PARTY)));
         d.party.id = 9;
+        d.party.is_party = false;
+        let mismatch = run(&mut d, "/partyinvite Self", None, &[]).unwrap();
+        assert_eq!(mismatch.notice, Some(Notice::Error(CHAT_NOT_IN_PARTY)));
         d.party.is_party = true;
         d.party.owner_id = 48;
         d.party.members = vec![aa_net::party::PartyMember {
@@ -745,6 +766,8 @@ mod tests {
                 arg: Some("Ghost".into())
             })
         );
+        let empty = run(&mut d, "/unblock", None, &[]).unwrap();
+        assert!(empty.notice.is_none() && empty.commands.is_empty());
         assert!(matches!(
             &run(&mut d, "/block Friend", None, &[]).unwrap().commands[..],
             [Command::Friend(FriendCommand::Block { name })] if name == "Friend"
@@ -793,6 +816,11 @@ mod tests {
             &truncated.commands[..],
             [Command::JoinUserChatChannel { name, create: false, .. }] if name.len() == 48
         ));
+        let password = run(&mut d, "/enter_channel Trade 12345678", None, &[]).unwrap();
+        assert!(matches!(
+            &password.commands[..],
+            [Command::JoinUserChatChannel { password, .. }] if password == "123456"
+        ));
         let channels = [ChatChannel {
             chat_type: chat_type::USER,
             sub_type: 0,
@@ -801,7 +829,7 @@ mod tests {
         }];
         assert_eq!(
             run(&mut d, "/enter_channel Trade", None, &channels).unwrap().notice,
-            Some(Notice::Error(CHAT_ALREADY_JOINED))
+            Some(Notice::ErrorArg(CHAT_ALREADY_JOINED, "Trade".into()))
         );
         let leave = run(&mut d, "/leave_channel Trade", None, &channels).unwrap();
         assert!(matches!(

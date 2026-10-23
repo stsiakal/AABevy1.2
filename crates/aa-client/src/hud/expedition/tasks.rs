@@ -22,11 +22,6 @@ pub(super) fn clear(view: &mut View) {
     view.tasks.quotes.clear();
 }
 
-/// A received/admitted confirmation task is queued (the slash-command path has no window yet).
-pub(super) fn pending(view: &View, task: u8) -> bool {
-    view.tasks.quotes.contains_key(&task)
-}
-
 fn insert(view: &mut View, task: u8, command: Command, inviter: Vec<u8>) {
     let (Some(owner), Some(object)) = (view.cache.local_character_id, view.cache.local_object_id) else {
         return;
