@@ -1,6 +1,6 @@
 # What is left: ordered work queue for AABevy1.2
 
-Date: 2026-10-22. Restructured from the 2026-10-18 stocktaking into the order the parity loop needs; no code changed.
+Date: 2026-10-23. Restructured from the 2026-10-18 stocktaking into the order the parity loop needs; no code changed.
 Sources: every `docs/*.md` gap section, `docs/research/*`, `docs/aa-client-parity.md` (the completion ledger), `git log`,
 `git status`, `data/extract/game/scriptsbin/x2ui`, `crates/aa-client/src/hud`, `crates/aa-ui/examples/fake`, the AAEmu lane
 source (`D:\aaemu-wt\bevy`, its `rust/tools/opcode_coverage/sc_sent.json`), `reference/`.
@@ -26,9 +26,25 @@ passed the headless smoke tests (titles, tooltip, Character Info, emotes, guild 
 settlement tail/reconnect and the final social unblock/offline/restart live checks remain unverified. By the parity ledger's
 own words, "overall 1.2 parity is unfinished".
 
-The parity loop and its three status fields are in `docs/aa-client-parity.md`. Four areas have end-to-end RE specs today
-(placement, mounts, wagons, unit colours); the rest have none, so their rows cannot be done yet even where the feature mostly
-works.
+The parity loop and its three status fields are in `docs/aa-client-parity.md`. The area specs now cover: `re-placement.md`,
+`re-mounts.md`, `re-mounts-full.md`, `re-wagons.md`, `re-unit-colors.md`, `re-movement.md`, `re-housing.md`, `re-combat.md`,
+`re-inventory.md`, `re-quests.md`, `re-transport.md`, `re-crafting.md`, `re-social.md` and `re-uitoolkit.md`;
+`re-equipment.md` and `re-skills.md` stay narrow notes. World, character, loading and the remaining rows still have no area
+spec, so those rows cannot be done yet even where the feature mostly works.
+
+Spec progress in the 2026-10-22/23 merges: placement gaps 1-7 and 9-12 (refused-build retry `8cb994a`, design match
+`b9ad5b1`), mounts gaps 1-6 and 8, wagon gaps 1-3, 5 and 7-8 along with the measured packet flow (gap 4 is partly: helm and
+wheels in, grip IK open), movement gaps 1 and 3-5 (ladders
+`11d6122`, camera modes `5ea2227`, stance capsule `0fb4ba6`), housing gaps 1-5 (`231e9df` decoration, `5e52514`
+maintain/sale/tax/rename), combat gaps 1-5 (`c86a280`, `2a5919e`, `6d646af`), inventory gap 1 (`644e473`, `03b8e6c`),
+quest gaps 1-4 (`3037053`, `f79ebe4`, `a41e134`, `0e42647`), transport gaps 1, 2 and 4 (`fe37759`/`c0e7eec`, `654d092`),
+crafting gaps 1-5 (`6d00d0d`, `075260d`/`38a2f5c`, `8f1255a`/`6405a87`), social gap 1 (`5401aaa`/`4d49692`) and UI-toolkit
+gaps 1-3 (`ad80b3a`, `22a19b7`, `593c2c5`). The still-open gaps are listed per area in section 3 and under 4.14/4.18.
+
+Only mounts, placement and the wagon flows, plus the action-bar pages and the quest tracker, have been compared live against
+the original. Oracle batch 2 (2026-10-22/23): action-bar pages SAME and the 1-based slot numbering fixed in `c86a280`; quest
+tracker SAME; a refused `CSCreateHouse` keeps the Start Construction builder (`8cb994a`). Quest talk/timer and ladders are
+implemented but not drivable in the live oracle yet.
 
 ## 2. Engine systems first
 
@@ -93,93 +109,118 @@ spec status, the next step and every old item moved under it.
 
 ### 3.1 Movement and mounts
 
-**RE spec.** `re-mounts.md` + `re-mounts-full.md`: graph states, DB speeds, attach/seat rules and the measured packet sequence;
-`re-mounts-full.md` §7 lists what stays inferred (PseudoSpeed producer, inertia semantics, jump impulse, turn 360, camera, XL14
-tier, rider idle quirk, transition choice, `normal_speed`). Mount flow, controllers and PseudoSpeed were matched to the original
-once (`re-mounts.md` §9-10).
+**RE spec.** `re-mounts.md` (summon/mount/dismount, attach/seat rules, measured packets), `re-mounts-full.md` (graphs, speeds,
+movement code; §7 lists what stays inferred) and `re-movement.md` (walk/run/strafe, ladders, camera, collision). Mount gaps 1-6
+and 8 are implemented; movement gaps 1, 3, 4 and 5 are implemented. Open: mount gap 7 (rider skills) and gap 9 (stirrup IK,
+`CSRemoveMate` auto-dismiss), humanoid combat idle, and the `re-mounts-full.md` §7 inferences (PseudoSpeed producer, inertia
+semantics, jump impulse, turn 360, camera, XL14 tier, rider idle quirk, transition choice, `normal_speed`); movement gap 2
+(click-to-move), gap 6 (air momentum), gap 7 (stance/alertness/combat flags), gap 8 (swim multipliers and graph controls),
+gap 9 (camera collision/fade) and gap 10 (follow). Mounts were matched live once; ladders are implemented but not drivable in
+the live oracle yet.
 
 **Next step.** Close the remaining rider/mount items (`CH2`): rider skills (`ride_ub`, `<weapon>_co_horse_attack_*`,
-`horse_ac_spur_f`), stirrup IK, `CSRemoveMate` auto-dismiss and humanoid combat idle; then re-verify placement/gaits with the
-animation graph player and tick rate, and do the live owner test (jump, strafe, mount/dismount).
+`horse_ac_spur_f`), stirrup IK, `CSRemoveMate` auto-dismiss and humanoid combat idle; then movement gaps 2 and 6-10; re-verify
+placement/gaits with the animation graph player and tick rate, and do the live owner test (jump, strafe, mount/dismount,
+ladder).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| CH2 | units | Mount / rider placement unverified (the get-on/get-off clips, PseudoSpeed gaits and mount inertia are in, unchecked against the retail client), no rider/mount skills (`ride_ub`, `<weapon>_co_horse_attack_*`, `horse_ac_spur_f`, jousting), no stirrup IK, no `CSRemoveMate` auto-dismiss, PseudoSpeed formula/turn thresholds/approach point/hop exit inferred (`re-mounts.md` section 7); humanoid NPCs lack combat idle; `SCUnitMovements` types read from the packet not the object | `aa-client-units.md` Gaps | med | M | G2 |
-| G4 | gameplay | Click-to-move, camera preset actions, hanging / moving supports, less common locomotion | parity row "Ground movement" | med | M | none |
+| CH2 | units | Mount / rider placement is implemented and matched live once (get-on/get-off clips, PseudoSpeed gaits, inertia), but rider/mount skills (`ride_ub`, `<weapon>_co_horse_attack_*`, `horse_ac_spur_f`, jousting), stirrup IK, `CSRemoveMate` auto-dismiss and humanoid combat idle remain; `re-mounts-full.md` §7 inferences (PseudoSpeed producer, inertia semantics, jump impulse, turn 360, camera, XL14 tier, rider idle quirk, transition choice, `normal_speed`); `SCUnitMovements` types read from the packet not the object | `aa-client-units.md` Gaps, `re-mounts.md` gaps 7/9 | med | M | G2 |
+| G4 | gameplay | Click-to-move, air momentum, stance/alertness/combat flags, swim multipliers and graph controls, camera collision/fade, follow, camera preset actions, hanging / moving supports, less common locomotion (`re-movement.md` gaps 2, 6-10) | parity row "Ground movement" | med | M | none |
 
 ### 3.2 Housing and farming
 
-**RE spec.** `re-placement.md`: builder state machine, ghost model/tint, checks/error codes, plot border, packets, Start
-Construction/Construction windows, F/G actions; the two-click/quote/cancel/guide/wheel/tax-cert flow was measured live once.
-Farming/crops: no RE spec.
+**RE spec.** `re-placement.md` (builder state machine, ghost model/tint, checks/error codes, plot border, packets, Start
+Construction/Construction windows, F/G actions) and `re-housing.md` (decoration builder, maintain/sale/tax/rename, farm
+windows). Placement gaps 1-7 and 9-12 are done; gap 8 (rotating plot dots) and the open questions remain. Housing gaps 1-5 are
+done (`231e9df`, `5e52514`); open are gap 6 (right-click on an unfinished house casts the build skill), gap 7 (silent
+buy/cancel-sale failures), gap 8 (unused `SCHouseFarm`), gap 9 (public-farm trigger), gap 10 (synthesized F/G), gap 11
+(hardcoded `IsCastle`/`IsSiegePeriod`) and gap 12 (smaller parity items). Farming/crops still have no RE spec.
 
-**Next step.** Finish `H2` (plain wheel step, rotating plot dots, decoration counters/`X2House` decorate, live maintain-window
-and retail entry checks) and `G3` (gathering, farming, coffers, switches); crops need their own `doodad`/`DoodadFunc*` RE pass
-before implementation.
+**Next step.** Finish `H2` (plain wheel step, rotating plot dots, right-click build casting, public-farm trigger, castle/siege
+flags, live maintain-window and retail entry checks) and `G3` (gathering, farming, coffers, switches); crops need their own
+`doodad`/`DoodadFunc*` RE pass before implementation.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| H2 | HUD | Housing: placement, construction, tooltip, build precheck and the finished-house maintain window (tax, permission, recover, sale, buy, demolish) exist (`hud/houses.rs`, `hud/house_maintain.rs`); still open: plain placement wheel step (unresolved, 10 deg placeholder `ROT_STEP_PLAIN`; one live retail count), plot dots rotating with the model / following the terrain (rotated retail screenshot first), decoration counters/`X2House` decorate, live checks, retail entry point of the finished-house window; server `systems/housing` ~14k lines | HUD sweep; opcodes 0x0c1 to 0x0ca, 0x056 to 0x060 | high | L | aa-net + aa-client + aa-world placement |
+| H2 | HUD | Housing: placement, construction, tooltip, build precheck, the finished-house maintain window (tax, permission, recover, sale, buy, demolish), decoration placement (`231e9df`), counters/actability groups and sale/tax/rename (`5e52514`) exist (`hud/houses.rs`, `hud/house_maintain.rs`); still open: plain placement wheel step (unresolved, 10 deg placeholder `ROT_STEP_PLAIN`; one live retail count), plot dots rotating with the model / following the terrain (rotated retail screenshot first), right-click build casting, public-farm trigger, hardcoded castle/siege flags, silent buy/cancel failures, live maintain/deco checks, retail entry point of the finished-house window; server `systems/housing` ~14k lines | HUD sweep; opcodes 0x0c1 to 0x0ca, 0x056 to 0x060 | high | L | aa-net + aa-client + aa-world placement |
 | G3 | gameplay | Doodad interaction: gathering, farming, coffers, switches (`ChangeDoodadPhase`, `SelectInteractionEx`, `SCCofferContentsUpdate`, `SCVegetationCutdowning` unhandled) | opcodes 0x096, 0x081 | high | M | none |
 
 ### 3.3 Combat and HUD
 
-**RE spec.** None as an area spec. `re-skills.md` covers skill controllers (kinds/parameters, Dash, Leap), knockdown and effect
-lookup/beams, but not the combat row end to end.
+**RE spec.** `re-combat.md` is the area spec; gaps 1-5 are done (`c86a280` action-bar slot numbering, `2a5919e` target combat
+state and `SCCombatText`, `6d646af` resurrection/`PLAYER_RESURRECTION`); gaps 6-9 are open (tab targeting, target-of-target,
+GCD attribute/per-slot query, first-hit/preemptive state). `re-skills.md` stays a narrow note for skill controllers,
+knockdown and effect lookup/beams.
 
-**Next step.** `CB1` effect decals/lights/forces, `CB2` casters/projectiles/poses, `CB3` cooldown/GCD producers and TL lifetimes,
-`CB4` force-mode plus more reference captures; the skill-caster flowgraph (kind 8) waits on 2.4 and mounted/flying casting on 3.1.
+**Next step.** Close `re-combat.md` gaps 6-9, then `CB1` effect decals/lights/forces, `CB2` casters/projectiles/poses, `CB3`
+cooldown/GCD producers and TL lifetimes, `CB4` force-mode plus more reference captures; the skill-caster flowgraph (kind 8)
+waits on 2.4 and mounted/flying casting on 3.1.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
 | CB1 | combat | Effect decals (31 skills), `GeometryInPieces` (2), per-effect lights, `EmissiveHDRDynamic`, `ForceGeneration`, `FxMaterial` flashes (24) | `aa-client-combat.md` "What is left" | med | M | aa-fx |
 | CB2 | combat | Mounted / swimming / flying casters, doodad and ship cannon projectiles; cast cancel on mount-jump; poses for 3 channeling skills; two-hand grip, instruments' placement and sounds; remote camera shakes | `aa-client-combat.md` Not done | med | M | G2 |
-| CB3 | combat | Cooldown / GCD: native Fired producers, custom GCD, full timeline lifetimes, lane cooldown emitter re-entry check | parity row "Skill progression" | med | M | N1 for live check |
-| CB4 | combat | Force-mode (protected / team) eligibility; skill-by-skill reference verification (only 6 combat captures exist) | parity "Combat and HUD", `reference/ingame/combat_*` | med | L | more captures |
+| CB3 | combat | Cooldown / GCD: native Fired producers, custom GCD, full timeline lifetimes, re-combat gap 8 (attribute multiplier and per-slot four-value query), lane cooldown emitter re-entry check | parity row "Skill progression", `re-combat.md` gap 8 | med | M | N1 for live check |
+| CB4 | combat | Force-mode (protected / team) eligibility; tab targeting and target-of-target (re-combat gaps 6-7); first-hit/preemptive state (gap 9); skill-by-skill reference verification (only 6 combat captures exist) | parity "Combat and HUD", `re-combat.md` gaps 6-7/9, `reference/ingame/combat_*` | med | L | more captures |
 
 ### 3.4 Inventory and items
 
-**RE spec.** None as an area spec. `re-equipment.md` covers costume slot clearing, attachment rotation and heel use, not the
-inventory row.
+**RE spec.** `re-inventory.md` is the area spec; gap 1 (item security locks, `644e473`/`03b8e6c`) is done, gaps 2-11 are open
+(bag/bank cooldowns, missing tooltip sections, level-requirement red state, unconfirmed state, aux equipment slots, worn-item
+use, bank AA-point/locks, equipment stat getters, filtered-tab order, expand/destroy dialog). `re-crafting.md` covers the
+crafting/trade-pack side; `re-equipment.md` stays a narrow note.
 
-**Next step.** `H11` item workflows (enchant protected planning/shared pending/continuation, dye, look converter, temper, secure),
-`H10` remaining tooltip fields, `H7` crafting/gathering/trade-pack follow-ups; live repair/expansion routing stays with the NPC
-entry (3.5).
+**Next step.** `H11` item workflows (enchant protected planning/shared pending/continuation, dye, look converter, temper),
+`H10` remaining tooltip fields, `H7` crafting/gathering/trade-pack follow-ups; close `re-inventory.md` gaps 2-11; live
+repair/expansion routing stays with the NPC entry (3.5).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| H7 | HUD | Crafting follow-ups: workbench input / range / permissions, gathering interactions, processing, trade-pack (specialty) sale flow and coin payout, `X2Store` zone-group getters and `BackCarryingOrders` still fake | parity rows "Crafting" and "NPC interactions", `aa-client-specialty.md` | high | M to L | G4 |
-| H10 | HUD | Tooltips: damage breakdown option, `ea_*` / `return_point`, buff caster stats on others, gems / tempers / enchants, repair cost | `aa-client-hud.md` "Tooltip numbers" | med | S to M | none |
-| H11 | HUD | Item workflows: enchant protected planning / shared pending / continuation, dye, look converter (`X2ItemLookConverter`), temper, item secure / unsecure sends | `aa-client-enchant.md`, parity row "Inventory" | med | M | none |
+| H7 | HUD | Crafting follow-ups: heavy-pack penalties, stale proficiency after a craft, hardcoded max labor and premium getters, gathering interactions and processing flows, the missing optional natives and ignored `SCWorldInteractionSkillList` (`re-crafting.md` gaps 6-10); live workbench input/permission validation | parity rows "Crafting" and "NPC interactions", `aa-client-specialty.md`, `re-crafting.md` | high | M to L | G4 |
+| H10 | HUD | Tooltips: damage breakdown option, `ea_*` / `return_point`, buff caster stats on others, gems / tempers / enchants, repair cost; missing `re-inventory.md` gap 3 sections | `aa-client-hud.md` "Tooltip numbers", `re-inventory.md` gap 3 | med | S to M | none |
+| H11 | HUD | Item workflows: enchant protected planning / shared pending / continuation, dye, look converter (`X2ItemLookConverter`), temper, plus `re-inventory.md` gaps 2, 4-11 (bag/bank cooldowns, level red state, unconfirmed state, aux slots, worn-item use, bank AA/locks, equipment getters, filtered-tab order, expand/destroy dialog) | `aa-client-enchant.md`, parity row "Inventory", `re-inventory.md` | med | M | none |
 
 ### 3.5 Quests and NPCs
 
-**RE spec.** None.
+**RE spec.** `re-quests.md` is the area spec; gaps 1-4 are done (`3037053` timer, `f79ebe4` marks, `a41e134` every talk
+objective, `0e42647` the 16 NPC windows), gaps 5-10 are open (requirement kinds mostly default true, journal data stubs,
+quest camera/decline no-ops, shop AA-point currency/catalog order, undecoded quest packets, `TryStartQuestContext` arity).
+Oracle: the quest tracker is SAME in batch 2; quest talk/timer are implemented but not drivable live yet.
 
-**Next step.** `H8` NPC services (multi-service choice, live repair routing, ability, priest, coin/doodad shops, teleport), `H9`
-map (objective areas, notifier icons, other zones, climate/conflict, housing/public-farm, ship markers), `H5`
-portals/teleport/navi/return points, and `G6` quest camera (with 2.4).
+**Next step.** Close `re-quests.md` gaps 5-10, then `H8` NPC leftovers (coin/doodad shops, teleporter fare, live multi-service
+verification), `H9` map (other-zone icons, climate/conflict overlays, live housing/public-farm icons, native radar
+relations/area fog), `H5` portals/teleport/navi/return points, and `G6` quest camera (with 2.4).
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
 | H5 | HUD | Portals / teleport / navi / return points: nothing wired, `SCCharacterPortals` etc. undecoded | opcodes 0x05b to 0x05d, 0x0b3, 0x115 | med | M | none |
-| H8 | HUD | NPC services: multi-service NPCs (quest and shop choice), live repair routing, ability services, priest buffs, coin / doodad shops, teleport | parity row "NPC interactions" | med | M | none |
-| H9 | HUD | Map: quest objective areas, notifier icons, other-zone icons, climate / conflict overlays, live housing / public farm icons, ship markers | `aa-client-hud.md` Not done | med | M | H2, G2 |
+| H8 | HUD | NPC services: the 16 original service windows, multi-service menu, repair routing, ability services and priest buffs are done (`0e42647`); still open: coin / doodad-shop NPCs, the server-side teleporter fare table, live multi-service verification | parity row "NPC interactions", `re-quests.md` gap 4 | med | M | none |
+| H9 | HUD | Map: quest objective areas, notifier icons and ship/transport/fish radar are done; still open: other-zone icons, climate / conflict overlays, live housing / public farm icons, native radar relations/area fog | `aa-client-hud.md` Not done | med | M | H2, G2 |
 | G6 | gameplay | Cinema / quest camera: hidden cinematic actors are "aa-client's screen-flow responsibility"; `X2Quest.UseQuestCamera` false | `aa-world.md` §6 | low | M | none |
 
 ### 3.6 Transport (ships, gliders, carts)
 
-**RE spec.** `re-wagons.md` for the Farm Wagon (identity, model/wheels/helm, seats/boarding, driving, cargo/mode bar, despawn;
-packet flow measured live). Ships, gliders, hanging/flying: none.
+**RE spec.** `re-wagons.md` for the Farm Wagon (identity, model/wheels/helm, seats/boarding, driving, cargo/mode bar,
+despawn; packet flow measured live) and `re-transport.md` for ships, gliders, transfers, siege weapons and the packet table.
+Wagon gaps 1-3, 5 and 7-8 are done and gap 4 is partly done (helm and wheels; `$IK_Grip` IK open); open are gap 6 (SlaveLocator
+ghost), gap 9 (CryPhysics driving) and gap 10 (name-tag offset unverified), plus the open questions (interaction/range,
+rotation, wheel spin/remote smoothing, mate-wagon link). Transport gaps 1, 2 and 4 are done
+(`fe37759`/`c0e7eec`, `654d092`); open are gap 3 (ship visual chain: rudder, wheel, sail, throttle, sounds), gap 5 (boarding
+ranges), gap 6 (glider mode skills), gap 7 (deploy default/gate), gap 8 (static Summon Info), gap 9 (turret aiming), gap 10
+(water feedback), gap 11 (extra anchor), gap 12 (arcade cars/tractors) and gap 13 (stuck-ship actions). `re-mounts.md` covers
+the mount core.
 
 **Next step.** `G2a` land-vehicle leftovers (SlaveLocator ghost, CryPhysics driving, `$IK_Grip`/helm, boarding range constant,
-cargo models per pack), `G2` ships/gliders/hanging/flying and ship cannons, `N4` outbound land/ship movement plus type-3 bodies.
-CryPhysics driving waits on 2.3; ship cannons remain blocked by the server's log-only slave-equipment stub.
+cargo models per pack, name-tag offset), `G2` ships/gliders/hanging/flying and ship cannons (transport gaps 3, 5-13), `N4`
+outbound land/ship
+movement plus type-3 bodies. CryPhysics driving waits on 2.3; ship cannons remain blocked by the server's log-only
+slave-equipment stub. The wagon packet flow was measured live; transfer boarding/routes have not been captured live.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| G2a | gameplay | Land vehicles (Farm Wagon), left after the `fix/wagon-retail` pass (`docs/research/re-wagons.md` 6): gap 7 summon locator ghost (`SlaveLocator`: cursor ray, wheel rotation, OBB validity, red invalid material) and gap 8 CryPhysics driving (inertia, roll/pitch, `max_climb_ang`); `$IK_Grip_L/R` hand IK on the helm and the helm's exact orientation (no `$helms` helper in the wagon skeleton: it sits between the grips); the boarding range constant `DAT_39ac79fc` (10 m stand-in); the `builtin_vehicle_info` key has no default key; cargo crate models per loaded pack and `VehicleMove` remote steering from the packet instead of the heading rate are unverified live | `re-wagons.md` | med | M | G2 |
-| G2 | gameplay | Transport: the mount core is implemented (`re-mounts.md`); remaining: ships (water placement, boarding, helm, deck standing, mode mount skills, unsummon), gliders, hanging, flying state (`SCSkillControllerState`, `SCUnitFlyingStateChanged`, `SCShipyardState`, `SCHung`, `SCBondDoodad` undecoded); ship cannons blocked by the server's log-only slave-equipment stub; server drops the ship summon position and always binds the driver seat | `aa-client-units.md`, parity "Pets, slaves", opcodes 0x06d, 0x07a, 0x137 to 0x13a, 0x1aa | med | L | N4 |
+| G2a | gameplay | Land vehicles (Farm Wagon), left after the `fix/wagon-retail`/`fix/wagon-mount-packets` passes (`re-wagons.md` 6): gap 6 summon locator ghost (`SlaveLocator`: cursor ray, wheel rotation, OBB validity, red invalid material) and gap 9 CryPhysics driving (inertia, roll/pitch, `max_climb_ang`); `$IK_Grip_L/R` hand IK on the helm and the helm's exact orientation (no `$helms` helper in the wagon skeleton: it sits between the grips); the boarding range constant `DAT_39ac79fc` (10 m stand-in; `re-transport.md` gap 5 wants 4 m bind / 3 m interaction); cargo crate models per loaded pack, the name-tag offset (`name_tag_offset` 3.0) and `VehicleMove` remote steering from the packet instead of the heading rate are unverified live | `re-wagons.md`, `re-transport.md` gap 5 | med | M | G2 |
+| G2 | gameplay | Transport: mounts, owned land vehicles and transfers (boarding/bar/routes, `fe37759`/`c0e7eec`), plus ship parts and damage states (`654d092`) are in; remaining: ship visual chain, boarding ranges, glider mode skills/deploy gate, live Summon Info, turret aiming, water feedback, extra anchor, arcade cars/tractors and stuck-ship actions (`re-transport.md` gaps 3, 5-13); hanging/flying state (`SCSkillControllerState`, `SCUnitFlyingStateChanged`, `SCShipyardState`, `SCHung`, `SCBondDoodad` undecoded); ship cannons blocked by the server's log-only slave-equipment stub; server drops the ship summon position and always binds the driver seat | `aa-client-units.md`, parity "Pets, slaves", `re-transport.md`, opcodes 0x06d, 0x07a, 0x137 to 0x13a, 0x1aa | med | L | N4 |
 | N4 | network | Outbound land-vehicle (`MoveVehicle`/type 2) and ship helm (`SteerShip`/type 4) movement are written; type-3 ship bodies and hanging/support blocks remain read-only | `aa-net.md` Known gaps | med | M | G2 |
 
 ## 4. Remaining ledger rows
@@ -266,8 +307,9 @@ slots; the graph player (2.1) is a prerequisite for the remaining clips.
 
 ### 4.8 Chat
 
-**RE spec.** None. **Next step.** `H13`: send-size overflow, window position persistence, other-tab splitting, full command set,
-moderation.
+**RE spec.** `re-social.md` (gaps 2-4; gap 1 is done, `5401aaa`/`4d49692`). **Next step.** `H13`: user chat channels,
+notices/chat failures, send/render policy, send-size overflow, window position persistence, other-tab splitting, full command
+set and moderation.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
@@ -275,7 +317,8 @@ moderation.
 
 ### 4.9 Party and raid
 
-**RE spec.** None. **Next step.** `H14` overhead 3D glyphs and party indicators; paired live loot settlement waits on `N1`.
+**RE spec.** `re-social.md` (gaps 5-6). **Next step.** `H14` overhead 3D glyphs and party indicators, the risky two-stage flow,
+invite field order and loot-method 255; paired live loot settlement waits on `N1`.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
@@ -283,8 +326,8 @@ moderation.
 
 ### 4.10 Social/community
 
-**RE spec.** None. **Next step.** `H17` live settlement/unblock/restart and 3D titles; guild web/siege controls are in `H3`
-(4.12), nation in 4.12.
+**RE spec.** `re-social.md` (gaps 3, 7-9; gap 1 is done). **Next step.** `H17` live settlement/unblock/restart, 3D titles,
+notices, expedition coverage and mail/trade/friends tails; guild web/siege controls are in `H3` (4.12), nation in 4.12.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
@@ -292,8 +335,8 @@ moderation.
 
 ### 4.11 Mail, trade and auctions
 
-**RE spec.** None. **Next step.** `H1`: live search/bid/buyout/put-up/cancel/settlement and escrow/restart; paired mail/trade
-checks wait on `N1`.
+**RE spec.** `re-social.md` (gap 8). **Next step.** `H1`: live search/bid/buyout/put-up/cancel/settlement and escrow/restart,
+`CSListMailContinue`, `withReceiver`, postage/return and partial-stack trade; paired mail/trade checks wait on `N1`.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
@@ -319,9 +362,9 @@ scheduled-event presentation are open.
 
 ### 4.14 Unit colours
 
-**RE spec.** `re-unit-colors.md` (rules, `hud.dds` rows, passive-hostile evidence, Bevy fix). **Next step.** Capture the
-aggressive name colour (the red row scaled is assumed), check a friendly NPC of another faction, and run one live side-by-side.
-No item ID.
+**RE spec.** `re-unit-colors.md` (rules, `hud.dds` rows, passive-hostile evidence, Bevy fix; implemented in `a54eaa0`, no open
+spec gaps). **Next step.** Capture the aggressive name colour (the red row scaled is assumed), check a friendly NPC of another
+faction, and run one live side-by-side. No item ID.
 
 ### 4.15 Duels
 
@@ -354,8 +397,10 @@ common farm/racing/second password/web/tutorial.
 
 ### 4.18 Options and UI toolkit
 
-**RE spec.** None. **Next step.** `H12`: remaining quality knobs, live draw-distance change, key-binding blob/character sync,
-remaining action consumers and layout persistence.
+**RE spec.** `re-uitoolkit.md`: gaps 1-3 are done (`ad80b3a`, `22a19b7`, `593c2c5`); gaps 4-8 are open (option/keybinding
+storage format and profile import, restart options, mouse-sensitivity range, options with no consumer, `Reset` semantics).
+**Next step.** `H12`: remaining quality knobs, live draw-distance change, key-binding blob/character sync, remaining action
+consumers and layout persistence, plus `re-uitoolkit.md` gaps 4-8.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
