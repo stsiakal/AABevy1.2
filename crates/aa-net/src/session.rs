@@ -262,6 +262,9 @@ pub enum Command {
     /// `CraftRequested` only reports a local send, not batch acceptance/completion. Existing
     /// `StopCasting` cancels an active cast; the lane does not invalidate queued craft tasks.
     ExecuteCraft { craft_id: u32, doodad_obj_id: u32, count: i32 },
+    /// Sell the worn trade pack (`CSSellBackpackGoods`) at the specialty/trader NPC
+    /// `npc_obj_id` (nonzero, 24-bit). The server checks the pack, labor and NPC.
+    SellBackpackGoods { npc_obj_id: u32 },
     /// Cast a resolved combat skill as a mate. Both the raw mount skill ID and combat skill ID
     /// are explicit; target must be a real nonzero 24-bit unit ID (self buffs name the mate).
     /// No local learned-skill gate or automatic target/slot/auto-use choice is imposed.
@@ -1500,6 +1503,11 @@ impl Session {
                     self.emit(Event::CraftRequested { craft_id, doodad_obj_id, count });
                 } else {
                     self.emit(Event::CraftRejected { craft_id, doodad_obj_id, count, message: "crafting request was not sent".into() });
+                }
+            }
+            Command::SellBackpackGoods { npc_obj_id } => {
+                if npc_obj_id != 0 && npc_obj_id <= 0xffffff && self.phase == Phase::InWorld {
+                    self.send_game(game::ClientMsg::SellBackpackGoods { npc_obj_id }).await;
                 }
             }
             Command::UseMateSkill { skill_id, mate_obj_id, mount_skill_id, target_obj_id } => {
@@ -4123,6 +4131,44 @@ mod tests {
         assert!(state.doodads.by_id.is_empty());
         assert_eq!((state.stats.labor, state.stats.money), (123, 456));
         assert_eq!(state.inventory.bag, vec![None]);
+    }
+
+    #[tokio::test]
+    async fn sell_backpack_command_sends_the_bc_npc_only_in_world() {
+        use tokio::io::AsyncWriteExt;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let stub = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut length = [0u8; 2];
+            tokio::time::timeout(Duration::from_secs(2), sock.read_exact(&mut length))
+                .await
+                .unwrap()
+                .unwrap();
+            let mut request = vec![0u8; u16::from_le_bytes(length) as usize];
+            sock.read_exact(&mut request).await.unwrap();
+            assert_eq!(request, [0xdd, 1, 0, 0, 0x42, 0, 0x01, 0x02, 0x03]);
+            let mut response = crate::wire::Writer::new();
+            response.raw(&[0xdd, 1, 0, 0]).u16(crate::opcodes::sc::SCErrorMsgPacket).i16(361).i16(361).u32(0).bool(false);
+            let response = response.finish();
+            sock.write_all(&(response.len() as u16).to_le_bytes()).await.unwrap();
+            sock.write_all(&response).await.unwrap();
+        });
+        let (evt, mut events) = unbounded_channel();
+        let mut session = Session::new(evt, ClientOptions::default());
+        session.game = Some(GameConn::connect(&addr).await.unwrap());
+        session.phase = Phase::CharacterSelect;
+        session.command(Command::SellBackpackGoods { npc_obj_id: 0x030201 }).await;
+        session.phase = Phase::InWorld;
+        for npc_obj_id in [0, 0x100_0000, u32::MAX] {
+            session.command(Command::SellBackpackGoods { npc_obj_id }).await;
+        }
+        assert!(events.try_recv().is_err(), "the client never confirms its own sale");
+        session.command(Command::SellBackpackGoods { npc_obj_id: 0x030201 }).await;
+        let response = session.game.as_mut().unwrap().recv().await;
+        session.game_msg(response).await;
+        assert!(matches!(events.try_recv(), Ok(Event::ServerError { code: 361 })));
+        stub.await.unwrap();
     }
 
     #[tokio::test]

@@ -108,6 +108,8 @@ pub enum ClientMsg {
     RemoveBuff { obj_id: u32, buff_index: u32, reason: u8 },
     /// `CSExecuteCraft`: submit the whole recipe batch once. The session validates IDs/count.
     ExecuteCraft { craft_id: u32, doodad_obj_id: u32, count: i32 },
+    /// `CSSellBackpackGoods`: sell the worn trade pack at the specialty/trader NPC `npc_obj_id`.
+    SellBackpackGoods { npc_obj_id: u32 },
     /// `CSLootOpenBag`: open the loot of the corpse `obj_id` (`loot_all`: take everything at once; the server sends
     /// what is left as a `LootBag`).
     LootOpenBag { obj_id: u32, loot_all: bool },
@@ -209,6 +211,7 @@ impl ClientMsg {
             Self::StopCasting { .. } => cs::CSStopCastingPacket,
             Self::RemoveBuff { .. } => cs::CSRemoveBuffPacket,
             Self::ExecuteCraft { .. } => cs::CSExecuteCraft,
+            Self::SellBackpackGoods { .. } => cs::CSSellBackpackGoodsPacket,
             Self::LootOpenBag { .. } => cs::CSLootOpenBagPacket,
             Self::LootItem { .. } => cs::CSLootItemPacket,
             Self::LootCloseBag { .. } => cs::CSLootCloseBagPacket,
@@ -319,6 +322,9 @@ impl ClientMsg {
             }
             Self::ExecuteCraft { craft_id, doodad_obj_id, count } => {
                 w.u32(*craft_id).bc(*doodad_obj_id).i32(*count);
+            }
+            Self::SellBackpackGoods { npc_obj_id } => {
+                w.bc(*npc_obj_id);
             }
             Self::LootOpenBag { obj_id, loot_all } => {
                 // the object, the second object (none) and whether to take everything
@@ -1623,6 +1629,28 @@ mod tests {
                 ),
                 (craft_id, doodad_obj_id, count)
             );
+            assert_eq!(reader.remaining(), 0);
+        }
+    }
+
+    #[test]
+    fn sell_backpack_goods_is_the_server_reader_bc_object_id() {
+        // The server's `CSSellBackpackGoodsPacket::read` (`systems/npcs/specialty.rs`,
+        // `systems/economy/store.rs`) reads exactly one `bc` object id.
+        for (npc_obj_id, expected) in [
+            (0u32, vec![0u8, 0, 0]),
+            (0x030201, vec![0x01, 0x02, 0x03]),
+            (0xffffff, vec![0xff, 0xff, 0xff]),
+        ] {
+            let message = ClientMsg::SellBackpackGoods { npc_obj_id };
+            assert_eq!(message.opcode(), 0x042);
+            assert_eq!(message.name(), "CSSellBackpackGoodsPacket");
+            assert_eq!(message.encode_body(), expected);
+            let mut frame = vec![0xdd, 1, 0, 0, 0x42, 0];
+            frame.extend_from_slice(&expected);
+            assert_eq!(message.encode(0), frame);
+            let mut reader = Reader::new(&expected);
+            assert_eq!(reader.bc().unwrap(), npc_obj_id);
             assert_eq!(reader.remaining(), 0);
         }
     }
