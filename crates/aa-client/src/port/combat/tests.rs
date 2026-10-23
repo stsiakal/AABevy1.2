@@ -969,6 +969,19 @@ fn timeline_combo_and_client_only() {
         world.events,
         vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED, EVENT_SKILL_ENDED]
     );
+
+    // StopSkill only acts on the auto-attack pseudo skill (2) and emits 0x17.
+    let mut world = TimelineWorld::default();
+    world.units.insert(
+        local_id,
+        TimelineUnit { id: local_id, auto_attack: true, ..TimelineUnit::default() },
+    );
+    world.stop_skill(local_id, 10024);
+    assert!(world.units[&local_id].auto_attack);
+    assert!(world.events.is_empty());
+    world.stop_skill(local_id, AUTO_ATTACK_SKILL);
+    assert!(!world.units[&local_id].auto_attack);
+    assert_eq!(world.events, vec![EVENT_AUTO_ATTACK_STOPPED]);
 }
 
 // ---------------------------------------------------------------- synthetic branches
