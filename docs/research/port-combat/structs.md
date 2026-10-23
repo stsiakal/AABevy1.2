@@ -19,12 +19,13 @@ combat code reads, with the call site that proves the width.
 | `0x19` | u8 | "silent/refusal suppressed" (error builder returns early) | **[I]** 39390900 |
 | `0x38` | u8 | `start_autoattack` — start auto-attack on cast | **[I]** 3939a810 |
 | `0x6c` | i32 | channel/repeat duration (>0 = channel/ticks) | **[I]** 3939a810, 3939b010, 3939b8c0 |
+| `0x84` | u32 | `cooldown_tag_id` (word `0x21`): `0` selects the skill cooldown list, otherwise the tag list key | **[R]** 39899f90 |
 | `0x94` | i32 | `custom_gcd` (ms; positive) | **[I]** 3939a810 |
 | `0x9c` | u8 | "custom gcd valid" (`0` → use `+0x94`, else tag GCD) | **[I]** 3939a810 |
 | `0xb0` | i32 | base duration copied into `ClientSkill+0x138` | **[R]** 3939b8c0 |
 | `0xc0` | u8 | start-skill-controller flag | **[I]** 3939b010, 3939b8c0 |
 | `0xc4` | i32 | cooldown-ish value copied into `ClientSkill+0x140` / passed to `FUN_39898ef0` | **[R]** 3939b8c0 |
-| `0xdc` | u8 | `ignore_global_cooldown` — `FUN_3989a3e0` zeroes the GCD pair when set | **[R]** 3989a290/3989a3e0 |
+| `0xdc` | u8 | `ignore_global_cooldown` — `FUN_3989a3e0` starts the pair at zero instead of the GCD (tags/skills still scanned) | **[R]** 3989a290/3989a3e0 |
 | `0xdd` | u8 | "skip" flag used at fire | **[I]** 3939a810, 3939b010 |
 | `0xe4` | i32 | skill category id for the target-override gate | **[R]** 393925c0 |
 | `0xe8` | i32 | skill-category index (-1 = none) → unit `+0x4b8 + 0xc0*idx` | **[R]** 393925c0 |
@@ -40,7 +41,7 @@ combat code reads, with the call site that proves the width.
 | `0x158` | u8 | `casting_delayable` (start-delay path `FUN_39390f80`) | **[I]** 39390f80 |
 | `0x160` | i32 | camera/controller parameter | **[R]** 3939b8c0 |
 | `0x164` | i32 | camera/controller parameter | **[R]** 3939a810 |
-| `0x188` | i32 | "big hit" threshold (`float(desc+0x188) > 1.0` → alt presentation) | **[R]** 39391950 |
+| `0x188` | i32 | "big hit" value; `float(desc+0x188) > 0.0` (not 1.0) selects the alt presentation | **[R]** 39391950 |
 | `0x1b0` | i32 | target selection type (0 none, 1/4/5/6/0xd switch in Fire/click) | **[R]** 3939b010, 390f4c30 |
 | `0x1b4` | i32 | effect/attack range? | **[?]** |
 | `0x1bc` | i32 | `default_gcd` (1 = 1 s tag GCD) | **[I]** 3939a810, 3939b010 |
@@ -102,20 +103,29 @@ Proved by `lea ecx,[esi+0x2c48]` at `0x3939aab9`/`0x3939aad7` and by `FUN_39899d
 ```
 +0x000  Unit*   owner                 // *param_1; owner+0x3af1 disables the manager
 +0x004  u32     unitId                // passed to FUN_3989f900
-+0x008  i32     gcdRemainingMs
-+0x00C  i32     gcdTotalMs
++0x008  u32     gcdRemainingMs
++0x00C  u32     gcdTotalMs
 +0x010  i32     tagCount              // max 150
 +0x014  Entry   tags[150]             // 0xc bytes each
 +0x71C  i32     skillCount            // max 150
 +0x720  Entry   skills[150]           // 0xc bytes each
-+0xDC   u8      ignoreGlobal (copy of the queried desc's flag)  // [I] set by 3989a3e0 caller
-struct Entry { u32 id; i32 remainingMs; i32 totalMs; };
+struct Entry { u32 id; u32 remainingMs; u32 totalMs; };
 ```
-* `FUN_39899d00` clears `+8/+0xc`; `FUN_39899d40` appends; `FUN_39899e50` ticks.
-* `FUN_39899f90` inserts into the list keyed by `param_2[0x21]` (`DAT_3a5e12f0` = skill list,
-  otherwise tag list), keeping the larger remaining/total, compacting when full, and logs at 150.
+The manager ends at `0xE28`, not `0x1260`. There is **no** `ignoreGlobal` field in the manager:
+`FUN_3989a3e0` reads the flag from `SkillDesc+0xdc` (see §1); `FUN_3989a3b0` takes it as an
+explicit argument. The remaining/total are unsigned in every comparison (`jbe`/`ja`) and in the
+tick clamp.
+
+`SCCooldowns` packet layout read by `FUN_39899d40`: `i32 skillCount` at `+0`, then 150 rows of
+12 bytes at `+4` in the order **(id, total, remaining)**; `i32 tagCount` at `+0x70c`, rows at
+`+0x710`. Each list is capped at 150 independently.
+
+* `FUN_39899d00` clears `+8/+0xc`; `FUN_39899d40` appends; `FUN_39899e50` ticks (`saturating_sub`).
+* `FUN_39899f90` inserts into the skill list when `desc+0x84 == 0` (`DAT_3a5e12f0` is the static
+  value 0) keyed by skill id, otherwise into the tag list keyed by `desc+0x84`, keeping the larger
+  remaining/total, compacting rows with zero remaining when full, and logging at 150.
 * `FUN_3989a290` queries max remaining for skill id `*desc` and all tags `desc+0x238..0x23c`;
-  `ignore` (`desc+0xdc`) returns `(0,0)` for the GCD pair.
+  the `ignore` flag only zeroes the **initial global pair**, the tag/skill scan still runs.
 
 ## 4. `Unit` combat fields (x2game `X2Unit` actor object)
 
@@ -254,16 +264,19 @@ Input `hitType` → `(animId, kind)`, all ids from `.data`:
 
 | hitType | anim id | kind |
 |---|---|---|
-| 1, 9, 0xD | `DAT_3a177728` (none) | 3 |
-| 3, 0xB, 0xF | `0x39ac7680` | 3 |
-| 4, 0xA, 0xE | `0x39ac768c` / `0x39ac7690` (weapon-dependent) | 3 |
-| 5, 0x10 | `0x39ac7678` | 3 |
-| 6, 0x11 | `0x39ac7674` | 1 |
-| 7, 0x14 | `0x39ac7670` / `0x39ac766c` | 1 |
-| other, crit | `0x39ac7684` / `0x39ac767c` | 3 |
-| other, normal | `0x39ac7698` / `0x39ac7694` | 3 |
+| 1, 9, 0xD | crit/normal fallback (below) | 3 |
+| 3, 0xB, 0xF | `0x39ac7680` = 15 | 3 |
+| 4, 0xA, 0xE | `0x39ac768c` = 255 / `0x39ac7690` = 256 (weapon) | 3 |
+| 5, 0x10 | `0x39ac7678` = 13 | 3 |
+| 6, 0x11 | `0x39ac7674` = 12 | 1 |
+| 7, 0x14 | `0x39ac7670` = 11 / `0x39ac766c` = 10 (weapon) | 1 |
+| other | `DAT_3a177728` = 0 | 3 |
+| fallback crit | `0x39ac7684` = 17 / `0x39ac767c` = 14 (weapon) | 3 |
+| fallback normal | `0x39ac7698` = 387 / `0x39ac7694` = 386 (weapon) | 3 |
 
-`FUN_39354600()` selects the "crit/skill" vs "melee" column; `FUN_397cd5f0` gates one variant.
+`FUN_39354600(unit)` reads `unit+0x5fc4` (crit/skill column); `FUN_397cd5f0(*(u32*)(unit+0x1000))`
+is the weapon variant (item type `+0x74 == 0x10`).  The table values above are the four-byte
+`.data` values at those addresses.
 
 ## 10. `HitRecord` (SCUnitDamaged payload, copied to the instance)
 

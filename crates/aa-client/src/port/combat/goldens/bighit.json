@@ -1,0 +1,899 @@
+{
+  "function": "big hit predicate FUN_39391950",
+  "module": "x2game.dll",
+  "client_mode": 1,
+  "resolved_ids": [
+    9254,
+    37503
+  ],
+  "cases": [
+    {
+      "hit_type": 0,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": -1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": 100,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": 2147483647,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 0,
+      "big_hit": -2147483648,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": -1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 100,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2147483647,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": -2147483648,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": -1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": 100,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": 2147483647,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 2,
+      "big_hit": -2147483648,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 0,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 1,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 1,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 1,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 1,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 1,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 2,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 2,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 2,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 2,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 2,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 3,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": false
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 3,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 3,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 3,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 3,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 4,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 4,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 4,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 4,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 4,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 9,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 0,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 9,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 1,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 0,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 9,
+      "caster_id": 37503,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 9,
+      "caster_id": 0,
+      "target_id": 9254,
+      "out": true
+    },
+    {
+      "hit_type": 1,
+      "big_hit": 2,
+      "caster_kind": 9,
+      "caster_id": 9254,
+      "target_id": 37503,
+      "out": true
+    }
+  ]
+}

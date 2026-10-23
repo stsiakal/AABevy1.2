@@ -1,0 +1,322 @@
+{
+  "function": "action-slot cooldown resolver FUN_393f61c0 (body of FUN_3943f310/FUN_3943f420)",
+  "module": "x2game.dll",
+  "skill_id": 10501,
+  "skill_desc_tag": 0,
+  "skill_desc_tags": [
+    378,
+    1480,
+    1463
+  ],
+  "item_id": 5569,
+  "item_skill_id": 0,
+  "item_kind": 1,
+  "gcd_default_ms": 777,
+  "gcd_custom_ms": 3000,
+  "cases": [
+    {
+      "label": "empty_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 0,
+        "id": 0
+      },
+      "seed": "none",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "skill_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill",
+      "out": {
+        "global": [
+          1234,
+          1234
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "skill_gcd_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill_gcd",
+      "out": {
+        "global": [
+          1234,
+          1234
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "skill_big_gcd_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill_big_gcd",
+      "out": {
+        "global": [
+          5000,
+          5000
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "item_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 1,
+        "id": 5569
+      },
+      "seed": "none",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "item_gcd_slot_0",
+      "slot": 0,
+      "input": {
+        "kind": 1,
+        "id": 5569
+      },
+      "seed": "item_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "unknown_kind_0",
+      "slot": 0,
+      "input": {
+        "kind": 3,
+        "id": 10501
+      },
+      "seed": "skill_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "unknown_kind4_0",
+      "slot": 0,
+      "input": {
+        "kind": 4,
+        "id": 5569
+      },
+      "seed": "item_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "empty_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 0,
+        "id": 0
+      },
+      "seed": "none",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "skill_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill",
+      "out": {
+        "global": [
+          1234,
+          1234
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "skill_gcd_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill_gcd",
+      "out": {
+        "global": [
+          1234,
+          1234
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "skill_big_gcd_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 2,
+        "id": 10501
+      },
+      "seed": "skill_big_gcd",
+      "out": {
+        "global": [
+          5000,
+          5000
+        ],
+        "skill": [
+          1234,
+          1234
+        ]
+      }
+    },
+    {
+      "label": "item_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 1,
+        "id": 5569
+      },
+      "seed": "none",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "item_gcd_slot_84",
+      "slot": 84,
+      "input": {
+        "kind": 1,
+        "id": 5569
+      },
+      "seed": "item_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "unknown_kind_84",
+      "slot": 84,
+      "input": {
+        "kind": 3,
+        "id": 10501
+      },
+      "seed": "skill_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "unknown_kind4_84",
+      "slot": 84,
+      "input": {
+        "kind": 4,
+        "id": 5569
+      },
+      "seed": "item_gcd",
+      "out": {
+        "global": [
+          0,
+          0
+        ],
+        "skill": [
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}
