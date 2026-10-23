@@ -91,12 +91,13 @@ pub fn encode_key(keys: &[(impl AsRef<str>, u16)], name: &str) -> u16 {
     0xffff
 }
 
-/// `FUN_30611470`: keyed encode by local key index. `keys[local]` names the key; the result is
-/// the key's graph-wide index, or `0xffff` when the local index is out of range or the name is
-/// not present in the graph key map. The original writes the result into `out[input_id]`; the
-/// caller supplies the id, so the returned value is enough here.
-pub fn encode_key_index(keys: &[(impl AsRef<str>, u16)], local: usize) -> u16 {
-    keys.get(local).map(|(_, index)| *index).unwrap_or(0xffff)
+/// `FUN_30611470`: keyed encode by key-index. The original writes `out[input_id]` from the
+/// input's sorted key map at `+0x14`; the `param_3` argument is an offset into that map, not an
+/// index into the `+0x18` key list. Graph inputs loaded from XML never populate the map (its
+/// root stays `-1`), so the function writes `0xffff` for every call. The captured `index`
+/// goldens are all `0xffff` for that reason.
+pub fn encode_key_index(_keys: &[(impl AsRef<str>, u16)], _local: usize) -> u16 {
+    0xffff
 }
 
 /// `cvttss2si`: truncate toward zero, `INT_MIN` for NaN/out-of-range (x86 semantics). Rust's

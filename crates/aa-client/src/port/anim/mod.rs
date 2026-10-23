@@ -1,4 +1,4 @@
-//! Animation-graph port, steps 1-2: pure leaves and the static graph loader.
+//! Animation-graph port, steps 1-3: pure leaves, the static graph loader and the graph state machine.
 //!
 //! Step 1 is a line-by-line port of the pure functions used by the 1.2 animation graph:
 //! `CAnimationGraph::SStateInfo::EvaluateGuards` (`cryaction+0x5f7a80`), the integer/float/key
@@ -18,6 +18,7 @@
 mod fourcc;
 mod graph;
 mod guards;
+mod machine;
 mod inputs;
 mod side;
 
@@ -30,6 +31,7 @@ pub use graph::{
     load_graph_from_pak,
 };
 pub use guards::evaluate_guards;
+pub use machine::{GraphEvent, GraphState, InputValues, UpdateKind};
 pub use inputs::{
     encode_float, encode_float_str, encode_int, encode_int_str, encode_key, encode_key_index,
     parse_float, parse_int,
