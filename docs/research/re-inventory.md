@@ -384,21 +384,29 @@ found), `SCUnitEquipmentsChangedPacket 0x094` (`objId BC, count u8, (slot u8, it
    through `drag.lua`; the original padlock overlay and SKYBLUE line render from the item info
    table. `GetFeatureSet` now maps every native field from the received FeatureSet bytes (empty
    table before one arrives), so the lock button stays hidden on this server (ItemSecure off).
-2. **Bag/bank item cooldown is never shown.** Original computes the use-skill cooldown plus the
-   600 s sapling timer per slot (`FUN_3944d9e0`). Bevy's item slot hard-codes
-   `cooldown: None` (`hud/panels.rs:144-160`) and `X2Bag.GetBagCooldown` returns nil
-   (`aa-ui/examples/fake/fake_bag.lua:208`). Fix: fill `SlotSnap.cooldown` from the item's
-   use skill and the category-8 timestamp, and override `GetBagCooldown`.
-3. **Most tooltip sections are missing.** Original renders lifespan/expiry, locked, look
+2. **Done (`8fbdf06`): bag/bank item cooldown.** Original computes the use-skill cooldown plus
+   the 600 s sapling timer per slot (`FUN_3944d9e0`). Bevy now fills `SlotSnap.cooldown` from
+   the item's use skill (`native_at` plus the own-cast estimate) and, for category 8, from the
+   item's creation timestamp (`elapsed <= 600` -> `(600 - elapsed) * 1000` / 600000 ms, else
+   600000 / 600000), and `X2Bag.GetBagCooldown` returns the slot's remaining/total, taking the
+   bank slots while the bank is active (`sort_bank.alb` calls `X2Bag`).
+3. **Done (`8fbdf06`): tooltip sections.** Original renders lifespan/expiry, locked, look
    changed, unpack, sockets, recharge, user music, crafter, set and sell lines
-   (`tooltip.alb:1326-2912`, `FUN_39423560`). Bevy's `tips.rs:181-217` sets only name, grade,
-   description, stack, level, price, refund, sellable and equipment stats. Fix: add the missing
-   table fields from `items` row and item instance (`expireTime`, `needsUnpack`, `locked`,
-   `securityState`, `itemSocketInfos`, `sellables`, `crafterInfo`).
-4. **Level-requirement red state is dead.** Original calls `ItemRequireLevel` and
+   (`tooltip.alb:1326-2912`, `FUN_39423560`). The info table now carries the item row and
+   instance fields the original sections read: `lifeSpan` / `expireTime` (seconds from the
+   created time and lifespan), `needsUnpack` (categories 4/5 without flag 0x10), `locked`
+   (flag 0x04), `securityState`, `socketInfo` / `itemSocketInfos` (per-socket gem list and
+   `maxSocket` from `item_sockets`), `lookType` / `lookChanged` (the equip detail's appearance
+   item), `gradeEnchantable`, the gender restriction and `crafter` (the crafter unit's name
+   when nearby, or the player). `equipSetInfo`, sellable/refund and the stat sections already
+   existed. The original scripts build the sections; the ignored
+   `original_tooltip_builds_the_time_look_socket_and_crafter_sections` test shows no script
+   errors.
+4. **Done (`8fbdf06`): level-requirement red state.** Original calls `ItemRequireLevel` and
    `ProcessRequireLevelCheck` (`sort_inventory.alb:231-234`); Bevy's `X2Bag.ItemRequireLevel`
-   always returns 0 (`fake_bag.lua:198`) so no item is ever marked too high level. Fix: return
-   the real `items.level_requirement`.
+   returned 0 (`fake_bag.lua:198`) so no item was ever marked too high level. It now returns
+   the real server slot's `items.level_requirement` (0 for an empty slot), so the original
+   widget paints the red 30%-alpha state.
 5. **New-item "unconfirmed" state is missing.** Original marks freshly received items with
    `UnconfirmedState` and raises `BAG_ITEM_CONFIRMED` (`sort_inventory.alb:256-261`,
    `FUN_39214380`). Bevy's `IsConfirmedSlot` only knows an explicit test flag
