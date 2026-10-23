@@ -56,6 +56,7 @@ opcodes! {
     pub mod cs {
         CSRankCharacterPacket = 0x12f,
         CSRankSnapshotPacket = 0x130,
+        CSRequestSpecialtyCurrentPacket = 0x131,
         CSFamilyInviteMemberPacket = 0x01a,
         CSFamilyReplyInvitationPacket = 0x01b,
         CSFamilyLeavePacket = 0x01c,
@@ -330,6 +331,7 @@ opcodes! {
         SCUnitEquipmentIdsPacket = 0x095,
         SCSyncItemLifespanPacket = 0x098,
         SCSpecialtyRatioPacket = 0x099,
+        SCSpecialtyCurrentPacket = 0x1f4,
         SCScheduleItemSentPacket = 0x151,
         SCScheduleItemUpdatePacket = 0x1eb,
         SCItemUccDataChangedPacket = 0x15d,

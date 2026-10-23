@@ -65,6 +65,8 @@ pub(super) enum Service {
     Stabler,
     LookConverter,
     Auction,
+    Trader,
+    Specialty,
 }
 
 impl Service {
@@ -78,6 +80,9 @@ impl Service {
             12195 => Self::Stabler,
             23478 => Self::LookConverter,
             12083 => Self::Auction,
+            // Native interaction actions on `npcs.trader` / `npcs.specialty`.
+            14866 => Self::Trader,
+            16376 => Self::Specialty,
             _ => return None,
         })
     }
@@ -92,6 +97,8 @@ impl Service {
             Self::Stabler => 12195,
             Self::LookConverter => 23478,
             Self::Auction => 12083,
+            Self::Trader => 14866,
+            Self::Specialty => 16376,
         }
     }
 
@@ -109,7 +116,24 @@ impl Service {
             Self::Stabler => "stabler",
             Self::LookConverter => "look_converter",
             Self::Auction => "auction",
+            // `npc_interaction.alb` F9 (lines 290-294): `trader` opens `store_backpack.alb`,
+            // `specialty` the specialty sale message box.
+            Self::Trader => "trader",
+            Self::Specialty => "specialty",
         }
+    }
+}
+
+/// The interaction action an NPC template's flags add (`npcs.trader`) or its specialty flag
+/// (`npcs.specialty`), independent of the service skill the server advertises.
+fn flagged_service(game: &GameData, template: u32) -> Option<Service> {
+    let npc = game.npcs.get(&template)?;
+    if npc.trader {
+        Some(Service::Trader)
+    } else if npc.specialty {
+        Some(Service::Specialty)
+    } else {
+        None
     }
 }
 
@@ -189,6 +213,9 @@ fn open(data: &mut HudData, service: Service, rt: &UiRuntime) -> Option<&'static
             }
         }
         Service::Repair | Service::Ability | Service::Priest | Service::LookConverter => {}
+        // The script windows (`store_backpack.alb`, the specialty message box) open from
+        // `NPC_INTERACTION_START`; there is no app-side state to prepare.
+        Service::Trader | Service::Specialty => {}
     }
     Some(service.key())
 }
@@ -341,6 +368,14 @@ pub(super) fn update(
                 {
                     services.push(service);
                 }
+            }
+            // The original client adds the trade actions from the NPC's own flags, not from the
+            // reply: `trader` opens `store_backpack.alb`, `specialty` the specialty sale box.
+            let template = units.get(npc_obj).map_or(0, |unit| unit.kind.template_id());
+            if let Some(service) = d.game.get().and_then(|game| flagged_service(game, template))
+                && !services.contains(&service)
+            {
+                services.push(service);
             }
             let quest = quest_choice(&d);
             if services.is_empty() {
@@ -515,6 +550,14 @@ mod tests {
         skills: &[u32],
         quests: usize,
     ) -> Result<(App, Shared), Box<dyn std::error::Error>> {
+        setup_with_flags(skills, quests, None)
+    }
+
+    fn setup_with_flags(
+        skills: &[u32],
+        quests: usize,
+        flags: Option<(u32, bool, bool)>,
+    ) -> Result<(App, Shared), Box<dyn std::error::Error>> {
         let mut rt = UiRuntime::new("en_us", 1920., 1080.)?;
         let bridge = std::rc::Rc::new(std::cell::RefCell::new(HudData::default()));
         bridge.borrow_mut().snapshot.unit_id = "100".into();
@@ -522,6 +565,9 @@ mod tests {
         bridge.borrow_mut().dialog.start = (1..=quests as u32).collect();
         let mut game = GameData::default();
         game.services.priest.push(PriestBuff { id: 1, buff_id: 239, cost: 100 });
+        if let Some((template, trader, specialty)) = flags {
+            game.npcs.insert(template, super::super::data::NpcInfo { trader, specialty, ..Default::default() });
+        }
         assert!(bridge.borrow_mut().game.0.set(game).is_ok());
         super::super::api::install(&mut rt, &bridge)?;
         rt.lua
@@ -529,6 +575,9 @@ mod tests {
             .exec()?;
         let mut unit = super::super::expansion::fixture::spawn().unit;
         unit.obj_id = 200;
+        if let Some((template, _, _)) = flags {
+            unit.kind = aa_net::model::UnitKind::Npc { template_id: template, owner_id: 0 };
+        }
         let mut units = Units::default();
         units.by_id.insert(200, unit);
         let mut app = App::new();
@@ -566,6 +615,8 @@ mod tests {
             (12195, "stabler"),
             (23478, "look_converter"),
             (12083, "auction"),
+            (14866, "trader"),
+            (16376, "specialty"),
         ] {
             let service = Service::from_skill(skill).unwrap();
             assert_eq!(service.key(), key);
@@ -580,6 +631,49 @@ mod tests {
         assert!(bridge.borrow().services.choices.is_empty());
         assert_eq!(bridge.borrow().store.npc.map(|n| n.0), Some(200));
         let events = app.world().non_send::<UiRuntime>().lua.load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='store' and NPC_EVENTS[1].what==''").eval::<bool>()?;
+        assert!(events);
+        Ok(())
+    }
+
+    #[test]
+    fn trader_flag_opens_the_shadow_merchant_without_a_server_service() -> Result<(), Box<dyn std::error::Error>> {
+        // The 1.2 server's interaction-option chain has no trader branch; the original client
+        // adds `npcs.trader` itself. Its empty reply must still reach `store_backpack.alb`.
+        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000099, true, false)))?;
+        assert!(bridge.borrow().services.choices.is_empty(), "a lone trade action opens at once");
+        let events = app
+            .world()
+            .non_send::<UiRuntime>()
+            .lua
+            .load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='trader' and NPC_EVENTS[1].what=='' and NPC_EVENTS[1].id=='200'")
+            .eval::<bool>()?;
+        assert!(events);
+        Ok(())
+    }
+
+    #[test]
+    fn specialty_flag_opens_the_specialty_sale_box() -> Result<(), Box<dyn std::error::Error>> {
+        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000098, false, true)))?;
+        assert!(bridge.borrow().services.choices.is_empty());
+        let events = app
+            .world()
+            .non_send::<UiRuntime>()
+            .lua
+            .load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='specialty' and NPC_EVENTS[1].id=='200'")
+            .eval::<bool>()?;
+        assert!(events);
+        Ok(())
+    }
+
+    #[test]
+    fn a_server_trade_skill_does_not_need_the_local_flag() -> Result<(), Box<dyn std::error::Error>> {
+        let (app, _) = setup(&[16376], 0)?;
+        let events = app
+            .world()
+            .non_send::<UiRuntime>()
+            .lua
+            .load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='specialty'")
+            .eval::<bool>()?;
         assert!(events);
         Ok(())
     }

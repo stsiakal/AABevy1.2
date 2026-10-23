@@ -271,6 +271,9 @@ pub enum Command {
     /// Sell the worn trade pack (`CSSellBackpackGoods`) at the specialty/trader NPC
     /// `npc_obj_id` (nonzero, 24-bit). The server checks the pack, labor and NPC.
     SellBackpackGoods { npc_obj_id: u32 },
+    /// Ask for the live trade rates from zone group `from` to zone group `to`
+    /// (`CSRequestSpecialtyCurrent`), answered by [`Event::SpecialtyCurrent`].
+    RequestSpecialtyCurrent { from: u16, to: u16 },
     /// Cast a resolved combat skill as a mate. Both the raw mount skill ID and combat skill ID
     /// are explicit; target must be a real nonzero 24-bit unit ID (self buffs name the mate).
     /// No local learned-skill gate or automatic target/slot/auto-use choice is imposed.
@@ -587,6 +590,8 @@ pub enum Event {
     EquipmentIdsChanged { obj_id: u32, ids: [u64; 28] },
     /// Raw native specialty sale ratio receipt; zero is an error/reset path.
     SpecialtyRatio(i32),
+    /// `SCSpecialtyCurrent`: live trade rates per item from one zone group to another.
+    SpecialtyCurrent { from: u16, to: u16, rates: Vec<(u32, u32)> },
     /// A container grew to `slots` slots.
     InventoryExpanded { container: u8, slots: u8 },
     /// A unit began casting `skill_id` (or, with a non zero `result` and `tl` 0, the server
@@ -1560,6 +1565,11 @@ impl Session {
                     self.send_game(game::ClientMsg::SellBackpackGoods { npc_obj_id }).await;
                 }
             }
+            Command::RequestSpecialtyCurrent { from, to } => {
+                if self.phase == Phase::InWorld {
+                    self.send_game(game::ClientMsg::RequestSpecialtyCurrent { from, to }).await;
+                }
+            }
             Command::UseMateSkill { skill_id, mate_obj_id, mount_skill_id, target_obj_id } => {
                 let error = if skill_id == 0 || mount_skill_id == 0 {
                     Some("combat skill and mount skill IDs must be nonzero")
@@ -1974,6 +1984,7 @@ impl Session {
             M::EquipmentChanged { obj_id, items } => self.emit(Event::EquipmentChanged { obj_id, items }),
             M::EquipmentIdsChanged { obj_id, ids } => self.emit(Event::EquipmentIdsChanged { obj_id, ids }),
             M::SpecialtyRatio(ratio) => self.emit(Event::SpecialtyRatio(ratio)),
+            M::SpecialtyCurrent { from, to, rates } => self.emit(Event::SpecialtyCurrent { from, to, rates }),
             M::InvenExpanded { container, slots } => self.emit(Event::InventoryExpanded { container, slots }),
             M::SkillStarted(s) => self.emit(Event::SkillStarted(s)),
             M::SkillFired(s) => self.emit(Event::SkillFired(s)),
@@ -4254,6 +4265,43 @@ mod tests {
         session.game_msg(response).await;
         assert!(matches!(events.try_recv(), Ok(Event::ServerError { code: 361 })));
         stub.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn specialty_current_request_sends_u16_zone_groups_only_in_world() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let stub = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut length = [0u8; 2];
+            tokio::time::timeout(Duration::from_secs(2), sock.read_exact(&mut length))
+                .await
+                .unwrap()
+                .unwrap();
+            let mut request = vec![0u8; u16::from_le_bytes(length) as usize];
+            sock.read_exact(&mut request).await.unwrap();
+            assert_eq!(request, [0xdd, 1, 0, 0, 0x31, 0x01, 0x34, 0x12, 0x78, 0x56]);
+        });
+        let (evt, mut events) = unbounded_channel();
+        let mut session = Session::new(evt, ClientOptions::default());
+        session.game = Some(GameConn::connect(&addr).await.unwrap());
+        session.phase = Phase::CharacterSelect;
+        session.command(Command::RequestSpecialtyCurrent { from: 0x1234, to: 0x5678 }).await;
+        session.phase = Phase::InWorld;
+        session.command(Command::RequestSpecialtyCurrent { from: 0x1234, to: 0x5678 }).await;
+        stub.await.unwrap();
+        assert!(events.try_recv().is_err(), "the client never confirms its own request");
+        session
+            .game_msg(Ok(game::ServerMsg::SpecialtyCurrent {
+                from: 0x1234,
+                to: 0x5678,
+                rates: vec![(40, 117), (41, 130)],
+            }))
+            .await;
+        assert!(matches!(
+            events.try_recv(),
+            Ok(Event::SpecialtyCurrent { from: 0x1234, to: 0x5678, rates }) if rates == vec![(40, 117), (41, 130)]
+        ));
     }
 
     #[tokio::test]

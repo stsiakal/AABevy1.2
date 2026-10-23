@@ -342,12 +342,21 @@ u32 craftId × count ≤20`; `craft.rs:960-990`), `SCCharacterLaborPowerChanged`
    075260d, natives 38a2f5c):** 0x042 is one `bc` NPC id checked against the server readers,
    `GetBackPackGoodsInfo` returns the type-3 item tooltip/refund, `SellBackPackGoods` queues the
    sale and resets the native ratio; the delayed `SYS_SELL_BACKPACK` mail arrives on the existing
-   `SCGotMail`/mailbox path.
+   `SCGotMail`/mailbox path. **Routing done (8f1255a):** the native client adds the trade action
+   from the NPC template itself, not from the server's interaction reply — `npcs.trader` raises
+   `NPC_INTERACTION_START("trader")` (the `store_backpack.alb` Shadow Merchant window) and
+   `npcs.specialty` raises `"specialty"`; the server's interaction skills 14866 / 16376 are also
+   recognised. A lone trade action opens at once, like the other service windows.
 4. **Trade-info window absent.** `GetProductionZoneGroups` (`stubs.rs:813`),
    `GetSellableZoneGroups` (`:912`), `GetSpecialtyRatioBetween` (`:941`) are stubs; no 0x131
    request or 0x1F4 receipt is decoded. Original: `specialty/info.alb` lists production /
    destination zones and dynamic ratios (server `specialty.rs:462-608`). Fix: load
-   `specialties`/zone names, send 0x131, feed `SC 0x1F4` into the window.
+   `specialties`/zone names, send 0x131, feed `SC 0x1F4` into the window. **Done (codec 6405a87,
+   natives 8f1255a):** `GetProductionZoneGroups` returns the distinct `specialties.row_zone_group_id`
+   with zone names, `GetSellableZoneGroups(from)` the `vendor_exist` destinations, and
+   `GetSpecialtyRatioBetween(from,to)` sends `CS 0x131` under the native 5 s cooldown (`0x1F4`,
+   `count i32, from u16, to u16, (item u32, rate u32)[]`); `SC 0x1F4` raises
+   `SPECIALTY_RATIO_BETWEEN_INFO` with `{ itemInfo, ratio }` rows for `specialty/info.alb`.
 5. **Workbench range not enforced.** Original admits interaction at <2.1 m (cvar; `FUN_39093800`)
    and offers the bar at 25 m; Bevy uses `skill.max_range + 1` or `BASE_REACH 4 m`
    (`hud/doodad.rs:55-56`) and `batch::command` never checks distance (`craft/batch.rs:180-210`),
