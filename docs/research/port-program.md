@@ -53,7 +53,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
 | F7 | Remote-unit smoothing (interpolation/extrapolation of other units) | movement section 6 + [`port-vehicles/`](port-vehicles/MAP.md) D | mapped |
-| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **ported, bit-exact** (cooldown manager, GCD, equality, reaction table, big-hit, token parser, slot resolver; ~760 goldens, `5ddc8a6`) |
+| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **ported, bit-exact** (~760 goldens, `5ddc8a6`); step 2 **ported** (cast queries, StartSkill/Fire/End, StopCasting, CastingStopped/Delayed: 1-8 live goldens each; StopSkill, combo add/update and client-only skills only synthetic tests from the decompile because the harness faulted in their UI/animation paths; movement/jump cancel U9 and queue margin U7 open; `b188e40`) |
 | S2 | Doodad and NPC interaction rules: range gates, interaction selection, gathering/farming, coffers, phases, loot | [`port-interaction/`](port-interaction/MAP.md), 220 fn / 57 KB | mapped |
 | S3 | Vehicles and ships: wagon/cart driving, helm, boarding, cannons, transfers | [`port-vehicles/`](port-vehicles/MAP.md), 191 fn / 115 KB | mapped |
 | S4 | Housing and decoration placement, construction display, seeds | [`port-housing/`](port-housing/MAP.md), 197 fn / 84 KB | mapped |
