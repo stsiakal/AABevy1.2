@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use aa_net::model::{Item, ItemDetail};
+use aa_net::model::Item;
 use aa_net::slave_control::{
     BAG_CONTAINER, SLAVE_EQUIPMENT_CONTAINER, SLAVE_EQUIPMENT_SLOTS, SlaveEquipmentRequest, SlaveItemLocation,
 };
@@ -170,10 +170,6 @@ pub(super) fn build(
 }
 
 fn tip(lua: &Lua, data: &HudData, item: &Item) -> mlua::Result<Table> {
-    let detail = match &item.detail {
-        ItemDetail::Equip(detail) => Some(detail),
-        _ => None,
-    };
     let grade = i64::from(super::store::ui_grade(item.grade));
     let result = match data.game.get() {
         Some(game) => super::tips::item_tip(
@@ -183,12 +179,7 @@ fn tip(lua: &Lua, data: &HudData, item: &Item) -> mlua::Result<Table> {
             item.template_id,
             Some(grade),
             Some(i64::from(item.count)),
-            super::tips::Instance {
-                durability: detail.map(|d| d.durability),
-                temper: detail.map_or((0, 0), |d| (d.temper_physical, d.temper_magical)),
-                flags: Some(item.flags),
-                unsecure_time: item.unsecure_time,
-            },
+            super::tips::Instance::from_item(item),
         )?,
         None => None,
     };

@@ -43,6 +43,17 @@ pub struct ItemInfo {
     pub category_order: i64,
     /// The item category's English name ("Book"), for the tooltip.
     pub category: String,
+    /// `items.category_id`: 8 (saplings) takes the native 600 s cooldown, 4/5 need unpacking.
+    pub category_id: i64,
+    /// `item_sockets` rows: how many sockets the item has.
+    pub sockets: u8,
+    /// `items.exp_abs_lifetime` / `items.exp_online_lifetime` (minutes).
+    pub abs_lifetime: i64,
+    pub online_lifetime: i64,
+    /// `items.grade_enchantable`: the ORANGE enchantable line.
+    pub grade_enchantable: bool,
+    /// `items.char_gender_id`: 1 male, 2 female, 0 any.
+    pub gender: i64,
     /// `items.impl_id` (`ItemImplEnum`): the tooltip's `item_impl` ("portal", "weapon", ...).
     pub impl_id: i64,
     pub sellable: bool,
@@ -617,7 +628,7 @@ impl GameData {
             }
         }
         {
-            let mut q = conn.prepare("SELECT i.id, i.name, i.icon_id, i.max_stack_size, i.level_requirement, i.fixed_grade, i.use_skill_id, c.item_group_id, i.category_id, i.bind_id, i.sellable, i.price, i.refund, i.level_limit, i.impl_id, i.honor_price, i.living_point_price, c.category_order FROM items i LEFT JOIN item_categories c ON c.id = i.category_id")?;
+            let mut q = conn.prepare("SELECT i.id, i.name, i.icon_id, i.max_stack_size, i.level_requirement, i.fixed_grade, i.use_skill_id, c.item_group_id, i.category_id, i.bind_id, i.sellable, i.price, i.refund, i.level_limit, i.impl_id, i.honor_price, i.living_point_price, c.category_order, i.exp_abs_lifetime, i.exp_online_lifetime, i.grade_enchantable, i.char_gender_id FROM items i LEFT JOIN item_categories c ON c.id = i.category_id")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id: u32 = r.get(0)?;
@@ -633,6 +644,7 @@ impl GameData {
                         group: r.get::<_, Option<i64>>(7)?.unwrap_or(0).max(0) as u32,
                         category_order: any_int(r, 17)?,
                         category: name("item_categories", any_int(r, 8)?.max(0) as u32, None),
+                        category_id: any_int(r, 8)?,
                         impl_id: any_int(r, 14)?,
                         sellable: any_flag(r, 10)?,
                         price: any_int(r, 11)?,
@@ -640,9 +652,23 @@ impl GameData {
                         honor_price: any_int(r, 15)?,
                         living_price: any_int(r, 16)?,
                         level_limit: any_int(r, 13)?,
+                        abs_lifetime: any_int(r, 18)?,
+                        online_lifetime: any_int(r, 19)?,
+                        grade_enchantable: any_flag(r, 20)?,
+                        gender: any_int(r, 21)?,
+                        sockets: 0,
                         pet_only: false,
                     },
                 );
+            }
+        }
+        {
+            let mut q = conn.prepare("SELECT item_id, COUNT(*) FROM item_sockets GROUP BY item_id")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                if let Some(item) = data.items.get_mut(&r.get::<_, u32>(0)?) {
+                    item.sockets = r.get::<_, i64>(1)?.clamp(0, 7) as u8;
+                }
             }
         }
         {

@@ -450,16 +450,7 @@ fn info(lua: &Lua, state: &Shared, index: usize) -> mlua::Result<MultiValue> {
         None
     };
     let instance = match &item.detail {
-        ItemDetail::Equip(e) => super::super::tips::Instance {
-            durability: Some(e.durability),
-            temper: (e.temper_physical, e.temper_magical),
-            flags: Some(item.flags),
-            unsecure_time: item.unsecure_time,
-        },
-        _ => super::super::tips::Instance {
-            flags: Some(item.flags),
-            ..Default::default()
-        },
+        _ => super::super::tips::Instance::from_item(item),
     };
     let Some(table) = super::super::tips::item_tip(
         lua,

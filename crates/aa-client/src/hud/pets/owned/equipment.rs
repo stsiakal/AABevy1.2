@@ -76,10 +76,6 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
                 out.set("itemGrade", 0)?;
                 return Ok(MultiValue::from_iter([Value::Table(out)]));
             };
-            let detail = match &item.detail {
-                ItemDetail::Equip(detail) => Some(detail),
-                _ => None,
-            };
             // Actual Pet Gear has no set rows in this catalog; this shares the existing static
             // item-tooltip calculations, not the player's equipped-slot or attribute fallback.
             let result = if let Some(game) = data.game.get() {
@@ -90,14 +86,7 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
                     item.template_id,
                     Some(i64::from(super::super::super::store::ui_grade(item.grade))),
                     Some(i64::from(item.count)),
-                    super::super::super::tips::Instance {
-                        durability: detail.map(|detail| detail.durability),
-                        temper: detail.map_or((0, 0), |detail| {
-                            (detail.temper_physical, detail.temper_magical)
-                        }),
-                        flags: Some(item.flags),
-                        unsecure_time: item.unsecure_time,
-                    },
+                    super::super::super::tips::Instance::from_item(item),
                 )?
             } else {
                 None

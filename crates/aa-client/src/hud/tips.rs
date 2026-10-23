@@ -146,26 +146,71 @@ impl TipState {
 }
 
 /// What the tooltip knows of one item beyond its template: the slot table the scripts built the item from
-/// (`HUD.bag[i]`): `dur` (durability), `tp` / `tm` (temper values), `fl` (item flags). Nothing for an item
-/// that is not in the bag (a shop's, a loot window's).
-#[derive(Clone, Copy, Debug, Default)]
+/// (`HUD.bag[i]`): `dur` (durability), `tp` / `tm` (temper values), `fl` (item flags), the creation/lifespan
+/// timestamp, the look item and socketed gems. Nothing for an item that is not in the bag (a shop's, a loot
+/// window's).
+#[derive(Clone, Debug, Default)]
 pub struct Instance {
     pub durability: Option<u8>,
     pub temper: (u16, u16),
     pub flags: Option<u8>,
     /// A pending unlock's deadline (Unix seconds, 0 = none).
     pub unsecure_time: i64,
+    /// Creation time (Unix seconds) and total lifespan (minutes): `FUN_397d0400` / `FUN_397cd400`.
+    pub create_time: i64,
+    pub lifespan_mins: i64,
+    /// The appearance item when it differs from the template (`lookType`/`lookChanged`).
+    pub look_type: u32,
+    pub gems: [u32; 7],
+    /// The crafter's name, when the unit is known (`FUN_39018560`).
+    pub crafter: Option<String>,
 }
 
 impl Instance {
+    /// Everything a tooltip reads from a server item instance (`FUN_39423560` / `FUN_39421e20`).
+    pub fn from_item(it: &aa_net::model::Item) -> Instance {
+        let (durability, temper, gems, look_type) = match &it.detail {
+            aa_net::model::ItemDetail::Equip(d) => (Some(d.durability), (d.temper_physical, d.temper_magical), d.gem_ids, d.image_item_template_id),
+            _ => (None, (0, 0), [0; 7], 0),
+        };
+        Instance {
+            durability,
+            temper,
+            flags: Some(it.flags),
+            unsecure_time: it.unsecure_time,
+            create_time: it.create_time,
+            lifespan_mins: i64::from(it.lifespan_mins),
+            look_type,
+            gems,
+            crafter: None,
+        }
+    }
+
     pub fn of(table: Option<&Table>) -> Instance {
         let Some(t) = table else { return Instance::default() };
         let get = |k: &str| t.raw_get::<Option<i64>>(k).ok().flatten();
+        let gems = t
+            .raw_get::<Option<Table>>("gm")
+            .ok()
+            .flatten()
+            .map(|t| {
+                let mut gems = [0u32; 7];
+                for (i, gem) in gems.iter_mut().enumerate() {
+                    *gem = t.raw_get::<Option<i64>>(i as i64 + 1).ok().flatten().unwrap_or(0).clamp(0, i64::from(u32::MAX)) as u32;
+                }
+                gems
+            })
+            .unwrap_or([0; 7]);
         Instance {
             durability: get("dur").filter(|d| *d >= 0).map(|d| d.min(255) as u8),
             temper: (get("tp").unwrap_or(0).clamp(0, 65535) as u16, get("tm").unwrap_or(0).clamp(0, 65535) as u16),
             flags: get("fl").map(|f| f as u8),
             unsecure_time: get("un").unwrap_or(0),
+            create_time: get("ct").unwrap_or(0),
+            lifespan_mins: get("ls").unwrap_or(0),
+            look_type: get("look").unwrap_or(0).clamp(0, i64::from(u32::MAX)) as u32,
+            gems,
+            crafter: t.raw_get::<Option<String>>("cr").ok().flatten().filter(|c| !c.is_empty()),
         }
     }
 }
@@ -201,7 +246,13 @@ fn item_tip_at(
     let t = lua.create_table()?;
     t.raw_set("itemType", id)?;
     t.raw_set("isPetOnly", info.pet_only)?;
-    t.raw_set("lookType", id)?;
+    // FUN_397cd490: the appearance item, and the ORANGE "%s%s [%s]" look-changed title when it is not
+    // the template (tooltip.alb [1439]-[1456]).
+    let look_type = if instance.look_type != 0 { instance.look_type } else { id };
+    t.raw_set("lookType", look_type)?;
+    if look_type != id {
+        t.raw_set("lookChanged", true)?;
+    }
     t.raw_set("itemGrade", grade)?;
     if let Some((name, color)) = game.grades.get(&grade) {
         t.raw_set("grade", name.as_str())?;
@@ -221,9 +272,10 @@ fn item_tip_at(
     }
     if let Some(flags) = instance.flags {
         // The padlock overlay and the SKYBLUE line read these (item_icon_button.alb
-        // [130]-[146], tooltip.alb [1466]-[1473]).
+        // [130]-[146], tooltip.alb [1466]-[1473]); flag 0x04 is the item lock.
         let security = aa_net::secure::state(flags, instance.unsecure_time, now);
         t.raw_set("securityState", i64::from(security.code()))?;
+        t.raw_set("locked", flags & aa_net::secure::FLAG_SECURE != 0)?;
         if let Some(remain) = aa_net::secure::remaining(instance.unsecure_time, now) {
             let date = lua.create_table()?;
             for (key, value) in [
@@ -238,6 +290,56 @@ fn item_tip_at(
             }
             t.raw_set("securityRemainDate", date)?;
         }
+    }
+    // FUN_39423560 / FUN_39421e20: lifespan and expiry are seconds; `lifeSpan` is the period shown
+    // while the item is still packed, `expireTime` the remaining lifetime (tooltip.alb [1532]-[1672]).
+    let period = if instance.lifespan_mins > 0 {
+        instance.lifespan_mins * 60
+    } else if info.abs_lifetime > 0 {
+        info.abs_lifetime * 60
+    } else if info.online_lifetime > 0 {
+        info.online_lifetime * 60
+    } else {
+        0
+    };
+    if period > 0 {
+        t.raw_set("lifeSpan", period)?;
+        let remaining = if instance.create_time > 0 {
+            (instance.create_time + period - now).max(0)
+        } else {
+            period
+        };
+        t.raw_set("expireTime", remaining)?;
+    }
+    if matches!(info.category_id, 4 | 5) && instance.flags.is_some_and(|f| f & 0x10 == 0) {
+        t.raw_set("needsUnpack", true)?;
+    }
+    // FUN_395aca00 / FUN_397cc290: socketInfo.socketItem carries one entry per socket (0 = empty),
+    // maxSocket its count. The tooltip's itemSocketInfos section reads it (tooltip.alb [1910]-[1967]).
+    let max_socket = (info.sockets as usize).max(instance.gems.iter().rposition(|g| *g != 0).map_or(0, |i| i + 1)).min(7);
+    if max_socket > 0 {
+        let socket = lua.create_table()?;
+        socket.raw_set("maxSocket", max_socket as i64)?;
+        socket.raw_set("socketItem", lua.create_sequence_from(instance.gems[..max_socket].iter().map(|g| i64::from(*g)))?)?;
+        t.raw_set("socketInfo", socket.clone())?;
+        t.raw_set("itemSocketInfos", socket)?;
+    }
+    match info.gender {
+        1 => {
+            t.raw_set("gender", "male")?;
+            t.raw_set("onlyMale", true)?;
+        }
+        2 => {
+            t.raw_set("gender", "female")?;
+            t.raw_set("onlyFemale", true)?;
+        }
+        _ => {}
+    }
+    if info.grade_enchantable {
+        t.raw_set("gradeEnchantable", true)?;
+    }
+    if let Some(crafter) = instance.crafter.as_deref() {
+        t.raw_set("crafter", crafter)?;
     }
     if info.use_skill != 0 {
         t.raw_set("skillType", info.use_skill)?;
@@ -488,6 +590,93 @@ mod tests {
         // Template-only items (a shop's, a loot window's) have no instance state.
         let plain = item_tip_at(&lua, &game, &state, 42, Some(1), Some(1), Instance::default(), now)?.unwrap();
         assert!(plain.get::<Option<i64>>("securityState")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn item_time_lock_look_socket_and_crafter_fields_fill_the_tooltip_sections() -> Result<(), Box<dyn std::error::Error>> {
+        let mut game = GameData::default();
+        game.items.insert(42, super::super::data::ItemInfo {
+            category_id: 4,
+            sockets: 2,
+            ..Default::default()
+        });
+        let lua = Lua::new();
+        let state = TipState::default();
+        let now = 1_700_000_000;
+        let info = item_tip_at(
+            &lua,
+            &game,
+            &state,
+            42,
+            Some(1),
+            Some(1),
+            Instance {
+                flags: Some(aa_net::secure::FLAG_SECURE),
+                create_time: now - 3600,
+                lifespan_mins: 120,
+                look_type: 43,
+                gems: [7, 8, 0, 0, 0, 0, 0],
+                crafter: Some("Smith".into()),
+                ..Default::default()
+            },
+            now,
+        )?
+        .unwrap();
+        assert_eq!(info.get::<i64>("lifeSpan")?, 7200);
+        assert_eq!(info.get::<i64>("expireTime")?, 3600);
+        assert!(info.get::<bool>("needsUnpack")?);
+        assert!(info.get::<bool>("locked")?);
+        assert_eq!(info.get::<i64>("lookType")?, 43);
+        assert!(info.get::<bool>("lookChanged")?);
+        assert_eq!(info.get::<String>("crafter")?, "Smith");
+        let socket: Table = info.get("socketInfo")?;
+        assert_eq!(socket.get::<i64>("maxSocket")?, 2);
+        let items: Table = socket.get("socketItem")?;
+        assert_eq!((items.get::<i64>(1)?, items.get::<i64>(2)?), (7, 8));
+        // An expired period still carries the packed/expiry fields (the script paints it ORANGE).
+        let expired = item_tip_at(
+            &lua,
+            &game,
+            &state,
+            42,
+            Some(1),
+            Some(1),
+            Instance { flags: Some(0), create_time: now - 9000, lifespan_mins: 120, ..Default::default() },
+            now,
+        )?
+        .unwrap();
+        assert_eq!(expired.get::<i64>("expireTime")?, 0);
+        assert!(!expired.get::<bool>("locked")?);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "loads the original world-stage tooltip scripts and read-only game catalog"]
+    fn original_tooltip_builds_the_time_look_socket_and_crafter_sections() -> Result<(), Box<dyn std::error::Error>> {
+        let (rt, _bridge, path) = super::super::breath::fixture::runtime(1280.0, 720.0)?;
+        rt.lua
+            .load(
+                r#"
+        local now = os.time()
+        HUD.bag[1] = { id = 16385, grade = 1, count = 1, ct = now - 60, ls = 10, fl = 4,
+                       look = 16386, gm = { 7, 8, 0, 0, 0, 0, 0 }, cr = 'Smith' }
+        local info = X2Bag:GetBagItemInfo(0, 1)
+        assert(info.lifeSpan == 600 and info.expireTime == 540, tostring(info.lifeSpan) .. '/' .. tostring(info.expireTime))
+        assert(info.locked == true and info.lookType == 16386 and info.lookChanged == true)
+        assert(info.socketInfo.maxSocket == 2 and info.socketInfo.socketItem[1] == 7)
+        assert(info.crafter == 'Smith')
+        tooltip.tooltipWindows[1].stickMeV = 'TOP'
+        tooltip.tooltipWindows[1].stickMeH = 'LEFT'
+        ShowTooltip(info)
+        assert(tooltip.tooltipWindows[1]:IsVisible())
+        "#,
+            )
+            .exec()?;
+        assert!(rt.errors.is_empty(), "{:?}", rt.errors);
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
         Ok(())
     }
 

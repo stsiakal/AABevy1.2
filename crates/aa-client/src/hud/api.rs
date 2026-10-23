@@ -1529,6 +1529,34 @@ mod tests {
     }
 
     #[test]
+    fn bag_hooks_expose_level_requirement_and_item_cooldowns() -> Result<(), Box<dyn std::error::Error>> {
+        let mut rt = UiRuntime::new("en_us", 1280.0, 720.0)?;
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        install(&mut rt, &bridge)?;
+        rt.lua.load(
+            r#"
+            HUD.bag_slots = 50
+            local now = HUD.now_ms()
+            HUD.bag = { [3] = { id = 1, grade = 1, count = 1, level = 42, cd_end = now + 5000, cd_total = 8000 } }
+            HUD.bank = { [4] = { id = 2, grade = 1, count = 1, level = 17, cd_end = now + 2000, cd_total = 6000 } }
+            assert(X2Bag:ItemRequireLevel(3) == 42)
+            assert(X2Bag:ItemRequireLevel(9) == 0)
+            local remain, total = X2Bag:GetBagCooldown(3)
+            assert(remain and remain > 4000 and remain <= 5000 and total == 8000)
+            oldIsActivatedBank = IsActivatedBank
+            IsActivatedBank = function() return true end
+            local bankRemain, bankTotal = X2Bag:GetBagCooldown(4)
+            assert(bankRemain and bankRemain > 1000 and bankRemain <= 2000 and bankTotal == 6000)
+            IsActivatedBank = oldIsActivatedBank
+            HUD.bag[3].cd_end = now - 1
+            assert(X2Bag:GetBagCooldown(3) == nil)
+        "#,
+        )
+        .exec()?;
+        Ok(())
+    }
+
+    #[test]
     fn action_bar_page_api_is_one_based_and_maps_the_main_bar() {
         let mut rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
         let bridge = Rc::new(RefCell::new(HudData::default()));

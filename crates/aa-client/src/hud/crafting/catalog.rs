@@ -24,18 +24,7 @@ fn tooltip(lua: &Lua, data: &HudData, template: u32, grade: u8, item: Option<&It
     let Some(game) = data.game.get() else {
         return Ok(None);
     };
-    let instance = item.map_or_else(tips::Instance::default, |item| tips::Instance {
-        flags: Some(item.flags),
-        durability: match &item.detail {
-            aa_net::model::ItemDetail::Equip(d) => Some(d.durability),
-            _ => None,
-        },
-        temper: match &item.detail {
-            aa_net::model::ItemDetail::Equip(d) => (d.temper_physical, d.temper_magical),
-            _ => (0, 0),
-        },
-        unsecure_time: item.unsecure_time,
-    });
+    let instance = item.map_or_else(tips::Instance::default, tips::Instance::from_item);
     let info = tips::item_tip(
         lua,
         game,
