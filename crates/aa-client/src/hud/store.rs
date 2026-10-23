@@ -2,7 +2,7 @@
 use std::collections::{HashMap, HashSet};
 
 use aa_net::interaction::InteractEvent;
-use aa_net::model::{Item, ItemDetail};
+use aa_net::model::Item;
 use aa_net::shop::{BuyEntry, SellEntry, Shop, ShopCommand, ShopEvent};
 use aa_net::state::{Inventory, Player, Units};
 use aa_net::{Command, Event, NetCommand, NetEvent};
@@ -318,16 +318,7 @@ fn sold_info(
     let out = lua.create_table()?;
     for item in sold {
         let instance = match &item.detail {
-            ItemDetail::Equip(e) => Instance {
-                durability: Some(e.durability),
-                temper: (e.temper_physical, e.temper_magical),
-                flags: Some(item.flags),
-                unsecure_time: item.unsecure_time,
-            },
-            _ => Instance {
-                flags: Some(item.flags),
-                ..default()
-            },
+            _ => Instance::from_item(item),
         };
         if let Some(t) = tips::item_tip(
             lua,

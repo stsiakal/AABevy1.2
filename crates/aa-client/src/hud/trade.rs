@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use aa_net::model::{Item, ItemDetail};
+use aa_net::model::Item;
 use aa_net::state::{Inventory, PlayerStats, Units};
 use aa_net::trade::{Trade, TradeCommand, TradeEvent};
 use aa_net::{Command, Event, NetCommand, NetEvent};
@@ -77,16 +77,7 @@ fn current_item(lua: &Lua, bridge: &Shared, item: &Item) -> mlua::Result<Option<
     let d = bridge.borrow();
     let Some(game) = d.game.get() else { return Ok(None) };
     let instance = match &item.detail {
-        ItemDetail::Equip(e) => super::tips::Instance {
-            durability: Some(e.durability),
-            temper: (e.temper_physical, e.temper_magical),
-            flags: Some(item.flags),
-            unsecure_time: item.unsecure_time,
-        },
-        _ => super::tips::Instance {
-            flags: Some(item.flags),
-            ..default()
-        },
+        _ => super::tips::Instance::from_item(item),
     };
     super::tips::item_tip(
         lua,

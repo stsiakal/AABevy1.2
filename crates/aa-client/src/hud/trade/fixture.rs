@@ -2,7 +2,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aa_net::model::{EquipDetail, Equipment, ModelParams, Unit, UnitKind};
+use aa_net::model::{EquipDetail, Equipment, ItemDetail, ModelParams, Unit, UnitKind};
 use bevy::window::PrimaryWindow;
 
 use super::*;

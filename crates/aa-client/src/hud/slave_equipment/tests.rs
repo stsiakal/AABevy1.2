@@ -2,6 +2,7 @@
 use super::*;
 use crate::hud::api;
 use crate::hud::vehicles::{self, Current};
+use aa_net::model::ItemDetail;
 use aa_ui::UiRuntime;
 use bevy::prelude::*;
 

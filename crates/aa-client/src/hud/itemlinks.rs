@@ -140,6 +140,8 @@ pub fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
                     temper: (e.temper_physical, e.temper_magical),
                     flags: Some(record.flags),
                     unsecure_time: record.unsecure_time,
+                    gems: e.gem_ids,
+                    ..Default::default()
                 },
                 _ => Instance {
                     flags: Some(record.flags),

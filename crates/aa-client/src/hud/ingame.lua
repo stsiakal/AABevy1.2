@@ -481,7 +481,8 @@ local function bagCount()
 end
 local fake = {}
 for _, name in ipairs({ "Capacity", "CountEmptyBagSlots", "CountItems", "IsInvalidSlot", "SlotByIdx", "GetBagItemInfo",
-                        "ItemIdentifier", "ItemStack", "GetBagNumSlots", "Slots", "CurrentTabIdx", "TabInfo" }) do
+                        "ItemIdentifier", "ItemStack", "ItemRequireLevel", "GetBagCooldown", "GetBagNumSlots", "Slots",
+                        "CurrentTabIdx", "TabInfo" }) do
   fake[name] = X2Bag[name]
 end
 X2Bag.Capacity = function(self) if not bagKnown() then return fake.Capacity(self) end return HUD.bag_slots end
@@ -539,6 +540,26 @@ X2Bag.ItemStack = function(self, slot)
   if not bagKnown() then return fake.ItemStack(self, slot) end
   local s = HUD.bag[slot]
   return s and s.count or 0
+end
+-- The red "too high level" state (sort_inventory.alb [231]-[234]): the server item's requirement.
+X2Bag.ItemRequireLevel = function(self, slot)
+  if not bagKnown() then return fake.ItemRequireLevel(self, slot) end
+  local s = HUD.bag[slot]
+  return s and s.level or 0
+end
+-- FUN_3944d9e0: the use skill's cooldown plus the category-8 600 s timer, as remaining/total ms.
+-- The bank window calls X2Bag too (sort_bank.alb [31]-[33]).
+local function bagCooldown(s)
+  local endTime = s and s.cd_end
+  if endTime == nil then return nil end
+  local remain = endTime - HUD.now_ms()
+  if remain <= 0 then return nil end
+  return remain, math.max(s.cd_total or 0, remain)
+end
+X2Bag.GetBagCooldown = function(self, slot)
+  if not bagKnown() then return fake.GetBagCooldown(self, slot) end
+  local bank = type(IsActivatedBank) == "function" and IsActivatedBank()
+  return bagCooldown(bank and HUD.bank[slot] or HUD.bag[slot])
 end
 
 local fakeIconSet, fakeStackable, fakeLevel = X2Item.GetItemIconSet, X2Item.IsStackable, X2Item.GetLevelRequirement

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use aa_net::mail::{MailBody, MailCommand, MailEvent, MailHeader, MailSlot, Mailbox, SendMail};
-use aa_net::model::{Item, ItemDetail};
+use aa_net::model::Item;
 use aa_net::state::{Doodads, Inventory};
 use aa_net::{Command, Event, NetCommand, NetEvent};
 use aa_ui::UiRuntime;
@@ -164,16 +164,7 @@ pub(super) fn item_info(lua: &Lua, bridge: &Shared, item: &Item) -> mlua::Result
     let d = bridge.borrow();
     let Some(game) = d.game.get() else { return Ok(None) };
     let instance = match &item.detail {
-        ItemDetail::Equip(e) => Instance {
-            durability: Some(e.durability),
-            temper: (e.temper_physical, e.temper_magical),
-            flags: Some(item.flags),
-            unsecure_time: item.unsecure_time,
-        },
-        _ => Instance {
-            flags: Some(item.flags),
-            ..default()
-        },
+        _ => Instance::from_item(item),
     };
     tips::item_tip(
         lua,

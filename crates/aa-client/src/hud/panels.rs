@@ -56,6 +56,17 @@ pub struct SlotSnap {
     pub flags: Option<u8>,
     /// Item instances: the end of a pending 600 s unlock (Unix seconds, 0 = none).
     pub unsecure_time: i64,
+    /// Item instances: creation time (Unix seconds) and total lifespan (minutes), for the
+    /// tooltip's lifespan/expiry lines and the category-8 cooldown (`FUN_3944d9e0`).
+    pub create_time: i64,
+    pub lifespan_mins: i64,
+    /// Item instances: crafter unit id (`FUN_39423560`).
+    pub made_unit_id: u32,
+    /// Equip details: appearance item (`lookType`/`lookChanged`) and the socketed gems.
+    pub look_type: u32,
+    pub gems: [u32; 7],
+    /// The crafter's name when the unit is known (the tooltip's GRAY `crafter` line).
+    pub crafter: String,
     /// Action bar slots that cannot be used now (the icon goes dark, the hotkey red): the skill result that refuses them
     /// (`usable::code`), `None` when the slot is lit.
     pub blocked: Option<u8>,
@@ -167,6 +178,12 @@ pub(in crate::hud) fn item_slot(game: Option<&GameData>, template: u32, count: i
         temper: (0, 0),
         flags: None,
         unsecure_time: 0,
+        create_time: 0,
+        lifespan_mins: 0,
+        made_unit_id: 0,
+        look_type: 0,
+        gems: [0; 7],
+        crafter: String::new(),
         blocked: None,
     }
 }
@@ -178,11 +195,61 @@ impl SlotSnap {
         if let aa_net::model::ItemDetail::Equip(d) = &it.detail {
             self.dur = Some(d.durability);
             self.temper = (d.temper_physical, d.temper_magical);
+            self.gems = d.gem_ids;
+            self.look_type = d.image_item_template_id;
         }
         self.flags = Some(it.flags);
         self.unsecure_time = it.unsecure_time;
+        self.create_time = it.create_time;
+        self.lifespan_mins = i64::from(it.lifespan_mins);
+        self.made_unit_id = it.made_unit_id;
         self
     }
+}
+
+/// The per-slot cooldown of a bag/bank item (`X2Bag:GetBagCooldown`, `FUN_3944d9e0`): the use skill's
+/// cooldown, plus the 600 s seedling timer measured from the item's creation time (category 8).
+pub(in crate::hud) fn item_cooldown(game: Option<&GameData>, skills: Option<&Skills>, it: &aa_net::model::Item, start: Instant) -> Option<(u64, u32)> {
+    let info = game?.items.get(&it.template_id)?;
+    let now = Instant::now();
+    let mut best = (0u32, 0u32);
+    if info.use_skill != 0
+        && let Some(skill) = game?.skills.get(&info.use_skill)
+        && let Some(skills) = skills
+    {
+        best = super::cooldown::native_at(skill, skills, info.use_skill, now);
+        let observed = super::cooldown::observed_at(skill, skills, info.use_skill, now);
+        if observed.0 > best.0 {
+            best = observed;
+        }
+    }
+    if info.category_id == 8 && it.create_time > 0 {
+        let elapsed = aa_net::secure::unix_now() - it.create_time;
+        let (left, total) = if elapsed <= 600 {
+            let left = (600 - elapsed) * 1000;
+            (u32::try_from(left).unwrap_or(u32::MAX), 600_000)
+        } else {
+            (600_000, 600_000)
+        };
+        if left > best.0 {
+            best = (left, total);
+        }
+    }
+    (best.0 > 0).then(|| (now_ms(start) + u64::from(best.0), best.1))
+}
+
+/// A bag, bank or worn item slot: the instance data and its cooldown and crafter name.
+fn instance_slot(game: Option<&GameData>, skills: Option<&Skills>, units: Option<&Units>, own_obj_id: u32, own_name: &str, it: &aa_net::model::Item, start: Instant) -> SlotSnap {
+    let mut snap = item_slot(game, it.template_id, i64::from(it.count), it.grade).with_instance(it);
+    snap.cooldown = item_cooldown(game, skills, it, start);
+    snap.crafter = if it.made_unit_id == 0 {
+        String::new()
+    } else if it.made_unit_id == own_obj_id {
+        own_name.to_owned()
+    } else {
+        units.and_then(|u| u.get(it.made_unit_id)).map_or_else(String::new, |u| u.name.clone())
+    };
+    snap
 }
 
 pub(in crate::hud) fn skill_slot(game: Option<&GameData>, skills: Option<&Skills>, skill: u32, start: Instant) -> SlotSnap {
@@ -215,6 +282,12 @@ pub(in crate::hud) fn skill_slot(game: Option<&GameData>, skills: Option<&Skills
         temper: (0, 0),
         flags: None,
         unsecure_time: 0,
+        create_time: 0,
+        lifespan_mins: 0,
+        made_unit_id: 0,
+        look_type: 0,
+        gems: [0; 7],
+        crafter: String::new(),
         blocked: None,
     }
 }
@@ -303,16 +376,18 @@ pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj
             .collect();
     }
     if let Some(inv) = inventory {
+        let units = world.get_resource::<Units>();
+        let slot = |it: &aa_net::model::Item| instance_slot(game, skills, units, own_obj_id, &me.name, it, start);
         p.bag_slots = inv.bag_slots;
         p.bank_slots = inv.bank_slots;
-        p.bank = inv.bank.iter().map(|it| it.as_ref().map(|it| item_slot(game, it.template_id, i64::from(it.count), it.grade).with_instance(it))).collect();
-        p.bag = inv.bag.iter().map(|it| it.as_ref().map(|it| item_slot(game, it.template_id, i64::from(it.count), it.grade).with_instance(it))).collect();
+        p.bank = inv.bank.iter().map(|it| it.as_ref().map(&slot)).collect();
+        p.bag = inv.bag.iter().map(|it| it.as_ref().map(&slot)).collect();
         p.equipment = inv
             .equipment
             .slots
             .iter()
             .enumerate()
-            .map(|(i, it)| it.as_ref().filter(|_| !aa_net::model::slot::is_body_part(i)).map(|it| item_slot(game, it.template_id, 1, it.grade).with_instance(it)))
+            .map(|(i, it)| it.as_ref().filter(|_| !aa_net::model::slot::is_body_part(i)).map(&slot))
             .collect();
     }
     if let Some(buffs) = world.get_resource::<Buffs>() {
@@ -409,6 +484,18 @@ pub(in crate::hud) fn slot_table(lua: &Lua, s: &SlotSnap) -> mlua::Result<Table>
     }
     if s.unsecure_time != 0 {
         t.raw_set("un", s.unsecure_time)?;
+    }
+    t.raw_set("ct", s.create_time)?;
+    t.raw_set("ls", s.lifespan_mins)?;
+    if s.look_type != 0 {
+        t.raw_set("look", i64::from(s.look_type))?;
+    }
+    if !s.crafter.is_empty() {
+        t.raw_set("cr", s.crafter.as_str())?;
+    }
+    if s.gems.iter().any(|g| *g != 0) {
+        let gems = lua.create_sequence_from(s.gems.iter().map(|g| i64::from(*g)))?;
+        t.raw_set("gm", gems)?;
     }
     if let Some(b) = s.blocked {
         t.raw_set("blocked", i64::from(b))?;
@@ -803,6 +890,38 @@ mod tests {
         let t: Table = hud.get("target")?;
         assert!(!t.get::<bool>("in_combat")?);
         Ok(())
+    }
+
+    #[test]
+    fn bag_item_cooldown_uses_the_use_skill_and_the_category_eight_timer() {
+        let mut game = GameData::default();
+        game.items.insert(42, super::super::data::ItemInfo { use_skill: 7, category_id: 1, ..default() });
+        game.skills.insert(7, super::super::data::SkillInfo { cooldown_ms: 10_000, ignore_gcd: true, ..default() });
+        let start = Instant::now();
+        let mut skills = Skills::default();
+        skills.last_used.insert(7, Instant::now());
+        let item = aa_net::model::Item { template_id: 42, count: 1, ..Default::default() };
+        let cooldown = item_cooldown(Some(&game), Some(&skills), &item, start).unwrap();
+        assert_eq!(cooldown.1, 10_000);
+        assert!((9_000..=10_250).contains(&(cooldown.0 - now_ms(start))));
+
+        // Category 8 (saplings) adds the 600 s timer measured from the item's timestamp.
+        let item_info = game.items.get_mut(&42).unwrap();
+        item_info.use_skill = 0;
+        item_info.category_id = 8;
+        let now = aa_net::secure::unix_now();
+        let seedling = aa_net::model::Item { template_id: 42, count: 1, create_time: now - 100, ..Default::default() };
+        let cooldown = item_cooldown(Some(&game), Some(&skills), &seedling, start).unwrap();
+        assert_eq!(cooldown.1, 600_000);
+        assert!((499_000..=500_000).contains(&(cooldown.0 - now_ms(start))));
+
+        let old = aa_net::model::Item { template_id: 42, count: 1, create_time: now - 700, ..Default::default() };
+        let cooldown = item_cooldown(Some(&game), Some(&skills), &old, start).unwrap();
+        assert!((599_000..=600_000).contains(&(cooldown.0 - now_ms(start))));
+        assert_eq!(cooldown.1, 600_000);
+
+        let fresh = aa_net::model::Item { template_id: 42, count: 1, ..Default::default() };
+        assert!(item_cooldown(Some(&game), Some(&skills), &fresh, start).is_none());
     }
 
     #[test]
