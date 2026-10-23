@@ -669,6 +669,10 @@ pub enum ServerMsg {
     DoodadSound { obj_id: u32, sound_id: u32 },
     DoodadPhaseChanged { obj_id: u32, func_group_id: u32, time_left: u32, puzzle_group: i32, item_template_id: u32 },
     Chat(ChatMessage),
+    ChatNotice(crate::model::ChatNotice),
+    ChatLocalized(crate::model::ChatLocalizedMessage),
+    ChatFailed(crate::model::ChatFailed),
+    ChatSpam(crate::model::ChatSpam),
     ErrorMsg { code: i16, kind: u32, notify: bool },
     Kicked { reason: u8, message: String },
     // -- leaving
@@ -838,6 +842,10 @@ impl ServerMsg {
             Self::DoodadSound { .. } => "SCDoodadSound",
             Self::DoodadPhaseChanged { .. } => "SCDoodadPhaseChanged",
             Self::Chat(_) => "SCChatMessage",
+            Self::ChatNotice(_) => "SCNoticeMessage",
+            Self::ChatLocalized(_) => "SCChatLocalizedMessage",
+            Self::ChatFailed(_) => "SCChatFailed",
+            Self::ChatSpam(_) => "SCChatSpamDelay",
             Self::ErrorMsg { .. } => "SCErrorMsg",
             Self::Kicked { .. } => "SCKicked",
             Self::PrepareLeaveWorld { .. } => "SCPrepareLeaveWorld",
@@ -1308,6 +1316,10 @@ impl ServerMsg {
                 item_template_id: r.u32()?,
             },
             sc::SCChatMessagePacket => Self::Chat(ChatMessage::read(r)?),
+            sc::SCNoticeMessagePacket => Self::ChatNotice(crate::model::ChatNotice::read(r)?),
+            sc::SCChatLocalizedMessagePacket => Self::ChatLocalized(crate::model::ChatLocalizedMessage::read(r)?),
+            sc::SCChatFailedPacket => Self::ChatFailed(crate::model::ChatFailed::read(r)?),
+            sc::SCChatSpamDelayPacket => Self::ChatSpam(crate::model::ChatSpam::read(r)?),
             sc::SCErrorMsgPacket => {
                 let code = r.i16()?;
                 r.skip(2)?;
@@ -1914,6 +1926,76 @@ mod tests {
             decode(sc::SCLeavedChatChannelPacket, &[1, 0, 5, 0, 0, 0, 0, 0]),
             ServerMsg::ChatLeft { chat_type: 1, sub_type: 5, faction_id: 0 }
         );
+        // SCNoticeMessage: u8 kind, string alpha, i32 visible time, string RRGGBB+text.
+        let mut w = Writer::new();
+        w.u8(2).string("FF").i32(4000).string("FF0000Maintenance");
+        let notice = crate::model::ChatNotice {
+            kind: 2,
+            alpha_hex: "FF".into(),
+            visible_ms: 4000,
+            text: "FF0000Maintenance".into(),
+        };
+        assert_eq!(decode(sc::SCNoticeMessagePacket, &w.finish()), ServerMsg::ChatNotice(notice.clone()));
+        assert_eq!(crate::model::ChatNotice { visible_ms: 0, ..notice }.visible_time(), 1000 + 17 * 50);
+        // SCChatFailed: i32 code, string text.
+        let mut w = Writer::new();
+        w.i32(0x10f).string("Crew");
+        assert_eq!(
+            decode(sc::SCChatFailedPacket, &w.finish()),
+            ServerMsg::ChatFailed(crate::model::ChatFailed { code: 0x10f, text: "Crew".into() })
+        );
+        // SCChatLocalizedMessage: packed i64 identity, bc obj id, u8 language, u32 category,
+        // sender, key, u32 numParam, param, param2.
+        let mut w = Writer::new();
+        w.i64(0x0000_0009_0000_000f).bc(0x010203).u8(1).u32(7)
+            .string("Ann").string("party_invite").u32(2).string("Bob").string("Squad");
+        let m = crate::model::ChatLocalizedMessage {
+            chat_id: 0x0000_0009_0000_000f,
+            sender_obj_id: 0x010203,
+            language: 1,
+            category: 7,
+            sender: "Ann".into(),
+            key: "party_invite".into(),
+            num_param: 2,
+            param: "Bob".into(),
+            param2: "Squad".into(),
+        };
+        assert_eq!(m.chat_type(), 15);
+        assert_eq!(m.sub_type(), 0);
+        assert_eq!(m.channel_faction(), 9);
+        assert_eq!(decode(sc::SCChatLocalizedMessagePacket, &w.finish()), ServerMsg::ChatLocalized(m));
+        // SCChatSpamDelay: version, report delay, 15 groups, whisper group, 15 float delays,
+        // then the two fixed config tails.
+        let mut w = Writer::new();
+        w.u8(1).u16(3);
+        for i in 0..15u8 { w.u8(i); }
+        w.u8(4);
+        for i in 0..15u8 { w.f32(f32::from(i)); }
+        w.raw(&[1, 2]);
+        w.raw(&[3; 19]);
+        let spam = crate::model::ChatSpam {
+            version: 1,
+            report_delay: 3,
+            groups: std::array::from_fn(|i| i as u8),
+            whisper_group: 4,
+            delays: std::array::from_fn(|i| i as f32),
+            apply_config: [1, 2],
+            detect_config: [3; 19],
+        };
+        assert_eq!(decode(sc::SCChatSpamDelayPacket, &w.finish()), ServerMsg::ChatSpam(spam));
+        // The 1.2 server's shorter layout: version, 15 groups, 15 float delays, two empty blobs.
+        let mut w = Writer::new();
+        w.u8(0);
+        for i in 0..15u8 { w.u8(i); }
+        for i in 0..15u8 { w.f32(f32::from(i) / 10.0); }
+        w.string("").string("");
+        let spam = crate::model::ChatSpam {
+            version: 0,
+            groups: std::array::from_fn(|i| i as u8),
+            delays: std::array::from_fn(|i| i as f32 / 10.0),
+            ..Default::default()
+        };
+        assert_eq!(decode(sc::SCChatSpamDelayPacket, &w.finish()), ServerMsg::ChatSpam(spam));
         // SCTargetChanged: bc object id, bc target (0 = none).
         let mut w = Writer::new();
         w.bc(0x0102).bc(0x0A0B0C);

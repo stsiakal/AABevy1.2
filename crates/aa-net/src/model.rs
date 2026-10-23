@@ -1899,6 +1899,8 @@ pub struct ChatMessage {
     pub sender: String,
     pub message: String,
     pub ability: i32,
+    /// `SCChatMessagePacket`'s language byte (the chat script's language styling).
+    pub language: u8,
 }
 
 impl ChatMessage {
@@ -1908,7 +1910,7 @@ impl ChatMessage {
         let channel_faction = r.u32()?;
         let sender_obj_id = r.bc()?;
         let sender_id = r.u32()?;
-        r.skip(1)?; // language
+        let language = r.u8()?;
         let sender_race = r.u8()?;
         let faction_id = r.u32()?;
         let sender = r.string()?;
@@ -1925,7 +1927,152 @@ impl ChatMessage {
             sender,
             message,
             ability,
+            language,
         })
+    }
+}
+
+/// `SCNoticeMessagePacket`: a server/GM notice (`kind` 1 chat, 2/3 the notice window).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatNotice {
+    pub kind: u8,
+    /// `ARGBColor.A.ToString("X2")`.
+    pub alpha_hex: String,
+    /// `<= 0`: `1000 + 50 ms per character` (the server's own default).
+    pub visible_ms: i32,
+    /// `RRGGBB` + text.
+    pub text: String,
+}
+
+impl ChatNotice {
+    pub fn read(r: &mut Reader) -> Result<Self> {
+        let kind = r.u8()?;
+        let alpha_hex = r.string()?;
+        let visible_ms = r.i32()?;
+        let text = r.string()?;
+        Ok(Self { kind, alpha_hex, visible_ms, text })
+    }
+
+    /// The native visible time: a non-positive value means `1000 + 50 ms` per character.
+    pub fn visible_time(&self) -> i32 {
+        if self.visible_ms > 0 {
+            self.visible_ms
+        } else {
+            1000 + self.text.chars().count() as i32 * 50
+        }
+    }
+}
+
+/// `SCChatLocalizedMessagePacket`: a chat line whose text is a locale template.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatLocalizedMessage {
+    /// The packed channel identity `(faction << 32) | (sub_type << 16) | chat_type`.
+    pub chat_id: i64,
+    pub sender_obj_id: u32,
+    pub language: u8,
+    /// The locale group (`category`) and template key.
+    pub category: u32,
+    pub key: String,
+    pub sender: String,
+    pub num_param: u32,
+    pub param: String,
+    pub param2: String,
+}
+
+impl ChatLocalizedMessage {
+    pub fn read(r: &mut Reader) -> Result<Self> {
+        let chat_id = r.i64()?;
+        let sender_obj_id = r.bc()?;
+        let language = r.u8()?;
+        let category = r.u32()?;
+        let sender = r.string()?;
+        let key = r.string()?;
+        let num_param = r.u32()?;
+        let param = r.string()?;
+        let param2 = r.string()?;
+        Ok(Self {
+            chat_id,
+            sender_obj_id,
+            language,
+            category,
+            key,
+            sender,
+            num_param,
+            param,
+            param2,
+        })
+    }
+
+    pub fn chat_type(&self) -> i16 {
+        self.chat_id as i16
+    }
+
+    pub fn sub_type(&self) -> i16 {
+        (self.chat_id >> 16) as i16
+    }
+
+    pub fn channel_faction(&self) -> u32 {
+        (self.chat_id as u64 >> 32) as u32
+    }
+}
+
+/// `SCChatFailedPacket`: an error code plus the raw text the server attached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatFailed {
+    pub code: i32,
+    pub text: String,
+}
+
+impl ChatFailed {
+    pub fn read(r: &mut Reader) -> Result<Self> {
+        Ok(Self { code: r.i32()?, text: r.string()? })
+    }
+}
+
+/// `SCChatSpamDelayPacket`: 15 per-chat-type group bytes and their delays (seconds).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChatSpam {
+    pub version: u8,
+    pub report_delay: u16,
+    pub groups: [u8; 15],
+    pub whisper_group: u8,
+    pub delays: [f32; 15],
+    pub apply_config: [u8; 2],
+    pub detect_config: [u8; 19],
+}
+
+impl ChatSpam {
+    pub fn read(r: &mut Reader) -> Result<Self> {
+        let mut spam = Self { version: r.u8()?, ..Self::default() };
+        // The full client config (0x68 bytes) carries the report delay, the whisper group and the
+        // two fixed config tails. The 1.2 server sends the shorter version, groups, delays and two
+        // empty blobs; accept both.
+        let full = r.remaining() >= 15 + 60 + 2 + 19;
+        if full {
+            spam.report_delay = r.u16()?;
+        }
+        for group in &mut spam.groups {
+            *group = r.u8()?;
+        }
+        if full {
+            spam.whisper_group = r.u8()?;
+        }
+        for delay in &mut spam.delays {
+            *delay = r.f32()?;
+        }
+        if full {
+            for byte in &mut spam.apply_config {
+                *byte = r.u8()?;
+            }
+            for byte in &mut spam.detect_config {
+                *byte = r.u8()?;
+            }
+        } else {
+            let _ = r.string();
+            let _ = r.string();
+            r.skip(r.remaining())?;
+        }
+        Ok(spam)
     }
 }
 
