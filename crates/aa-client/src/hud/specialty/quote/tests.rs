@@ -255,6 +255,54 @@ fn received_ratio_callback_quotes_before_later_grade_and_npc_removal() -> Result
     Ok(())
 }
 
+#[test]
+fn backpack_goods_info_is_the_type3_tooltip_and_sale_queues_the_current_npc() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, state) = runtime()?;
+    {
+        let data = state.borrow();
+        let item = crate::hud::enchant::equipment(&data, slot::BACKPACK as u8).expect("equipped pack");
+        let game = data.game.get().expect("game data");
+        assert!(game.specialties.is_pack(item.template_id), "template {}", item.template_id);
+        assert_ne!(game.items[&item.template_id].price, 0);
+    }
+    rt.lua
+        .load(
+            r#"
+        local goods = X2Equipment:GetBackPackGoodsInfo('player')
+        assert(goods ~= nil and goods.itemType == 20090 and goods.lookType == 20090)
+        assert(goods.itemGrade == 0 and goods.refund == 25000)
+    "#,
+        )
+        .exec()?;
+    dispatch(&state, Event::SpecialtyRatio(117));
+    state.borrow_mut().dialog.npc = Some((500, 4473));
+    rt.lua
+        .load("assert(select('#',X2Store:SellBackPackGoods('ignored',1))==0)")
+        .exec()?;
+    {
+        let data = state.borrow();
+        assert_eq!(data.specialty.ratio, 100, "394fbadd resets the ratio after the sale sender");
+        assert!(matches!(
+            data.requests.as_slice(),
+            [crate::hud::api::Request::SellBackpackGoods { npc_obj_id: 500 }]
+        ));
+    }
+    // The target and the talked-to NPC disagree: the original interaction context is not inferred.
+    state.borrow_mut().dialog.npc = Some((999, u32::MAX));
+    rt.lua.load("X2Store:SellBackPackGoods()").exec()?;
+    assert_eq!(state.borrow().requests.len(), 1);
+    // Without a type-3 pack the getter is nil and the sale sends nothing.
+    let mut spawn = crate::hud::expansion::fixture::spawn();
+    spawn.unit.equipment.slots[slot::BACKPACK] = None;
+    spawn.state.character.equipment.slots[slot::BACKPACK] = None;
+    dispatch(&state, Event::PlayerSpawn(Box::new(spawn)));
+    rt.lua
+        .load("assert(X2Equipment:GetBackPackGoodsInfo('player')==nil); X2Store:SellBackPackGoods()")
+        .exec()?;
+    assert_eq!(state.borrow().requests.len(), 1);
+    Ok(())
+}
+
 fn database() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(

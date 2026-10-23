@@ -10,7 +10,7 @@ pub(super) fn runtime() -> Result<(UiRuntime, Shared), Box<dyn std::error::Error
     rt.lua
         .load(
             r#"
-        X2Store={}; ERROR_MSG=1; LOCALIZED={}; NOTICES={}
+        X2Store={}; X2Equipment={}; ERROR_MSG=1; LOCALIZED={}; NOTICES={}
         X2Locale={LocalizeUiText=function(_,group,key)
           assert(group==ERROR_MSG)
           LOCALIZED[#LOCALIZED+1]={key,X2Store:GetSpecialtyRatio()}

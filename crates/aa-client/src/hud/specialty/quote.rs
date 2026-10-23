@@ -56,6 +56,40 @@ impl Tables {
         Ok(tables)
     }
 
+    /// Whether `template` is a trade pack (`item_backpacks.backpack_type_id = 3`).
+    pub(in crate::hud) fn is_pack(&self, template: u32) -> bool {
+        self.backpack_types.get(&template) == Some(&3)
+    }
+
+    /// The worn trade pack as `X2Equipment:GetBackPackGoodsInfo` shows it: the item tooltip table (its
+    /// `lookType`, `itemGrade` and grade-scaled `refund`) when the equipped template is a type-3
+    /// `item_backpacks` row with a nonzero item price.
+    pub(in crate::hud) fn goods(&self, lua: &Lua, data: &crate::hud::api::HudData) -> mlua::Result<Option<Table>> {
+        let Some(item) = crate::hud::enchant::equipment(data, aa_net::model::slot::BACKPACK as u8) else {
+            return Ok(None);
+        };
+        if self.backpack_types.get(&item.template_id) != Some(&3) {
+            return Ok(None);
+        }
+        let Some(game) = data.game.get() else { return Ok(None) };
+        let Some(desc) = game.items.get(&item.template_id) else { return Ok(None) };
+        if desc.price as i32 == 0 {
+            return Ok(None);
+        }
+        crate::hud::tips::item_tip(
+            lua,
+            game,
+            &data.tips,
+            item.template_id,
+            Some(i64::from(item.grade)),
+            Some(i64::from(item.count)),
+            crate::hud::tips::Instance {
+                flags: Some(item.flags),
+                ..Default::default()
+            },
+        )
+    }
+
     fn quote(&self, game: &GameData, npc: u32, item: &aa_net::model::Item, ratio: i32) -> Result<Option<(i32, u32)>, i16> {
         let Some(&coin) = self.npc_coins.get(&npc) else { return Ok(None) };
         if self.backpack_types.get(&item.template_id) != Some(&3) {
@@ -119,7 +153,51 @@ fn current(state: &Shared) -> Result<Option<(i32, u32)>, i16> {
     game.specialties.quote(game, npc, item, data.specialty.ratio)
 }
 
+/// The NPC the sale packet names: the received target and the talked-to NPC must not disagree; either
+/// one alone is the current interaction (the native sale reads the interaction manager, not the target).
+fn sale_npc(data: &crate::hud::api::HudData) -> Option<u32> {
+    let target = data.specialty.target.obj_id.filter(|id| *id != 0);
+    let dialog = data.dialog.npc.map(|n| n.0).filter(|id| *id != 0);
+    match (target, dialog) {
+        (Some(target), Some(dialog)) if target == dialog => Some(target),
+        (Some(target), None) => Some(target),
+        (None, Some(dialog)) => Some(dialog),
+        _ => None,
+    }
+}
+
 pub(super) fn install(lua: &Lua, store: &Table, state: &Shared) -> mlua::Result<()> {
+    let equipment: Table = lua.globals().get("X2Equipment")?;
+    let goods_state = state.clone();
+    equipment.set(
+        "GetBackPackGoodsInfo",
+        lua.create_function(move |lua, _: MultiValue| {
+            let data = goods_state.borrow();
+            data.game.get().map_or(Ok(None), |game| game.specialties.goods(lua, &data))
+        })?,
+    )?;
+    let sale_state = state.clone();
+    store.set(
+        "SellBackPackGoods",
+        lua.create_function(move |_, _: MultiValue| {
+            let mut data = sale_state.borrow_mut();
+            let Some(npc) = sale_npc(&data) else { return Ok(()) };
+            let Some(item) = crate::hud::enchant::equipment(&data, aa_net::model::slot::BACKPACK as u8) else {
+                return Ok(());
+            };
+            let sellable = data
+                .game
+                .get()
+                .is_some_and(|game| game.specialties.is_pack(item.template_id) && game.items.get(&item.template_id).is_some_and(|d| d.price != 0));
+            if !sellable {
+                return Ok(());
+            }
+            //394fbadd resets the native ratio cache only after the sale sender.
+            data.specialty.ratio = 100;
+            data.requests.push(crate::hud::api::Request::SellBackpackGoods { npc_obj_id: npc });
+            Ok(())
+        })?,
+    )?;
     let state = state.clone();
     store.set(
         "GetSpecialtyRatioRefund",
