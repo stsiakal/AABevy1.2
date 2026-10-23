@@ -197,7 +197,7 @@ pub fn close_created_build(
         let Event::Housing(HousingEvent::MyHouse(house)) = event else { continue };
         let design = house.template_id;
         let answered_session = placement.session.as_ref().is_some_and(|s| s.is_house() && s.done && s.house_design() == Some(design));
-        let answered_pending = placement.session.is_none() && placement.pending_house == Some(design);
+        let answered_pending = placement.pending_house == Some(design);
         if !answered_session && !answered_pending {
             continue;
         }
