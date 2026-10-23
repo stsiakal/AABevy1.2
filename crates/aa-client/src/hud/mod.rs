@@ -507,6 +507,7 @@ impl Plugin for HudPlugin {
             .add_message::<alerts::UseFailed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_message::<crate::ingame::combat::DamageLanded>()
             .insert_resource(session::ScriptedSession::from_args())
             .insert_resource(cameras::DevFov::from_args())

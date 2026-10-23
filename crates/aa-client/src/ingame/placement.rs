@@ -37,11 +37,11 @@ use std::collections::{HashMap, HashSet};
 use aa_cry::scene::{CryAssets, ModelOptions, spawn_loaded};
 use aa_net::farm::CreateDoodad;
 use aa_net::housing::{ConstructHouseTax, HouseCommand};
-use aa_net::state::{Doodads, Houses, Inventory, Skills};
+use aa_net::state::{Doodads, Houses, Inventory, Skills, Units};
 use aa_net::{Command, NetCommand, Pos};
 use aa_world::coords::cry_rot_to_bevy;
 use aa_world::collide::SurfaceKind;
-use aa_world::{TerrainQuery, WaterQuery, WorldCollision, cry_to_bevy};
+use aa_world::{TerrainQuery, WaterQuery, WorldCollision, bevy_to_cry, cry_to_bevy};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
@@ -73,6 +73,8 @@ pub const ROT_STEP_PLAIN: f32 = 10.0 * std::f32::consts::PI / 180.0;
 const DEFAULT_RANGE: f32 = 2.0;
 /// How far above the ground the floor is searched for, metres.
 const REACH_UP: f32 = 4.0;
+/// How far the decoration builder's surface ray reaches, metres (`FUN_3903da00` `RayWorldIntersection`).
+const DECO_REACH: f32 = 100.0;
 
 /// A template an item plants: the doodad, its start phase model, use range and footprint.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -100,6 +102,51 @@ pub struct Plantable {
     pub parts: Vec<super::data::ShipPart>,
     /// A design item (`item_housings`): the placement is a house plot, not a doodad.
     pub house: Option<HouseDesign>,
+    /// A decoration item (`item_housing_decorations`): the placement is furniture bonded to a house.
+    pub deco: Option<DecoDesign>,
+}
+
+/// A decoration item's `housing_decorations` row: the design the server receives and the surface flags.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DecoDesign {
+    /// `housing_decorations.id`, the `design_id` of `CSDecorateHouse`.
+    pub design: u32,
+    pub allow_on_floor: bool,
+    pub allow_on_wall: bool,
+    pub allow_on_ceiling: bool,
+    pub allow_mesh_on_garden: bool,
+    pub allow_pivot_on_garden: bool,
+    /// `housing_decorations.deco_actability_group_id`.
+    pub group: u32,
+}
+
+/// The decoration limits of a housing template (`housings.deco_limit`, `absolute_deco_limit`,
+/// `housing_deco_limit_elems`) and its built-in doodads.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HousingDecoRules {
+    pub garden_radius: f32,
+    pub deco_limit: u32,
+    pub absolute_deco_limit: u32,
+    pub housing_deco_limit_id: u32,
+    /// `housing_binding_doodads.doodad_id` (the built-ins the counter excludes).
+    pub builtins: Vec<u32>,
+    /// `(deco_actability_group_id, count)` of the template's limit id.
+    pub group_limits: Vec<(u32, u32)>,
+}
+
+/// The decoration being placed and the house it will bond to.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Deco {
+    pub design: u32,
+    pub decoration: DecoDesign,
+    pub house_tl: u16,
+    pub house_obj_id: u32,
+    /// The house unit's world position (game coordinates).
+    pub house_pos: Vec3,
+    /// The house unit's yaw around Z, radians (`CSDecorateHouse` coordinates are relative to the house).
+    pub house_yaw: f32,
+    pub house_scale: f32,
+    pub rules: HousingDecoRules,
 }
 
 /// A house / farm design (`item_housings.item_id` -> `housings.id`).
@@ -139,6 +186,10 @@ pub struct Catalog {
     area_groups: HashMap<u32, u32>,
     /// `housing_groups.id` -> the categories its `housing_group_categories` rows allow.
     group_categories: HashMap<u32, HashSet<u32>>,
+    /// `housings.id` -> decoration limits and built-ins.
+    deco_rules: HashMap<u32, HousingDecoRules>,
+    /// `(housing_decorations.doodad_id, item template)` -> `deco_actability_group_id`.
+    deco_groups: HashMap<(u32, u32), u32>,
     /// [`Catalog::load`] filled this from the database (a default catalog has no placement data).
     loaded: bool,
 }
@@ -146,6 +197,17 @@ pub struct Catalog {
 /// The ground-point offset of a housing design: none (see the design loader for why `housings.auto_z_offset_*` is left out).
 fn house_grounding(_auto_z: bool, _offset: Vec3) -> Grounding {
     Grounding::default()
+}
+
+/// A `NUM` column that may hold `t`/`f`, `1`/`0` or a real (the database mixes them).
+fn sql_flag(r: &rusqlite::Row, i: usize) -> rusqlite::Result<bool> {
+    use rusqlite::types::Value;
+    Ok(match r.get::<_, Value>(i)? {
+        Value::Integer(n) => n != 0,
+        Value::Real(f) => f != 0.0,
+        Value::Text(t) => matches!(t.trim(), "1" | "t" | "T" | "true" | "TRUE"),
+        _ => false,
+    })
 }
 
 impl Catalog {
@@ -210,6 +272,7 @@ impl Catalog {
                     grounding: Grounding::default(),
                     parts: Vec::new(),
                     house: None,
+                    deco: None,
                 });
             }
         }
@@ -271,6 +334,62 @@ impl Catalog {
                     grounding: house_grounding(auto_z, Vec3::new(ox, oy, oz)),
                     parts: db.map(|db| db.housing_parts(model_id)).unwrap_or_default(),
                     house: Some(house),
+                    deco: None,
+                });
+            }
+        }
+        // Decoration items (`item_housing_decorations`): the doodad that is bonded to a house and its surface flags.
+        if let Ok(mut q) = conn.prepare(
+            "SELECT ih.item_id, hd.id, hd.doodad_id, hd.allow_on_floor, hd.allow_on_wall, \
+             hd.allow_on_ceiling, hd.allow_mesh_on_garden, hd.allow_pivot_on_garden, \
+             hd.deco_actability_group_id, i.use_skill_id, a.sim_radius, s.cooldown_time, s.cooldown_tag_id \
+             FROM item_housing_decorations ih \
+             JOIN housing_decorations hd ON hd.id = ih.design_id \
+             LEFT JOIN items i ON i.id = ih.item_id \
+             LEFT JOIN skills s ON s.id = i.use_skill_id \
+             LEFT JOIN doodad_almighties a ON a.id = hd.doodad_id",
+        ) && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                let item: u32 = r.get::<_, Option<i64>>(0).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let design: u32 = r.get::<_, Option<i64>>(1).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let doodad: u32 = r.get::<_, Option<i64>>(2).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                if item == 0 || design == 0 || doodad == 0 {
+                    continue;
+                }
+                let deco = DecoDesign {
+                    design,
+                    allow_on_floor: sql_flag(r, 3).unwrap_or(false),
+                    allow_on_wall: sql_flag(r, 4).unwrap_or(false),
+                    allow_on_ceiling: sql_flag(r, 5).unwrap_or(false),
+                    allow_mesh_on_garden: sql_flag(r, 6).unwrap_or(false),
+                    allow_pivot_on_garden: sql_flag(r, 7).unwrap_or(false),
+                    group: r.get::<_, Option<i64>>(8).unwrap_or_default().unwrap_or(0).max(0) as u32,
+                };
+                let use_skill: u32 = r.get::<_, Option<i64>>(9).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let radius: f32 = r.get::<_, Option<i64>>(10).unwrap_or_default().unwrap_or(0).max(0) as f32 / 1000.0;
+                let cooldown_ms: u32 = r.get::<_, Option<i64>>(11).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let cooldown_tag: u32 = r.get::<_, Option<i64>>(12).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                catalog.deco_groups.entry((doodad, item)).or_insert(deco.group);
+                catalog.by_item.entry(item).or_insert(Plantable {
+                    item,
+                    doodad,
+                    use_skill,
+                    // the decoration is placed next to the player inside the house's garden; the builder does not
+                    // range-check the spot (the house lookup does)
+                    use_range: 0.0,
+                    cooldown_ms,
+                    cooldown_tag,
+                    start_group: 0,
+                    model: db.and_then(|db| db.doodad_model(doodad)),
+                    // `doodad_almighties.sim_radius` is 0 on most furniture; the original overlap test uses the
+                    // model's bounding box, so a small fallback keeps the check meaningful
+                    footprint: if radius > 0.0 { radius } else { 0.25 },
+                    requires_water: false,
+                    grounding: Grounding::default(),
+                    parts: Vec::new(),
+                    house: None,
+                    deco: Some(deco),
                 });
             }
         }
@@ -298,8 +417,66 @@ impl Catalog {
                 }
             }
         }
+        // Decoration limits: `housings.deco_limit` / `absolute_deco_limit`, the built-in doodads the counter
+        // excludes and the per-actability-group caps.
+        if let Ok(mut q) = conn.prepare(
+            "SELECT id, deco_limit, absolute_deco_limit, housing_deco_limit_id, garden_radius FROM housings",
+        ) && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                let id = r.get::<_, Option<i64>>(0).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                if id == 0 {
+                    continue;
+                }
+                catalog.deco_rules.insert(
+                    id,
+                    HousingDecoRules {
+                        garden_radius: r.get::<_, Option<f64>>(4).unwrap_or_default().unwrap_or(0.0) as f32,
+                        deco_limit: r.get::<_, Option<i64>>(1).unwrap_or_default().unwrap_or(0).max(0) as u32,
+                        absolute_deco_limit: r.get::<_, Option<i64>>(2).unwrap_or_default().unwrap_or(0).max(0) as u32,
+                        housing_deco_limit_id: r.get::<_, Option<i64>>(3).unwrap_or_default().unwrap_or(0).max(0) as u32,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        if let Ok(mut q) = conn.prepare(
+            "SELECT owner_id, doodad_id FROM housing_binding_doodads WHERE owner_type = 'Housing'",
+        ) && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                let owner = r.get::<_, Option<i64>>(0).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let doodad = r.get::<_, Option<i64>>(1).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                if let Some(rules) = catalog.deco_rules.get_mut(&owner) {
+                    rules.builtins.push(doodad);
+                }
+            }
+        }
+        if let Ok(mut q) = conn.prepare(
+            "SELECT housing_deco_limit_id, deco_actability_group_id, count FROM housing_deco_limit_elems",
+        ) && let Ok(mut rows) = q.query([])
+        {
+            while let Ok(Some(r)) = rows.next() {
+                let limit = r.get::<_, Option<i64>>(0).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let group = r.get::<_, Option<i64>>(1).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                let count = r.get::<_, Option<i64>>(2).unwrap_or_default().unwrap_or(0).max(0) as u32;
+                for rules in catalog.deco_rules.values_mut().filter(|rules| rules.housing_deco_limit_id == limit) {
+                    rules.group_limits.push((group, count));
+                }
+            }
+        }
         catalog.loaded = true;
         Some(catalog)
+    }
+
+    /// The decoration limits of a housing template.
+    pub fn deco_rules(&self, housing_id: u32) -> Option<&HousingDecoRules> {
+        self.deco_rules.get(&housing_id)
+    }
+
+    /// The actability group of a placed decoration (`housing_decorations` by doodad and item template).
+    pub fn deco_group(&self, doodad: u32, item: u32) -> Option<u32> {
+        self.deco_groups.get(&(doodad, item)).copied()
     }
 
     /// The placement of a housing design (its item's template), for the offline renders and tests.
@@ -364,6 +541,14 @@ pub struct HousePressed {
     pub item_template: u32,
 }
 
+/// A decoration item was used (`item_housing_decorations`, the original item-task type 6): the HUD sends this
+/// instead of its use skill.
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DecorationPressed {
+    pub item_id: u64,
+    pub item_template: u32,
+}
+
 /// Why a spot cannot take a plant or a house.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Invalid {
@@ -377,6 +562,20 @@ pub enum Invalid {
     WrongCategory,
     Overlap,
     Player,
+    /// A decoration on a surface its `housing_decorations` flags do not allow.
+    DecoSurface,
+    /// A decoration outside the house but with no garden flag.
+    DecoOutOfHouse,
+    /// An indoor-only decoration placed inside the house.
+    DecoInHouse,
+    /// A decoration beyond `housings.garden_radius`.
+    DecoOutOfGarden,
+    /// A decoration overlapping another doodad bonded to the house.
+    DecoOverlap,
+    /// `housings.deco_limit` / `absolute_deco_limit` reached.
+    DecoTooMany,
+    /// A `housing_deco_limit_elems` group cap reached.
+    DecoNoSpace,
 }
 
 impl Invalid {
@@ -392,6 +591,13 @@ impl Invalid {
             Self::WrongCategory => "the housing area does not allow this design",
             Self::Overlap => "another house is in the way",
             Self::Player => "the player is in the way",
+            Self::DecoSurface => "this surface cannot be decorated",
+            Self::DecoOutOfHouse => "outside the house",
+            Self::DecoInHouse => "inside the house",
+            Self::DecoOutOfGarden => "outside the garden",
+            Self::DecoOverlap => "another decoration is in the way",
+            Self::DecoTooMany => "the house has too many decorations",
+            Self::DecoNoSpace => "the furniture group is full",
         }
     }
 }
@@ -429,17 +635,23 @@ pub struct Session {
     pub created: bool,
     /// A spot set by a script (`house_place`): the cursor may not move it off-screen in a headless run.
     pub scripted: bool,
+    /// The decoration being placed (the original item-task-6 builder); `None` for seeds and house plots.
+    pub deco: Option<Deco>,
+    /// The ghost's full orientation in game axes (Cry `[x, y, z, w]`); a decoration on a wall or ceiling is not just a
+    /// yaw. `None` uses the yaw-only rotation of seeds and house plots.
+    pub orientation: Option<Quat>,
 }
 
 impl Session {
     /// A house or farm whose spot the first left click locked (rotation, or the Start Construction popup is asked for
-    /// or open).
+    /// or open), or the decoration builder's rotation state.
     pub fn locked(&self) -> bool {
-        self.is_house() && (self.rotating || self.quote_requested || self.window_open)
+        (self.is_house() || self.is_deco()) && (self.rotating || self.quote_requested || self.window_open)
     }
 
     /// Retail: only after the click that locks a house / farm spot does the wheel turn the model (and then it is not the
-    /// camera's); before it, and for seeds and saplings, the wheel zooms the camera.
+    /// camera's); before it, and for seeds and saplings, the wheel zooms the camera. The decoration builder uses the
+    /// same rotation state.
     pub fn wheel_rotates(&self) -> bool {
         self.locked()
     }
@@ -448,6 +660,13 @@ impl Session {
     /// the rotation goes back to free placement (the spot unlocks). `false` when there is no step back (free
     /// placement, or a seed): the click cancels the placement.
     pub fn step_back(&mut self) -> bool {
+        if self.is_deco() {
+            if self.rotating {
+                self.rotating = false;
+                return true;
+            }
+            return false;
+        }
         if !self.is_house() {
             return false;
         }
@@ -493,6 +712,8 @@ impl Session {
             done: false,
             created: false,
             scripted: false,
+            deco: None,
+            orientation: None,
         }
     }
 
@@ -504,13 +725,18 @@ impl Session {
         self.plant.house.is_some()
     }
 
+    /// The original item-task-6 decoration builder.
+    pub fn is_deco(&self) -> bool {
+        self.deco.is_some()
+    }
+
     pub fn house_design(&self) -> Option<u32> {
         self.plant.house.as_ref().map(|h| h.design)
     }
 
-    /// The request a doodad confirmation sends; `None` for a house or while the spot is not valid.
+    /// The request a doodad confirmation sends; `None` for a house, a decoration or while the spot is not valid.
     pub fn request(&self) -> Option<CreateDoodad> {
-        if self.is_house() || !self.valid() {
+        if self.is_house() || self.is_deco() || !self.valid() {
             return None;
         }
         let spot = self.spot?;
@@ -525,12 +751,38 @@ impl Session {
 
     /// `CSConstructHouseTax`: ask the server for the retail build window's numbers.
     pub fn tax_request(&self) -> Option<HouseCommand> {
-        if !self.valid() {
+        if !self.is_house() || !self.valid() {
             return None;
         }
         let design = self.house_design()?;
         let spot = self.spot?;
         Some(HouseCommand::ConstructHouseTax { design_id: design, x: spot.x, y: spot.y, z: spot.z })
+    }
+
+    /// `CSDecorateHouse`: the decoration builder's confirm. The server stores a house's children in the parent's
+    /// frame, so the position and quaternion are converted from world to the house's local frame.
+    pub fn decorate_request(&self) -> Option<HouseCommand> {
+        let deco = self.deco.as_ref()?;
+        if !self.valid() {
+            return None;
+        }
+        let spot = self.spot?;
+        let world = self.orientation?;
+        let scale = if deco.house_scale > 0.0 { deco.house_scale } else { 1.0 };
+        let (sin, cos) = deco.house_yaw.sin_cos();
+        let (dx, dy, dz) = (spot.x - deco.house_pos.x, spot.y - deco.house_pos.y, spot.z - deco.house_pos.z);
+        let local = Vec3::new((cos * dx + sin * dy) / scale, (-sin * dx + cos * dy) / scale, dz / scale);
+        let local_q = Quat::from_rotation_z(-deco.house_yaw) * world;
+        Some(HouseCommand::DecorateHouse {
+            house_tl: deco.house_tl,
+            design_id: deco.design,
+            x: local.x,
+            y: local.y,
+            z: local.z,
+            quat: [local_q.x, local_q.y, local_q.z, local_q.w],
+            parent_obj_id: deco.house_obj_id,
+            item_id: self.item_id,
+        })
     }
 
     /// Why the confirmed house cannot be sent, for the one WARN the Build button logs.
@@ -657,6 +909,11 @@ struct Visuals {
     cursor_bad: Option<Handle<StandardMaterial>>,
     cursor_rotation: Option<Handle<StandardMaterial>>,
     cursor_zoom: Option<Handle<StandardMaterial>>,
+    /// The decoration builder's own cursor set (`housing_deco_*`), fallback to the housing set.
+    deco_good: Option<Handle<StandardMaterial>>,
+    deco_bad: Option<Handle<StandardMaterial>>,
+    deco_rotation: Option<Handle<StandardMaterial>>,
+    deco_zoom: Option<Handle<StandardMaterial>>,
     ring: RingParts,
     arrow: Option<Entity>,
 }
@@ -683,6 +940,7 @@ struct RingParts {
 pub fn plugin(app: &mut App) {
     app.add_message::<PlantPressed>()
         .add_message::<HousePressed>()
+        .add_message::<DecorationPressed>()
         .init_resource::<Placement>()
         .init_resource::<Visuals>()
         .insert_resource(Catalog::default())
@@ -699,7 +957,7 @@ pub fn plugin(app: &mut App) {
 /// The `BUILDER_STEP` argument of the original builder (`FUN_39017410`, table `{"stanby","position","rotation","elevation"}`)
 /// for a house / farm placement; seeds and saplings are not builder placements.
 fn builder_step(session: Option<&Session>) -> Option<&'static str> {
-    let session = session.filter(|s| s.is_house())?;
+    let session = session.filter(|s| s.is_house() || s.is_deco())?;
     Some(if session.locked() { "rotation" } else { "position" })
 }
 
@@ -883,16 +1141,83 @@ fn end_session(commands: &mut Commands, placement: &mut Placement, visuals: &Vis
     }
 }
 
+/// The original item-task-6 start (`FUN_3932c120`): the house under the player, its decoration rules, and a session
+/// that uses the decoration's doodad as its ghost. Errors are the original `ERROR_MSG` keys.
+#[allow(clippy::too_many_arguments)]
+fn start_deco_session(
+    item_id: u64,
+    template: u32,
+    player: Vec3,
+    yaw: f32,
+    houses: Option<&Houses>,
+    units: Option<&Units>,
+    doodads: Option<&Doodads>,
+    catalog: &Catalog,
+) -> Result<Session, &'static str> {
+    let Some(plant) = catalog.plantable(template).filter(|p| p.deco.is_some()).cloned() else {
+        return Err("HOUSE_CANNOT_DECORATE");
+    };
+    let decoration = plant.deco.ok_or("HOUSE_CANNOT_DECORATE")?;
+    let houses = houses.ok_or("HOUSE_CANNOT_DECORATE")?;
+    let mut best: Option<(&aa_net::housing::House, HousingDecoRules, f32)> = None;
+    for house in houses.by_tl_id.values() {
+        if house.demolished {
+            continue;
+        }
+        let Some(rules) = catalog.deco_rules(house.snapshot.template_id).cloned() else { continue };
+        let pos = house.snapshot.position();
+        let distance = Vec2::new(pos.x - player.x, pos.y - player.y).length();
+        if distance <= rules.garden_radius.max(1.0) + 1.0 && best.as_ref().is_none_or(|b| distance < b.2) {
+            best = Some((house, rules, distance));
+        }
+    }
+    let Some((house, rules, _)) = best else { return Err("TOO_FAR_TO_DECORATE_HOUSE") };
+    if house.snapshot.current_actions < house.snapshot.all_actions {
+        return Err("HOUSE_NOT_DECORATABLE_STATE");
+    }
+    let pos = house.snapshot.position();
+    let (house_yaw, house_scale) = units
+        .and_then(|units| units.by_id.get(&house.snapshot.obj_id))
+        .map_or((0.0, 1.0), |unit| (unit.rotation[2], unit.scale));
+    let deco = Deco {
+        design: decoration.design,
+        decoration,
+        house_tl: house.snapshot.tl_id,
+        house_obj_id: house.snapshot.obj_id,
+        house_pos: Vec3::new(pos.x, pos.y, pos.z),
+        house_yaw,
+        house_scale,
+        rules,
+    };
+    if let Some(doodads) = doodads
+        && let Some(error) = deco_limit_error(&deco, doodads, catalog)
+    {
+        return Err(match error {
+            Invalid::DecoNoSpace => "NO_MORE_SPACE_TO_DECORATE",
+            _ => "HOUSE_TOO_MANY_DECORATIONS",
+        });
+    }
+    let mut session = Session::new(item_id, plant, yaw);
+    session.invalid = Some(Invalid::DecoSurface);
+    session.deco = Some(deco);
+    Ok(session)
+}
+
 /// Starts a placement when the HUD reports a seed use.
 #[allow(clippy::too_many_arguments)]
 fn start(
     mut commands: Commands,
     mut pressed: MessageReader<PlantPressed>,
-    mut houses: MessageReader<HousePressed>,
+    mut houses_pressed: MessageReader<HousePressed>,
+    mut decorations: MessageReader<DecorationPressed>,
     catalog: Res<Catalog>,
     mut placement: ResMut<Placement>,
     player: Query<&Mover, With<LocalPlayer>>,
     camera: Query<&OrbitCamera>,
+    houses: Option<Res<Houses>>,
+    units: Option<Res<Units>>,
+    doodads: Option<Res<Doodads>>,
+    rt: Option<NonSend<aa_ui::UiRuntime>>,
     visuals: Res<Visuals>,
     mut virtual_input: ResMut<VirtualInput>,
 ) {
@@ -929,12 +1254,44 @@ fn start(
             placement.session = Some(session);
         }
     }
-    for press in houses.read() {
+    for press in houses_pressed.read() {
         if let Some(session) = session_for(press.item_id, press.item_template, "housing") {
             end_session(&mut commands, &mut placement, &visuals);
             virtual_input.clear_edges();
             placement.pending_house = None;
             placement.session = Some(session);
+        }
+    }
+    for press in decorations.read() {
+        let player_pos = player.single().map(|m| m.pos).unwrap_or_default();
+        let yaw = camera.single().map(|c| c.yaw).unwrap_or(0.0);
+        match start_deco_session(
+            press.item_id,
+            press.item_template,
+            player_pos,
+            yaw,
+            houses.as_deref(),
+            units.as_deref(),
+            doodads.as_deref(),
+            &catalog,
+        ) {
+            Ok(session) => {
+                info!(
+                    "decoration: item {} (template {}) decorates house {} (design {})",
+                    press.item_id,
+                    press.item_template,
+                    session.deco.as_ref().map_or(0, |d| d.house_tl),
+                    session.deco.as_ref().map_or(0, |d| d.design)
+                );
+                end_session(&mut commands, &mut placement, &visuals);
+                virtual_input.clear_edges();
+                placement.pending_house = None;
+                placement.session = Some(session);
+            }
+            Err(key) => {
+                let text = localized_error(rt.as_deref(), key).unwrap_or_else(|| key.to_string());
+                notify(rt.as_deref(), text);
+            }
         }
     }
 }
@@ -962,9 +1319,27 @@ fn track(
     ensure_visuals(&mut cry.images, &mut cry.meshes, &mut cry.materials, &mut visuals);
     let Some(session) = placement.session.as_mut() else { return };
     let root = ensure_ghost(&mut commands, &mut cry, session);
-    let Some(mover) = player.single().ok() else { return };
+    let Some(mover) = player.single().ok().map(|m| m.pos).or_else(|| session.is_deco().then_some(Vec3::ZERO)) else {
+        return;
+    };
     let raw_cursor = virtual_input.cursor_position(windows.single().ok());
     let over_ui = over_ui.is_some_and(|o| o.0);
+    if session.is_deco() {
+        track_deco(
+            &mut commands,
+            root,
+            session,
+            raw_cursor,
+            over_ui,
+            mover,
+            &doodads,
+            &catalog,
+            collision.as_deref(),
+            &cameras,
+            &mut visuals,
+        );
+        return;
+    }
     let cursor = if over_ui { None } else { raw_cursor };
     let house = session.is_house();
     // confirmed for the Start Construction window: the spot and yaw stay locked until Cancel. The pointer
@@ -1012,9 +1387,9 @@ fn track(
     let before = (session.spot, session.invalid);
     session.spot = Some(spot);
     session.invalid = match &session.plant.house {
-        Some(design) => check_house(design, spot, mover.pos, &houses, &catalog, areas.as_deref(), wet).err(),
+        Some(design) => check_house(design, spot, mover, &houses, &catalog, areas.as_deref(), wet).err(),
         None => {
-            let mut invalid = check(&session.plant, spot, mover.pos, &doodads, &catalog, wet, surface).err();
+            let mut invalid = check(&session.plant, spot, mover, &doodads, &catalog, wet, surface).err();
             if invalid.is_none() && ring_blocked(&session.plant, spot, &doodads, &catalog).is_some() {
                 invalid = Some(Invalid::Footprint);
             }
@@ -1044,6 +1419,213 @@ fn track(
     update_ring(&mut commands, &mut cry.meshes, &mut visuals, session, &doodads, &houses, &catalog, areas.as_deref(), collision.as_deref(), terrain.as_deref());
 }
 
+/// The decoration builder's per-frame update (`FUN_3903e020` -> `FUN_3903da00`): the ghost sits on the surface under
+/// the cursor, aligned to its normal. The rotation state keeps the spot and only turns the model.
+#[allow(clippy::too_many_arguments)]
+fn track_deco(
+    commands: &mut Commands,
+    root: Option<Entity>,
+    session: &mut Session,
+    raw_cursor: Option<Vec2>,
+    over_ui: bool,
+    player: Vec3,
+    doodads: &Doodads,
+    catalog: &Catalog,
+    collision: Option<&WorldCollision>,
+    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    visuals: &mut Visuals,
+) {
+    let Some(deco) = session.deco.clone() else {
+        return;
+    };
+    hide_ring(commands, visuals);
+    if session.rotating {
+        show_ghost(commands, root, session);
+        return;
+    }
+    if over_ui {
+        // the original reports the surface error while the pointer is over the HUD but keeps the last spot
+        session.invalid = Some(Invalid::DecoSurface);
+        show_ghost(commands, root, session);
+        return;
+    }
+    let hit = raw_cursor.and_then(|c| {
+        let (camera, transform) = cameras.iter().find(|(c, _)| c.is_active)?;
+        hit_under(camera, transform, c, collision)
+    });
+    let Some((point, normal)) = hit else {
+        session.spot = None;
+        session.orientation = None;
+        session.invalid = Some(Invalid::DecoSurface);
+        if let Some(root) = root {
+            commands.entity(root).insert(Visibility::Hidden);
+        }
+        return;
+    };
+    let before = (session.spot, session.invalid);
+    let spot = point + normal * 0.01;
+    session.invalid = check_deco(
+        &deco,
+        &session.plant,
+        spot,
+        normal,
+        player,
+        doodads,
+        catalog,
+        collision,
+    )
+    .err();
+    session.spot = Some(spot);
+    session.orientation = Some(deco_orientation(normal, session.yaw));
+    show_ghost(commands, root, session);
+    if session.invalid != before.1 {
+        info!(
+            "decoration: spot ({:.1}, {:.1}, {:.1}) {}",
+            spot.x,
+            spot.y,
+            spot.z,
+            session.invalid.map_or("is valid", Invalid::text)
+        );
+    } else if session.spot != before.0 {
+        debug!(
+            "decoration: spot ({:.1}, {:.1}, {:.1}) {}",
+            spot.x,
+            spot.y,
+            spot.z,
+            session.invalid.map_or("is valid", Invalid::text)
+        );
+    }
+}
+
+/// The first collision surface under the view ray, with its normal (game coordinates).
+fn hit_under(
+    camera: &Camera,
+    transform: &GlobalTransform,
+    cursor: Vec2,
+    collision: Option<&WorldCollision>,
+) -> Option<(Vec3, Vec3)> {
+    let collision = collision?;
+    let ray = camera.viewport_to_world(transform, cursor).ok()?;
+    let hit = collision.raycast(
+        bevy_to_cry(ray.origin),
+        bevy_to_cry(*ray.direction),
+        DECO_REACH,
+    )?;
+    Some((hit.point, hit.normal))
+}
+
+/// The object's orientation on a surface: its up axis along the surface normal, then the builder yaw around it.
+fn deco_orientation(normal: Vec3, yaw: f32) -> Quat {
+    let normal = normal.normalize_or_zero();
+    Quat::from_rotation_arc(Vec3::Z, normal) * Quat::from_rotation_z(yaw)
+}
+
+/// The decoration's surface, garden, indoor/outdoor, overlap and limit rules (`FUN_3903da00`, `FUN_39327c50`).
+#[allow(clippy::too_many_arguments)]
+fn check_deco(
+    deco: &Deco,
+    plant: &Plantable,
+    spot: Vec3,
+    normal: Vec3,
+    _player: Vec3,
+    doodads: &Doodads,
+    catalog: &Catalog,
+    collision: Option<&WorldCollision>,
+) -> Result<(), Invalid> {
+    let n = normal.normalize_or_zero();
+    let allowed = if n.z >= 0.7 {
+        deco.decoration.allow_on_floor
+    } else if n.z <= -0.7 {
+        deco.decoration.allow_on_ceiling
+    } else {
+        deco.decoration.allow_on_wall
+    };
+    if !allowed {
+        return Err(Invalid::DecoSurface);
+    }
+    let distance = Vec2::new(spot.x - deco.house_pos.x, spot.y - deco.house_pos.y).length();
+    if distance > deco.rules.garden_radius + 0.5 {
+        return Err(Invalid::DecoOutOfGarden);
+    }
+    // The original decides inside/outside from ray hits on the house's eight bounding-box corners; a ceiling over the
+    // spot is the same test without the house's collision identity.
+    let inside =
+        collision.is_some_and(|c| c.raycast(spot + Vec3::Z * 0.05, Vec3::Z, 20.0).is_some());
+    let indoor = deco.decoration.allow_on_floor
+        || deco.decoration.allow_on_wall
+        || deco.decoration.allow_on_ceiling;
+    let outdoor = deco.decoration.allow_on_floor
+        || deco.decoration.allow_mesh_on_garden
+        || deco.decoration.allow_pivot_on_garden;
+    if inside && !indoor {
+        return Err(Invalid::DecoInHouse);
+    }
+    if !inside && !outdoor {
+        return Err(Invalid::DecoOutOfHouse);
+    }
+    if let Some(error) = deco_limit_error(deco, doodads, catalog) {
+        return Err(error);
+    }
+    for doodad in doodads
+        .by_id
+        .values()
+        .filter(|d| d.parent_obj_id == deco.house_obj_id)
+    {
+        let other = catalog.footprint(doodad.template_id);
+        if plant.footprint <= 0.0 || other <= 0.0 {
+            continue;
+        }
+        let d = Vec2::new(doodad.pos.x - spot.x, doodad.pos.y - spot.y).length();
+        if d < plant.footprint + other {
+            return Err(Invalid::DecoOverlap);
+        }
+    }
+    Ok(())
+}
+
+/// The count/limit checks the original runs before it starts the builder and again on confirm.
+fn deco_limit_error(deco: &Deco, doodads: &Doodads, catalog: &Catalog) -> Option<Invalid> {
+    let (count, group_count) = deco_counts(deco, doodads, catalog);
+    let rules = &deco.rules;
+    if (rules.deco_limit > 0 && count >= rules.deco_limit)
+        || (rules.absolute_deco_limit > 0 && count >= rules.absolute_deco_limit)
+    {
+        return Some(Invalid::DecoTooMany);
+    }
+    if let Some((_, max)) = rules
+        .group_limits
+        .iter()
+        .find(|(group, _)| *group == deco.decoration.group)
+        && *max > 0
+        && group_count >= *max
+    {
+        return Some(Invalid::DecoNoSpace);
+    }
+    None
+}
+
+/// The decorations already bonded to the house (built-ins excluded) and the ones of the same actability group.
+fn deco_counts(deco: &Deco, doodads: &Doodads, catalog: &Catalog) -> (u32, u32) {
+    let mut count = 0;
+    let mut group_count = 0;
+    for doodad in doodads
+        .by_id
+        .values()
+        .filter(|d| d.parent_obj_id == deco.house_obj_id)
+    {
+        if deco.rules.builtins.contains(&doodad.template_id) {
+            continue;
+        }
+        count += 1;
+        if catalog.deco_group(doodad.template_id, doodad.item_template_id)
+            == Some(deco.decoration.group)
+        {
+            group_count += 1;
+        }
+    }
+    (count, group_count)
+}
+
 /// A house preview stops following the pointer once confirmed (the Start Construction window is open) and
 /// whenever the pointer is over the HUD.
 fn house_locks_pointer(session: &Session, over_ui: bool) -> bool {
@@ -1053,11 +1635,13 @@ fn house_locks_pointer(session: &Session, over_ui: bool) -> bool {
 /// Puts the ghost root at the session's spot (the last valid one for a house over the UI).
 fn show_ghost(commands: &mut Commands, root: Option<Entity>, session: &Session) {
     let (Some(root), Some(spot)) = (root, session.spot) else { return };
-    let cry_q = cry_rot_to_bevy(Quat::from_xyzw(0.0, 0.0, (session.yaw * 0.5).sin(), (session.yaw * 0.5).cos()));
+    let cry_q = session.orientation.unwrap_or_else(|| {
+        Quat::from_xyzw(0.0, 0.0, (session.yaw * 0.5).sin(), (session.yaw * 0.5).cos())
+    });
     commands.entity(root).insert((
         Transform {
             translation: cry_to_bevy(spot),
-            rotation: cry_q,
+            rotation: cry_rot_to_bevy(cry_q),
             scale: Vec3::splat(session.scale),
         },
         Visibility::Visible,
@@ -1076,7 +1660,7 @@ fn ghost_options(invalid: bool) -> ModelOptions {
 /// The ghost entity of the session, loaded once; `None` when the doodad has no model. A house ghost is reloaded with
 /// the original invalid material while the spot is invalid and with its own materials otherwise.
 fn ensure_ghost(commands: &mut Commands, cry: &mut CryAssets, session: &mut Session) -> Option<Entity> {
-    let want_invalid = session.is_house() && session.invalid.is_some();
+    let want_invalid = (session.is_house() || session.is_deco()) && session.invalid.is_some();
     if let Some(root) = session.root {
         if session.ghost_invalid != want_invalid
             && let Some(old) = session.ghost_model.take()
@@ -1585,6 +2169,19 @@ fn ensure_visuals(images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materia
         // the builder's rotation and Ctrl-zoom cursors; a missing one falls back to the position cursor
         visuals.cursor_rotation = dds_image("ui/cursor/housing_rotation.dds").map(|i| materials.add(cursor_material(&images.add(i))));
         visuals.cursor_zoom = dds_image("ui/cursor/housing_zoom.dds").map(|i| materials.add(cursor_material(&images.add(i))));
+        // the decoration builder's own set (`FUN_39017410` with the item-task-6 cursor table)
+        visuals.deco_good = dds_image("ui/cursor/housing_deco_position.dds")
+            .map(|i| materials.add(cursor_material(&images.add(i))))
+            .or_else(|| visuals.cursor_good.clone());
+        visuals.deco_bad = dds_image("ui/cursor/housing_deco_invalid.dds")
+            .map(|i| materials.add(cursor_material(&images.add(i))))
+            .or_else(|| visuals.cursor_bad.clone());
+        visuals.deco_rotation = dds_image("ui/cursor/housing_deco_rotation.dds")
+            .map(|i| materials.add(cursor_material(&images.add(i))))
+            .or_else(|| visuals.cursor_rotation.clone());
+        visuals.deco_zoom = dds_image("ui/cursor/housing_deco_zoom.dds")
+            .map(|i| materials.add(cursor_material(&images.add(i))))
+            .or_else(|| visuals.cursor_zoom.clone());
         visuals.cursor_mesh = Some(meshes.add(Mesh::from(Rectangle::new(1.0, 1.0))));
     } else {
         warn!("planting: cannot read the housing cursor textures");
@@ -1624,7 +2221,7 @@ enum CursorKind {
 fn cursor_kind(session: &Session, ctrl: bool) -> CursorKind {
     if session.invalid.is_some() {
         CursorKind::Invalid
-    } else if session.is_house() && ctrl {
+    } else if (session.is_house() || session.is_deco()) && ctrl {
         CursorKind::Zoom
     } else if session.locked() {
         CursorKind::Rotation
@@ -1664,9 +2261,14 @@ fn cursor_icon(
         return;
     }
     let Some((camera_entity, camera, projection)) = cameras.iter().find(|(_, c, _)| c.is_active) else { return };
+    let deco = placement.session.as_ref().is_some_and(|s| s.is_deco());
     // the placement-mode arrow: a screen-space HUD element at the bottom centre (the retail arrow is native; the
     // road arrow texture is the closest original asset and stays documented as a placeholder)
-    if let Some(image) = visuals.arrow_image.clone() {
+    if deco {
+        if let Some(arrow) = visuals.arrow {
+            commands.entity(arrow).insert(Visibility::Hidden);
+        }
+    } else if let Some(image) = visuals.arrow_image.clone() {
         match visuals.arrow {
             Some(arrow) => {
                 commands.entity(arrow).insert(Visibility::Inherited);
@@ -1743,11 +2345,20 @@ fn cursor_icon(
     };
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     let wanted = placement.session.as_ref().map_or(CursorKind::Position, |s| cursor_kind(s, ctrl));
-    let Some(material) = (match wanted {
-        CursorKind::Invalid => visuals.cursor_bad.clone(),
-        CursorKind::Zoom => visuals.cursor_zoom.clone().or_else(|| visuals.cursor_good.clone()),
-        CursorKind::Rotation => visuals.cursor_rotation.clone().or_else(|| visuals.cursor_good.clone()),
-        CursorKind::Position => visuals.cursor_good.clone(),
+    let Some(material) = (if deco {
+        match wanted {
+            CursorKind::Invalid => visuals.deco_bad.clone().or_else(|| visuals.cursor_bad.clone()),
+            CursorKind::Zoom => visuals.deco_zoom.clone().or_else(|| visuals.deco_good.clone()).or_else(|| visuals.cursor_zoom.clone()),
+            CursorKind::Rotation => visuals.deco_rotation.clone().or_else(|| visuals.deco_good.clone()).or_else(|| visuals.cursor_rotation.clone()),
+            CursorKind::Position => visuals.deco_good.clone().or_else(|| visuals.cursor_good.clone()),
+        }
+    } else {
+        match wanted {
+            CursorKind::Invalid => visuals.cursor_bad.clone(),
+            CursorKind::Zoom => visuals.cursor_zoom.clone().or_else(|| visuals.cursor_good.clone()),
+            CursorKind::Rotation => visuals.cursor_rotation.clone().or_else(|| visuals.cursor_good.clone()),
+            CursorKind::Position => visuals.cursor_good.clone(),
+        }
     }) else { return };
     let Some(mesh) = visuals.cursor_mesh.clone() else { return };
     let size_px = 32.0;
@@ -1858,12 +2469,26 @@ fn input(
         } else if let Some(reason) = session.invalid {
             let text = if session.is_house() {
                 house_error_text(rt.as_deref(), reason)
+            } else if session.is_deco() {
+                deco_error_text(rt.as_deref(), reason)
             } else {
                 error_message(reason).map(str::to_string)
             };
             match text {
                 Some(text) => notify(rt.as_deref(), text),
                 None => info!("placement: not confirmed: {}", reason.text()),
+            }
+        } else if session.is_deco() && !session.rotating {
+            // the decoration builder's state 1: the click locks the surface spot and starts the rotation
+            info!("decoration: spot locked, rotation (wheel turns the model, click again to place)");
+            session.rotating = true;
+        } else if session.is_deco() {
+            if let Some(request) = session.decorate_request() {
+                if let HouseCommand::DecorateHouse { house_tl, design_id, x, y, z, .. } = &request {
+                    info!("decoration: design {design_id} on house {house_tl} at local ({x:.2}, {y:.2}, {z:.2})");
+                }
+                net.write(NetCommand(Command::House(request)));
+                cancel = true;
             }
         } else if session.is_house() && !session.rotating {
             // retail `FUN_39332200`, state 1: the click locks the spot and starts the rotation (no quote yet)
@@ -1965,6 +2590,35 @@ fn house_error_text(rt: Option<&aa_ui::UiRuntime>, reason: Invalid) -> Option<St
     match house_error_key(reason) {
         Some((key, english)) => localized_error(rt, key).or_else(|| Some(english.to_string())),
         None => error_message(reason).map(str::to_string),
+    }
+}
+
+/// The `ERROR_MSG` key of a decoration error (`ui_texts` 124..128, 200..201, 290..291: code + 1) with the English
+/// text used when no UI runtime is there.
+fn deco_error_key(reason: Invalid) -> Option<(&'static str, &'static str)> {
+    match reason {
+        Invalid::DecoSurface => Some(("HOUSE_CANNOT_DECORATE_SURFACE", "This part cannot be decorated.")),
+        Invalid::DecoOutOfHouse => Some(("HOUSE_CANNOT_DECORATE_OUT_OF_HOUSE", "You cannot decorate outside the house.")),
+        Invalid::DecoInHouse => Some(("HOUSE_CANNOT_DECORATE_IN_HOUSE", "You cannot decorate inside the house.")),
+        Invalid::DecoOutOfGarden => Some((
+            "HOUSE_CANNOT_DECORATE_OUT_OF_GARDEN",
+            "Furniture cannot be placed outside the building's area.",
+        )),
+        Invalid::DecoOverlap => Some(("HOUSE_CANNOT_DECORATE_OVERLAP", "You cannot decorate it overlapping something else.")),
+        Invalid::DecoTooMany => Some(("HOUSE_TOO_MANY_DECORATIONS", "You cannot decorate the house anymore.")),
+        Invalid::DecoNoSpace => Some((
+            "NO_MORE_SPACE_TO_DECORATE",
+            "Major furniture over 40 cannot be placed. (Furniture recovered by mail when demolished counts.)",
+        )),
+        _ => None,
+    }
+}
+
+/// The text the retail decoration builder prints for a refused click.
+fn deco_error_text(rt: Option<&aa_ui::UiRuntime>, reason: Invalid) -> Option<String> {
+    match deco_error_key(reason) {
+        Some((key, english)) => localized_error(rt, key).or_else(|| Some(english.to_string())),
+        None => Some(reason.text().to_string()),
     }
 }
 
@@ -2104,6 +2758,7 @@ mod tests {
             grounding: Grounding::default(),
             parts: Vec::new(),
             house: None,
+            deco: None,
         }
     }
 
@@ -2374,6 +3029,7 @@ mod tests {
                 garden_radius: radius,
                 heavy_tax: true,
             }),
+            deco: None,
         }
     }
 
@@ -3285,5 +3941,370 @@ mod tests {
         // the housing-area posts are dull straw, not saturated yellow (which reads as an orange glow at distance)
         let post = materials.get(visuals.post.as_ref().unwrap()).unwrap().base_color.to_srgba();
         assert!(post.blue > 0.4 && post.red < 0.9, "pale straw posts: {post:?}");
+    }
+
+    fn deco_design() -> DecoDesign {
+        DecoDesign {
+            design: 10,
+            allow_on_floor: true,
+            allow_on_wall: false,
+            allow_on_ceiling: false,
+            allow_mesh_on_garden: false,
+            allow_pivot_on_garden: false,
+            group: 5,
+        }
+    }
+
+    fn deco_rules() -> HousingDecoRules {
+        HousingDecoRules {
+            garden_radius: 4.0,
+            deco_limit: 2,
+            absolute_deco_limit: 3,
+            housing_deco_limit_id: 10,
+            builtins: vec![4001],
+            group_limits: vec![(5, 1)],
+        }
+    }
+
+    fn deco_catalog() -> Catalog {
+        let mut c = Catalog::default();
+        c.insert(Plantable {
+            item: 107,
+            doodad: 5461,
+            use_skill: 0,
+            use_range: 0.0,
+            cooldown_ms: 0,
+            cooldown_tag: 0,
+            start_group: 0,
+            model: None,
+            footprint: 0.3,
+            requires_water: false,
+            grounding: Grounding::default(),
+            parts: Vec::new(),
+            house: None,
+            deco: Some(deco_design()),
+        });
+        c.deco_rules.insert(267, deco_rules());
+        c.deco_groups.insert((5461, 107), 5);
+        c
+    }
+
+    fn deco_houses() -> Houses {
+        let snapshot = aa_net::housing::HouseSnapshot {
+            tl_id: 13,
+            db_id: 267,
+            obj_id: 16211,
+            template_id: 267,
+            model_id: 0,
+            co_owner_id: 0,
+            owner_id: 1,
+            owner_name: "owner".into(),
+            account_id: 1,
+            permission: 255,
+            all_actions: 10,
+            current_actions: 10,
+            tax: 0,
+            x: aa_net::wire::coord_to_long(100.0),
+            y: aa_net::wire::coord_to_long(200.0),
+            z: 10.0,
+            name: "Scarecrow Garden".into(),
+            allow_recover: false,
+            sell_price: 0,
+            sell_to_player_id: 0,
+            sell_to_name: String::new(),
+        };
+        let mut houses = Houses::default();
+        houses.by_tl_id.insert(
+            13,
+            aa_net::housing::House {
+                snapshot,
+                demolished: false,
+                build_pay: None,
+                tax: None,
+                sale: None,
+            },
+        );
+        houses
+    }
+
+    fn deco_session() -> Session {
+        let catalog = deco_catalog();
+        let plant = catalog.plantable(107).unwrap().clone();
+        let mut session = Session::new(99, plant, 0.0);
+        session.spot = Some(Vec3::new(101.0, 200.0, 10.0));
+        session.invalid = None;
+        session.orientation = Some(Quat::IDENTITY);
+        session.deco = Some(Deco {
+            design: 10,
+            decoration: deco_design(),
+            house_tl: 13,
+            house_obj_id: 16211,
+            house_pos: Vec3::new(100.0, 200.0, 10.0),
+            house_yaw: 0.0,
+            house_scale: 1.0,
+            rules: deco_rules(),
+        });
+        session
+    }
+
+    /// The catalog's decoration rows: the item → design link, the surface flags and the housing limits.
+    #[test]
+    fn the_catalog_maps_decoration_items_their_surfaces_and_house_limits() {
+        let Some(db) = Db::open() else { return };
+        let Some(catalog) = Catalog::load(&db) else {
+            return;
+        };
+        let pot = catalog
+            .plantable(107)
+            .expect("the flower pot decoration item");
+        let deco = pot.deco.expect("a decoration, not a seed");
+        assert_eq!(deco.design, 10);
+        assert!(deco.allow_on_floor && deco.allow_pivot_on_garden);
+        assert!(!deco.allow_on_wall && !deco.allow_on_ceiling && !deco.allow_mesh_on_garden);
+        assert!(pot.footprint > 0.0 && pot.model.as_deref().is_some_and(|m| m.ends_with(".cgf")));
+        let rules = catalog.deco_rules(171).expect("Thatched Farmhouse limits");
+        assert_eq!((rules.deco_limit, rules.absolute_deco_limit), (40, 51));
+        assert!(!rules.builtins.is_empty());
+        assert!(rules.group_limits.contains(&(5, 3)));
+        assert_eq!(catalog.deco_group(5461, 107), Some(0));
+        assert_eq!(catalog.deco_group(2721, 17630), Some(5));
+    }
+
+    /// Item-task type 6 (`FUN_3932c120`): the decoration item needs a finished house at the player's spot.
+    #[test]
+    fn the_decoration_builder_needs_a_finished_house_at_the_player() {
+        let catalog = deco_catalog();
+        let houses = deco_houses();
+        let session = start_deco_session(
+            99,
+            107,
+            Vec3::new(100.0, 200.0, 10.0),
+            0.0,
+            Some(&houses),
+            None,
+            None,
+            &catalog,
+        )
+        .expect("the player stands on the house's lot");
+        assert_eq!(
+            session
+                .deco
+                .as_ref()
+                .map(|d| (d.house_tl, d.house_obj_id, d.design)),
+            Some((13, 16211, 10))
+        );
+        assert!(session.is_deco() && !session.is_house());
+
+        let mut unfinished = deco_houses();
+        unfinished
+            .by_tl_id
+            .get_mut(&13)
+            .unwrap()
+            .snapshot
+            .current_actions = 9;
+        assert_eq!(
+            start_deco_session(
+                99,
+                107,
+                Vec3::new(100.0, 200.0, 10.0),
+                0.0,
+                Some(&unfinished),
+                None,
+                None,
+                &catalog
+            )
+            .err()
+            .map(str::to_string),
+            Some("HOUSE_NOT_DECORATABLE_STATE".into())
+        );
+        assert_eq!(
+            start_deco_session(
+                99,
+                107,
+                Vec3::new(300.0, 400.0, 10.0),
+                0.0,
+                Some(&houses),
+                None,
+                None,
+                &catalog
+            )
+            .err()
+            .map(str::to_string),
+            Some("TOO_FAR_TO_DECORATE_HOUSE".into())
+        );
+    }
+
+    /// `CSDecorateHouse` carries the position and quaternion in the house's local frame.
+    #[test]
+    fn the_decoration_request_is_house_local() {
+        let mut session = deco_session();
+        session.deco.as_mut().unwrap().house_yaw = std::f32::consts::FRAC_PI_2;
+        session.spot = Some(Vec3::new(101.0, 202.0, 13.0));
+        session.orientation = Some(Quat::from_rotation_z(0.5));
+        let request = session.decorate_request().expect("a valid spot");
+        let HouseCommand::DecorateHouse {
+            house_tl,
+            design_id,
+            x,
+            y,
+            z,
+            quat,
+            parent_obj_id,
+            item_id,
+        } = request
+        else {
+            panic!("not a decoration request: {request:?}");
+        };
+        assert_eq!(
+            (house_tl, design_id, parent_obj_id, item_id),
+            (13, 10, 16211, 99)
+        );
+        assert!(
+            (x - 2.0).abs() < 1e-5 && (y + 1.0).abs() < 1e-5 && (z - 3.0).abs() < 1e-5,
+            "local ({x}, {y}, {z})"
+        );
+        let angle = 0.5 - std::f32::consts::FRAC_PI_2;
+        assert!((quat[2] - (angle * 0.5).sin()).abs() < 1e-5, "{quat:?}");
+        assert!((quat[3] - (angle * 0.5).cos()).abs() < 1e-5, "{quat:?}");
+        // no orientation (a flat yaw-only spot) must not send a zero quaternion
+        session.orientation = None;
+        assert!(session.decorate_request().is_none());
+    }
+
+    /// `FUN_3903da00` / `FUN_39327c50`: surface, garden, overlap and limit errors in the original order.
+    #[test]
+    fn decoration_surfaces_the_garden_overlap_and_limits_are_checked() {
+        let session = deco_session();
+        let catalog = deco_catalog();
+        let plant = session.plant.clone();
+        let doodads = Doodads::default();
+        let me = Vec3::new(101.0, 200.0, 10.0);
+        let mut open = session.deco.clone().unwrap();
+        open.rules.deco_limit = 10;
+        open.rules.absolute_deco_limit = 20;
+        open.rules.group_limits.clear();
+        assert_eq!(check_deco(&open, &plant, me, Vec3::Z, me, &doodads, &catalog, None), Ok(()));
+        assert_eq!(
+            check_deco(&open, &plant, me, Vec3::X, me, &doodads, &catalog, None),
+            Err(Invalid::DecoSurface),
+            "a floor-only decoration cannot go on a wall"
+        );
+        assert_eq!(
+            check_deco(&open, &plant, Vec3::new(110.0, 200.0, 10.0), Vec3::Z, me, &doodads, &catalog, None),
+            Err(Invalid::DecoOutOfGarden)
+        );
+
+        let mut wall_only = open.clone();
+        wall_only.decoration.allow_on_floor = false;
+        wall_only.decoration.allow_on_wall = true;
+        assert_eq!(
+            check_deco(&wall_only, &plant, me, Vec3::X, me, &doodads, &catalog, None),
+            Err(Invalid::DecoOutOfHouse),
+            "a wall-only decoration is not outdoor furniture"
+        );
+
+        let child = |obj_id, template, pos| aa_net::model::Doodad {
+            obj_id,
+            template_id: template,
+            owner_obj_id: 0,
+            parent_obj_id: 16211,
+            attach_point: 0,
+            pos: Pos::new(pos, 200.0, 10.0),
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: 1.0,
+            has_loot_item: false,
+            func_group_id: 0,
+            owner_id: 0,
+            ucc_id: 0,
+            item_template_id: 107,
+            type2: 0,
+            time_left: 0,
+            plant_time: 0,
+            quest_glow: 0,
+            family: 0,
+            puzzle_group: 0,
+            owner_type: 3,
+            owner_db_id: 0,
+            data: 0,
+        };
+        let mut crowded = Doodads::default();
+        crowded.by_id.insert(1, child(1, 5461, 100.5));
+        assert_eq!(check_deco(&open, &plant, me, Vec3::Z, me, &crowded, &catalog, None), Err(Invalid::DecoOverlap));
+
+        // the group cap (`housing_deco_limit_elems`) and the house cap (`housings.deco_limit`) are checked first
+        let mut group_full = Doodads::default();
+        group_full.by_id.insert(1, child(1, 5461, 120.0));
+        let grouped = session.deco.clone().unwrap();
+        assert_eq!(grouped.rules.group_limits, vec![(5, 1)]);
+        assert_eq!(check_deco(&grouped, &plant, me, Vec3::Z, me, &group_full, &catalog, None), Err(Invalid::DecoNoSpace));
+        let mut builtin = Doodads::default();
+        builtin.by_id.insert(1, child(1, 4001, 120.0));
+        assert_eq!(check_deco(&open, &plant, me, Vec3::Z, me, &builtin, &catalog, None), Ok(()));
+        let mut two = Doodads::default();
+        two.by_id.insert(1, child(1, 5461, 100.0));
+        two.by_id.insert(2, child(2, 5461, 120.0));
+        let mut small = open.clone();
+        small.rules.deco_limit = 2;
+        assert_eq!(check_deco(&small, &plant, me, Vec3::Z, me, &two, &catalog, None), Err(Invalid::DecoTooMany));
+    }
+
+    /// The decoration builder shows its own four cursors and uses the same wheel rules as the house builder.
+    #[test]
+    fn the_decoration_cursor_follows_the_builder_state() {
+        let mut session = deco_session();
+        assert_eq!(cursor_kind(&session, false), CursorKind::Position);
+        assert_eq!(cursor_kind(&session, true), CursorKind::Zoom);
+        session.rotating = true;
+        assert_eq!(cursor_kind(&session, false), CursorKind::Rotation);
+        assert_eq!(cursor_kind(&session, true), CursorKind::Zoom);
+        session.invalid = Some(Invalid::DecoSurface);
+        assert_eq!(cursor_kind(&session, false), CursorKind::Invalid);
+        assert_eq!(builder_step(Some(&session)), Some("rotation"));
+        assert_eq!(wheel_turn(true, false, false, 1.0), ROT_STEP);
+        assert_eq!(wheel_turn(false, true, false, -1.0), -ROT_STEP_SMALL);
+    }
+
+    fn deco_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::input::InputPlugin)
+            .add_message::<NetCommand>()
+            .init_resource::<VirtualInput>()
+            .init_resource::<Visuals>()
+            .init_resource::<Sent>()
+            .init_resource::<Skills>()
+            .insert_resource(HudPointerOverUi::default())
+            .insert_resource(HudKeyboardFocus::default())
+            .add_systems(PreUpdate, crate::ingame::virtual_input::inject.before(bevy::input::InputSystems))
+            .add_systems(Update, (input, collect_sent).chain());
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(Placement { session: Some(deco_session()), ..Default::default() });
+        app.update();
+        app
+    }
+
+    #[test]
+    fn a_decoration_needs_two_clicks_the_second_sends_cs_decorate_house() {
+        let mut app = deco_app();
+        click(&mut app, MouseButton::Left);
+        assert!(session_of(&app).rotating);
+        assert!(sent(&mut app).is_empty());
+        click(&mut app, MouseButton::Left);
+        let packets = sent(&mut app);
+        assert!(
+            matches!(packets.as_slice(), [Command::House(HouseCommand::DecorateHouse { house_tl: 13, design_id: 10, .. })]),
+            "{packets:?}"
+        );
+        assert!(app.world().resource::<Placement>().session.is_none(), "the builder ends after the send");
+    }
+
+    #[test]
+    fn a_decoration_right_click_steps_back_to_the_surface_then_cancels() {
+        let mut app = deco_app();
+        click(&mut app, MouseButton::Left);
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_some());
+        assert!(!session_of(&app).rotating, "back to the surface spot");
+        click(&mut app, MouseButton::Right);
+        assert!(app.world().resource::<Placement>().session.is_none(), "the second right click cancels");
     }
 }

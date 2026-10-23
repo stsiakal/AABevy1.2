@@ -988,10 +988,19 @@ pub fn handle_requests(
     skills: Res<aa_net::state::Skills>,
     buffs: Res<aa_net::state::Buffs>,
     flight: Res<super::usable::InFlight>,
-    mut failed: MessageWriter<super::alerts::UseFailed>,
-    mut pressed: MessageWriter<crate::ingame::ground_target::SkillPressed>,
-    mut plant: MessageWriter<crate::ingame::placement::PlantPressed>,
-    mut house: MessageWriter<crate::ingame::placement::HousePressed>,
+    (
+        mut failed,
+        mut pressed,
+        mut plant,
+        mut house,
+        mut deco,
+    ): (
+        MessageWriter<super::alerts::UseFailed>,
+        MessageWriter<crate::ingame::ground_target::SkillPressed>,
+        MessageWriter<crate::ingame::placement::PlantPressed>,
+        MessageWriter<crate::ingame::placement::HousePressed>,
+        MessageWriter<crate::ingame::placement::DecorationPressed>,
+    ),
     mut placement: Option<ResMut<crate::ingame::placement::Placement>>,
     (emotes, rt, units, chat): (
         Option<Res<crate::ingame::emote::Emotes>>,
@@ -1131,12 +1140,12 @@ pub fn handle_requests(
                 let Some(slot) = bar.display_slot(slot.saturating_sub(1)) else { continue };
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-                panels::use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
+                panels::use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut deco, &mut failed);
             }
             Request::UseBag { slot } => {
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
-                panels::use_bag_slot(slot - 1, &env, &flight, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut failed);
+                panels::use_bag_slot(slot - 1, &env, &flight, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut deco, &mut failed);
             }
             Request::UsePetAction { slot } => {
                 let data = bridge.0.borrow();
@@ -1396,6 +1405,7 @@ mod tests {
             .add_message::<crate::ingame::ground_target::SkillPressed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_systems(Update, handle_requests);
         app.update();
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
@@ -1437,6 +1447,7 @@ mod tests {
             .add_message::<crate::ingame::ground_target::SkillPressed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_systems(Update, handle_requests);
         app.update();
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
@@ -1465,6 +1476,7 @@ mod tests {
             .add_message::<crate::ingame::ground_target::SkillPressed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_systems(Update, handle_requests);
         app.update();
         assert_eq!(app.world().resource::<aa_net::state::ActionBar>().page(), 1);
@@ -1556,6 +1568,7 @@ mod tests {
                 grounding: Grounding::default(),
                 parts: Vec::new(),
                 house: Some(HouseDesign { design: 267, name: "Scarecrow Garden".into(), category_id: 16, garden_radius: 4.0, heavy_tax: true }),
+                deco: None,
             },
             0.5,
         );
@@ -1587,6 +1600,7 @@ mod tests {
             .add_message::<crate::ingame::ground_target::SkillPressed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_systems(Update, handle_requests);
         app.update();
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
@@ -1621,6 +1635,7 @@ mod tests {
             .add_message::<crate::ingame::ground_target::SkillPressed>()
             .add_message::<crate::ingame::placement::PlantPressed>()
             .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
             .add_systems(Update, handle_requests);
         app.update();
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|c| c.0).collect();
