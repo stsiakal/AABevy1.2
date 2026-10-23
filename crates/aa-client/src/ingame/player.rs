@@ -69,15 +69,98 @@ pub struct PlayerInput {
     pub turned: bool,
 }
 
-/// Gravity and jump speed come from the actor model (`physics_living_gravity` 25, `game_jump_height` 1.3: [`ActorParams`]).
-/// The capsule that collides with the walls (m), the tallest step it climbs, and how far it may drop before it falls.
-const RADIUS: f32 = 0.35;
-const HEIGHT: f32 = 1.8;
-const STEP_UP: f32 = 0.5;
+/// The capsule that collides with the walls comes from the stance block (`game_stances`: `height_collider`, `height_pivot`,
+/// `size`, `useCapsule`, `FUN_3911a5a0:135-226`) and the actor's CryPhysics climb angle. [`StanceBody::default`] is the fallback
+/// when the database has no row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StanceBody {
+    /// Capsule radius (m): `size_x`, the collider cylinder's radius.
+    pub radius: f32,
+    /// Total capsule height above the feet (m): the collider's top, `height_collider - height_pivot + size_z` (+ `size_x` for a
+    /// capsule's top cap).
+    pub height: f32,
+    /// The tallest obstacle it steps over (m): the gap under the collider, `height_collider - height_pivot - size_z`
+    /// (- `size_x` for a capsule's bottom cap).
+    pub step_up: f32,
+    /// `tan(physics_living_max_climb_angle)`.
+    pub climb_tan: f32,
+}
+
+impl Default for StanceBody {
+    fn default() -> Self {
+        StanceBody { radius: 0.35, height: 1.8, step_up: 0.5, climb_tan: 1.19 }
+    }
+}
+
+impl StanceBody {
+    /// The body of a `game_stances` row: CryEngine's `pe_player_dimensions` (x is radius, z half the cylinder's height,
+    /// `heightCollider` the centre over the feet), walked from the feet up to the collider's top. `climb_angle` is
+    /// `actor_models.physics_living_max_climb_angle` in degrees.
+    pub fn from_row(height_collider: f32, height_pivot: f32, size_x: f32, size_z: f32, use_capsule: bool, climb_angle: f32) -> StanceBody {
+        let radius = size_x.max(0.05);
+        let center = height_collider - height_pivot;
+        let cap = if use_capsule { radius } else { 0.0 };
+        StanceBody {
+            radius,
+            height: (center + size_z + cap).clamp(0.2, 4.0),
+            step_up: (center - size_z - cap).clamp(0.05, 1.0),
+            climb_tan: climb_angle.to_radians().tan().max(0.1),
+        }
+    }
+}
+
+/// The local player's stance bodies by stance id (0..=9), from `game_stances`. The stance ids are 1 combat, 2 relaxed,
+/// 3 swim, 4 coswim, 5 combat (the low one), 6 stealth, 7 crouch, 8 prone, 9 fly.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Stances([StanceBody; 10]);
+
+impl Stances {
+    /// The body of a stance id; ids outside the block and rows the database lacks are the default body.
+    pub fn get(&self, stance_id: u8) -> StanceBody {
+        self.0.get(stance_id as usize).copied().unwrap_or_default()
+    }
+
+    /// The rows of the actor model of `models.id` `model_id`; `None` when the database or the rows are missing.
+    pub fn load(model_id: u32) -> Option<Stances> {
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI).ok()?;
+        let mut stances = Stances::default();
+        let mut statement = conn
+            .prepare(
+                "SELECT g.stance_id, g.height_collider, g.height_pivot, g.size_x, g.size_z, g.use_capsule, a.physics_living_max_climb_angle \
+                 FROM models m JOIN game_stances g ON g.actor_model_id = m.sub_id JOIN actor_models a ON a.id = g.actor_model_id \
+                 WHERE m.id = ?1 AND m.sub_type = 'ActorModel'",
+            )
+            .ok()?;
+        let mut rows = statement
+            .query_map([model_id], |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                    r.get::<_, Option<f64>>(1)?.unwrap_or(1.2) as f32,
+                    r.get::<_, Option<f64>>(2)?.unwrap_or(0.0) as f32,
+                    r.get::<_, Option<f64>>(3)?.unwrap_or(0.4) as f32,
+                    r.get::<_, Option<f64>>(4)?.unwrap_or(0.32) as f32,
+                    r.get::<_, Option<i64>>(5)?.unwrap_or(1) != 0,
+                    r.get::<_, Option<f64>>(6)?.unwrap_or(50.0) as f32,
+                ))
+            })
+            .ok()?;
+        let mut any = false;
+        for row in rows.by_ref().flatten() {
+            let (id, height_collider, height_pivot, size_x, size_z, capsule, climb) = row;
+            if let Some(slot) = usize::try_from(id).ok().and_then(|id| stances.0.get_mut(id)) {
+                *slot = StanceBody::from_row(height_collider, height_pivot, size_x, size_z, capsule, climb);
+                any = true;
+            }
+        }
+        any.then_some(stances)
+    }
+}
+
+/// How far it may drop before it falls.
 const DROP: f32 = 0.6;
-/// `physics_living_max_climb_angle` 50 degrees: terrain that rises faster than this over [`CLIMB_LOOK`] metres ahead cannot be
-/// walked up (tan 50).
-const MAX_CLIMB_TAN: f32 = 1.19;
+/// Terrain steeper than the actor's climb angle is not walked up; it is looked at over half a metre ahead, where the facets
+/// of the mesh are rougher than the angle alone (a brush under the feet, stairs, is not terrain).
 const CLIMB_LOOK: f32 = 0.5;
 /// Turning with A / D (radians per second): 1.2's `input::KeyboardTurnRate` (x2game+0x412e00) turns pi x `keyboard_rotate_speed`
 /// (0.5) a second on foot, a quarter turn, by the frame's time capped at [`TURN_STEP_CAP`].
@@ -213,7 +296,8 @@ pub fn spawn_player(
     let swim_clips = SwimClips::load(&assets.skeleton, &assets.cal, &clips);
     let ladder_clips = super::ladder::LadderClips::load(&assets.skeleton, &assets.cal, &clips);
     let actor = ActorParams::load(spawn.unit.model_id).unwrap_or_default();
-    debug!("actor params: {actor:?}, swim clips: {}", swim_clips.is_some());
+    let stances = Stances::load(spawn.unit.model_id).unwrap_or_default();
+    debug!("actor params: {actor:?}, stances: {stances:?}, swim clips: {}", swim_clips.is_some());
     let look_carried = carried.clone();
     let Some(root) = spawn_with_locomotion(&mut commands, &mut cry, &clips, assets, placement(pos, facing, 1.0), carried) else { return };
     commands.entity(root).insert((
@@ -223,6 +307,7 @@ pub fn spawn_player(
         appearance::LookSource::new(equipment, params),
         weapons::LookCarried(look_carried),
         actor,
+        stances,
     ));
     if spawn.unit.hp <= 0 {
         commands.entity(root).insert(super::combat::Dead { at: f64::MIN / 4.0 });
@@ -311,11 +396,11 @@ pub(super) fn on_foot_attached(attached: Option<aa_net::model::Attachment>) -> b
 /// The candidate of a horizontal move: the walls slide the capsule ([`WorldCollision::slide`]), the terrain's climb limit
 /// keeps it off steep ground, and a brush or vegetation hull closing over the body keeps it out. `pos` is the feet and
 /// `step` the move of this frame; the result keeps `pos.z`. The map's edge keeps the feet where they are.
-pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool) -> Vec3 {
+pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision, pos: Vec3, step: Vec2, grounded: bool, swimming: bool, body: StanceBody) -> Vec3 {
     if step == Vec2::ZERO {
         return pos;
     }
-    let candidate = collision.slide(pos, step, RADIUS, HEIGHT, STEP_UP).pos;
+    let candidate = collision.slide(pos, step, body.radius, body.height, body.step_up).pos;
     if terrain.height_at(candidate.x, candidate.y).is_none() {
         return pos;
     }
@@ -323,9 +408,9 @@ pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision,
     // are rougher than that (a brush under the feet, stairs, is not terrain)
     let ahead = Vec2::new(candidate.x, candidate.y) + step.normalize_or_zero() * CLIMB_LOOK;
     let rise = terrain.ground_at(ahead.x, ahead.y).map_or(0.0, |ground| ground.height - pos.z);
-    let climbing = !swimming && grounded && rise > CLIMB_LOOK * MAX_CLIMB_TAN;
-    let on_brush = climbing && support(terrain, collision, candidate.x, candidate.y, pos.z, STEP_UP).is_some_and(|s| s.brush);
-    if (!climbing || on_brush) && !buried(terrain, collision, candidate, pos.z) {
+    let climbing = !swimming && grounded && rise > CLIMB_LOOK * body.climb_tan;
+    let on_brush = climbing && support(terrain, collision, candidate.x, candidate.y, pos.z, body.step_up).is_some_and(|s| s.brush);
+    if (!climbing || on_brush) && !buried(terrain, collision, candidate, pos.z, body) {
         Vec3::new(candidate.x, candidate.y, pos.z)
     } else {
         pos
@@ -335,14 +420,14 @@ pub(super) fn move_candidate(terrain: &TerrainQuery, collision: &WorldCollision,
 /// Whether a candidate feet position is buried in a brush or vegetation hull: the first surface under the head there is
 /// more than [`DROP`] above the floor. A cliff rock's steep skin is not walkable ground, so [`floor_at`] falls through
 /// it to the terrain below; walking into it must not (the capsule would end up inside the closed hull).
-fn buried(terrain: &TerrainQuery, collision: &WorldCollision, candidate: Vec3, feet_z: f32) -> bool {
-    let floor = floor_at(terrain, collision, Vec3::new(candidate.x, candidate.y, feet_z), STEP_UP);
+fn buried(terrain: &TerrainQuery, collision: &WorldCollision, candidate: Vec3, feet_z: f32, body: StanceBody) -> bool {
+    let floor = floor_at(terrain, collision, Vec3::new(candidate.x, candidate.y, feet_z), body.step_up);
     if !floor.is_finite() {
         return false;
     }
-    let head = Vec3::new(candidate.x, candidate.y, feet_z + HEIGHT);
+    let head = Vec3::new(candidate.x, candidate.y, feet_z + body.height);
     collision
-        .raycast_mask(head, Vec3::NEG_Z, HEIGHT + 0.05, Mask::STRUCTURES | Mask::PROPS | Mask::VEGETATION)
+        .raycast_mask(head, Vec3::NEG_Z, body.height + 0.05, Mask::STRUCTURES | Mask::PROPS | Mask::VEGETATION)
         .is_some_and(|hit| hit.point.z > floor + DROP)
 }
 
@@ -352,13 +437,13 @@ const HULL_REACH: f32 = 5.0;
 /// The top of the closed brush hull the feet are wedged in, if any: the capsule overlaps a wall (`push_out` is blocked)
 /// and the highest walkable surface within [`HULL_REACH`] is above the feet and more than [`DROP`] over the terrain (a
 /// cliff rock's inside, not just standing under a bridge: that pushes nothing). `None` when the feet are free.
-fn hull_top(terrain: &TerrainQuery, collision: &WorldCollision, feet: Vec3) -> Option<f32> {
-    if !collision.push_out(feet, RADIUS, HEIGHT, STEP_UP).blocked {
+fn hull_top(terrain: &TerrainQuery, collision: &WorldCollision, feet: Vec3, body: StanceBody) -> Option<f32> {
+    if !collision.push_out(feet, body.radius, body.height, body.step_up).blocked {
         return None;
     }
     let top = collision.ground_below(feet.x, feet.y, feet.z, HULL_REACH)?;
     let terrain = terrain.ground_at(feet.x, feet.y).map_or(f32::NEG_INFINITY, |ground| ground.height);
-    (top.height > feet.z + STEP_UP && top.height > terrain + DROP).then_some(top.height)
+    (top.height > feet.z + body.step_up && top.height > terrain + DROP).then_some(top.height)
 }
 
 /// Keyboard movement, jumping, standing on the ground, swimming and the movement packets.
@@ -374,6 +459,7 @@ pub fn control_player(
         &mut Transform,
         &mut Motion,
         Option<&ActorParams>,
+        Option<&Stances>,
         Has<super::combat::Dead>,
         Has<super::skill_motion::SkillMove>,
         Has<super::mount::Dismounting>,
@@ -392,7 +478,7 @@ pub fn control_player(
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     (mut trace, sprint, mut local_jump, gliding, mut mounting): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>, ResMut<super::mount::MountFlow>),
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, dead, skill_moving, dismounting, deck_ride, on_ladder)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, stances, dead, skill_moving, dismounting, deck_ride, on_ladder)) = player.single_mut() else { return };
     // a ladder owns the character: `ladder::control_ladder` moves it and sends the hanging packets
     // (the component and `Motion::on_ladder` are set in the same frame as the grab)
     if on_ladder || motion.on_ladder {
@@ -509,6 +595,8 @@ pub fn control_player(
 
     let old = mover.pos;
     let swimming = mover.swim.is_some();
+    // the capsule of the stance the body is in: 3 swim, 2 relaxed (the others are not entered yet)
+    let body = stances.map_or_else(StanceBody::default, |s| s.get(if swimming { 3 } else { 2 }));
     // local velocity (x right, y forward): walking and running as the actor model says, swimming at the swim speed
     let walking = (state.walk || mount_slow) != (dev.scripted(t, 'H') || (!typing && (keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight))));
     let local_vel = if swimming {
@@ -527,13 +615,13 @@ pub fn control_player(
         terrain.prefetch(pos.x, pos.y, PREFETCH_RADIUS);
     }
     // walls: slide along them; stay on the map
-    pos = move_candidate(&terrain, &collision, old, step * dt, mover.grounded, swimming);
+    pos = move_candidate(&terrain, &collision, old, step * dt, mover.grounded, swimming, body);
 
     // what is under the feet and the water around
-    let step_up = if mover.grounded || swimming { STEP_UP } else { 0.05 };
+    let step_up = if mover.grounded || swimming { body.step_up } else { 0.05 };
     let mut ground = floor_at(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z), step_up);
     // a character saved (or landed) inside a closed rock hull is lifted onto its top once, so it is not wedged
-    if !swimming && mover.grounded && let Some(top) = hull_top(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z)) {
+    if !swimming && mover.grounded && let Some(top) = hull_top(&terrain, &collision, Vec3::new(pos.x, pos.y, old.z), body) {
         info!("lifted out of a closed brush hull at ({:.1}, {:.1}): feet {:.2} -> {:.2}", pos.x, pos.y, old.z, top);
         pos.z = top;
         ground = top;
@@ -965,30 +1053,31 @@ mod lifecycle_tests {
 
     #[test]
     fn native_hole_height_is_not_a_player_floor_and_preserves_the_received_spawn_height() {
+        let body = StanceBody::default();
         let terrain = TerrainQuery::new("main_world");
         let collision = WorldCollision::new("main_world", terrain.clone());
         // Executed original 300C91B0/300CAB30: a real 20,8 leaf, not synthetic missing terrain.
         let hole = Vec3::new(21204.25, 9026.5, 446.40103);
         assert_eq!(terrain.is_hole_at(hole.x, hole.y), Some(true));
         assert!((terrain.height_at(hole.x, hole.y).unwrap() - hole.z).abs() < 0.001);
-        assert!(support(&terrain, &collision, hole.x, hole.y, hole.z + 10.0, STEP_UP).is_none());
-        assert_eq!(floor_at(&terrain, &collision, hole, STEP_UP), f32::NEG_INFINITY);
+        assert!(support(&terrain, &collision, hole.x, hole.y, hole.z + 10.0, body.step_up).is_none());
+        assert_eq!(floor_at(&terrain, &collision, hole, body.step_up), f32::NEG_INFINITY);
         assert_eq!(height_or(&terrain, hole.x, hole.y, 430.0), 430.0);
         let solid = Vec3::new(21188.25, 9030.5, 498.16614);
         assert_eq!(terrain.is_hole_at(solid.x, solid.y), Some(false));
-        let ground = support(&terrain, &collision, solid.x, solid.y, solid.z + 10.0, STEP_UP).unwrap();
+        let ground = support(&terrain, &collision, solid.x, solid.y, solid.z + 10.0, body.step_up).unwrap();
         assert!(!ground.brush && (ground.height - solid.z).abs() < 0.001);
-        assert!((floor_at(&terrain, &collision, solid, STEP_UP) - solid.z).abs() < 0.001);
+        assert!((floor_at(&terrain, &collision, solid, body.step_up) - solid.z).abs() < 0.001);
         // Missing cells retain the application's streaming/map fallback; only known holes permit a fall.
         let outside = Vec3::new(-1.0, -1.0, 123.0);
-        assert_eq!(floor_at(&terrain, &collision, outside, STEP_UP), outside.z);
+        assert_eq!(floor_at(&terrain, &collision, outside, body.step_up), outside.z);
         // The same genuine hole can expose a lower compiled cave/brush floor.
         assert!(collision.build_blocking(20, 8).is_some());
         let cave = Vec3::new(21270.5, 8960.5, 474.8673);
         assert_eq!(terrain.is_hole_at(cave.x, cave.y), Some(true));
-        let ground = support(&terrain, &collision, cave.x, cave.y, cave.z + 5.0, STEP_UP).unwrap();
+        let ground = support(&terrain, &collision, cave.x, cave.y, cave.z + 5.0, body.step_up).unwrap();
         assert!(ground.brush && (ground.height - 464.76614).abs() < 0.001);
-        assert!((floor_at(&terrain, &collision, cave, STEP_UP) - 464.76614).abs() < 0.001);
+        assert!((floor_at(&terrain, &collision, cave, body.step_up) - 464.76614).abs() < 0.001);
     }
 
     #[test]
@@ -997,6 +1086,7 @@ mod lifecycle_tests {
         if !aa_world::pak_available() {
             return;
         }
+        let body = StanceBody::default();
         let terrain = TerrainQuery::new("main_world");
         let collision = WorldCollision::new("main_world", terrain.clone());
         for (cx, cy) in [(14, 14), (15, 14)] {
@@ -1009,13 +1099,13 @@ mod lifecycle_tests {
         let mut pos = Vec3::new(start.x, start.y, terrain.height_at(start.x, start.y).unwrap());
         for k in 0..(20.0 / dt) as usize {
             let dir = (goal - Vec2::new(pos.x, pos.y)).normalize_or_zero();
-            let moved = move_candidate(&terrain, &collision, pos, dir * RUN_SPEED * dt, true, false);
-            let ground = floor_at(&terrain, &collision, Vec3::new(moved.x, moved.y, pos.z), STEP_UP);
+            let moved = move_candidate(&terrain, &collision, pos, dir * RUN_SPEED * dt, true, false, body);
+            let ground = floor_at(&terrain, &collision, Vec3::new(moved.x, moved.y, pos.z), body.step_up);
             assert!(ground.is_finite(), "t={:.1} s: off the map at ({:.1}, {:.1})", k as f32 * dt, moved.x, moved.y);
             pos = Vec3::new(moved.x, moved.y, ground);
             if let Some(hit) = collision.raycast_mask(Vec3::new(pos.x, pos.y, pos.z + 20.0), Vec3::NEG_Z, 40.0, Mask::VEGETATION) {
                 assert!(
-                    hit.point.z - pos.z < HEIGHT,
+                    hit.point.z - pos.z < body.height,
                     "t={:.1} s at ({:.1}, {:.1}, {:.2}): the rock skin is {:.2} m over the feet",
                     k as f32 * dt,
                     pos.x,
@@ -1033,18 +1123,19 @@ mod lifecycle_tests {
         if !aa_world::pak_available() {
             return;
         }
+        let body = StanceBody::default();
         let terrain = TerrainQuery::new("main_world");
         let collision = WorldCollision::new("main_world", terrain.clone());
         for (cx, cy) in [(14, 14), (15, 14)] {
             collision.build_blocking(cx, cy).expect("cell");
         }
         let wedged = Vec3::new(15497.8, 14832.0, 143.41);
-        assert!(collision.push_out(wedged, RADIUS, HEIGHT, STEP_UP).blocked, "the saved position is inside the hull");
-        let top = hull_top(&terrain, &collision, wedged).expect("the rock has a walkable top over the feet");
-        assert!(top > wedged.z + STEP_UP, "lifted above the feet: {top}");
+        assert!(collision.push_out(wedged, body.radius, body.height, body.step_up).blocked, "the saved position is inside the hull");
+        let top = hull_top(&terrain, &collision, wedged, body).expect("the rock has a walkable top over the feet");
+        assert!(top > wedged.z + body.step_up, "lifted above the feet: {top}");
         let freed = Vec3::new(wedged.x, wedged.y, top);
-        assert!(!collision.push_out(freed, RADIUS, HEIGHT, STEP_UP).blocked, "the top is free");
-        assert!((floor_at(&terrain, &collision, freed, STEP_UP) - top).abs() < 1e-3, "the top is standing ground");
+        assert!(!collision.push_out(freed, body.radius, body.height, body.step_up).blocked, "the top is free");
+        assert!((floor_at(&terrain, &collision, freed, body.step_up) - top).abs() < 1e-3, "the top is standing ground");
     }
 
     #[test]
@@ -1294,5 +1385,39 @@ mod scripted_input_tests {
         }
         let moved = app.world_mut().query::<&Mover>().single(app.world()).expect("player").pos;
         assert!(moved.truncate().distance(start.truncate()) > 1.0, "held W moved the player from {start} to {moved}");
+    }
+
+    #[test]
+    fn the_stance_capsule_is_cryengines_collider_walked_from_the_feet() {
+        // the relaxed row (game_stances 74): heightCollider 1.2, pivot 0, size 0.4 / 0.4 / 0.32, capsule
+        let stand = StanceBody::from_row(1.2, 0.0, 0.4, 0.32, true, 50.0);
+        assert!((stand.radius - 0.4).abs() < 1e-6);
+        assert!((stand.height - 1.92).abs() < 1e-6, "the capsule's top: {}", stand.height);
+        assert!((stand.step_up - 0.48).abs() < 1e-6, "the gap under the collider: {}", stand.step_up);
+        assert!((stand.climb_tan - 50f32.to_radians().tan()).abs() < 1e-6);
+        // prone (row 80): heightPivot 1.0 lowers the collider to the ground
+        let prone = StanceBody::from_row(1.2, 1.0, 0.4, 0.01, true, 50.0);
+        assert!((prone.height - 0.61).abs() < 1e-6, "{}", prone.height);
+        assert!((prone.step_up - 0.05).abs() < 1e-6, "{}", prone.step_up);
+        // no capsule: a cylinder without the end caps
+        let cylinder = StanceBody::from_row(1.2, 0.0, 0.4, 0.32, false, 50.0);
+        assert!((cylinder.height - 1.52).abs() < 1e-6);
+        assert!((cylinder.step_up - 0.88).abs() < 1e-6);
+        // a body with no row falls back to the previous capsule
+        assert_eq!(Stances::default().get(2), StanceBody::default());
+        assert_eq!(Stances::default().get(9), StanceBody::default());
+    }
+
+    #[test]
+    fn the_players_stances_come_from_game_stances() {
+        let Some(stances) = Stances::load(10) else { return };
+        let relaxed = stances.get(2);
+        assert_eq!(relaxed.radius, 0.4);
+        assert!((relaxed.height - 1.92).abs() < 1e-4, "{}", relaxed.height);
+        assert!((relaxed.step_up - 0.48).abs() < 1e-4, "{}", relaxed.step_up);
+        let swim = stances.get(3);
+        assert_eq!(swim.radius, 0.65);
+        // row 75: size_z 0.1 and radius 0.65 around heightCollider 1.2
+        assert!((swim.height - 1.95).abs() < 1e-4, "{}", swim.height);
     }
 }
