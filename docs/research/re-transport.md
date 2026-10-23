@@ -315,15 +315,26 @@ writers and the client readers. [R]
 2. **Ship parts are not equipment-driven.** Original: hull brushes + slot doodads
    (`slave_doodad_bindings`, `item_slave_equipments.doodad_id`) swapped by `SCUnitEquipmentsChanged`.
    Bevy draws every prefab brush unconditionally (`ingame/units.rs:651-659`, `ingame/data.rs:1049-1059`)
-   and binds no slot doodads, so equipment changes only the UI (`hud/slave_equipment.rs`). Fix: build
-   parts from installed equipment.
+   and binds no slot doodads, so equipment changes only the UI (`hud/slave_equipment.rs`). **Done**
+   (`654d092`): a ship draws its prefab brushes plus one doodad per declared `slave_equip_slots` point
+   that holds an item (`item_slave_equipments.doodad_id`, placed at the model point from
+   `slave_attach_points.json` with its yaw); `slave_doodad_bindings` fill only points no equipment
+   slot owns. A `ShipVisual` component on the hull stores the state and equipped templates, so
+   `sync_views` rebuilds the brushes on `SCUnitEquipmentsChanged` / `SCSlaveEquipmentChanged` and on a
+   health change.
 3. **No ship visual chain.** Original: rudder (`FUN_390c7410`), 45° wheel (`FUN_390d2990`), sail billow
    (`FUN_390d1c60`), throttle anim (`FUN_390db700`), exhaust/ripple/sound (`FUN_390c78d0/7640/7bf0`).
    Bevy spawns static brushes (`ingame/units.rs:651-659`). Fix: bind named children and drive them from
    `ShipMove`.
 4. **No damage/dead model/sinking.** Original HP→state 1/2/3/4/6 (`FUN_3989f8b0`), model swap
    (`FUN_390eb610`/`FUN_390e7b20`), dead prefab + `caraval_water_destroy`. Bevy always draws `normal`
-   (`data.rs:1049-1059`). Fix: state→`ship_models` variant and dead particle.
+   (`data.rs:1049-1059`). **Done** (`654d092`): `ship_damage_state` copies `FUN_3989f8b0` exactly,
+   `ship_models.normal/damaged25/damaged50/damaged75/dead` is selected with the original's lower-state
+   fallback, and the variant prefab's active `ParticleEffect` entities are spawned under the hull (the
+   dead prefab is `galleon_dead.cgf` + `caraval_water_destroy`, with no equipment doodads). aa-cry
+   follow-up: `Model::lod_nodes(0)` drops meshes whose parent node is a `Helper`, so the dead hull
+   body itself is not drawn until that loader accepts Helper parents; the state, particle and
+   equipment swap are in place.
 5. **Boarding ranges are wrong.** Original bind precheck squared 16.0 → **4 m** (`DAT_39ac7408`,
    `FUN_39346290`), target interaction 3 m (`DAT_39ac79fc=9.0`). Bevy: `BOARD_RANGE 10.0`
    (`ingame/vehicle.rs:283`), **60 m** own-hull test (`vehicle.rs:227`), `CANNON_REACH 4.5`
