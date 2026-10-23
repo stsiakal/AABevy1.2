@@ -274,16 +274,20 @@ the original client, trade range, mail compose slots and family/guild window geo
 
 ## 7. Gaps vs Bevy (ranked)
 
-1. **Social slash commands - done in `5401aaa`.** The original dispatches 47 slash functions from
-   `slash_commands`/`slash_functions`: party/raid/guild invite, leave and kick, channel create/join/
-   leave, `/dice`, block/unblock, friend add/delete, family list/invite/leave/kick/title
-   (`slash_functions` rows 1-28,42,43; `FUN_393c5eb0`). Bevy only resolved channel names and emote
-   names. `crates/aa-client/src/hud/slash.rs` loads both tables at start-up, matches an alias as
-   `FUN_393c3bc0` does (case-insensitive whole word), and routes rows 1-28,41-43 to the native
-   party/expedition/family/friend checks and queues with the original refusals. `/dice` and the
-   channel functions send `CSRollDice` 0x0bd, `CSJoinUserChatChannel` 0x061 and
-   `CSLeaveChatChannel` 0x062. The remaining function rows (languages, jury, watch/target, music,
-   nation) are consumed without an action.
+1. **Social slash commands - done in `5401aaa`, `4d49692`.** The original dispatches 47 slash
+   functions from `slash_commands`/`slash_functions`: party/raid/guild invite, leave and kick,
+   channel create/join/leave, `/dice`, block/unblock, friend add/delete, family list/invite/leave/
+   kick/title (`slash_functions` rows 1-28,42,43; `FUN_393c5eb0`). Bevy only resolved channel names
+   and emote names. `crates/aa-client/src/hud/slash.rs` loads both tables at start-up, matches an
+   alias as `FUN_393c3bc0` does (case-insensitive whole word), and routes the social rows to the
+   native party/expedition/family/friend checks and queues with the original refusals
+   (`0x1b3`, `0x54`, `0x48`, `0x49`, `0x10b`/`0x10c`, `0x1f5`, `0x229`, family
+   `0x172`/`0x178`/`0x16f`). `/dice` and the channel functions send `CSRollDice` 0x0bd,
+   `CSJoinUserChatChannel` 0x061 and `CSLeaveChatChannel` 0x062 with the native name 0x31 and
+   password 7 byte caps (`FUN_397ab6c0`) and the duplicate-channel 0x10f text with its name.
+   `slash_functions` 17 (family list) has no `slash_commands` row, so the relationship window stays
+   its only entry. The remaining rows (cast/journal, languages, jury, watch/target, music, nation)
+   are matched and consumed without an action.
 2. **User chat channels do not exist.** Original `X2Chat:Create/Join/LeaveUserChatChannel` sends
    `CSJoinUserChatChannel 0x061`/`CSLeaveChatChannel 0x062` (x2game.dll.c:908837-908873; server
    reader `systems/social/packets/chat.rs:16-40`). Bevy's opcode table has neither
