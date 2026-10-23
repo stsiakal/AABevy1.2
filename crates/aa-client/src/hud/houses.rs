@@ -1165,11 +1165,13 @@ pub(super) mod tests {
             return;
         };
         let enabled = |rt: &aa_ui::UiRuntime| -> bool { rt.lua.load("return housing.buildWindow.startButton:IsEnabled()").eval().unwrap() };
-        for (have, want) in [(5, false), (35, true)] {
+        // The oracle's quote (Thatched Farmhouse, total 450000) needs 45 certificates: 10 unbound + 10 bound
+        // is genuinely short, so the original Build button is disabled (the scripted house_build bypassed it).
+        for (total, have, want) in [(150_000, 5, false), (150_000, 35, true), (450_000, 20, false), (450_000, 45, true)] {
             bridge.borrow_mut().panels.bag = vec![Some(SlotSnap { id: TAX_ITEM, count: have, ..Default::default() })];
             bridge.borrow_mut().house.design = 267;
-            rt.lua.load("ShowBuildWindow(267, 50000, 150000, 1, 0, true, 100000, 31891)").exec().unwrap();
-            assert_eq!(enabled(&rt), want, "{have} certificates in the bag");
+            rt.lua.load(format!("ShowBuildWindow(267, 50000, {total}, 1, 0, true, 100000, 31891)")).exec().unwrap();
+            assert_eq!(enabled(&rt), want, "{have} certificates for {total} copper");
             rt.fire_event("BUILDER_END", ());
         }
         let _ = std::fs::remove_file(path);

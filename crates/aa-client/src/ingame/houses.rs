@@ -157,9 +157,21 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, load_areas)
         .add_systems(
             Update,
-            (close_created_build, log_house_factions, sync_house_models.before(super::units::sync_views))
+            (close_created_build, create_refused, log_house_factions, sync_house_models.before(super::units::sync_views))
                 .run_if(super::world_screens),
         );
+}
+
+/// `SCErrorMsg` while a `CSCreateHouse` is waiting: the server refused it (no `SCMyHouse` follows), so the
+/// builder stays for another try instead of the client ending the placement on the strength of the send alone.
+pub fn create_refused(mut events: MessageReader<NetEvent>, mut placement: ResMut<Placement>) {
+    for NetEvent(event) in events.read() {
+        let Event::ServerError { code } = event else { continue };
+        if placement.session.as_ref().is_some_and(|s| s.is_house() && s.done && !s.created) {
+            info!("housing: server refused the build (error {code}); the placement stays");
+            placement.create_refused();
+        }
+    }
 }
 
 /// The server's faction for a house is logged once per spawned unit: design ids collide with NPC template ids,
