@@ -92,15 +92,15 @@ impl Store {
     /// A character-scope option lives in the active character's server bucket (`character_options`); system options and the
     /// pre-character screens keep the account map.
     fn option_value(&self, key: &str) -> Option<&Json> {
-        if self.character != 0 && is_character_option(key) {
-            if let Some(value) = self
+        if self.character != 0
+            && is_character_option(key)
+            && let Some(value) = self
                 .data
                 .get("character_options")
                 .and_then(|map| map.get(self.character.to_string()))
                 .and_then(|map| map.get(key))
-            {
-                return Some(value);
-            }
+        {
+            return Some(value);
         }
         // Account values written before the character buckets existed remain the fallback.
         self.data.get("options")?.get(key)
@@ -197,28 +197,28 @@ impl Store {
         }
         let (options, bindings) = character::dirty_types(owner);
         let mut out = Vec::new();
-        if options {
-            if let Some(payload) = character::options_payload(self.character_options(owner)) {
-                let command = UiDataCommand::Save {
-                    character_id: owner,
-                    data_type: character::OPTION_TYPE,
-                    payload,
-                };
-                if command.validate().is_ok() {
-                    out.push(command);
-                }
+        if options
+            && let Some(payload) = character::options_payload(self.character_options(owner))
+        {
+            let command = UiDataCommand::Save {
+                character_id: owner,
+                data_type: character::OPTION_TYPE,
+                payload,
+            };
+            if command.validate().is_ok() {
+                out.push(command);
             }
         }
-        if bindings {
-            if let Some(payload) = character::bindings_payload(self.character_bindings(owner)) {
-                let command = UiDataCommand::Save {
-                    character_id: owner,
-                    data_type: character::BINDING_TYPE,
-                    payload,
-                };
-                if command.validate().is_ok() {
-                    out.push(command);
-                }
+        if bindings
+            && let Some(payload) = character::bindings_payload(self.character_bindings(owner))
+        {
+            let command = UiDataCommand::Save {
+                character_id: owner,
+                data_type: character::BINDING_TYPE,
+                payload,
+            };
+            if command.validate().is_ok() {
+                out.push(command);
             }
         }
         out

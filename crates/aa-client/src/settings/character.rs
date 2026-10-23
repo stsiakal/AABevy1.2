@@ -127,10 +127,7 @@ pub(super) fn options_payload(options: Option<&Json>) -> Option<String> {
     }
     root.children.push(option);
     while encoded(&root).is_none() {
-        let option = root.children.get_mut(1)?;
-        if option.children.pop().is_none() {
-            return None;
-        }
+        root.children.get_mut(1)?.children.pop()?;
     }
     encoded(&root)
 }
@@ -171,10 +168,7 @@ pub(super) fn bindings_payload(bindings: Option<&Json>) -> Option<String> {
     }
     root.children.push(binding);
     while encoded(&root).is_none() {
-        let binding = root.children.get_mut(1)?;
-        if binding.children.pop().is_none() {
-            return None;
-        }
+        root.children.get_mut(1)?.children.pop()?;
     }
     encoded(&root)
 }
