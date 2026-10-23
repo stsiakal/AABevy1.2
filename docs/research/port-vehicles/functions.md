@@ -269,11 +269,12 @@ Legend for `this`: **C** = local vehicle movement controller (0x1a0), **M** = un
 
 * 191 unique entries (182 listed in `funcs.csv`, 9 unlisted leaves).
 * **115,163 bytes** of listed code (unlisted leaves are ~40 B together).
-* Pure leaves (safe to port and difftest before any world exists): **14** — the codecs
-  (0x3961e2c0, 0x397ad5a0, 0x397ad8c0, 0x397ada60, 0x397adc00, 0x397ad740, 0x397ae020,
-  0x397c0470, 0x397c52f0, 0x397c5e70, 0x397c5f60, 0x39024610), the clamp 0x3922aed0 and the
-  quaternion helpers 0x390bf0f0/0x390bf210 (15 with the rounder 0x390699b0, 16 with
-  0x398b1af0).
+* Pure leaves (safe to port and difftest before any world exists), **17**:
+  * move codecs/serializer: 0x3961e2c0, 0x397ad5a0, 0x397ad8c0, 0x397ada60, 0x397adc00,
+    0x397ad740, 0x397ae020, 0x397c0470, 0x397c52f0, 0x397c5e70, 0x397c5f60 (11);
+  * move copy: 0x39024610 (1);
+  * math: 0x3922aed0 (clamp), 0x390bf0f0 / 0x390bf210 / 0x390bf6a0 (quaternion helpers),
+    0x390699b0 (round 0.1), 0x398b1af0 (sphere-sphere gap, already in aaemu-physics) (6).
 * Stateful but testable with a synthetic object: 0x390967c0, 0x390a3de0, 0x390c7410,
   0x390d2990, 0x390e8e40 (with a fake doodad), 0x390db700, 0x390b2420/0x390b0040 (with a fake
   entity), 0x390af740/0x390c70f0.
