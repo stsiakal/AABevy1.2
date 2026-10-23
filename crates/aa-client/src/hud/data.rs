@@ -66,6 +66,16 @@ pub struct ItemInfo {
     pub pet_only: bool,
 }
 
+/// A `blocked_texts` row: the client's own censor list (`FUN_393c78e0`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockedText {
+    pub text: String,
+    pub check_name: bool,
+    pub check_chat: bool,
+    /// Replace occurrences anywhere; otherwise only whole words.
+    pub partial: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SkillInfo {
     pub named: Named,
@@ -376,6 +386,8 @@ pub struct GameData {
     pub(super) speech: super::speech::Tables,
     /// Static housing and public-farm templates (`data/housing.rs`).
     pub(super) housing: housing::Tables,
+    /// `blocked_texts`: the chat/name censor list.
+    pub blocked_texts: Vec<BlockedText>,
 }
 
 impl GameData {
@@ -865,6 +877,18 @@ impl GameData {
         data.specialties = super::specialty::Tables::load(&conn)?;
         data.speech = super::speech::Tables::load(&conn).unwrap_or_default();
         data.housing = housing::Tables::load(&conn)?;
+        {
+            let mut q = conn.prepare("SELECT utf8str, check_name, check_chat, partial_match FROM blocked_texts")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                data.blocked_texts.push(BlockedText {
+                    text: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    check_name: any_flag(r, 1)?,
+                    check_chat: any_flag(r, 2)?,
+                    partial: any_flag(r, 3)?,
+                });
+            }
+        }
         data.load_sub_zone_shapes();
         data.load_quest_areas();
         Ok(data)

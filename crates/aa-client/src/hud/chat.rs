@@ -8,6 +8,7 @@
 //! `CHAT_EXPEDITION` 7, `CHAT_RACE` 14, whispers -3 / -4, notice -1, system -2), so they pass
 //! through unchanged.
 
+pub(super) mod channels;
 pub(super) mod config;
 
 use aa_net::state::{Chat, Player};
@@ -17,8 +18,108 @@ use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 
 use super::api::HudBridge;
-use super::data::GameData;
+use super::data::{BlockedText, GameData};
 use super::{HudBuilt, HudKeyboardFocus};
+
+/// The chat edit's per-type limit: `chatLocale.maxTextLength` (`x2ui/chat/locale/ko.alb`, 160
+/// for every type in the shipped locales).
+const TEXT_LIMITS: [usize; 15] = [160; 15];
+
+pub(super) fn text_limit(chat_type: i16) -> usize {
+    usize::try_from(chat_type)
+        .ok()
+        .filter(|t| *t < TEXT_LIMITS.len())
+        .map_or(160, |t| TEXT_LIMITS[t])
+}
+
+/// The C++ send buffer (`FUN_393c5aa0`) holds 1024 UTF-16 units.
+pub(super) const TRANSPORT_LIMIT: usize = 1024;
+
+/// Truncate at `limit` characters (the edit's own count).
+pub(super) fn truncate_chars(text: &str, limit: usize) -> String {
+    text.chars().take(limit).collect()
+}
+
+/// Truncate at `limit` UTF-16 units, as `FUN_393c5aa0` does after the conversion.
+pub(super) fn truncate_utf16(text: &str, limit: usize) -> String {
+    let mut units = 0;
+    text.chars()
+        .take_while(|c| {
+            units += c.len_utf16();
+            units <= limit
+        })
+        .collect()
+}
+
+/// `FUN_393c78e0`: replace every `check_chat` row's text with `*` (the same character count).
+/// `partial` rows match anywhere, the others only as whole words. `None` when nothing matched.
+pub(super) fn censor(text: &str, rows: &[BlockedText]) -> Option<String> {
+    let mut chars: Vec<char> = text.chars().collect();
+    let mut lower: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    let mut changed = false;
+    for row in rows.iter().filter(|r| r.check_chat && !r.text.is_empty()) {
+        let needle: Vec<char> = row.text.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).collect();
+        let n = needle.len();
+        let mut i = 0;
+        while i + n <= chars.len() {
+            let hit = (0..n).all(|k| lower[i + k] == needle[k]);
+            let whole = row.partial
+                || ((i == 0 || !lower[i - 1].is_alphanumeric())
+                    && (i + n == lower.len() || !lower[i + n].is_alphanumeric()));
+            if hit && whole {
+                for c in &mut chars[i..i + n] {
+                    *c = '*';
+                }
+                for c in &mut lower[i..i + n] {
+                    *c = '*';
+                }
+                changed = true;
+                i += n;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    changed.then(|| chars.into_iter().collect())
+}
+
+/// `FUN_39426f40`: fill a localized template's `%s` / `%u` / `%d` with the packet's two strings.
+pub(super) fn format_params(template: &str, param: &str, param2: &str) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut params = [param, param2].into_iter();
+    let mut rest = template;
+    while let Some(at) = rest.find('%') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at..];
+        if let Some(kind) = after.chars().nth(1) {
+            if matches!(kind, 's' | 'u' | 'd') {
+                if let Some(value) = params.next() {
+                    out.push_str(value);
+                }
+                rest = &after[2..];
+                continue;
+            }
+            if kind == '%' {
+                out.push('%');
+                rest = &after[2..];
+                continue;
+            }
+        }
+        out.push('%');
+        rest = &after[1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `CHAT_FAILED(localized, raw)` with the `ERROR_MSG` row of `code` (0x108-0x111 are the chat
+/// refusals: yell too often, no whisper target, forbidden word, not in party/raid, channel errors).
+pub(super) fn fire_failed(rt: &UiRuntime, code: i16, raw: &str) {
+    let text = super::alerts::error_name(code)
+        .and_then(|name| super::alerts::localized(rt, "ERROR_MSG", name))
+        .unwrap_or_else(|| raw.to_string());
+    rt.fire_event("CHAT_FAILED", (text, raw.to_string()));
+}
 
 /// The name the scripts show for a joined channel: the zone for the zone channels, the faction for
 /// the faction ones, the user's name for user channels.
@@ -47,9 +148,57 @@ fn join(rt: &UiRuntime, game: Option<&GameData>, chat_type: i16, sub_type: i16, 
 /// raid and guild lines over it (`speakerInChatBound`, see `speech.rs`). Replayed lines are old news: no bubble.
 fn message(rt: &UiRuntime, m: &aa_net::model::ChatMessage, friends: &aa_net::Friends, bound: bool) {
     if (m.sender_obj_id != 0 || m.sender_id != 0) && friends.is_blocked(&m.sender) { return; }
+    // The original event passes 11 values; the scripts use type, numeric unit id, character id,
+    // name, text and `speakerInChatBound`; the rest keep the channel and ability/language fields.
     rt.fire_event(
         "CHAT_MESSAGE",
-        (m.chat_type as i64, m.sender_obj_id.to_string(), false, m.sender.clone(), m.message.clone(), bound, None::<String>),
+        (
+            m.chat_type as i64,
+            i64::from(m.sender_obj_id),
+            i64::from(m.sender_id),
+            m.sender.clone(),
+            m.message.clone(),
+            bound,
+            None::<String>,
+            i64::from(m.sub_type),
+            i64::from(m.faction_id),
+            i64::from(m.ability),
+            i64::from(m.language),
+            i64::from(m.sender_race),
+        ),
+    );
+}
+
+/// `SCChatLocalizedMessage`: look the key up in `X2Locale` (the packet's category is the group)
+/// and fill the template with its two string parameters.
+fn localized(rt: &UiRuntime, m: &aa_net::model::ChatLocalizedMessage) {
+    let locale = rt.lua.globals().get::<Option<mlua::Table>>("X2Locale").ok().flatten();
+    let template = locale
+        .as_ref()
+        .and_then(|t| t.get::<Option<mlua::Function>>("LocalizeUiText").ok().flatten().map(|f| (t, f)))
+        .and_then(|(t, f)| {
+            f.call::<Option<String>>((t, i64::from(m.category), m.key.as_str()))
+                .ok()
+                .flatten()
+        })
+        .filter(|text| !text.is_empty() && *text != m.key)
+        .unwrap_or_else(|| m.key.clone());
+    let text = format_params(&template, &m.param, &m.param2);
+    rt.fire_event(
+        "CHAT_MESSAGE",
+        (
+            i64::from(m.chat_type()),
+            i64::from(m.sender_obj_id),
+            0i64,
+            m.sender.clone(),
+            text,
+            false,
+            None::<String>,
+            i64::from(m.sub_type()),
+            i64::from(m.channel_faction()),
+            0i64,
+            i64::from(m.language),
+        ),
     );
 }
 
@@ -69,7 +218,7 @@ mod blocked_tests {
 
     fn line(name:&str,id:u32) -> aa_net::model::ChatMessage {
         aa_net::model::ChatMessage { chat_type:0,sub_type:0,channel_faction:0,sender_obj_id:id,
-            sender_id:id,sender_race:1,faction_id:1,sender:name.into(),message:"hello".into(),ability:0 }
+            sender_id:id,sender_race:1,faction_id:1,sender:name.into(),message:"hello".into(),ability:0,language:0 }
     }
 
     #[test]
@@ -123,6 +272,14 @@ pub fn route_chat(
             Event::ChatChannelLeft { chat_type, sub_type, faction_id } => {
                 rt.fire_event("CHAT_LEAVED_CHANNEL", (*chat_type as i64, channel_name(game, *chat_type, *sub_type, *faction_id, "")));
             }
+            Event::ChatNotice(n) => {
+                rt.fire_event(
+                    "NOTICE_MESSAGE",
+                    (i64::from(n.kind), n.alpha_hex.clone(), i64::from(n.visible_time()), n.text.clone()),
+                );
+            }
+            Event::ChatFailed { code, text } => fire_failed(&rt, *code as i16, text),
+            Event::ChatLocalized(m) => localized(&rt, m),
             _ => {}
         }
     }
@@ -252,5 +409,132 @@ pub fn chat_keys(
     }
     if open || slash {
         *pending = Some(slash && !open);
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    fn blocked(text: &str, check_chat: bool, partial: bool) -> BlockedText {
+        BlockedText { text: text.into(), check_name: true, check_chat, partial }
+    }
+
+    #[test]
+    fn the_type_limit_is_160_and_the_transport_cap_is_1024_utf16() {
+        assert_eq!(text_limit(0), 160);
+        assert_eq!(text_limit(-3), 160);
+        assert_eq!(truncate_chars(&"a".repeat(200), text_limit(0)).chars().count(), 160);
+        // Two UTF-16 units each: 513 emoji are 1026 units, so the last one is dropped.
+        let emoji = "😀".repeat(513);
+        assert_eq!(truncate_utf16(&emoji, TRANSPORT_LIMIT), "😀".repeat(512));
+        assert_eq!(truncate_utf16("abc", TRANSPORT_LIMIT), "abc");
+    }
+
+    #[test]
+    fn the_censor_keeps_the_character_count_and_honours_the_row_flags() {
+        let rows = [
+            blocked("fuck", true, false),
+            blocked("nig", true, true),
+            blocked("Admin", false, true),
+        ];
+        assert_eq!(censor("Fuck this", &rows).as_deref(), Some("**** this"));
+        assert_eq!(censor("a fuckery", &rows), None, "whole word only");
+        assert_eq!(censor("Niglet", &rows).as_deref(), Some("***let"));
+        assert_eq!(censor("Admin", &rows), None, "check_chat is off");
+        assert_eq!(censor("clean", &rows), None);
+    }
+
+    #[test]
+    fn the_localized_template_fills_its_two_parameters() {
+        assert_eq!(format_params("%s invited %s", "Ann", "Bob"), "Ann invited Bob");
+        assert_eq!(format_params("100% fine", "Ann", "Bob"), "100% fine");
+        assert_eq!(format_params("%d%%", "7", "Bob"), "7%");
+    }
+
+    #[test]
+    fn the_chat_refusal_codes_map_to_the_locale_rows() {
+        for (code, name) in [
+            (0x108, "YELL_TOO_OFTEN"),
+            (0x109, "WHISPER_NO_TARGET"),
+            (0x10a, "SAID_FORBIDDEN_WORD"),
+            (0x10b, "CHAT_NOT_IN_PARTY"),
+            (0x10c, "CHAT_NOT_IN_RAID"),
+            (0x10d, "CHAT_CHANNEL_ALREADY_EXISTS"),
+            (0x10e, "CHAT_NO_CHANNEL"),
+            (0x10f, "CHAT_ALREADY_JOINED_CHANNEL"),
+            (0x110, "CHAT_PRIVATE_CHANNEL"),
+            (0x111, "CHAT_WRONG_PASSWORD"),
+        ] {
+            assert_eq!(super::super::alerts::error_name(code), Some(name), "{code:#x}");
+        }
+    }
+
+    #[test]
+    fn chat_events_fire_with_the_native_fields() -> Result<(), Box<dyn std::error::Error>> {
+        let rt = UiRuntime::new("en_us", 1280.0, 720.0)?;
+        rt.lua
+            .load(
+                "X2Locale={LocalizeUiText=function(_,group,key) \
+                   if key=='CHAT_ALREADY_JOINED_CHANNEL' then return 'Already joined' end \
+                   if key=='party_invite' then return '%s joined %s' end \
+                 end};\
+                 lines={}; notice=nil; failed=nil;\
+                 UIParent:SetEventHandler('CHAT_MESSAGE',function(a,b,c,d,e,f,g,h,i,j,k) lines[#lines+1]={a,b,c,d,e,f,g,h,i,j,k} end);\
+                 UIParent:SetEventHandler('NOTICE_MESSAGE',function(a,b,c,d) notice={a,b,c,d} end);\
+                 UIParent:SetEventHandler('CHAT_FAILED',function(a,b) failed={a,b} end)",
+            )
+            .exec()?;
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(super::super::api::HudData::default()));
+        let mut app = App::new();
+        app.add_message::<NetEvent>();
+        app.add_systems(Update, route_chat);
+        app.insert_resource(HudBuilt { up: true, fresh: false });
+        app.insert_non_send(HudBridge(bridge));
+        app.insert_non_send(rt);
+        let m = aa_net::model::ChatMessage {
+            chat_type: 0,
+            sub_type: 5,
+            channel_faction: 0,
+            sender_obj_id: 123,
+            sender_id: 9,
+            sender_race: 1,
+            faction_id: 7,
+            sender: "Ann".into(),
+            message: "hi".into(),
+            ability: 3,
+            language: 1,
+        };
+        app.world_mut().write_message(NetEvent(Event::Chat(m)));
+        app.world_mut().write_message(NetEvent(Event::ChatNotice(aa_net::model::ChatNotice {
+            kind: 2,
+            alpha_hex: "FF".into(),
+            visible_ms: 0,
+            text: "FF0000Maintenance".into(),
+        })));
+        app.world_mut().write_message(NetEvent(Event::ChatFailed { code: 0x10f, text: "Crew".into() }));
+        app.world_mut().write_message(NetEvent(Event::ChatLocalized(aa_net::model::ChatLocalizedMessage {
+            chat_id: 0x0000_0009_0000_000f,
+            sender_obj_id: 124,
+            language: 1,
+            category: 7,
+            key: "party_invite".into(),
+            sender: "Bob".into(),
+            num_param: 2,
+            param: "Bob".into(),
+            param2: "Squad".into(),
+        })));
+        app.update();
+        let lua = &app.world().non_send::<UiRuntime>().lua;
+        lua.load(
+            "assert(lines[1][1]==0 and lines[1][2]==123 and lines[1][3]==9 and lines[1][4]=='Ann' and lines[1][5]=='hi');\
+             assert(lines[1][8]==5 and lines[1][9]==7 and lines[1][10]==3 and lines[1][11]==1);\
+             assert(lines[2][1]==15 and lines[2][2]==124 and lines[2][4]=='Bob' and lines[2][5]=='Bob joined Squad');\
+             assert(lines[2][8]==0 and lines[2][9]==9 and lines[2][11]==1);\
+             assert(notice[1]==2 and notice[2]=='FF' and notice[3]==1000+17*50 and notice[4]=='FF0000Maintenance');\
+             assert(failed[1]=='Already joined' and failed[2]=='Crew')",
+        )
+        .exec()?;
+        Ok(())
     }
 }

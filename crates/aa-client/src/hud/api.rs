@@ -31,6 +31,10 @@ use crate::login::gameapi;
 pub enum Request {
     /// `HUD.request("chat", channel, message, target)`: a line typed into the chat input.
     Chat { chat_type: i16, message: String, target: String },
+    /// `X2Chat:CreateUserChatChannel` / `JoinUserChatChannel`.
+    ChatChannel { name: String, password: String, create: bool },
+    /// `X2Chat:LeaveUserChatChannel`.
+    LeaveChatChannel { name: String },
     /// `HUD.request("leave", how)`: `X2World:LeaveWorld(EXIT_*)`.
     Leave { how: i64 },
     /// `HUD.request("leave_cancel")`: `X2World:CancelLeaveWorld()`.
@@ -385,6 +389,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::achievement::install(lua, bridge)?;
     crate::settings::install_hud(lua)?;
     super::chat::config::install(lua, bridge)?;
+    super::chat::channels::install(lua, bridge)?;
     super::crime::install(lua, bridge)?;
     super::speech::install(lua, bridge)?;
     super::appellation::install(lua, bridge)?;
@@ -1020,11 +1025,11 @@ pub fn handle_requests(
         MessageWriter<crate::ingame::placement::DecorationPressed>,
     ),
     mut placement: Option<ResMut<crate::ingame::placement::Placement>>,
-    (emotes, rt, units, chat): (
+    (emotes, rt, units, mut chat): (
         Option<Res<crate::ingame::emote::Emotes>>,
         Option<NonSend<UiRuntime>>,
         Option<Res<aa_net::state::Units>>,
-        Option<Res<aa_net::state::Chat>>,
+        Option<ResMut<aa_net::state::Chat>>,
     ),
 ) {
     let requests = std::mem::take(&mut bridge.0.borrow_mut().requests);
@@ -1042,7 +1047,8 @@ pub fn handle_requests(
             is_player: matches!(unit.kind, aa_net::model::UnitKind::Character { .. }),
         })
     });
-    let channels = chat.as_ref().map_or(&[][..], |chat| chat.channels.as_slice());
+    let channels: Vec<aa_net::state::ChatChannel> =
+        chat.as_ref().map_or_else(Vec::new, |chat| chat.channels.clone());
     for request in requests {
         match request {
             Request::Party(command) => { net.write(NetCommand(Command::Party(command))); }
@@ -1105,6 +1111,27 @@ pub fn handle_requests(
                     net.write(NetCommand(Command::ItemEffect { character_id, request }));
                 }
             }
+            Request::ChatChannel { name, password, create } => {
+                // `FUN_393c3810`: a channel already in the joined list refuses with 0x10f.
+                if channels
+                    .iter()
+                    .any(|c| c.chat_type == aa_net::model::chat_type::USER && c.name.eq_ignore_ascii_case(&name))
+                {
+                    if let Some(rt) = rt.as_deref() {
+                        super::chat::fire_failed(rt, 0x10f, &name);
+                    }
+                } else {
+                    net.write(NetCommand(Command::JoinUserChatChannel { name, password, create }));
+                }
+            }
+            Request::LeaveChatChannel { name } => {
+                if let Some(channel) = channels
+                    .iter()
+                    .find(|c| c.chat_type == aa_net::model::chat_type::USER && c.name.eq_ignore_ascii_case(&name))
+                {
+                    net.write(NetCommand(Command::LeaveChatChannel { chat_id: channel.id }));
+                }
+            }
             Request::Chat { chat_type, message, target } => {
                 // `/addons list|enable|disable|reload|log ...` is the loader's own command, not a chat line
                 if super::addons::is_command(&message) {
@@ -1123,12 +1150,39 @@ pub fn handle_requests(
                     &mut bridge.0.borrow_mut(),
                     &message,
                     slash_target,
-                    channels,
+                    &channels,
                 ) {
                     super::slash::apply(outcome, rt.as_deref().map(|rt| &rt.lua), &mut net);
                     continue;
                 }
+                // `FUN_393c5aa0`: empty text is dropped, the type's spam group may refuse with
+                // 0x108, then the edit's per-type limit, the `blocked_texts` censor (0x10a) and
+                // the 1024 UTF-16 send buffer apply.
+                if message.is_empty() {
+                    continue;
+                }
+                if !chat.as_mut().is_none_or(|chat| chat.allow_send(chat_type)) {
+                    if let Some(rt) = rt.as_deref() {
+                        super::chat::fire_failed(rt, 0x108, "");
+                    }
+                    continue;
+                }
+                let mut message = super::chat::truncate_chars(&message, super::chat::text_limit(chat_type));
+                let blocked = bridge
+                    .0
+                    .borrow()
+                    .game
+                    .get()
+                    .map(|game| game.blocked_texts.clone())
+                    .unwrap_or_default();
+                if let Some(censored) = super::chat::censor(&message, &blocked) {
+                    if let Some(rt) = rt.as_deref() {
+                        super::chat::fire_failed(rt, 0x10a, &message);
+                    }
+                    message = censored;
+                }
                 let message = aa_ui::lua::chat::encode_for_transport(&message);
+                let message = super::chat::truncate_utf16(&message, super::chat::TRANSPORT_LIMIT);
                 net.write(NetCommand(Command::Chat { chat_type, target, message }));
             }
             Request::Leave { how } => {
@@ -1741,5 +1795,76 @@ mod tests {
         assert!((row.get::<f64>("levelPercent").unwrap() - 100.0 / 3.0).abs() < 1e-9);
         let levels: Vec<i64> = state.get::<Table>("ability_levels").unwrap().sequence_values().collect::<mlua::Result<_>>().unwrap();
         assert_eq!(levels, [1, 0, 0, 0, 0, 3, 0, 0, 0, 0]);
+    }
+}
+
+#[cfg(test)]
+mod chat_policy_tests {
+    use std::sync::{Arc, OnceLock};
+
+    use super::*;
+    use crate::hud::data::{BlockedText, SharedGameData};
+
+    fn app(bridge: std::rc::Rc<std::cell::RefCell<HudData>>, chat: aa_net::state::Chat) -> App {
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge))
+            .init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::ActionBar>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Target>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<aa_net::state::Buffs>()
+            .init_resource::<super::super::usable::InFlight>()
+            .insert_resource(chat)
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_message::<crate::ingame::ground_target::SkillPressed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
+            .add_message::<crate::ingame::placement::DecorationPressed>()
+            .add_systems(Update, handle_requests);
+        app
+    }
+
+    #[test]
+    fn chat_send_truncates_at_160_and_censors_before_the_wire() {
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(HudData::default()));
+        let mut game = super::super::data::GameData::default();
+        game.blocked_texts = vec![BlockedText {
+            text: "fuck".into(),
+            check_name: false,
+            check_chat: true,
+            partial: false,
+        }];
+        let shared = SharedGameData(Arc::new(OnceLock::new()));
+        let _ = shared.0.set(game);
+        bridge.borrow_mut().game = shared;
+        bridge.borrow_mut().requests.push(Request::Chat {
+            chat_type: 0,
+            target: String::new(),
+            message: "Fuck ".repeat(50),
+        });
+        let mut app = app(bridge, aa_net::state::Chat::default());
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
+        assert!(matches!(&commands[..], [NetCommand(Command::Chat { message, .. })]
+            if message == &"**** ".repeat(32)));
+    }
+
+    #[test]
+    fn chat_send_refuses_within_the_type_spam_delay() {
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(HudData::default()));
+        bridge.borrow_mut().requests.push(Request::Chat {
+            chat_type: 0,
+            target: String::new(),
+            message: "hello".into(),
+        });
+        let mut chat = aa_net::state::Chat::default();
+        chat.spam.delays[0] = 60.0;
+        chat.next_send[0] = Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        let mut app = app(bridge, chat);
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
+        assert!(commands.is_empty(), "the spam group refuses the line");
     }
 }
