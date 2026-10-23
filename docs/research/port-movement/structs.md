@@ -25,7 +25,7 @@ pub struct InputState {
     pub smoothed_vel:  [f32; 3], // +0x24  R FUN_39402c50 state
     pub unknown_30: f32,         // +0x30
     pub accel: f32,              // +0x34  R smoothing factor, default 30.0
-    pub turn_accum: f32,         // +0x38  R mounted keyboard-turn ramp (FUN_39402e00 this+0x38)
+    pub turn_accum: f32,         // +0x38  R glider keyboard-turn ramp (FUN_39402e00 this+0x38)
     pub autorun_or_lock: u8,     // +0x3c  R byte set to 0/1 (0x39405251)
     pub unknown_3d: [u8; 3],     // +0x3d
     pub timer_40: f32,           // +0x40  R accumulates mouse axes when turn starts (39405249)
@@ -67,8 +67,9 @@ pub struct InputState {
     pub latch: *mut u32,         // +0xc4  R pair of ids (FUN_39403850 allocates 8 bytes)
 }```
 
-The mount keyboard-turn ramp is `turn_accum` at **`+0x38` of this state** (`FUN_39402e00`
-`this+0x38`; see MAP §3.2). It is reset to 0 whenever the turn axis is zero.
+The glider keyboard-turn ramp is `turn_accum` at **`+0x38` of this state** (`FUN_39402e00`
+`this+0x38`; see MAP §3.2). It is reset to 0 whenever the turn axis is zero. A horse does
+not use it: `+0x1c1` is 0 on a horse and 4 only while gliding.
 
 ## 2. InputManager / per-unit wrapper
 
@@ -134,8 +135,8 @@ partial struct with explicit padding up to the fields you need, or access it thr
 | +0x8c..0xa0 | f32[6] | swim control vectors |
 | +0x118 | f32[3] | movement anchor (swim/controller ctor `3912e0c0`) |
 | +0x154..0x174 | f32[8] | viewSensitivity / viewLimitPitch / viewLimitYaw / viewLimitDir / speedMultiplier / viewHeightOffset / viewDistance / viewPivot (Lua `gameParams`, `FUN_3911a5a0`) |
-| +0x174 | f32 | turn speed (read by `FUN_39402e00` on the controlled unit) |
-| +0x1c1 | u8 | unit kind; 4 = quadruped/mount |
+| +0x174 | f32 | turn speed (read by `FUN_39402e00` on the controlled unit; glider rad/s) |
+| +0x1c1 | u8 | movement stance; 4 = gliding (mounts use +0xa8/+0xf8) |
 | +0x1db | u8 | `isOnLadder` (0x101 while on a ladder) |
 | +0x1dc..0x1df | u8[4] | ladder flags |
 | +0x238 | u32 | ladder entity id |

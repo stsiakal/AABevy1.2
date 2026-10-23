@@ -1,4 +1,5 @@
-//! Phase A movement leaves ported from the 1.2 `x2game.dll` decompile.
+//! Movement ported from the 1.2 `x2game.dll` decompile: Phase A leaves and the
+//! Phase B input state (`InputState`, `UpdateMovement`).
 //!
 //! Every item names the original function it came from (`FUN_xxxxxxxx` in `x2game.dll`).
 //! Frame time and cvars are explicit arguments here; the original reads them from
@@ -10,8 +11,11 @@
 mod clamp;
 mod direction;
 mod input;
+mod input_state;
 mod mouse;
+mod request;
 mod turn;
+mod update;
 
 #[cfg(test)]
 mod tests;
@@ -21,6 +25,13 @@ pub use direction::{MovementParams, direction_factor};
 pub use input::{
     CombineInput, CombineOutput, LadderOutput, PressTimes, combine, ladder_filter, prefer_axes,
 };
+pub use input_state::{
+    ExternalTargetInput, INPUT_STATE_SIZE, InputState, LocalUnitInput, MovementTypeInput,
+    StartGateInput, can_turn,
+    external_target, is_local_unit, movement_type, reset, smooth_velocity, start_gate,
+};
+pub use request::{DEFAULT_REQUEST_PTR, MovementRequest, REQUEST_SIZE};
+pub use update::{ControlledUnit, GateOutputs, MovementContext, pushed_flags, update_movement};
 pub use mouse::{mouse_pitch, mouse_yaw};
 pub use turn::{TurnInput, TurnResult, TurnState, TurnUnit, turn_delta};
 

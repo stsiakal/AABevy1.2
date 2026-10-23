@@ -379,19 +379,30 @@ return axis * dt * cvar * rate;
 * `game_cfg` is `DAT_39aefb98` (a heap object in the dump, so the cvar value is runtime; the
   default is the static 0.5 above).
 
-### 3.2 Mounted turn rate
+### 3.2 Gliding turn rate (the `+0x1c1 == 4` branch; not a mount)
 
-`unit+0x1c1 == 4` identifies the local controlled mate as a quadruped. `unit+0x174` is the
-per-model turn speed and comes from `actor_models.turn_speed` (SQLite: model 1 = 360.0,
-model 206 horse = 360.0). The code multiplies it by `turnAccum/3` where `turnAccum` ramps from 0
-to 3 over **3 s of continuous turn** (reset to 0 by a zero axis). **[R]** for the formula,
-**[I]** for the unit interpretation:
+**Live correction (phase B, hidden 1.2 client):** `unit+0x1c1 == 4` is the **gliding stance**,
+not a mount. `FUN_3911d6c0(1)` sets `+0x1c1 = 4` while the glider is deployed and
+`FUN_3912dd40` dispatches stance 4 to the glide integrator `FUN_3912d860`; the mount branch is
+selected by `+0xa8`/`+0xf8` (`FUN_3912c770`), see `../port-movement-extra/MAP.md` §0.4.
+Values read with the driver from the controlled unit:
 
-* if `+0x174` is stored in **radians/s** (the fast-turn behaviour is 2× on foot), the full rate is
-  `0.5 * (2π) = π rad/s = 180°/s`;
-* if it is stored in **degrees/s**, the last factor is 180 (interpreted as radians by the
-  downstream code), which is physically impossible, so the radian reading is the consistent one.
-  The writer of `+0x174` was not isolated; the read is at 0x39402ecc–0x39402edb **[?]**.
+| state | `unit+0x1c1` | `unit+0x174` |
+|---|---|---|
+| on foot | 0 | 1.0 |
+| riding a horse (item 8159) | 0 | 1.0 |
+| gliding (item 16392, while airborne) | 4 | 0.5235988 rad/s (30°/s) |
+
+Consequences:
+
+* **A horse uses the on-foot branch: 90°/s** (`0.5 * pi`). It never enters the
+  `turnAccum/3 * unit[0x174]` code.
+* A glider enters that branch: `turnAccum` ramps 0→3 over 3 s of continuous turn and
+  `+0x174 = 30°/s`, so the full rate is `0.5 * 0.5235988 = 0.2618 rad/s = 15°/s`
+  (`turnAccum/3 * 30°/s * keyboard_rotate_speed 0.5`), starting at 5°/s.
+* `+0x174` is in **radians/s** (the glider value is the DB `gliding_rotate_speed` 30 converted
+  by `* 0.0174533`); the on-foot/horse value 1.0 is a placeholder because the branch is not
+  taken there. This resolves U6.
 
 ### 3.3 Mouse look override
 
@@ -426,7 +437,7 @@ bit-exact.
 | situation | source | rate |
 |---|---|---|
 | on foot, A/D | `FUN_39402e00`, `keyboard_rotate_speed` 0.5 × π | 90°/s |
-| mounted, A/D | `FUN_39402e00`, `(turnAccum/3) × unit[0x174] × 0.5`, 3 s ramp | 180°/s at full (inferred) |
+| gliding, A/D | `FUN_39402e00`, `(turnAccum/3) × unit[0x174] × 0.5`, 3 s ramp | 15°/s at full (live `+0x174` = 30°/s) |
 | mouse held (free look / RMB) | `FUN_3915c700` | `mouse dx` × dt, cvar-scaled |
 | camera yaw | mode-1 camera adds the same mouse delta and follows the character yaw | see §4 |
 
@@ -760,7 +771,10 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
    `GameClient vtable +0x3C` call for idle/walk/run/jump/swim/mount/ladder gives the truth table.
 3. **U3 - mouse-look flag.** The `useMouse` byte is `FUN_392aa250(3) && local_23`; which input
    state writes that table entry (right button? camera mode?) is not resolved. A driver test can
-   set the entry directly and observe `FUN_39402e00`.
+   set the entry directly and observe `FUN_39402e00`. Phase B found that the live input-mode
+   globals (`DAT_39d2ff2c`/`DAT_39d2ff10`) are rewritten by the input manager between driver
+   requests, so a headless forced mouse-look capture is not reliable; the mouse branch itself
+   is covered bit-exactly by the phase A `turn_delta`/`mouse_yaw` goldens.
 4. **U4 - CSMoveUnit serializer.** Packet class vtable `0x3999d574`, body copied by 0x39024610;
    the field-by-field wire order is in the vtable slot 0 (probably 0x3901c160, which is not a
    function start) and was not decoded. The server layout is known; the client writer needs a
@@ -768,8 +782,9 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 5. **U5 - send cadence.** The pump passes a timer from `DAT_3a59f850->vtable+8()` in 0.001 s
    units; the interval itself (cvar or constant) was not isolated. Measure inter-packet times in
    the live client while walking.
-6. **U6 - `unit+0x174` units.** The mount turn formula is confirmed but the stored unit
-   (radians/s vs degrees/s) is inferred; the writer was not found.
+6. **U6 - `unit+0x174` units. RESOLVED (phase B).** Live gliding reads `+0x174 = 0.5235988`
+   rad/s (30°/s), so the value is in radians/s. The `+0x1c1 == 4` branch is gliding, not a
+   mount; a horse reads `+0x1c1 = 0`, `+0x174 = 1.0` and uses the 90°/s on-foot branch.
 7. **U7 - `CPlayer::ProcessFrameMovement` callers.** The wrapper and its tail code are thin
    `jmp` trampolines (`0x3913a620` -> `0x3a6ab5f3`, `0x3913da40` -> `0x3a98bb00`,
    `0x39139470` -> `0x3a9918bb`); the exact engine callback that invokes them is a vtable slot
