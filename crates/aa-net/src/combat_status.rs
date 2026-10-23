@@ -38,6 +38,8 @@ impl EnvironmentDamage {
 pub struct UnitCombatFlags {
     pub force_attack: Option<bool>,
     pub invisible: Option<bool>,
+    /// `SCCombatEngaged` / `SCCombatCleared`: the unit's combat-state byte (`X2Unit:UnitCombatState`).
+    pub engaged: bool,
 }
 
 /// Received-only flags for announced units (including the player), and the latest local breath
@@ -62,6 +64,7 @@ impl CombatStatus {
             entry.insert(UnitCombatFlags {
                 force_attack: Some(unit.flags & FORCE_ATTACK_FLAG != 0),
                 invisible: None,
+                engaged: false,
             });
             true
         } else {
@@ -91,6 +94,17 @@ impl CombatStatus {
                     return false;
                 }
                 flags.invisible = Some(*invisible);
+                true
+            }
+            // `SCCombatEngaged` (0x085) / `SCCombatCleared` (0x086): the state byte the unit frames read.
+            Event::CombatChanged { obj_id, engaged } => {
+                let Some(flags) = self.by_unit.get_mut(obj_id) else {
+                    return false;
+                };
+                if flags.engaged == *engaged {
+                    return false;
+                }
+                flags.engaged = *engaged;
                 true
             }
             Event::UnderWater { start } => {
@@ -314,7 +328,8 @@ mod tests {
             state.combat_status.get(7),
             Some(&UnitCombatFlags {
                 force_attack: Some(true),
-                invisible: None
+                invisible: None,
+                engaged: false
             })
         );
         assert!(!state.combat_status.apply(&spawn));
@@ -325,7 +340,8 @@ mod tests {
             state.combat_status.get(7),
             Some(&UnitCombatFlags {
                 force_attack: Some(false),
-                invisible: Some(true)
+                invisible: Some(true),
+                engaged: false
             })
         );
         assert!(
@@ -337,6 +353,12 @@ mod tests {
             invisible: false
         }));
         assert_eq!(state.combat_status.get(7).unwrap().invisible, Some(false));
+        let engaged = Event::CombatChanged { obj_id: 7, engaged: true };
+        assert!(state.combat_status.apply(&engaged));
+        assert!(state.combat_status.get(7).unwrap().engaged);
+        assert!(!state.combat_status.apply(&engaged));
+        state.apply(&Event::CombatChanged { obj_id: 8, engaged: true });
+        assert!(state.combat_status.get(8).is_none(), "only announced units carry the state");
         for breath in [u32::MAX, 1, 0, 1000] {
             assert!(state.combat_status.apply(&Event::SetBreath { breath }));
             assert_eq!(state.combat_status.breath, Some(breath));
@@ -350,7 +372,8 @@ mod tests {
             state.combat_status.get(7),
             Some(&UnitCombatFlags {
                 force_attack: Some(true),
-                invisible: None
+                invisible: None,
+                engaged: false
             }),
             "a reused ID must not inherit stale flags"
         );

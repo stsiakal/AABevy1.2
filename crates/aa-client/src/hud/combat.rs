@@ -37,7 +37,7 @@ fn hit_name(h: u8) -> &'static str {
 }
 
 /// A unit's name for the chat lines.
-fn unit_name(units: &Units, game: Option<&super::data::GameData>, own: &Player, id: u32) -> String {
+pub(super) fn unit_name(units: &Units, game: Option<&super::data::GameData>, own: &Player, id: u32) -> String {
     if own.spawn.as_ref().is_some_and(|s| s.obj_id == id) {
         return own.spawn.as_ref().map(|s| s.name().to_string()).unwrap_or_default();
     }
@@ -135,6 +135,20 @@ fn show_damage(
     }
 }
 
+/// `SCCombatText` (0x0ab), native `FUN_391e90b0`: type 0 raises the system synergy alert with the target, type 1
+/// shows the floating immunity text through `COMBAT_TEXT`.
+pub(super) fn combat_text(rt: &aa_ui::UiRuntime, source: u32, target: u32, text_type: u8, own_pos: Vec3, units: &Units) {
+    let id = |obj: u32| obj.to_string();
+    match text_type {
+        0 => rt.fire_event("COMBAT_TEXT_SYNERGY", (target as f64,)),
+        1 => {
+            let distance = units.get(target).map_or(0.0, |u| own_pos.distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z)) as f64);
+            rt.fire_event("COMBAT_TEXT", (id(source), id(target), 0i64, "SWING", "IMMUNE", 0i64, false, distance));
+        }
+        _ => {}
+    }
+}
+
 /// aa-net's combat events as the scripts' events (after `sync_hud` pushed this frame's state).
 #[allow(clippy::too_many_arguments)]
 pub fn route_combat(
@@ -174,6 +188,7 @@ pub fn route_combat(
             }
             // (the damage packets come with the blow: `DamageLanded`, below)
             Event::UnitDamaged(_) => {}
+            Event::CombatText { source, target, text_type } => combat_text(&rt, *source, *target, *text_type, own_pos, &units),
             Event::UnitHealed(h) => {
                 if h.target_obj_id != own && h.caster.obj_id != own {
                     continue;
@@ -207,7 +222,13 @@ pub fn route_combat(
                 bridge.0.borrow_mut().local_combat = false;
                 *over_at = now;
             }
-            Event::CombatChanged { obj_id, engaged } => debug!("hud: combat state of unit {obj_id}: {engaged}"),
+            Event::CombatChanged { obj_id, engaged } => {
+                debug!("hud: combat state of unit {obj_id}: {engaged}");
+                // the target frame redraws its combat icon; the player frame follows the pushed snapshot (`sync_hud`)
+                if *obj_id != own {
+                    rt.fire_event("UNIT_COMBAT_STATE_CHANGED", (*engaged, id(*obj_id)));
+                }
+            }
             Event::ExpChanged { obj_id, delta, .. } if *obj_id == own => {
                 rt.fire_event("EXP_CHANGED", (id(own), i64::from(*delta), delta.abs().to_string()));
             }
@@ -234,6 +255,28 @@ mod tests {
         assert_eq!(hit_name(hit_type::SPELL_CRITICAL), "CRITICAL");
         assert_eq!(hit_name(hit_type::RANGED_DODGE), "DODGE");
         assert_eq!(hit_name(hit_type::SPELL_RESIST), "RESIST");
+    }
+
+    #[test]
+    fn combat_text_routes_synergy_alerts_and_the_immune_float() -> Result<(), Box<dyn std::error::Error>> {
+        let rt = aa_ui::UiRuntime::new("en_us", 1280.0, 720.0)?;
+        rt.lua.load(r#"
+            synergy={}; text={}
+            UIParent:SetEventHandler('COMBAT_TEXT_SYNERGY', function(v) synergy[#synergy+1]=v end)
+            UIParent:SetEventHandler('COMBAT_TEXT', function(...) text[#text+1]={n=select('#',...),...} end)
+        "#).exec()?;
+        let units = Units::default();
+        combat_text(&rt, 5, 6, 0, Vec3::ZERO, &units);
+        combat_text(&rt, 5, 6, 1, Vec3::ZERO, &units);
+        combat_text(&rt, 5, 6, 2, Vec3::ZERO, &units);
+        rt.lua.load(r#"
+            assert(#synergy==1 and synergy[1]==6)
+            assert(#text==1)
+            local t=text[1]
+            assert(t.n==8 and t[1]=='5' and t[2]=='6' and t[3]==0)
+            assert(t[4]=='SWING' and t[5]=='IMMUNE' and t[6]==0 and t[7]==false and t[8]==0)
+        "#).exec()?;
+        Ok(())
     }
 
     #[test]

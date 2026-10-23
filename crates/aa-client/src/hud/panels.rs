@@ -102,6 +102,8 @@ pub struct TargetSnap {
     /// Honor gained in combat and hostile faction kills (unit tooltip `|p10;`, `|p11;`).
     pub pvp_honor: i32,
     pub pvp_kills: i32,
+    /// `X2Unit:UnitCombatState("target")`: the unit's `SCCombatEngaged` / `SCCombatCleared` byte (`target.alb:543`).
+    pub in_combat: bool,
     /// `GetUnitTypeString`: `"character"` / `"npc"`, and the detail (`"slave"`, `"housing"`, ...).
     pub unit_type: &'static str,
     pub detail: &'static str,
@@ -353,6 +355,10 @@ pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj
             max_mp: max_mp.max(u.mp),
             pvp_honor: u.pvp_honor,
             pvp_kills: u.pvp_kills,
+            in_combat: world
+                .get_resource::<aa_net::state::CombatStatus>()
+                .and_then(|c| c.get(u.obj_id))
+                .is_some_and(|f| f.engaged),
             unit_type,
             detail,
             faction_name: game.and_then(|g| g.factions.get(&faction).cloned()).unwrap_or_default(),
@@ -499,7 +505,7 @@ pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua:
                 x.raw_set("pvp_honor", i64::from(t.pvp_honor))?;
                 x.raw_set("pvp_kills", i64::from(t.pvp_kills))?;
                 x.raw_set("dead", t.hp <= 0)?;
-                x.raw_set("in_combat", false)?;
+                x.raw_set("in_combat", t.in_combat)?;
                 x.raw_set("unit_type", t.unit_type)?;
                 x.raw_set("detail", t.detail)?;
                 x.raw_set("npc_type", t.npc_type)?;
@@ -751,6 +757,23 @@ mod tests {
             .add_systems(Update, (press, see).chain());
         app.update();
         assert!(app.world().resource::<DecoSeen>().0, "item_housing_decorations uses the decoration builder");
+    }
+
+    #[test]
+    fn target_combat_state_is_exposed_to_the_target_frame() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let hud = lua.create_table()?;
+        let target = TargetSnap { in_combat: true, ..TargetSnap::default() };
+        let panels = Panels { target: Some(target), ..Panels::default() };
+        push(&lua, &hud, &panels, None)?;
+        let t: Table = hud.get("target")?;
+        assert!(t.get::<bool>("in_combat")?);
+        let target = TargetSnap { in_combat: false, ..TargetSnap::default() };
+        let panels = Panels { target: Some(target), ..Panels::default() };
+        push(&lua, &hud, &panels, None)?;
+        let t: Table = hud.get("target")?;
+        assert!(!t.get::<bool>("in_combat")?);
+        Ok(())
     }
 
     #[test]
