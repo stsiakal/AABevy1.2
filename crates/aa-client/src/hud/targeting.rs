@@ -11,8 +11,15 @@ use bevy::window::PrimaryWindow;
 use super::api::HudBridge;
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
-/// How far `Tab` looks, metres.
-const TAB_RANGE: f32 = 40.0;
+/// The seven `tab_targeting_*` cvars (`FUN_390f7b40`): a 4 m round catch, then a 50 m fan whose half angle is
+/// 60 degrees, with a 20 m height limit; the last [`TAB_HISTORY_MAX`] targets stay in the history for
+/// [`TAB_HISTORY_EXPIRE`] seconds.
+const TAB_ROUND_DIST: f32 = 4.0;
+const TAB_FAN_DIST: f32 = 50.0;
+const TAB_FAN_COS: f32 = 0.5;
+const TAB_Z_LIMIT: f32 = 20.0;
+const TAB_HISTORY_EXPIRE: f32 = 3.0;
+const TAB_HISTORY_MAX: usize = 10;
 /// How near the view ray has to pass a unit's middle for a click to select it, metres.
 const PICK_RADIUS: f32 = 1.1;
 /// A press that moves more than this many pixels before it is released was a camera drag.
@@ -22,10 +29,75 @@ fn unit_centre(pos: aa_net::Pos, scale: f32) -> Vec3 {
     aa_world::cry_to_bevy(Vec3::new(pos.x, pos.y, pos.z + 0.9 * scale.max(0.5)))
 }
 
+/// Whether a unit at `at` is inside the Tab selection volume of `me` facing `facing`: the 4 m round catch, or
+/// the 50 m / 60 degree fan below the 20 m height limit.
+fn in_tab_volume(me: Vec3, facing: f32, at: Vec3) -> bool {
+    let offset = at - me;
+    let distance = offset.length();
+    if distance <= TAB_ROUND_DIST {
+        return true;
+    }
+    let flat = offset.truncate();
+    let planar = flat.length();
+    planar <= TAB_FAN_DIST
+        && offset.z.abs() <= TAB_Z_LIMIT
+        && (planar < 1.0 || crate::ingame::player::forward(facing).dot(flat.normalize_or_zero()) >= TAB_FAN_COS)
+}
+
+/// The Tab candidates among `me` facing `facing`, nearest first.
+fn tab_candidates(me: Vec3, facing: f32, candidates: impl IntoIterator<Item = (u32, Vec3)>) -> Vec<(f32, u32)> {
+    let mut near: Vec<(f32, u32)> = candidates
+        .into_iter()
+        .filter_map(|(id, at)| in_tab_volume(me, facing, at).then_some((me.distance(at), id)))
+        .collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    near
+}
+
+/// The target after `current`: the next entry in the nearest-first list (or the previous one backwards). With no
+/// target in the list, the nearest unit the 3 s history does not hold yet, else the nearest unit.
+fn next_tab_target(near: &[(f32, u32)], current: Option<u32>, history: &[u32], backwards: bool) -> Option<u32> {
+    let len = near.len();
+    if len == 0 {
+        return None;
+    }
+    if let Some(i) = current.and_then(|t| near.iter().position(|(_, id)| *id == t)) {
+        return Some(near[(i + if backwards { len - 1 } else { 1 }) % len].1);
+    }
+    if !backwards
+        && let Some((_, id)) = near.iter().find(|(_, id)| !history.contains(id))
+    {
+        return Some(*id);
+    }
+    Some(near[if backwards { len - 1 } else { 0 }].1)
+}
+
+/// The last targets Tab picked, with the time each was picked (seconds).
+#[derive(Default)]
+pub(super) struct TabHistory(Vec<(u32, f32)>);
+
+impl TabHistory {
+    fn prune(&mut self, now: f32) {
+        self.0.retain(|(_, at)| now - at < TAB_HISTORY_EXPIRE);
+    }
+
+    fn record(&mut self, id: u32, now: f32) {
+        self.prune(now);
+        self.0.retain(|(held, _)| *held != id);
+        self.0.insert(0, (id, now));
+        self.0.truncate(TAB_HISTORY_MAX);
+    }
+
+    fn ids(&self) -> Vec<u32> {
+        self.0.iter().map(|(id, _)| *id).collect()
+    }
+}
+
 /// `Tab`: the nearest enemy that is alive and not the one targeted, the next one after it when pressed again (the
 /// client's "target nearest enemy"; with no enemy in range, any unit).
 #[allow(clippy::too_many_arguments)]
 pub fn tab_target(
+    time: Res<Time>,
     actions: Res<crate::settings::Actions>,
     focus: Res<HudKeyboardFocus>,
     bridge: NonSend<HudBridge>,
@@ -33,6 +105,7 @@ pub fn tab_target(
     target: Res<Target>,
     player: Res<Player>,
     mut script: ResMut<super::chat::ScriptedKeys>,
+    mut history: Local<TabHistory>,
     mut net: MessageWriter<NetCommand>,
 ) {
     let scripted = script.take_tab();
@@ -49,31 +122,30 @@ pub fn tab_target(
     }
     let (_, backwards, friendly) = mode.unwrap_or(("cycle_hostile_forward", false, false));
     let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
-    let (me, shared) = {
+    let (me, yaw, shared) = {
         let d = bridge.0.borrow();
-        (d.pos, d.game.clone())
+        (d.pos, d.yaw, d.game.clone())
     };
+    let now = time.elapsed_secs();
+    history.prune(now);
     let own_faction = player.spawn.as_ref().map_or(0, |s| s.character().faction_id);
     let mut near: Vec<(f32, u32, bool)> = units
         .iter()
         .filter(|u| u.obj_id != own)
         .filter(|u| !friendly || (!u.dead && super::plates::relation_of(shared.get(), own_faction, u) == "friendly"))
-        .map(|u| {
-            (me.distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z)), u.obj_id, !u.dead && super::plates::relation_of(shared.get(), own_faction, u) == "hostile")
+        .filter_map(|u| {
+            let hostile = !u.dead && super::plates::relation_of(shared.get(), own_faction, u) == "hostile";
+            let (distance, id) = tab_candidates(me, yaw, [(u.obj_id, Vec3::new(u.pos.x, u.pos.y, u.pos.z))]).pop()?;
+            Some((distance, id, hostile))
         })
-        .filter(|(d, _, _)| *d <= TAB_RANGE)
         .collect();
     if near.iter().any(|n| n.2) {
         near.retain(|n| n.2);
     }
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if near.is_empty() {
-        return;
-    }
-    let next = match target.obj_id.and_then(|t| near.iter().position(|(_, id, _)| *id == t)) {
-        Some(i) => near[(i + if backwards { near.len() - 1 } else { 1 }) % near.len()].1,
-        None => near[if backwards { near.len() - 1 } else { 0 }].1,
-    };
+    let flat: Vec<(f32, u32)> = near.iter().map(|(d, id, _)| (*d, *id)).collect();
+    let Some(next) = next_tab_target(&flat, target.obj_id, &history.ids(), backwards) else { return };
+    history.record(next, now);
     net.write(NetCommand(Command::Target { obj_id: next }));
 }
 
@@ -176,6 +248,45 @@ mod tests {
     use super::*;
     use crate::ingame::virtual_input::{inject, VirtualInput};
     use bevy::input::InputPlugin;
+
+    #[test]
+    fn tab_uses_the_round_catch_and_the_forward_fan() {
+        let me = Vec3::ZERO;
+        // 4 m round: in front or behind, inside the catch
+        assert!(in_tab_volume(me, 0.0, Vec3::new(0.0, 3.9, 0.0)));
+        assert!(in_tab_volume(me, 0.0, Vec3::new(0.0, -3.9, 0.0)));
+        assert!(!in_tab_volume(me, 0.0, Vec3::new(0.0, -4.1, 0.0)));
+        // 50 m fan, 60 degrees to either side of the facing
+        assert!(in_tab_volume(me, 0.0, Vec3::new(43.0, 25.0, 0.0)));
+        assert!(!in_tab_volume(me, 0.0, Vec3::new(46.0, 25.0, 0.0)));
+        assert!(!in_tab_volume(me, 0.0, Vec3::new(0.0, -10.0, 0.0)));
+        assert!(!in_tab_volume(me, 0.0, Vec3::new(0.0, 51.0, 0.0)));
+        // 20 m height limit
+        assert!(!in_tab_volume(me, 0.0, Vec3::new(0.0, 10.0, 20.1)));
+        assert!(in_tab_volume(me, 0.0, Vec3::new(0.0, 10.0, -19.9)));
+    }
+
+    #[test]
+    fn tab_cycles_the_list_and_skips_the_three_second_history() {
+        let near = [(1.0, 11), (2.0, 12), (3.0, 13)];
+        assert_eq!(next_tab_target(&near, Some(11), &[], false), Some(12));
+        assert_eq!(next_tab_target(&near, Some(13), &[], false), Some(11));
+        assert_eq!(next_tab_target(&near, Some(11), &[], true), Some(13));
+        assert_eq!(next_tab_target(&near, None, &[11, 12], false), Some(13));
+        assert_eq!(next_tab_target(&near, None, &[11, 12, 13], false), Some(11));
+        assert_eq!(next_tab_target(&[], None, &[], false), None);
+        // the history keeps 10 entries for 3 s
+        let mut history = TabHistory::default();
+        for id in 0..12 {
+            history.record(id, 0.0);
+        }
+        assert_eq!(history.0.len(), TAB_HISTORY_MAX);
+        assert_eq!(history.0[0].0, 11);
+        history.record(5, 2.9);
+        assert_eq!(history.0[0].0, 5);
+        history.record(6, 3.1);
+        assert_eq!(history.ids(), vec![6, 5], "entries older than 3 s are gone");
+    }
 
     /// A scripted `key escape` is a real Escape edge: the binding/input path (`settings::update_input`
     /// and `ButtonInput<KeyCode>`) sees it, and the open original window closes.
