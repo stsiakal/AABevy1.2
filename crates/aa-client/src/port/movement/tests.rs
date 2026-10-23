@@ -529,6 +529,9 @@ fn q_at(bytes: &[u8], off: usize) -> [f32; 4] {
 }
 
 fn assert_near(case: &str, what: &str, got: f32, want: f32) {
+    if got.is_nan() && want.is_nan() {
+        return;
+    }
     let scale = want.abs().max(1.0);
     assert!(
         (got - want).abs() <= 1e-5 * scale,
@@ -542,6 +545,9 @@ fn assert_q(case: &str, what: &str, got: [f32; 4], want: [f32; 4]) {
 
 fn assert_q_tol(case: &str, what: &str, got: [f32; 4], want: [f32; 4], tol: f32) {
     for i in 0..4 {
+        if got[i].is_nan() && want[i].is_nan() {
+            continue;
+        }
         let scale = want[i].abs().max(1.0);
         assert!(
             (got[i] - want[i]).abs() <= tol * scale,
@@ -789,6 +795,35 @@ fn phase_c_quadruped_ctors_match_goldens() {
             assert_q(name, "q2", got.quats[2], q_at(&want, 0x40));
             assert_q(name, "sup0", got.support[0], q_at(&want, 0x50));
             assert_q(name, "sup1", got.support[1], q_at(&want, 0x60));
+        }
+    }
+}
+
+#[test]
+fn phase_c_rotation_bind_matches_goldens() {
+    let doc = phase_c();
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("rot_bind_") {
+            continue;
+        }
+        let rot_before = hex_bytes(case["rotation_before"].as_str().unwrap());
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        let rot = rotation_from(&rot_before);
+        let got = rot.bind();
+        assert_q(name, "move0", got.move_quats[0], q_at(&want, 0x2b0));
+        assert_q(name, "move1", got.move_quats[1], q_at(&want, 0x2c0));
+        assert_q(name, "move2", got.move_quats[2], q_at(&want, 0x2d0));
+        assert_q(name, "sup0", got.support_quats[0], q_at(&want, 0x33c));
+        assert_q(name, "sup1", got.support_quats[1], q_at(&want, 0x34c));
+        for (i, w) in [0x950usize, 0x954, 0x958, 0x95c].iter().enumerate() {
+            assert_near(name, "out_pos", got.out_pos[i], f_at(&want, *w));
+        }
+        for (i, w) in [0x960usize, 0x964, 0x968].iter().enumerate() {
+            assert_near(name, "swim", got.swim[i], f_at(&want, *w));
+        }
+        for (i, w) in [0x154usize, 0x158, 0x15c].iter().enumerate() {
+            assert_near(name, "view", got.view_limit[i], f_at(&want, *w));
         }
     }
 }
