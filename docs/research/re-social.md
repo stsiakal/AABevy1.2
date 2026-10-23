@@ -217,8 +217,8 @@ i32 amount`; `CSPutupTradeMoney 0x0f1` i32; `CSTakedownTradeItem 0x0f2` `(slotTy
 `CSTradeLock 0x0f3` bool; `CSTradeOk 0x0f4` empty (only after lock). UI drags use the cursor-picked
 amount (`trade.alb` proto 21.1 lines 328-338 -> `PutupTradeItem(index,amount)`), i.e. partial stacks
 are supported. Lock click locks both item and money panes; OK only unlocks after both sides lock
-(`trade.alb:437-446`). The client starts trades only within the squared range `DAT_39ac9b84 = 25.0`,
-i.e. **5 m** (`FUN_394fd9a0` / `FUN_394fddf0`; the doc's earlier "25 m" was the squared value) [R].
+(`trade.alb:437-446`). The client starts trades only within the **5 m surface gap** (`sqrt(DAT_39ac9b84 = 25.0)`
+via `FUN_3989bf90`; `FUN_394fd9a0` / `FUN_394fddf0`; the doc's earlier "25 m" was the squared value) [R].
 The server has no range check (`economy/trade.rs`).
 
 ## 3. Numeric parameters
@@ -241,7 +241,7 @@ The server has no range check (`economy/trade.rs`).
 | Family roster | 8 x 0xF0 B; page 10 | addedIndex 0x794; family_tab_view.alb |
 | Friends/block row | 0xD0 / 0x88 B; page 10 | FUN_39304550/393035d0 |
 | Mail | 10 attachments; page 14; 128/400/1600 B; fee 50/100+30/80; delay 30 min | mail/common.alb; mail.rs:148-155 |
-| Trade | 30 tasks; 5 m start range | packets/economy/trade.rs; DAT_39ac9b84 = 25.0 |
+| Trade | 30 tasks; 5 m start surface gap | packets/economy/trade.rs; DAT_39ac9b84 = 25.0 |
 
 ## 4. What is inferred
 

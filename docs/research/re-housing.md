@@ -29,7 +29,7 @@ Construction actions are ordinary unit skills, one per `housing_build_steps` row
 
 ### 1.3 Construction/material window of an unfinished house
 
-Interaction with any house runs `FUN_393befd0`: it checks the 3 m range (`DAT_39ac79fc = 9.0` squared) and selection, **sends `CSRequestHouseTax` (0x5C, `tl u16`)**, stores the selected `tl`, and fires `HOUSE_INTERACTION_START` (0x6D) with `(unit type, house category, 1)`, where the category string is `seafarm` for `housings.category_id 7`, `farm` for 8/16/17, `house` for 9/10/11/12/15/18, else nil. **[R]** (`FUN_393befd0`; event id from the registration order of `FUN_39214380`, cross-checked by the measured `BUILDER_STEP` 0x224).
+Interaction with any house runs `FUN_393befd0`: it checks the 3 m surface gap (`sqrt(DAT_39ac79fc = 9.0)`, `FUN_3989bf90`) and selection, **sends `CSRequestHouseTax` (0x5C, `tl u16`)**, stores the selected `tl`, and fires `HOUSE_INTERACTION_START` (0x6D) with `(unit type, house category, 1)`, where the category string is `seafarm` for `housings.category_id 7`, `farm` for 8/16/17, `house` for 9/10/11/12/15/18, else nil. **[R]** (`FUN_393befd0`; event id from the registration order of `FUN_39214380`, cross-checked by the measured `BUILDER_STEP` 0x224).
 
 `housing_manager.alb` proto 0 handles the event: if `IsHouseUnderConstruction()` it calls `ShowMaterialWindow(true)`; if `IsCastle()` it also fills it; otherwise it opens the maintain window (own vs other variant). So **the interaction only opens the window; it never casts a build skill**. The window itself (`material.alb`) is created once, its `okButton` `OnHide` only refreshes step info, and its `Demolish` button (enabled only when `IsMyHouse`) asks a default dialog then calls `X2House:Demolish()`. **[R]** (`material.alb` proto 0, 0.0, 0.1; `housing_manager.alb` proto 0).
 
@@ -146,7 +146,7 @@ C→S: `CSConstructHouseTax` 0x56, `CSCreateHouse` 0x57, `CSDecorateHouse` 0x58,
 ## 5. Open questions
 
 * Does the retail client cast the build-step skill on interaction or only on G? The code says only the window opens; a capture settles it.
-* House interaction range and farm-list request interval are resolved: 3 m (`DAT_39ac79fc = 9.0`) and 2.0 s (`_DAT_3999d848`), both applied in `a7cdef3` / `4983865`.
+* House interaction range and farm-list request interval are resolved: 3 m surface gap (`sqrt(DAT_39ac79fc = 9.0)`) and 2.0 s (`_DAT_3999d848`), both applied in `a7cdef3` / `4983865`.
 * Second tax certificate id (31892) and whether `CountTaxItemForTax` uses the item price or a hardcoded divisor.
 * A decoration capture for the validation order, cursor states and the exact `CSDecorateHouse` quaternion/parent semantics.
 * How the 1.2 server fills a house unit's skill list (the F/G source) and whether the owner-only craft skill is per-viewer.

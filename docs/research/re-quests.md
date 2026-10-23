@@ -297,7 +297,7 @@ NPC service reach is **3 m** for shops ("3m should be enough for NPC shops", C# 
 preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
 (`.../store.rs:205-209`). `CSStartInteractionPacket` itself has only a
 `TODO (C#): Distance-check` (`.../npc/packets.rs:296`), so the client is expected to gate it.
-The generic interaction gate is the squared `DAT_39ac79fc = 9.0`, i.e. **3 m** (`FUN_39093860`;
+The generic interaction gate is the **3 m surface gap** (`sqrt(DAT_39ac79fc = 9.0)` via `FUN_3989bf90`, `FUN_39093860`;
 the quest-talk call site itself was not isolated, but it uses that gate). `[R range / I call site]`
 
 ## 3. Numeric parameters
@@ -319,7 +319,7 @@ the quest-talk call site itself was not isolated, but it uses that gate). `[R ra
 |Cart|1×10|`store/common.alb:7-8`|
 |Sell grid|2×8|`store/common.alb:5`|
 |Buy-back grid|2×7 = 14 cells, 12 items|`store/rebuy.alb:9`; server truncates 12|
-|NPC talk/interaction range|3 m|`DAT_39ac79fc = 9.0`; `FUN_39093860`|
+|NPC talk/interaction surface gap|3 m|`DAT_39ac79fc = 9.0`; `FUN_39093860` / `FUN_3989bf90`|
 |Shop range|3 m|`store.rs:201-203`|
 |Bank/auction range|5 m|`store.rs:205-209`|
 |Selected reward slots|3|`questcontext_common.alb:1077,1086`|

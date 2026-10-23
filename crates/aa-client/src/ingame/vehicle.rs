@@ -15,6 +15,7 @@ use super::data::{Db, VehicleBody};
 use super::player::{PlayerInput, approach_angle, forward, placement};
 use super::units::{RemoteUnit, Views};
 use crate::hud::{HudKeyboardFocus, HudPointerOverUi};
+use crate::interaction::Shape;
 
 const VEHICLE_STEP_UP: f32 = 0.5;
 const VEHICLE_ACCEL: f32 = 8.0;
@@ -68,17 +69,18 @@ fn towards(current: f32, target: f32, max_delta: f32) -> f32 {
     }
 }
 
-/// How close the gunner must stand to a ship's cannon to man it (metres). Standing aboard is not
-/// reported to the client, so being this near a cannon is the "aboard" test; the server decides who
-/// may man it (`may_man_cannon`: the summoner, the ship's owner or anybody aboard).
+/// How close the gunner must stand to a ship's cannon to man it (metres): the surface gap of
+/// `FUN_39093860` / `FUN_398b1af0`, not the origin distance. Standing aboard is not reported to the
+/// client, so being this near a cannon is the "aboard" test; the server decides who may man it
+/// (`may_man_cannon`: the summoner, the ship's owner or anybody aboard).
 pub(super) const CANNON_REACH: f32 = 3.0;
 
-/// The timeline id of the cannon `player` can man: the nearest of `cannons` (timeline, position) within
-/// [`CANNON_REACH`].
-pub(super) fn nearest_cannon(player: Vec3, cannons: impl IntoIterator<Item = (u16, Vec3)>) -> Option<u16> {
+/// The timeline id of the cannon `player` can man: the nearest of `cannons` (timeline, position, shape)
+/// whose surface gap is within [`CANNON_REACH`] (`FUN_39093860` / `FUN_398b1af0`).
+pub(super) fn nearest_cannon(player: Vec3, player_radius: f32, cannons: impl IntoIterator<Item = (u16, Vec3, Option<Shape>)>) -> Option<u16> {
     cannons
         .into_iter()
-        .map(|(tl, pos)| (tl, pos.distance(player)))
+        .map(|(tl, pos, shape)| (tl, shape.map_or_else(|| pos.distance(player), |shape| shape.gap(player, player_radius))))
         .filter(|(_, d)| *d <= CANNON_REACH)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(tl, _)| tl)
@@ -99,6 +101,7 @@ pub fn vehicle_seat(
     views: Option<Res<Views>>,
     visuals: Query<&RemoteUnit>,
     driven: Query<&DrivenSlave>,
+    measure: crate::interaction::UnitBounds,
     mover: Query<&super::player::Mover, With<super::player::LocalPlayer>>,
     target: Option<Res<aa_net::state::Target>>,
     mut out: MessageWriter<NetCommand>,
@@ -107,6 +110,7 @@ pub fn vehicle_seat(
     mut last: Local<f32>,
 ) {
     let Some(spawn) = player.spawn.as_ref() else { return };
+    let player_radius = db.as_deref().map_or(0.0, |db| db.mount_move(spawn.unit.model_id).radius * spawn.unit.scale.max(0.1));
     let now = time.elapsed_secs();
     let attached = spawn.unit.attached_to;
     let riding_slave = attached.and_then(|a| units.get(a.obj_id)).filter(|u| matches!(u.kind, UnitKind::Slave { .. }));
@@ -154,10 +158,14 @@ pub fn vehicle_seat(
                     .and_then(|v| v.unit_entity(u.obj_id))
                     .and_then(|e| visuals.get(e).ok())
                     .map_or(u.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
-                (tl_id, Vec3::new(at.x, at.y, at.z))
+                let shape = views
+                    .as_deref()
+                    .and_then(|v| v.unit_entity(u.obj_id))
+                    .and_then(|e| measure.shape(e));
+                (tl_id, Vec3::new(at.x, at.y, at.z), shape)
             })
         });
-        if let Some(tl_id) = nearest_cannon(me, cannons) {
+        if let Some(tl_id) = nearest_cannon(me, player_radius, cannons) {
             out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
             *last = now;
             return;
@@ -179,7 +187,11 @@ pub fn vehicle_seat(
             .filter(|s| matches!(s.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(s.model_id))
             .map(|s| (s, false))
             .or_else(|| {
-                let id = pick_land_vehicle(me, facing, attached.is_some(), units.by_id.values().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(u.model_id)).map(|u| (u.obj_id, visual_pos(u))))?;
+                let candidates = units.by_id.values().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(u.model_id)).map(|u| {
+                    let shape = views.as_deref().and_then(|v| v.unit_entity(u.obj_id)).and_then(|e| measure.shape(e));
+                    (u.obj_id, visual_pos(u), shape)
+                });
+                let id = pick_land_vehicle(me, player_radius, facing, attached.is_some(), candidates)?;
                 units.get(id).map(|s| (s, true))
             })
         && let UnitKind::Slave { tl_id, summoner_id, .. } = slave.kind
@@ -193,7 +205,12 @@ pub fn vehicle_seat(
             _ => 0,
         };
         let occupied = units.by_id.values().any(|u| u.attached_to.is_some_and(|a| a.obj_id == slave.obj_id));
-        let check = BoardCheck { player_dead: spawn.unit.dead, player_attached: attached.is_some(), slave_dead: slave.dead, occupied, distance: me.distance(at), owner: summoner_id == char_id };
+        let distance = views
+            .as_deref()
+            .and_then(|v| v.unit_entity(slave.obj_id))
+            .and_then(|e| measure.shape(e))
+            .map_or_else(|| me.distance(at), |shape| shape.gap(me, player_radius));
+        let check = BoardCheck { player_dead: spawn.unit.dead, player_attached: attached.is_some(), slave_dead: slave.dead, occupied, distance, owner: summoner_id == char_id };
         match board_refusal(&check) {
             None => {
                 out.write(NetCommand(Command::Slave(SlaveCommand::Bind { tl_id })));
@@ -224,7 +241,12 @@ pub fn vehicle_seat(
         .and_then(|v| v.unit_entity(own.obj_id))
         .and_then(|e| visuals.get(e).ok())
         .map_or(unit.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
-    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= PICK_RANGE;
+    let near = views
+        .as_deref()
+        .and_then(|v| v.unit_entity(own.obj_id))
+        .and_then(|e| measure.shape(e))
+        .map_or_else(|| Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)), |shape| shape.gap(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z), player_radius))
+        <= PICK_RANGE;
     if !near {
         return;
     }
@@ -243,8 +265,9 @@ pub fn vehicle_seat(
     }
 }
 
-/// How far the interaction key reaches for a land vehicle when nothing is targeted (metres). `FUN_393bf270` picks the
-/// squared range `DAT_39ac79fc = 9.0` (3 m); `DAT_39ac7a00 = 12.25` (3.5 m) while its `+0x3c26` attached flag is set.
+/// How far the interaction key reaches for a land vehicle when nothing is targeted (metres of surface gap).
+/// `FUN_393bf270` compares the gap of `FUN_3989bf90` with `sqrt(DAT_39ac79fc = 9.0)` (3 m), or
+/// `sqrt(DAT_39ac7a00 = 12.25)` (3.5 m) while its `+0x3c26` attached flag is set.
 pub(crate) const PICK_RANGE: f32 = 3.0;
 pub(crate) const PICK_RANGE_MOUNTED: f32 = 3.5;
 /// The forward cone of that pick: the cosine of its half angle (60 degrees; a stand-in, the live measurement only says "facing").
@@ -252,13 +275,19 @@ pub(crate) const PICK_COS: f32 = 0.5;
 
 /// The land vehicle the interaction key picks without a target: the nearest of `candidates` (`obj_id`, position) within
 /// [`PICK_RANGE`] (or [`PICK_RANGE_MOUNTED`] while `mounted`) of `me` and in front of `facing` (radians, 0 = north).
-pub(crate) fn pick_land_vehicle(me: Vec3, facing: f32, mounted: bool, candidates: impl IntoIterator<Item = (u32, Vec3)>) -> Option<u32> {
+pub(crate) fn pick_land_vehicle(
+    me: Vec3,
+    player_radius: f32,
+    facing: f32,
+    mounted: bool,
+    candidates: impl IntoIterator<Item = (u32, Vec3, Option<Shape>)>,
+) -> Option<u32> {
     let forward = forward(facing);
     let range = if mounted { PICK_RANGE_MOUNTED } else { PICK_RANGE };
     candidates
         .into_iter()
-        .filter_map(|(id, at)| {
-            let distance = me.distance(at);
+        .filter_map(|(id, at, shape)| {
+            let distance = shape.map_or_else(|| me.distance(at), |shape| shape.gap(me, player_radius));
             let toward = (at - me).truncate();
             // standing on top of it counts as facing it
             let ahead = toward.length() < 1.0 || forward.dot(toward.normalize_or_zero()) >= PICK_COS;
@@ -279,8 +308,8 @@ pub(super) fn unbind_refused(speed: f32) -> bool {
     speed * speed > UNBIND_MAX_SPEED * UNBIND_MAX_SPEED
 }
 
-/// How far the player may stand from a slave and still board it (metres). The bind precheck
-/// `FUN_39346290` uses the squared range `DAT_39ac7408 = 16.0`, i.e. 4 m.
+/// How far the player may stand from a slave and still board it (metres of surface gap). The bind
+/// precheck `FUN_39346290` compares `FUN_3989bf90` with `sqrt(DAT_39ac7408 = 16.0)`, i.e. 4 m.
 pub(super) const BOARD_RANGE: f32 = 4.0;
 
 /// What the boarding precheck looks at (`FUN_39346290`).
@@ -464,10 +493,10 @@ mod tests {
     #[test]
     fn the_nearest_cannon_in_reach_is_manned() {
         let me = Vec3::new(10.0, 10.0, 2.0);
-        let cannons = [(3, Vec3::new(13.0, 10.0, 2.0)), (4, Vec3::new(11.0, 10.0, 2.0)), (5, Vec3::new(40.0, 10.0, 2.0))];
-        assert_eq!(nearest_cannon(me, cannons), Some(4));
-        assert_eq!(nearest_cannon(me, [(5, Vec3::new(40.0, 10.0, 2.0)), (6, Vec3::new(10.0, 10.0, 2.0 + CANNON_REACH + 0.1))]), None);
-        assert_eq!(nearest_cannon(me, []), None);
+        let cannons = [(3, Vec3::new(13.0, 10.0, 2.0), None), (4, Vec3::new(11.0, 10.0, 2.0), None), (5, Vec3::new(40.0, 10.0, 2.0), None)];
+        assert_eq!(nearest_cannon(me, 0.0, cannons), Some(4));
+        assert_eq!(nearest_cannon(me, 0.0, [(5, Vec3::new(40.0, 10.0, 2.0), None), (6, Vec3::new(10.0, 10.0, 2.0 + CANNON_REACH + 0.1), None)]), None);
+        assert_eq!(nearest_cannon(me, 0.0, []), None);
     }
 
     #[test]
@@ -618,19 +647,22 @@ pub(crate) mod flow_tests {
     #[test]
     fn the_pick_takes_the_nearest_vehicle_in_the_forward_cone() {
         let me = Vec3::ZERO;
-        let near_left = (1, Vec3::new(-2.9, 0.5, 0.0)); // 80 degrees off: outside the cone
-        let ahead = (2, Vec3::new(0.0, 2.8, 0.0));
-        let nearer_ahead = (3, Vec3::new(0.5, 2.0, 0.0));
-        assert_eq!(pick_land_vehicle(me, 0.0, false, [near_left, ahead, nearer_ahead]), Some(3));
-        assert_eq!(pick_land_vehicle(me, 0.0, false, [near_left]), None);
+        let near_left = (1, Vec3::new(-2.9, 0.5, 0.0), None); // 80 degrees off: outside the cone
+        let ahead = (2, Vec3::new(0.0, 2.8, 0.0), None);
+        let nearer_ahead = (3, Vec3::new(0.5, 2.0, 0.0), None);
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, false, [near_left, ahead, nearer_ahead]), Some(3));
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, false, [near_left]), None);
         // facing east (-pi/2 turns left of north is west; +pi/2 is east in this convention: forward = (-sin, cos))
-        assert_eq!(pick_land_vehicle(me, -std::f32::consts::FRAC_PI_2, false, [(4, Vec3::new(3.0, 0.0, 0.0))]), Some(4));
-        assert_eq!(pick_land_vehicle(me, 0.0, false, [(5, Vec3::new(3.0, 0.0, 0.0))]), None);
+        assert_eq!(pick_land_vehicle(me, 0.0, -std::f32::consts::FRAC_PI_2, false, [(4, Vec3::new(3.0, 0.0, 0.0), None)]), Some(4));
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, false, [(5, Vec3::new(3.0, 0.0, 0.0), None)]), None);
         // mounted reach is 3.5 m (`DAT_39ac7a00 = 12.25`)
-        assert_eq!(pick_land_vehicle(me, 0.0, true, [(7, Vec3::new(0.0, 3.4, 0.0))]), Some(7));
-        assert_eq!(pick_land_vehicle(me, 0.0, true, [(8, Vec3::new(0.0, 3.6, 0.0))]), None);
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, true, [(7, Vec3::new(0.0, 3.4, 0.0), None)]), Some(7));
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, true, [(8, Vec3::new(0.0, 3.6, 0.0), None)]), None);
+        // a model box is measured to its wall, not its origin
+        let wall = Shape::Box { min: Vec3::new(-1.0, 2.0, 0.0), max: Vec3::new(1.0, 6.0, 2.0) };
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, false, [(9, Vec3::new(0.0, 6.0, 0.0), Some(wall))]), Some(9));
         // standing on it counts as facing it
-        assert_eq!(pick_land_vehicle(me, 0.0, false, [(6, Vec3::new(0.0, -0.5, 0.0))]), Some(6));
+        assert_eq!(pick_land_vehicle(me, 0.0, 0.0, false, [(6, Vec3::new(0.0, -0.5, 0.0), None)]), Some(6));
     }
 
     #[test]
