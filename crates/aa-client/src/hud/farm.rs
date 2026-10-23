@@ -17,7 +17,7 @@
 //! listens for. `itemType` is the item template from `farm_group_doodads` (the packet carries the doodad template),
 //! `leftGrowthTime` / `leftProtectTime` are seconds, and `growUp` says the growth is over (`time_left == 0`).
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aa_net::{Command, CommonFarmList, Farms, NetCommand, ShowCommonFarm};
 use aa_ui::UiRuntime;
@@ -66,6 +66,8 @@ pub struct View {
     /// The last show / list the scripts were told about.
     pub last_show: Option<ShowCommonFarm>,
     pub last_list: Option<CommonFarmList>,
+    /// When the client last asked for the list: `FUN_39035560` waits `_DAT_3999d848` (2.0 s) between sends.
+    pub last_list_request: Option<Instant>,
     /// Events waiting for the HUD to be up (`None` when there is no HUD yet).
     pub pending_open: Option<i32>,
     pub pending_update: bool,
@@ -106,6 +108,19 @@ pub fn farm_rows(
 /// Seconds since the unix epoch (the server's `plant_time`).
 pub fn now_unix() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+/// `_DAT_3999d848`: the public-farm list request interval (`FUN_39035560`).
+const FARM_LIST_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Whether `CSRequestCommonFarmList` may go out now, recording the send (`FUN_39035560` refuses while the
+/// elapsed constant has not passed).
+pub(super) fn may_request(view: &mut View, now: Instant) -> bool {
+    if view.last_list_request.is_some_and(|last| now.duration_since(last) < FARM_LIST_INTERVAL) {
+        return false;
+    }
+    view.last_list_request = Some(now);
+    true
 }
 
 fn groups(game: &GameData) -> Vec<Group> {
@@ -192,7 +207,9 @@ fn track(
         view.last_show = farms.show;
         if let Some(show) = farms.show {
             view.pending_open = Some(show.farm_type);
-            net.write(NetCommand(Command::RequestCommonFarmList));
+            if may_request(view, Instant::now()) {
+                net.write(NetCommand(Command::RequestCommonFarmList));
+            }
         }
     }
     if farms.list != view.last_list {
@@ -389,6 +406,16 @@ mod tests {
         assert_eq!((rows[0].left_growth_time, rows[0].left_protect_time, rows[0].grow_up), (5, 3_600, false));
         assert_eq!((rows[1].left_growth_time, rows[1].left_protect_time, rows[1].grow_up), (0, 3_600, true));
         assert_eq!((rows[0].v_pos_x, rows[0].v_pos_y), (100.0, 200.0));
+    }
+
+    #[test]
+    fn list_requests_wait_the_two_second_interval() {
+        let mut view = View::default();
+        let start = Instant::now();
+        assert!(may_request(&mut view, start));
+        assert!(!may_request(&mut view, start + Duration::from_millis(1_999)));
+        assert!(may_request(&mut view, start + FARM_LIST_INTERVAL));
+        assert!(!may_request(&mut view, start + FARM_LIST_INTERVAL + Duration::from_millis(1)));
     }
 
     #[test]
