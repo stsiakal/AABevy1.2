@@ -320,21 +320,24 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
    and `aa-net::ActionBar` had only the flat 85 slots (`aa-net/src/items.rs:121`). Fix: expose page
    state, map page N to slot offset, fire the event, and send the same `CSUpdateActionSlot` when a
    page's slot changes.
-2. **Target combat state is hardcoded off.** Original `target.alb:543` calls
-   `UnitCombatState("target")`; Bevy writes `in_combat:false` for every target
-   (`aa-client/src/hud/panels.rs:488`). Fix: carry `SCCombatEngaged/Cleared` per unit and return it.
-3. **`SCCombatText` (0x0ab) is dropped.** Original `FUN_391e90b0` shows `text_type 0` as a system alert
-   and `text_type 1` as a floating text. `aa-net` decodes it (`session.rs:681,1997`) but no aa-client
-   system reads `Event::CombatText`. Fix: route it to `SYSMSG`/`COMBAT_TEXT` like damage.
-4. **Resurrection countdown loses the flag and the server wait.** Original `FUN_39495c00` returns
-   `(flag, 300000-remaining, waitMs-remaining)`, all in ms. Bevy `hud/api.rs:581` returns one 5-minute
-   value in seconds and ignores the death packet's `resurrect_wait_ms` and the notify flag; the death
-   window's text and button gates (`0.7.4`, lines 301-318) cannot work. Fix: return the three values
-   from the death packet and the 5-minute deadline.
-5. **`PLAYER_RESURRECTION` is never fired.** Original `FUN_391d39f0` fires it (id 92), which switches
-   the death window to resurrection mode (`death_...alb:250-320`). Bevy only fires `UNIT_DEAD` and
-   `PLAYER_RESURRECTED` (`hud/alerts.rs:222-228`); `revive_caster` is tracked and exposed as `can_resurrect_here`, but the event is not fired. Fix: fire
-   `PLAYER_RESURRECTION` with the caster name when `ResurrectionOffered` arrives.
+2. **Target combat state - done in `2a5919e`.** Original `target.alb:543` calls
+   `UnitCombatState("target")`; Bevy wrote `in_combat:false` for every target. `aa-net`'s
+   `CombatStatus` now carries the `SCCombatEngaged` / `SCCombatCleared` byte per announced unit,
+   `panels::refresh` puts it in the target snapshot, and `combat::route_combat` raises
+   `UNIT_COMBAT_STATE_CHANGED` for the target frame.
+3. **`SCCombatText` (0x0ab) - done in `2a5919e`.** Original `FUN_391e90b0` shows `text_type 0` as a
+   system alert and `text_type 1` as a floating text. `aa-client` now routes `Event::CombatText`:
+   type 0 raises `COMBAT_TEXT_SYNERGY` with the target, type 1 raises `COMBAT_TEXT` with the native
+   `SWING` / `IMMUNE` values; other types are ignored.
+4. **Resurrection countdown - done in `6d646af`.** `FUN_39495c00` returns the notify flag, the
+   remaining automatic 300 000 ms deadline and the remaining death packet wait. The HUD keeps both
+   deadlines (`death_started` / `death_ends` from `resurrect_wait_ms`), `X2Player:GetResurrectionCountdown`
+   returns `(flag, 5-minute seconds, server-wait seconds)` as the scripts format them, and tests cover
+   the full three-value contract.
+5. **`PLAYER_RESURRECTION` - done in `6d646af`.** `FUN_391d39f0` sets the offer flag and fires id 92.
+   `ResurrectionOffered` now raises `PLAYER_RESURRECTION` with the caster's unit id; the death window
+   resolves its name through `X2Unit:GetUnitNameById` (a new `HUD.unit_name` fallback for a caster
+   outside player/target/party) and switches to resurrection mode. Covered by tests.
 6. **Tab targeting does not match the original.** Bevy `hud/targeting.rs:13` uses a 40 m nearest-unit
    list sorted by distance, no 60 deg fan, no 50 m fan distance, no 20 m z limit, no 4 m round catch and no
    3 s/10-entry history. Fix: implement the seven `tab_targeting_*` defaults above (4/50/60/20/3/10).
