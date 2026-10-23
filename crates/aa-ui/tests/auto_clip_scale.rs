@@ -312,3 +312,14 @@ fn original_chat_default_and_option_scale_keep_full_hover_text_and_physical_clic
     }
     assert!(ui.errors.is_empty(), "{:?}", ui.errors);
 }
+
+#[test]
+fn set_ui_scale_accepts_any_positive_value_and_ignores_invalid_ones() {
+    let ui = UiRuntime::new("en_us", 1920., 1080.).unwrap();
+    run(&ui, "UIParent:SetUIScale(2)");
+    assert_eq!(lua::ui(&ui.lua).ui_scale, 2.0);
+    run(&ui, "UIParent:SetUIScale(0.75)");
+    assert_eq!(lua::ui(&ui.lua).ui_scale, 0.75);
+    run(&ui, "UIParent:SetUIScale(0);UIParent:SetUIScale(-1);UIParent:SetUIScale(0/0)");
+    assert_eq!(lua::ui(&ui.lua).ui_scale, 0.75);
+}

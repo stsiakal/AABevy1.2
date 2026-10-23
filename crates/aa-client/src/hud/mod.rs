@@ -606,6 +606,10 @@ fn hud_up(built: Res<HudBuilt>) -> bool {
 /// A fresh UI runtime (not yet the one the renderer draws), ready to be built a step at a time from
 /// the current snapshot. `None` while the window has no size yet.
 fn start_stage(world: &mut World) -> Option<BuildingStage> {
+    // The stage's scripts read the character's option bucket as they load.
+    if let Some(spawn) = &world.resource::<Player>().spawn {
+        crate::settings::set_character(spawn.character().id);
+    }
     let (w, h) = {
         let mut q = world.query_filtered::<&Window, With<PrimaryWindow>>();
         let window = q.single(world).ok()?;
@@ -703,6 +707,9 @@ fn drop_prebuilt(world: &mut World) {
 /// Starts the HUD: swaps in the stage built during loading, or builds one now (`--enter-world` has no
 /// loading screen), then raises the events of entering the world.
 fn build_hud(world: &mut World) {
+    if let Some(spawn) = &world.resource::<Player>().spawn {
+        crate::settings::set_character(spawn.character().id);
+    }
     let bridge = world.non_send::<api::HudBridge>().0.clone();
     // Native widgets query skill/item tables while loading; wait for the background DB read.
     if bridge.borrow().game.get().is_none() { return; }

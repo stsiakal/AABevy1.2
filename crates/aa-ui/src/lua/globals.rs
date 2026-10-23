@@ -70,7 +70,8 @@ pub(crate) fn install(lua: &Lua) -> mlua::Result<()> {
     def(
         "SetUIScale",
         method(lua, |lua, _, a| {
-            let s = a.opt_f(1).unwrap_or(1.0).clamp(0.5, 2.0);
+            // The native cvar accepts the page's whole 0.8..1.2 range and any other positive value it is given.
+            let Some(s) = a.opt_f(1).filter(|s| s.is_finite() && *s > 0.0) else { return none() };
             let mut u = ui(lua);
             u.animations.set_ui_scale(s);
             if u.ui_scale != s {

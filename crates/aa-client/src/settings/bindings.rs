@@ -277,7 +277,7 @@ pub(super) fn map(store: &Arc<Mutex<super::Store>>) -> mlua::Result<Arc<Mutex<Ke
     if let Some(map) = &s.bindings {
         return Ok(map.clone());
     }
-    let map = Arc::new(Mutex::new(Keymap::new(s.data.get("bindings")).map_err(mlua::Error::external)?));
+    let map = Arc::new(Mutex::new(Keymap::new(s.bindings_json()).map_err(mlua::Error::external)?));
     s.bindings = Some(map.clone());
     Ok(map)
 }
@@ -426,9 +426,12 @@ pub(super) fn install(lua: &Lua, store: Arc<Mutex<super::Store>>) -> mlua::Resul
             };
             aa_ui::lua::fire_ui_event(lua, "UPDATE_BINDINGS", vec![]);
             let mut s = store.lock().unwrap_or_else(|e| e.into_inner());
-            if s.data.get("bindings") != Some(&value) {
-                s.data.insert("bindings".into(), value);
+            if s.bindings_json() != Some(&value) {
+                let character = s.set_bindings(value);
                 s.dirty = true;
+                if character {
+                    super::character::mark_bindings(s.character);
+                }
             }
             if let Err(e) = s.save() {
                 bevy::log::warn!("settings: hotkey save: {e:#}");

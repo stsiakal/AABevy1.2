@@ -452,9 +452,9 @@ pub struct GliderModel;
 #[derive(Component)]
 pub struct StowedPack;
 
-/// Whether option 56 is on (the option's default is taken as 1, like its neighbour 55).
+/// Whether option 56 is on (`glider_start_with_double_jump` registers 0 in 1.2).
 pub fn double_jump_on(saved: Option<f64>) -> bool {
-    saved.or_else(|| crate::settings::native_default(DOUBLE_JUMP_OPTION)).is_none_or(|v| v != 0.0)
+    saved.or_else(|| crate::settings::native_default(DOUBLE_JUMP_OPTION)).is_some_and(|v| v != 0.0)
 }
 
 /// Whether a jump press in the air opens the glider: the option is on, the character is in the air, in a freefall or `DEPLOY_HEIGHT`
@@ -1174,7 +1174,7 @@ mod tests {
         assert!(!may_deploy(true, false, false, false, 9.0, false), "on the ground");
         assert!(!may_deploy(true, true, true, false, 9.0, false), "swimming");
         assert!(!may_deploy(true, true, false, false, 9.0, true), "already flying");
-        assert!(double_jump_on(None) && double_jump_on(Some(1.0)) && !double_jump_on(Some(0.0)));
+        assert!(!double_jump_on(None) && double_jump_on(Some(1.0)) && !double_jump_on(Some(0.0)));
     }
 
     #[derive(Resource, Default)]
