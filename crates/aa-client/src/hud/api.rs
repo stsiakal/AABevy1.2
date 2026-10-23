@@ -940,7 +940,7 @@ pub(super) fn emote_command(emotes: Option<&crate::ingame::emote::Emotes>, messa
 }
 
 /// Carry out what the scripts asked for.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_requests(
     bridge: NonSend<HudBridge>,
     mut net: MessageWriter<NetCommand>,
@@ -957,10 +957,29 @@ pub fn handle_requests(
     mut plant: MessageWriter<crate::ingame::placement::PlantPressed>,
     mut house: MessageWriter<crate::ingame::placement::HousePressed>,
     mut placement: Option<ResMut<crate::ingame::placement::Placement>>,
-    (emotes, rt): (Option<Res<crate::ingame::emote::Emotes>>, Option<NonSend<UiRuntime>>),
+    (emotes, rt, units, chat): (
+        Option<Res<crate::ingame::emote::Emotes>>,
+        Option<NonSend<UiRuntime>>,
+        Option<Res<aa_net::state::Units>>,
+        Option<Res<aa_net::state::Chat>>,
+    ),
 ) {
     let requests = std::mem::take(&mut bridge.0.borrow_mut().requests);
     let selected = target.obj_id;
+    let self_name = bridge.0.borrow().snapshot.name.clone();
+    let slash_target = target.obj_id.and_then(|id| {
+        if id != 0 && id == skills.obj_id {
+            return Some(super::slash::Target {
+                name: &self_name,
+                is_player: true,
+            });
+        }
+        units.as_ref().and_then(|units| units.get(id)).map(|unit| super::slash::Target {
+            name: &unit.name,
+            is_player: matches!(unit.kind, aa_net::model::UnitKind::Character { .. }),
+        })
+    });
+    let channels = chat.as_ref().map_or(&[][..], |chat| chat.channels.as_slice());
     for request in requests {
         match request {
             Request::Party(command) => { net.write(NetCommand(Command::Party(command))); }
@@ -1029,6 +1048,17 @@ pub fn handle_requests(
                 if let Some(emotion_id) = emote_command(emotes.as_deref(), &message) {
                     let target_obj_id = selected.filter(|&t| t != skills.obj_id).unwrap_or(0);
                     net.write(NetCommand(Command::ExpressEmotion { emotion_id, target_obj_id }));
+                    continue;
+                }
+                // The original native input consumes an `ExpressText` or `SlashFunction` before
+                // the line is sent; the social slash functions send their own packets.
+                if let Some(outcome) = super::slash::run(
+                    &mut bridge.0.borrow_mut(),
+                    &message,
+                    slash_target,
+                    channels,
+                ) {
+                    super::slash::apply(outcome, rt.as_deref().map(|rt| &rt.lua), &mut net);
                     continue;
                 }
                 let message = aa_ui::lua::chat::encode_for_transport(&message);
@@ -1301,6 +1331,46 @@ mod tests {
         let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
         assert!(matches!(&commands[..], [NetCommand(Command::Chat { chat_type:-3,target,message })]
             if target=="Peer" && message=="@@name ||literal |q42; |i5,2,payload;"));
+    }
+
+    #[test]
+    fn slash_function_chat_requests_are_consumed_before_the_chat_send() {
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        let mut game = super::super::data::GameData::default();
+        let mut functions = std::collections::HashMap::new();
+        functions.insert(7, String::new());
+        game.slash = super::super::slash::Tables {
+            rows: vec![super::super::slash::Row {
+                action_id: 7,
+                action_type: "SlashFunction".into(),
+                aliases: vec!["dice".into()],
+            }],
+            functions,
+        };
+        let _ = bridge.borrow().game.0.set(game);
+        bridge.borrow_mut().requests.push(Request::Chat {
+            chat_type: 0,
+            target: String::new(),
+            message: "/dice 20".into(),
+        });
+        let mut app = App::new();
+        app.insert_non_send(HudBridge(bridge))
+            .init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::ActionBar>()
+            .init_resource::<aa_net::state::Inventory>()
+            .init_resource::<aa_net::state::Target>()
+            .init_resource::<aa_net::state::Skills>()
+            .init_resource::<aa_net::state::Buffs>()
+            .init_resource::<super::super::usable::InFlight>()
+            .add_message::<NetCommand>()
+            .add_message::<super::super::alerts::UseFailed>()
+            .add_message::<crate::ingame::ground_target::SkillPressed>()
+            .add_message::<crate::ingame::placement::PlantPressed>()
+            .add_message::<crate::ingame::placement::HousePressed>()
+            .add_systems(Update, handle_requests);
+        app.update();
+        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().collect();
+        assert!(matches!(&commands[..], [NetCommand(Command::RollDice { max: 20 })]), "{commands:?}");
     }
 
     #[test]

@@ -91,6 +91,19 @@ fn action(view: &View, kind: u8, name: &[u8], title: &[u8]) -> Result<Option<Fam
     }))
 }
 
+/// `/family_invite`, `/family_leave`, `/family_kick`, `/family_title`: the same native checks
+/// and request queue as the script methods.
+pub(super) fn slash_request(view: &mut View, kind: u8, name: &[u8], title: &[u8]) -> Result<(), i16> {
+    let Some(command) = action(view, kind, name, title)? else {
+        return Ok(());
+    };
+    if command.validate().is_ok() {
+        let owner = view.state.character;
+        view.requests.push((owner, command));
+    }
+    Ok(())
+}
+
 fn error(lua: &Lua, code: i16) -> mlua::Result<()> {
     let Some(key) = super::alerts::error_name(code) else { return Ok(()) };
     let locale: Table = lua.globals().get("X2Locale")?;

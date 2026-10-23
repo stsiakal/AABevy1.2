@@ -136,6 +136,17 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     tasks::install(lua, bridge)
 }
 
+/// `/expeditioninvite`, `/expeditionleave`, `/expedition_kick`: the script actions' native
+/// admission and confirmation tasks, reached without the management window.
+pub(super) fn slash_request(view: &mut View, kind: u8, name: &[u8]) -> Result<(), i16> {
+    match actions::plan(view, kind, name, None)? {
+        Some((command, 0)) => actions::queue(view, command),
+        Some((command, task)) => tasks::confirm(view, task, command),
+        None => {}
+    }
+    Ok(())
+}
+
 fn dispatch(rt: Option<&UiRuntime>, bridge: &Shared, event: &Event) {
     let mut data = bridge.borrow_mut();
     data.expedition.dominion.apply(event);
