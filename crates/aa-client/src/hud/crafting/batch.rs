@@ -349,9 +349,11 @@ mod tests {
 
     #[test]
     fn craft_submission_requires_the_workbench_interaction_distance() {
-        let mut data = HudData::default();
-        data.pos = bevy::prelude::Vec3::ZERO;
-        data.player_radius = 0.0;
+        let mut data = HudData {
+            pos: bevy::prelude::Vec3::ZERO,
+            player_radius: 0.0,
+            ..Default::default()
+        };
         let mut game = super::super::super::data::GameData::default();
         game.crafting.benches.insert(568, [5557].into_iter().collect());
         game.crafting.recipes.insert(5557, super::super::data::Recipe { skill: 21787, ..Default::default() });
