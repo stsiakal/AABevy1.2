@@ -288,25 +288,28 @@ the original client, trade range, mail compose slots and family/guild window geo
    `slash_functions` 17 (family list) has no `slash_commands` row, so the relationship window stays
    its only entry. The remaining rows (cast/journal, languages, jury, watch/target, music, nation)
    are matched and consumed without an action.
-2. **User chat channels do not exist.** Original `X2Chat:Create/Join/LeaveUserChatChannel` sends
-   `CSJoinUserChatChannel 0x061`/`CSLeaveChatChannel 0x062` (x2game.dll.c:908837-908873; server
-   reader `systems/social/packets/chat.rs:16-40`). Bevy's opcode table has neither
-   (`crates/aa-net/src/opcodes.rs`), so player channels, passwords and channel joined/left events are
-   unreachable. Fix: add both packets, a channel list keyed by i64 id, and the three X2Chat bindings.
-3. **Notices and chat failures are undecoded.** Original handles `SCNoticeMessage 0x0d0`,
-   `SCChatFailed 0x0d1`, `SCChatLocalizedMessage 0x0d2`, `SCChatSpamDelay 0x0d3`
-   (`FUN_391d8d60/8de0/8c40/8cf0`). Bevy decodes only `SCChatMessage 0x0ce`
-   (`crates/aa-net/src/game.rs:1245`) and lacks those four opcodes. Result: shutdown/GM notices,
-   "not in party/family/expedition", channel errors and spam-delay updates never render. Fix: decode
-   them, map the 0x108-0x111 names to locale rows, and store the spam table.
-4. **Chat send and render policy is unchecked.** Original enforces per-type 160-char limits, a 1024
-   UTF-16 buffer, per-type spam delays and `blocked_texts` censoring (FUN_393c5aa0:786355;
-   FUN_393c2540; FUN_393c7bb2). Bevy writes the message unchanged
-   (`crates/aa-net/src/game.rs:395-402`; `wire.rs:222-227`) and only filters by blocked user
-   (`hud/chat.rs:49`). Its renderer also drops `sub_type`, race, faction and ability and passes the
-   object id as a string (`hud/chat.rs:48-53`), so say-whisper distinctions, hostile colouring and
-   ability/language styling are lost. Fix: apply the type table and spam delay, censor before send,
-   and fire `CHAT_MESSAGE` with the original numeric unit id, sub-type, faction and ability.
+2. **User chat channels - done in `68dc736`, `770eda1`, `cb0dbce`.** Original
+   `X2Chat:Create/Join/LeaveUserChatChannel` sends `CSJoinUserChatChannel 0x061`/`CSLeaveChatChannel
+   0x062` (x2game.dll.c:908837-908873; server reader `systems/social/packets/chat.rs:16-40`). The
+   packets landed in `68dc736`; `ChatChannel` now carries the native i64 identity, `Chat` keeps the
+   joined list and the three X2Chat bindings queue the native requests with the 0x31-byte name and
+   7-byte password caps. A duplicate create/join refuses with 0x10f, and leave uses the joined
+   channel's identity.
+3. **Notices and chat failures - done in `770eda1`, `cb0dbce`.** Original handles
+   `SCNoticeMessage 0x0d0`, `SCChatFailed 0x0d1`, `SCChatLocalizedMessage 0x0d2`,
+   `SCChatSpamDelay 0x0d3` (`FUN_391d8d60/8de0/8c40/8cf0`). All four are decoded: the notice
+   raises `NOTICE_MESSAGE` (non-positive visible time = `1000 + 50 ms` per character), the failure
+   maps 0x108-0x111 through `ERROR_MSG` and raises `CHAT_FAILED`, the localized line fills its
+   `X2Locale` template and dispatches as `CHAT_MESSAGE`, and the spam config is stored on `Chat`.
+   Both the 1.2 server's short spam layout and the client's full 0x68 config are accepted.
+4. **Chat send and render policy - done in `cb0dbce`.** Original enforces per-type 160-char limits, a
+   1024 UTF-16 buffer, per-type spam delays and `blocked_texts` censoring (FUN_393c5aa0:786355;
+   FUN_393c2540; FUN_393c7bb2). The send path now drops empty text, checks the type's spam group
+   (refusing with 0x108), truncates at the type table's 160 characters, censors every `check_chat`
+   row (whole-word or partial, refusing with 0x10a while sending the censored text) and caps the
+   transport string at 1024 UTF-16 units. `CHAT_MESSAGE` carries the numeric unit id, character id,
+   sender, text, `speakerInChatBound`, sub-type, faction, ability, language and race, so
+   say-whisper distinctions, hostile colouring and ability/language styling work again.
 5. **Party protocol diverges from the original.** Bevy sends only `CSAskRiskyTeamAction 0x088` for
    leave/kick/dismiss and never the real `0x07d/0x07e/0x084` after the ack
    (`crates/aa-net/src/party.rs:497-521`); the original sends `0x088` only when the ack is required,
