@@ -187,6 +187,7 @@ fn tip(lua: &Lua, data: &HudData, item: &Item) -> mlua::Result<Table> {
                 durability: detail.map(|d| d.durability),
                 temper: detail.map_or((0, 0), |d| (d.temper_physical, d.temper_magical)),
                 flags: Some(item.flags),
+                unsecure_time: item.unsecure_time,
             },
         )?,
         None => None,

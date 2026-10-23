@@ -153,6 +153,8 @@ pub struct Instance {
     pub durability: Option<u8>,
     pub temper: (u16, u16),
     pub flags: Option<u8>,
+    /// A pending unlock's deadline (Unix seconds, 0 = none).
+    pub unsecure_time: i64,
 }
 
 impl Instance {
@@ -163,6 +165,7 @@ impl Instance {
             durability: get("dur").filter(|d| *d >= 0).map(|d| d.min(255) as u8),
             temper: (get("tp").unwrap_or(0).clamp(0, 65535) as u16, get("tm").unwrap_or(0).clamp(0, 65535) as u16),
             flags: get("fl").map(|f| f as u8),
+            unsecure_time: get("un").unwrap_or(0),
         }
     }
 }
@@ -179,6 +182,20 @@ fn grade_id(order: i64) -> i32 {
 /// The info of an item as `X2Bag:GetBagItemInfo` returns it: `grade` is the number the server and the icons
 /// use for display (0 crude, 1 basic, 2 grand ...); absent grade uses the item's fixed grade or basic.
 pub fn item_tip(lua: &Lua, game: &GameData, state: &TipState, id: u32, grade: Option<i64>, count: Option<i64>, instance: Instance) -> mlua::Result<Option<Table>> {
+    item_tip_at(lua, game, state, id, grade, count, instance, aa_net::secure::unix_now())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn item_tip_at(
+    lua: &Lua,
+    game: &GameData,
+    state: &TipState,
+    id: u32,
+    grade: Option<i64>,
+    count: Option<i64>,
+    instance: Instance,
+    now: i64,
+) -> mlua::Result<Option<Table>> {
     let Some(info) = game.items.get(&id) else { return Ok(None) };
     let grade = grade.unwrap_or_else(|| i64::from(super::store::ui_grade(info.fixed_grade.max(0) as u8)));
     let t = lua.create_table()?;
@@ -200,6 +217,26 @@ pub fn item_tip(lua: &Lua, game: &GameData, state: &TipState, id: u32, grade: Op
             if let Some(bind) = game.tips.items.soul_bind(id) {
                 t.raw_set("soul_bind", bind)?;
             }
+        }
+    }
+    if let Some(flags) = instance.flags {
+        // The padlock overlay and the SKYBLUE line read these (item_icon_button.alb
+        // [130]-[146], tooltip.alb [1466]-[1473]).
+        let security = aa_net::secure::state(flags, instance.unsecure_time, now);
+        t.raw_set("securityState", i64::from(security.code()))?;
+        if let Some(remain) = aa_net::secure::remaining(instance.unsecure_time, now) {
+            let date = lua.create_table()?;
+            for (key, value) in [
+                ("year", remain.year),
+                ("month", remain.month),
+                ("day", remain.day),
+                ("hour", remain.hour),
+                ("minute", remain.minute),
+                ("second", remain.second),
+            ] {
+                date.raw_set(key, value)?;
+            }
+            t.raw_set("securityRemainDate", date)?;
         }
     }
     if info.use_skill != 0 {
@@ -421,6 +458,36 @@ mod tests {
         let armour = item_tip(&lua, &game, &state, 23387, Some(1), Some(1), Instance::default())?.unwrap();
         assert!(armour.get::<i32>("armor")? > 0);
         assert!(armour.get::<i32>("magicResistance")? > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn item_security_state_exposes_the_lock_overlay_and_tooltip_line() -> Result<(), Box<dyn std::error::Error>> {
+        let mut game = GameData::default();
+        game.items.insert(42, super::super::data::ItemInfo::default());
+        let lua = Lua::new();
+        let state = TipState::default();
+        let now = 1_700_000_000;
+        let info = |flags, unsecure_time| {
+            item_tip_at(&lua, &game, &state, 42, Some(1), Some(1), Instance { flags: Some(flags), unsecure_time, ..Default::default() }, now)
+                .unwrap()
+                .unwrap()
+        };
+        let unlocked = info(0, 0);
+        assert_eq!(unlocked.get::<i64>("securityState")?, 2);
+        assert!(unlocked.get::<Option<Table>>("securityRemainDate")?.is_none());
+        let locked = info(aa_net::secure::FLAG_SECURE, 0);
+        assert_eq!(locked.get::<i64>("securityState")?, 1);
+        let unlocking = info(aa_net::secure::FLAG_SECURE, now + aa_net::secure::UNLOCK_DELAY_SECONDS);
+        assert_eq!(unlocking.get::<i64>("securityState")?, 3);
+        let remain: Table = unlocking.get("securityRemainDate")?;
+        assert_eq!(remain.get::<i64>("minute")?, 10);
+        assert_eq!(remain.get::<i64>("second")?, 0);
+        let expired = info(aa_net::secure::FLAG_SECURE, now - 1);
+        assert_eq!(expired.get::<i64>("securityState")?, 2);
+        // Template-only items (a shop's, a loot window's) have no instance state.
+        let plain = item_tip_at(&lua, &game, &state, 42, Some(1), Some(1), Instance::default(), now)?.unwrap();
+        assert!(plain.get::<Option<i64>>("securityState")?.is_none());
         Ok(())
     }
 

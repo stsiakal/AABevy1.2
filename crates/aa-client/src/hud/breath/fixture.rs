@@ -9,7 +9,21 @@ use bevy::window::PrimaryWindow;
 
 use super::super::{api, data::GameData};
 
+/// Synthetic received FeatureSet matching the old fixture feature table: the server's
+/// `FeatureSet::initialized(55, 50)` bytes with the optional services the tests do not exercise
+/// cleared. `ItemSecure` (bit 45) is off, `TaxItem` (bit 59) is on, achievement is off so the
+/// achievement tests can flip it.
+pub(crate) const FEATURES: [u8; 11] = [0x4B, 55, 0x0F, 0x0F, 0xF9, 0x01, 0x32, 0x08, 50, 0x00, 0x10];
+
 pub(crate) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared, PathBuf), Box<dyn std::error::Error>> {
+    runtime_with_features(width, height, &FEATURES)
+}
+
+pub(crate) fn runtime_with_features(
+    width: f32,
+    height: f32,
+    features: &[u8; 11],
+) -> Result<(UiRuntime, api::Shared, PathBuf), Box<dyn std::error::Error>> {
     let mut rt = UiRuntime::new("en_us", width, height)?;
     rt.load_ui_texts(std::path::Path::new(aa_anim::db::DEFAULT_DB))?;
     let bridge = Rc::new(RefCell::new(api::HudData::default()));
@@ -23,7 +37,7 @@ pub(crate) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared
         d.snapshot.mp = 100;
         d.snapshot.max_mp = 100;
         // Explicit received feature bytes, independent of XP tables.
-        d.feature_limits = (Some(55), Some(50));
+        d.feature_bytes = features.to_vec();
         d.panels.actions_known = true;
         d.panels.bag_slots = 50;
         d.breath.actor = Some(100);

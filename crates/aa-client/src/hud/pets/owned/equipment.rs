@@ -96,6 +96,7 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
                             (detail.temper_physical, detail.temper_magical)
                         }),
                         flags: Some(item.flags),
+                        unsecure_time: item.unsecure_time,
                     },
                 )?
             } else {

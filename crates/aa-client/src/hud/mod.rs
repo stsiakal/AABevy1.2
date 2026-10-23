@@ -89,6 +89,7 @@ mod pvp;
 mod radar;
 mod ranking;
 mod repair;
+mod secure;
 mod services;
 mod quests;
 mod ring;

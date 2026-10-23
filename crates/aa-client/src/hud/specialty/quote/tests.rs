@@ -192,10 +192,10 @@ fn original_specialty_confirmation_uses_real_quote_and_physical_cancel() -> Resu
             .load(format!(
                 r#"
             local ok,n,c=X2Store:GetSpecialtyRatioRefund(0)
-            assert(ok and n=={amount} and (c or 0)=={coin})
-            assert(GetSpecialtyStoreMessageBoxHandleWindow():IsVisible())
-            assert(SPECIALTY_DIALOG and SPECIALTY_DIALOG:IsVisible())
-            assert(SPECIALTY_DIALOG.btnOk:IsEnabled()=={enabled})
+            assert(ok and n=={amount} and (c or 0)=={coin}, 'refund')
+            assert(GetSpecialtyStoreMessageBoxHandleWindow():IsVisible(), 'message box')
+            assert(SPECIALTY_DIALOG and SPECIALTY_DIALOG:IsVisible(), 'dialog')
+            assert(SPECIALTY_DIALOG.btnOk:IsEnabled()=={enabled}, 'ok enabled')
         "#,
                 enabled = if coin == 0 || amount > 0 { "true" } else { "false" }
             ))

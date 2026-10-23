@@ -322,6 +322,7 @@ fn sold_info(
                 durability: Some(e.durability),
                 temper: (e.temper_physical, e.temper_magical),
                 flags: Some(item.flags),
+                unsecure_time: item.unsecure_time,
             },
             _ => Instance {
                 flags: Some(item.flags),

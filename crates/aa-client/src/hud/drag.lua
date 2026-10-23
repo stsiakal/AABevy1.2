@@ -80,6 +80,7 @@ X2Bag.HandleClick = function(self, virtual)
   if not bagKnown() then return end
   local real = realSlot(virtual)
   if real == nil then return end
+  if HUD.security_click and HUD.security_click(real) then return end
   if X2Bag:IsLocked(real) then return end
   local h = held()
   if h == nil then
