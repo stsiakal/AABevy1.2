@@ -48,7 +48,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 |---|---|---|---|
 | F1 | Movement controller: input, turn, move request, per-frame update, physics move, CSMoveUnit; on foot, mounted, swimming, ladder | [`port-movement/`](port-movement/MAP.md), 101 fn / 91 KB | phase A **ported, bit-exact** (8 fn, 195 goldens, `b270f79`); phase B running |
 | F2 | Third-person camera: follow, keyboard-turn yaw, pitch, zoom, collision, modes | in [`port-movement/`](port-movement/MAP.md) section 4 | mapped |
-| F3 | Animation graph runtime: inputs, state selection, transitions, blends, layers | [`port-mount-anim/`](port-mount-anim/MAP.md) D, 51 fn / 76 KB | steps 1-2 running |
+| F3 | Animation graph runtime: inputs, state selection, transitions, blends, layers | [`port-mount-anim/`](port-mount-anim/MAP.md) D, 51 fn / 76 KB | step 1 **ported, bit-exact** (guards, input encoding, FOURCC map, get-on side geometry; ~400 goldens, `d334b9d`); step 2 loader **partial**: horse inputs/states/guards exact, 59 template-generated transitions missing; player state set matches but ids permuted (vehicle states appended) |
 | F4 | Summon / mount / dismount flow, interaction prompt, rider/mount reactions | [`port-mount-anim/`](port-mount-anim/MAP.md) A-C, 72 fn / 41 KB | mapped |
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
@@ -79,6 +79,8 @@ client confirms it.
 | Mouse turn fold | `clamp(axis x -0.002, -c, c)` | movement U12, goldens bit-exact |
 | Global cooldown | 1,000,000 / (1000 + attribute 0x4a), floor -999, unsigned/wrapping; custom GCD x1000/(1000+attr); the stack argument is the unit | `FUN_39899f30`, `FUN_39899df0`; 160 goldens bit-exact |
 | Cooldown manager | inline at `unit+0x2c48`, 150 entries, size 0xE28; `SCCooldowns` rows `(id,total,remaining)` | combat step 1, 115 goldens |
+| Animation graph input quantisation | floats quantised to 1/1024; guard packing and op semantics, `forceGuard`/`mixinFilter`, inheritance masking | animation step 1, cryaction `EvaluateGuards`/`EncodeInput` goldens |
+| Get-on seat | back -> seat 2, front/sides -> seat 1 | `FUN_3909ae90` goldens + decompile |
 | Big-hit threshold | `0.0f` | `FUN_39391950`, 111 goldens |
 | Interaction ranges | 3 m units/houses (3.5 m mounted), 4 m bind, surface gap not origin distance | `FUN_39093860` -> `FUN_3989bf90` -> `FUN_398b1ab0`; client `75d7ca7` |
 | Placement wheel step | 1 deg x `builder_rotate_angle` (5.0) per notch | [`port-housing/`](port-housing/MAP.md); name from 10.x, value in 1.2 |

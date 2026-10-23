@@ -461,12 +461,37 @@ for `XL14`, `S8_1`, `M2I8`, `TSTP`, `ISTP`, `S8SW`, `XL15`, `XLV5`, `MI01`, `MI0
 
 ## 7. Unknowns specific to D
 
+Port status (steps 1-2, `port/anim-a`): the pure leaves and the static loader are in
+`crates/aa-client/src/port/anim/` and tested against live goldens.
+
 1. **Per-blend-space weight formulas** (all cases in `GetLMGCapabilities`, especially XL14,
    S8_1, M2I8, TSTP, ISTP, S8SW). The dispatcher/caps/command writer are mapped; the case bodies
-   are the remaining line-by-line work. [highest priority]
-2. **Parameterization expansion** (`PreprocessParameterization`, `[stance]`/`[dir]`/`[num]`).
-3. **Guard op 2 / min-max packing** at load time (runtime semantics are proven).
-4. **Float encode quantization** (the per-object virtual; likely linear min/max -> 0..255).
+   are the remaining line-by-line work. [highest priority, step 4]
+2. ~~**Parameterization expansion**~~ **resolved.** The parser body is `FUN_3061bd50`; copies are
+   generated per `<Parameter>` value combination in document-parameter order, the template is
+   dropped, `includeInGame=0` states are dropped, copies are appended after the originals, and
+   placeholders are substituted on ids/criteria/templates. The horse state table (223 states,
+   guards, parent, cost) matches the live dump exactly; the player state set matches by name
+   (the original appends vehicle states after the copies, so its ids are permuted).
+3. ~~**Guard op 2 / min-max packing**~~ **resolved.** op 0/1/2 = max/min/not-equal, op 3 passes;
+   the loader stores equality as a min/max pair. Int/float criteria need `forceGuard=1`; keyed
+   `value` criteria need `forceGuard` or `mixinFilter`; parameterised values do not become
+   guards. Only the first guard pair keeps the `0x8000` sentinels; later pairs are masked.
+4. ~~**Float encode quantization**~~ **resolved.** `CFloatInputValue` uses the fixed 1/1024
+   precision: `(offset + value) / scale`, clamp to the int range, truncate (`cvttss2si`), then
+   return the range-bucket index (`0xffff` if none). The integer and keyed encoders and the
+   string `sscanf` paths are captured in `goldens/inputs.json`.
 5. **`Update_SteadyState` / `Update_EphemeralState` branch details** (the high-level flow is
    mapped; the exact leave/enter order for equal-cost links and `forceFollowChance` is [?]).
 6. **Upper-body bone masking** (cryanimation consumer, not the graph state).
+7. **Template-generated transitions.** The XML `<Transitions>` table yields 396 of the horse
+   graph's 455 live `{from,to,force,cost}` entries; the other 59 come from the state templates
+   (idle-rand and jump sequences). The step-2 test accepts the XML subset and reports the gap.
+8. **Input range bucketisation.** Contiguous-guard inputs (PseudoSpeed, waterLevel, Health,
+   Aiming, ...) match the live range vectors; inputs with gap-based template ranges
+   (`SwimControl*`, `RequestedTurnSpeedLZ`) still use a different boundary rule. The live vectors
+   are kept in the graph goldens for the follow-up.
+9. **CAnimationGraphManager registry layout** — the manager is `[gEnv+0x4cc]`; its map at
+   `+0x28` has the sentinel at `[manager+0x2c]`, node key pointer at `+0xc`, graph pointer at
+   `+0x10`. Resolved for the capture script, recorded here because it differs from the map's
+   first guess.
