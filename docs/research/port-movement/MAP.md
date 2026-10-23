@@ -854,6 +854,21 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 | quadruped dispatch/apply, swim | see U17 | no | - |
 | frame wrappers | `0x39135fe0`/`0x39135ed0` | no | - |
 
+### 9.2 Phase C completion (port/movement-d)
+
+| item | state | live cases |
+|---|---|---|
+| `ProcessNormal` 0x3913ff90 | **done, bit-exact** (U14 resolved) | 20 |
+| `ClampAngles` 0x3913e8d0 + `FUN_39093ef0` | **done**, 1-ulp libm residual (U15) | 20 |
+| `CPlayerMovement::Process`, rotation ctor/bind/dispatch/ladder, quadruped scope ctors | done (previous branch) | 2/2/2/1/1/2/2 |
+| frame rotation wrapper 0x39135ed0 | ported (`process_frame_rotation`) | - (no captured case yet) |
+| frame movement wrapper 0x39135fe0 | interface port (`process_frame_movement`; sync thunks U7) | - |
+| `CActor::UpdateMovementRequest` 0x39118650 | **not ported (U16)** | 0 |
+| quadruped dispatch/apply 0x3912dd40/0x3912ac50, swim 0x39120300/0x3912ce00 | **not ported (U17)** | 0 |
+
+The Phase B smoothed-velocity fields now compare bit-exactly (the former 1e-6
+tolerance was stale; no x87 computation remains on that path).
+
 The capture tool is `rust/tools/capture_movement_phase_c.py` in the move-golden lane; it
 builds scratch actors/anims/params/requests and records the object bytes before and after
 each original call. Phase B now pins the frame timer (`+0x2c`/`+0x30`), the input-mode table
