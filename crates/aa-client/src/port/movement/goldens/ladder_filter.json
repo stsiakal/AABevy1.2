@@ -1,0 +1,682 @@
+{
+  "function": "FUN_39402f60",
+  "address": "0x39402f60",
+  "module": "x2game.dll",
+  "cases": [
+    {
+      "unit_kind": null,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": false,
+        "left_flag": false
+      }
+    },
+    {
+      "unit_kind": null,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": null,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 0,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": false,
+        "left_flag": false
+      }
+    },
+    {
+      "unit_kind": 0,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 4,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 4,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 4,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 5,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": false,
+        "left_flag": false
+      }
+    },
+    {
+      "unit_kind": 5,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 5,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 6,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 6,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 6,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 7,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 7,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 7,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 8,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 8,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 8,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 9,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": false,
+        "left_flag": false
+      }
+    },
+    {
+      "unit_kind": 9,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 9,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 10,
+      "turn_right": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "right_flag": false,
+      "left_flag": false,
+      "out": {
+        "turn_right": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 10,
+      "turn_right": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "right_flag": true,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0xbf800000",
+          "f32": -1.0
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "right_flag": true,
+        "left_flag": true
+      }
+    },
+    {
+      "unit_kind": 10,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "right_flag": false,
+      "left_flag": true,
+      "out": {
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        "right_flag": false,
+        "left_flag": true
+      }
+    }
+  ]
+}

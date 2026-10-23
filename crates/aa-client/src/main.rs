@@ -20,6 +20,7 @@ pub(crate) use hud::addons;
 mod ingame;
 mod logging;
 mod login;
+mod port;
 mod priority;
 mod script;
 mod settings;
