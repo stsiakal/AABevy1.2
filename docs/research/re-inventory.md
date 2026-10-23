@@ -303,6 +303,16 @@ and the SKYBLUE "locked/unlocking" tooltip line (`item_lock.alb`, `tooltip.alb:1
 The delay value itself is `[I]` 600 s, from the same 600.0 constant and the identical
 minute display; its exact client constant was not read directly.
 
+The lock button is feature-gated: `sort_inventory.alb:876` calls `CreateLockButton` only when
+`X2Player:GetFeatureSet().itemSecure` is true. `FUN_39496b20` builds that table from the received
+FeatureSet array at `+0x14`: siege 0, premium 4, ranking 36, ingamecashshop 38, customsaveload 40,
+bm_mileage 43, itemSecure 45, secondpass 46, slave_customize 48, beautyshopBypass 52,
+ingameshopSecondpass 55, backpackProfitShare 56, sensitiveOpeartion 58, taxItem 59, achievement 63,
+dwarfWarborn 74, mailCoolTime 75, hudAuctionButton 81, auctionPostBuff 83; `levelLimit` is byte 1
+and `mateLevelLimit` byte 8. With no FeatureSet the binding returns an empty table. This server
+initializes `Feature::ItemSecure` (45) off (`features.rs`), so the original client shows no lock
+button here `[R]`.
+
 ## 4. Numeric parameters
 
 | Parameter | Value | Evidence |
@@ -365,13 +375,15 @@ found), `SCUnitEquipmentsChangedPacket 0x094` (`objId BC, count u8, (slot u8, it
 
 ## 7. Gaps vs Bevy (ranked)
 
-1. **Done (`644e473`): item security locks.** Original: four-button lock window, `CSItemSecure` /
+1. **Done (`644e473`, feature gating `03b8e6c`): item security locks.** Original: four-button lock window, `CSItemSecure` /
    `CSEquipmentsSecure`, flag 0x04, padlock overlay, SKYBLUE tooltip line and a 600 s unlock
    confirmation (`sort_bag.alb:281-347`, `item_handlers.rs:479-558`, `tooltip.alb:1460-1484`).
    Bevy now sends all four packets (`aa-net::secure`, byte-exact against the server reader),
    exposes the flag/deadline state as `securityState`/`securityRemainDate`, opens the original
-   window with `itemSecure`, and routes the item modes through `drag.lua`; the original padlock
-   overlay and SKYBLUE line render from the item info table.
+   window when the received FeatureSet has `ItemSecure` (bit 45) on, and routes the item modes
+   through `drag.lua`; the original padlock overlay and SKYBLUE line render from the item info
+   table. `GetFeatureSet` now maps every native field from the received FeatureSet bytes (empty
+   table before one arrives), so the lock button stays hidden on this server (ItemSecure off).
 2. **Bag/bank item cooldown is never shown.** Original computes the use-skill cooldown plus the
    600 s sapling timer per slot (`FUN_3944d9e0`). Bevy's item slot hard-codes
    `cooldown: None` (`hud/panels.rs:144-160`) and `X2Bag.GetBagCooldown` returns nil
