@@ -46,7 +46,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 
 | # | System | Map | Status |
 |---|---|---|---|
-| F1 | Movement controller: input, turn, move request, per-frame update, physics move, CSMoveUnit; on foot, mounted, swimming, ladder | [`port-movement/`](port-movement/MAP.md), 101 fn / 91 KB | phase A **ported, bit-exact** (8 fn, 195 goldens, `b270f79`); phase B running |
+| F1 | Movement controller: input, turn, move request, per-frame update, physics move, CSMoveUnit; on foot, mounted, swimming, ladder | [`port-movement/`](port-movement/MAP.md), 101 fn / 91 KB | phase A **ported, bit-exact** (8 fn, 195 goldens, `b270f79`); phase B **ported** (InputState + 7 fn + `FUN_39404d50` UpdateMovement; 25 live input sequences, request bytes exact except the 4 turn-delta bytes, which depend on the live frame time the capture did not pin, and uninitialised stack bytes; `104fe68`) |
 | F2 | Third-person camera: follow, keyboard-turn yaw, pitch, zoom, collision, modes | in [`port-movement/`](port-movement/MAP.md) section 4 | mapped |
 | F3 | Animation graph runtime: inputs, state selection, transitions, blends, layers | [`port-mount-anim/`](port-mount-anim/MAP.md) D, 51 fn / 76 KB | step 1 **ported, bit-exact** (guards, input encoding, FOURCC map, get-on side geometry; ~400 goldens, `d334b9d`); step 2 loader **partial**: horse inputs/states/guards exact, 59 template-generated transitions missing; player state set matches but ids permuted (vehicle states appended) |
 | F4 | Summon / mount / dismount flow, interaction prompt, rider/mount reactions | [`port-mount-anim/`](port-mount-anim/MAP.md) A-C, 72 fn / 41 KB | mapped |
@@ -75,7 +75,8 @@ client confirms it.
 | Finding | Value | Evidence |
 |---|---|---|
 | Keyboard turn on foot | axis x min(dt, 0.033) x `keyboard_rotate_speed` (0.5) x pi = 90 deg/s | `FUN_39402e00`, `.data 0x3999c47c`; 30 goldens bit-exact |
-| Turn ramp (state `+0x1c1 == 4`) | accumulator 0..3 s x `unit+0x174` x 1/3, reset on release | `FUN_39402e00`, `0x399d5ed0`=3.0, `0x399a1c40`=1/3 |
+| Turn ramp while **gliding** (state `+0x1c1 == 4`) | accumulator 0..3 s x `unit+0x174` x 1/3, reset on release | `FUN_39402e00`, `0x399d5ed0`=3.0, `0x399a1c40`=1/3; live read: 4 only while gliding |
+| Horse keyboard turn | the on-foot branch, 90 deg/s (horse reads `+0x1c1` 0, `+0x174` 1.0) | live driver read, movement phase B |
 | Mouse turn fold | `clamp(axis x -0.002, -c, c)` | movement U12, goldens bit-exact |
 | Global cooldown | 1,000,000 / (1000 + attribute 0x4a), floor -999, unsigned/wrapping; custom GCD x1000/(1000+attr); the stack argument is the unit | `FUN_39899f30`, `FUN_39899df0`; 160 goldens bit-exact |
 | Cooldown manager | inline at `unit+0x2c48`, 150 entries, size 0xE28; `SCCooldowns` rows `(id,total,remaining)` | combat step 1, 115 goldens |
@@ -102,7 +103,7 @@ client confirms it.
 | Earlier claim | Correction | Source |
 |---|---|---|
 | Mount turn 12 deg/s in place, 6.7 running (`fix/mount-nick-base`) | trace artifact; the real formula is the ramp above, not a constant | movement map section 3 |
-| `unit+0x1c1 == 4` means mounted | 4 is most likely the glide state (`FUN_3912dd40` sends 4 to the glide integrator; mounts via `+0xa8`); live check in movement phase B | [`port-movement-extra/`](port-movement-extra/MAP.md) 0.4 |
+| `unit+0x1c1 == 4` means mounted | **confirmed live: 4 is the glide state**; a horse uses the 90 deg/s on-foot turn | [`port-movement-extra/`](port-movement-extra/MAP.md) 0.4 |
 | `command_unmount` is on the F bar | it is on the mode action bar (R/T/Y/U), only for a ridden mount that is not one's own mate | [`port-mount-anim/`](port-mount-anim/MAP.md) B |
 | Plot dots 3 m apart | 6 m | [`port-housing/`](port-housing/MAP.md) |
 | Ladder axis pairing, combiner order | corrected per goldens | movement phase A, `MAP.md` 1.4 / 2.3 |
