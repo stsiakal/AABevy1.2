@@ -63,6 +63,8 @@ pub enum Request {
     SecureEquipments { lock: bool },
     /// `X2Store:SellBackPackGoods`: sell the worn trade pack at the current specialty/trader NPC.
     SellBackpackGoods { npc_obj_id: u32 },
+    /// `X2Store:GetSpecialtyRatioBetween`: ask the server for the live rates of one route.
+    SpecialtyRatioBetween { from: u16, to: u16 },
     /// `HUD.request("farm_list")` / `X2.RequestRuntimeCommonFarmDoodadInfo`: ask for `SCResponseCommonFarmList`.
     FarmList,
     /// The original build window's Build button (`X2House:NextStepFromBuildCheck`).
@@ -1022,6 +1024,7 @@ pub fn handle_requests(
             Request::Friend(command) => { net.write(NetCommand(Command::Friend(command))); }
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
             Request::SellBackpackGoods { npc_obj_id } => { net.write(NetCommand(Command::SellBackpackGoods { npc_obj_id })); }
+            Request::SpecialtyRatioBetween { from, to } => { net.write(NetCommand(Command::RequestSpecialtyCurrent { from, to })); }
             Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
             Request::SecureItem { request, lock } => { net.write(NetCommand(Command::ItemSecurity { request, lock })); }
             Request::SecureEquipments { lock } => { net.write(NetCommand(Command::EquipmentsSecurity { lock })); }

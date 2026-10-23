@@ -1,8 +1,20 @@
 //! Known-bundle Refund over actual received NPC/equipment and complete static data.
 use super::*;
-use crate::hud::data::{GameData, any_int};
+use crate::hud::data::{GameData, any_flag, any_int};
 use aa_net::specialty::{KnownBundleQuote, quote_known_bundle};
 use rusqlite::{Connection, OptionalExtension};
+use std::time::{Duration, Instant};
+
+/// `DAT_39ac9b7c`: the native minimum interval between route-rate requests (5 s).
+const RATIO_REQUEST_COOLDOWN_MS: u64 = 5000;
+
+/// A `specialties` row: the production zone group and a destination that has a vendor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SpecialtyRoute {
+    row: u32,
+    col: u32,
+    vendor_exist: bool,
+}
 
 #[derive(Default)]
 pub(in crate::hud) struct Tables {
@@ -12,6 +24,7 @@ pub(in crate::hud) struct Tables {
     profits: HashMap<(u32, u32), (i32, i32)>,
     grades: HashMap<u32, i32>,
     coin_divisor: Option<i32>,
+    routes: Vec<SpecialtyRoute>,
 }
 
 impl Tables {
@@ -53,7 +66,40 @@ impl Tables {
                 Ok(any_int(row, 0)? as i32)
             })
             .optional()?;
+        //394af270 /394aedd0 read the loaded `specialties` rows in id order.
+        let mut query =
+            conn.prepare("SELECT row_zone_group_id,col_zone_group_id,vendor_exist FROM specialties ORDER BY id")?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            tables.routes.push(SpecialtyRoute {
+                row: any_int(row, 0)?.max(0) as u32,
+                col: any_int(row, 1)?.max(0) as u32,
+                vendor_exist: any_flag(row, 2)?,
+            });
+        }
         Ok(tables)
+    }
+
+    /// `FUN_394af270`: the distinct production zone groups (`specialties.row_zone_group_id`).
+    pub(in crate::hud) fn production_zones(&self) -> Vec<u32> {
+        let mut zones = Vec::new();
+        for route in &self.routes {
+            if !zones.contains(&route.row) {
+                zones.push(route.row);
+            }
+        }
+        zones
+    }
+
+    /// `FUN_394aedd0(from)`: the `vendor_exist` destinations of the production zone group `from`.
+    pub(in crate::hud) fn sellable_zones(&self, from: u32) -> Vec<u32> {
+        let mut zones = Vec::new();
+        for route in self.routes.iter().filter(|r| r.row == from && r.vendor_exist) {
+            if !zones.contains(&route.col) {
+                zones.push(route.col);
+            }
+        }
+        zones
     }
 
     /// Whether `template` is a trade pack (`item_backpacks.backpack_type_id = 3`).
@@ -166,6 +212,34 @@ fn sale_npc(data: &crate::hud::api::HudData) -> Option<u32> {
     }
 }
 
+/// A `{ id, name }` list as `FUN_394aec90` builds it; the window sorts by name itself.
+fn zone_table(lua: &Lua, game: &GameData, zones: Vec<u32>) -> mlua::Result<Table> {
+    let out = lua.create_table()?;
+    for (index, id) in zones.into_iter().enumerate() {
+        let entry = lua.create_table()?;
+        entry.set("id", id)?;
+        let name = game.zone_groups.get(&id).map(|zone| {
+            if zone.text.is_empty() {
+                zone.key.as_str()
+            } else {
+                zone.text.as_str()
+            }
+        });
+        entry.set("name", name.unwrap_or_default())?;
+        out.set(index + 1, entry)?;
+    }
+    Ok(out)
+}
+
+/// `FUN_394af490`'s numeric adapter: the converted integer argument, `None` for anything else.
+fn integer_arg(args: &MultiValue, index: usize) -> Option<i64> {
+    match args.get(index) {
+        Some(Value::Integer(n)) => Some(*n),
+        Some(Value::Number(n)) if n.is_finite() => Some(*n as i64),
+        _ => None,
+    }
+}
+
 pub(super) fn install(lua: &Lua, store: &Table, state: &Shared) -> mlua::Result<()> {
     let equipment: Table = lua.globals().get("X2Equipment")?;
     let goods_state = state.clone();
@@ -174,6 +248,50 @@ pub(super) fn install(lua: &Lua, store: &Table, state: &Shared) -> mlua::Result<
         lua.create_function(move |lua, _: MultiValue| {
             let data = goods_state.borrow();
             data.game.get().map_or(Ok(None), |game| game.specialties.goods(lua, &data))
+        })?,
+    )?;
+    let production_state = state.clone();
+    store.set(
+        "GetProductionZoneGroups",
+        lua.create_function(move |lua, _: MultiValue| {
+            let data = production_state.borrow();
+            let Some(game) = data.game.get() else { return lua.create_table() };
+            zone_table(lua, game, game.specialties.production_zones())
+        })?,
+    )?;
+    let sellable_state = state.clone();
+    store.set(
+        "GetSellableZoneGroups",
+        lua.create_function(move |lua, args: MultiValue| {
+            let from = integer_arg(&args, 1).unwrap_or(0).max(0) as u32;
+            let data = sellable_state.borrow();
+            let Some(game) = data.game.get() else { return lua.create_table() };
+            zone_table(lua, game, game.specialties.sellable_zones(from))
+        })?,
+    )?;
+    let ratio_state = state.clone();
+    store.set(
+        "GetSpecialtyRatioBetween",
+        lua.create_function(move |_, args: MultiValue| {
+            let (Some(from), Some(to)) = (integer_arg(&args, 1), integer_arg(&args, 2)) else {
+                return Ok(0.0);
+            };
+            let mut data = ratio_state.borrow_mut();
+            let now = Instant::now();
+            if let Some(until) = data.specialty.ratio_request_until
+                && now < until
+            {
+                //394fb6b0 returns the remaining milliseconds under an active cooldown.
+                let remain = (until - now).as_millis().min(i32::MAX as u128) as i32;
+                return Ok(f64::from(remain as f32));
+            }
+            data.specialty.ratio_request_until = Some(now + Duration::from_millis(RATIO_REQUEST_COOLDOWN_MS));
+            data.requests.push(crate::hud::api::Request::SpecialtyRatioBetween {
+                from: from as u16,
+                to: to as u16,
+            });
+            // The request returns the full interval (`DAT_39ac9b7c`).
+            Ok(f64::from(RATIO_REQUEST_COOLDOWN_MS as i32 as f32))
         })?,
     )?;
     let sale_state = state.clone();

@@ -115,6 +115,10 @@ pub struct NpcInfo {
     /// `npcs.aggression` (`'t'`/`'f'`): an aggressive hostile NPC attacks on sight (red name plate), a passive
     /// one (the Angry Rat) only fights back (orange). Rows without the column count as aggressive.
     pub aggression: bool,
+    /// `npcs.trader`: the Shadow Merchant that buys a worn trade pack (`store_backpack.alb`).
+    pub trader: bool,
+    /// `npcs.specialty`: the specialty trader whose window quotes the pack at the live ratio.
+    pub specialty: bool,
 }
 
 /// A quest objective area (`worlds/*/level_design/zone/*/client/quest_sign_sphere.g`): a circle
@@ -656,7 +660,7 @@ impl GameData {
             }
         }
         {
-            let mut q = conn.prepare("SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id, aggression FROM npcs")?;
+            let mut q = conn.prepare("SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id, aggression, trader, specialty FROM npcs")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id: u32 = r.get(0)?;
@@ -671,6 +675,8 @@ impl GameData {
                         show_name_tag: r.get::<_, Option<String>>(6)?.as_deref() != Some("f"),
                         template: r.get::<_, Option<i64>>(7)?.unwrap_or(0),
                         aggression: r.get::<_, Option<String>>(8)?.as_deref() != Some("f"),
+                        trader: r.get::<_, Option<String>>(9)?.as_deref() == Some("t"),
+                        specialty: r.get::<_, Option<String>>(10)?.as_deref() == Some("t"),
                     },
                 );
             }

@@ -5,6 +5,7 @@ use mlua::{Lua, MultiValue, ObjectLike, Table, Value};
 
 use super::api::{HudBridge, Shared};
 use std::collections::HashMap;
+use std::time::Instant;
 
 mod quote;
 pub(super) use quote::Tables;
@@ -18,6 +19,8 @@ pub(super) struct View {
     own_obj: u32,
     npc_templates: HashMap<u32, u32>,
     target: aa_net::state::Target,
+    /// `DAT_3a5ba4c4`: when the next `CS 0x131` route-rate request is allowed.
+    ratio_request_until: Option<Instant>,
 }
 
 impl Default for View {
@@ -30,6 +33,7 @@ impl Default for View {
             own_obj: 0,
             npc_templates: HashMap::new(),
             target: Default::default(),
+            ratio_request_until: None,
         }
     }
 }
@@ -64,6 +68,7 @@ fn observe(state: &Shared, event: &Event) {
         Event::CharacterSelected(selected) => {
             view.npc_templates.clear();
             view.target = Default::default();
+            view.ratio_request_until = None;
             view.owner = Some(selected.character.id);
             view.own_obj = 0;
         }
@@ -71,6 +76,7 @@ fn observe(state: &Shared, event: &Event) {
             if view.owner != Some(spawn.character().id) || (view.own_obj != 0 && view.own_obj != spawn.obj_id) {
                 view.npc_templates.clear();
                 view.target = Default::default();
+                view.ratio_request_until = None;
             }
             view.owner = Some(spawn.character().id);
             view.own_obj = spawn.obj_id;
@@ -101,6 +107,7 @@ fn observe(state: &Shared, event: &Event) {
             view.owner = None;
             view.own_obj = 0;
             view.target = Default::default();
+            view.ratio_request_until = None;
         }
         _ => {}
     }
@@ -109,27 +116,73 @@ fn observe(state: &Shared, event: &Event) {
     view.target.apply(event);
 }
 
-pub(super) fn receive(lua: Option<&Lua>, state: &Shared, event: &Event) {
-    observe(state, event);
-    let Event::SpecialtyRatio(ratio) = event else { return };
-    if *ratio == 0 {
-        // Original error225 is synchronous and precedes the reset to100.
-        // Never hold the shared state borrow across either Lua call.
-        if let Some(lua) = lua {
-            if let Err(error) = error(lua, 225) {
-                warn!("hud: specialty error225: {error}");
+/// `{ itemInfo, ratio }` rows for `specialty/info.alb`'s `SPECIALTY_RATIO_BETWEEN_INFO`.
+fn rate_rows(lua: &Lua, state: &Shared, rates: &[(u32, u32)]) -> mlua::Result<Table> {
+    let rows = lua.create_table()?;
+    let data = state.borrow();
+    let Some(game) = data.game.get() else { return Ok(rows) };
+    for (index, (item, rate)) in rates.iter().enumerate() {
+        let row = lua.create_table()?;
+        let info = crate::hud::tips::item_tip(
+            lua,
+            game,
+            &data.tips,
+            *item,
+            None,
+            None,
+            crate::hud::tips::Instance::default(),
+        )?;
+        match info {
+            Some(info) => row.set("itemInfo", info)?,
+            None => {
+                // A row still lists the template the server named.
+                let info = lua.create_table()?;
+                info.set("itemType", *item)?;
+                info.set("itemGrade", 0)?;
+                info.set("name", "")?;
+                row.set("itemInfo", info)?;
             }
         }
-        state.borrow_mut().specialty.ratio = 100;
-    } else {
-        state.borrow_mut().specialty.ratio = *ratio;
-        if let Some(lua) = lua {
-            aa_ui::lua::fire_ui_event(
-                lua,
-                "NPC_INTERACTION_START",
-                vec![Value::String(lua.create_string("specialty").expect("Lua string"))],
-            );
+        row.set("ratio", *rate)?;
+        rows.set(index + 1, row)?;
+    }
+    Ok(rows)
+}
+
+pub(super) fn receive(lua: Option<&Lua>, state: &Shared, event: &Event) {
+    observe(state, event);
+    match event {
+        Event::SpecialtyRatio(ratio) => {
+            if *ratio == 0 {
+                // Original error225 is synchronous and precedes the reset to100.
+                // Never hold the shared state borrow across either Lua call.
+                if let Some(lua) = lua {
+                    if let Err(error) = error(lua, 225) {
+                        warn!("hud: specialty error225: {error}");
+                    }
+                }
+                state.borrow_mut().specialty.ratio = 100;
+            } else {
+                state.borrow_mut().specialty.ratio = *ratio;
+                if let Some(lua) = lua {
+                    aa_ui::lua::fire_ui_event(
+                        lua,
+                        "NPC_INTERACTION_START",
+                        vec![Value::String(lua.create_string("specialty").expect("Lua string"))],
+                    );
+                }
+            }
         }
+        Event::SpecialtyCurrent { rates, .. } => {
+            let Some(lua) = lua else { return };
+            match rate_rows(lua, state, rates) {
+                Ok(rows) => {
+                    aa_ui::lua::fire_ui_event(lua, "SPECIALTY_RATIO_BETWEEN_INFO", vec![Value::Table(rows)]);
+                }
+                Err(error) => warn!("hud: specialty rate rows: {error}"),
+            }
+        }
+        _ => {}
     }
 }
 

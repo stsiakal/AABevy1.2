@@ -312,6 +312,8 @@ fn database() -> Connection {
       CREATE TABLE specialty_bundle_items(id INTEGER,item_id INTEGER,profit INTEGER,ratio INTEGER,specialty_bundle_id INTEGER); \
       CREATE TABLE item_grades(id INTEGER,refund_multiplier INTEGER); \
       CREATE TABLE content_configs(id INTEGER,kind_id INTEGER,value INTEGER); \
+      CREATE TABLE specialties(id INTEGER,row_zone_group_id INTEGER,col_zone_group_id INTEGER,ratio INTEGER,profit INTEGER,vendor_exist TEXT); \
+      INSERT INTO specialties VALUES(1,1,2,2000,4000,'t'),(2,1,3,2000,4000,'f'),(3,4,5,2000,4000,'t'),(4,4,6,2000,4000,'t'); \
       INSERT INTO item_backpacks VALUES(10,3);INSERT INTO npcs VALUES(1,0),(2,32103),(3,0); \
       INSERT INTO specialty_npcs VALUES(1,7),(2,7),(3,8),(99,7); \
       INSERT INTO specialty_bundle_items VALUES(1,10,1000,100,7),(2,10,99999,100,7); \
@@ -379,4 +381,86 @@ fn static_loader_keeps_first_bundle_match_id22_config_and_missing_descriptor_bou
     assert_eq!(tables.quote(&game, 1, &item, 100), Ok(None));
     conn.execute_batch("DROP TABLE item_backpacks;").unwrap();
     assert!(Tables::load(&conn).is_err());
+}
+
+#[test]
+fn production_and_sellable_zone_groups_follow_the_native_rows() {
+    let tables = Tables::load(&database()).unwrap();
+    assert_eq!(tables.production_zones(), vec![1, 4]);
+    assert_eq!(tables.sellable_zones(1), vec![2], "vendor_exist filters row 1 col 3");
+    assert_eq!(tables.sellable_zones(4), vec![5, 6]);
+    assert!(tables.sellable_zones(99).is_empty());
+}
+
+#[test]
+fn route_ratio_native_builds_the_zone_lists_and_requests_once_per_cooldown() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, state) = runtime()?;
+    // First specialties row id 1: production 1, sellable 2,3,4,5,8,12,17,20,27,59.
+    let list = rt
+        .lua
+        .load(
+            r#"
+      local zones=X2Store:GetProductionZoneGroups()
+      assert(#zones>0 and zones[1].id==1 and #zones[1].name>0)
+      for _,z in ipairs(zones) do assert(type(z.id)=='number' and type(z.name)=='string' and #z.name>0) end
+      local sell=X2Store:GetSellableZoneGroups(1)
+      local ids={}
+      for _,z in ipairs(sell) do ids[z.id]=z.name end
+      assert(#sell==10 and ids[2] and ids[3] and ids[4] and ids[5] and ids[8] and ids[12] and ids[17] and ids[20] and ids[27] and ids[59])
+      assert(not ids[1] and not ids[6] and not ids[7] and not ids[9] and not ids[10])
+      assert(#X2Store:GetSellableZoneGroups(99999)==0)
+    "#,
+        )
+        .exec();
+    list?;
+    let first: f64 = rt.lua.load("return X2Store:GetSpecialtyRatioBetween(1,2)").eval()?;
+    assert_eq!(first, 5000.0);
+    {
+        let data = state.borrow();
+        assert!(matches!(
+            data.requests.as_slice(),
+            [crate::hud::api::Request::SpecialtyRatioBetween { from: 1, to: 2 }]
+        ));
+    }
+    let second: f64 = rt.lua.load("return X2Store:GetSpecialtyRatioBetween(1,2)").eval()?;
+    assert!(second > 0.0 && second <= 5000.0);
+    assert_eq!(state.borrow().requests.len(), 1, "the cooldown suppresses a second request");
+    assert_eq!(
+        rt.lua.load("return X2Store:GetSpecialtyRatioBetween('1',2)").eval::<f64>()?,
+        0.0,
+        "the native adapter requires numeric arguments"
+    );
+    Ok(())
+}
+
+#[test]
+fn specialty_current_receipt_raises_the_rate_rows() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, state) = runtime()?;
+    rt.lua
+        .load(
+            r#"
+      BETWEEN=nil
+      UIParent:SetEventHandler('SPECIALTY_RATIO_BETWEEN_INFO',function(rows) BETWEEN=rows end)
+    "#,
+        )
+        .exec()?;
+    super::super::receive(
+        Some(&rt.lua),
+        &state,
+        &Event::SpecialtyCurrent {
+            from: 1,
+            to: 2,
+            rates: vec![(20090, 117), (999999, 130)],
+        },
+    );
+    rt.lua
+        .load(
+            r#"
+      assert(#BETWEEN==2)
+      assert(BETWEEN[1].ratio==117 and BETWEEN[1].itemInfo.itemType==20090 and #BETWEEN[1].itemInfo.name>0)
+      assert(BETWEEN[2].ratio==130 and BETWEEN[2].itemInfo.itemType==999999 and BETWEEN[2].itemInfo.name=='')
+    "#,
+        )
+        .exec()?;
+    Ok(())
 }
