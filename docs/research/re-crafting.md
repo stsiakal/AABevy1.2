@@ -325,16 +325,24 @@ u32 craftId × count ≤20`; `craft.rs:960-990`), `SCCharacterLaborPowerChanged`
    workbench (`hud/doodad.rs:321, 875, 968`), and `Tables::add` drops skill-less funcs
    (`doodad.rs:156-166`), so a town anvil/farm table offers nothing. Fix: treat craft funcs as a use that
    calls `open_bench(object, template)` and fires `CRAFTING_START`; drop the ownership test and
-   let the server's permission check answer.
+   let the server's permission check answer. **Done (6d00d0d):** craft funcs are a `Uses` entry on
+   the bar and open the Folio from the first/second action; the world doodad is no longer
+   ownership-gated.
 2. **Hide-only workbenches of other players.** `hud/doodad.rs:321` requires
    `state.owner_id == data.character_id`; the original offers the bench with the owner's
    `DoodadFuncPermission` (SameAccount/ZoneResidents) and `SetCraftingPay`. Fix: offer G to
-   permitted visitors, server already validates (`craft.rs:330-430`).
+   permitted visitors, server already validates (`craft.rs:330-430`). **Done (6d00d0d):** the
+   client resolves the phase's first-func `perm_id` and offers Any/SameAccount/ZoneResidents to
+   visitors (own house always); the server remains authoritative.
 3. **Trade-pack sale missing.** `X2Store:SellBackPackGoods` (stub, `aa-ui/src/lua/stubs.rs:1541`)
    never sends `CSSellBackpackGoods` 0x042; `X2Equipment:GetBackPackGoodsInfo` is a stub
    (`stubs.rs:408`), so the Shadow Merchant window (`store_backpack.alb`) cannot price or sell.
    Bevy has the quote (`hud/specialty/quote.rs:105-190`) but no command/sale path. Fix: implement
-   both natives, send 0x042 with the target NPC, and handle the 22 h mail receipt.
+   both natives, send 0x042 with the target NPC, and handle the 22 h mail receipt. **Done (wire
+   075260d, natives 38a2f5c):** 0x042 is one `bc` NPC id checked against the server readers,
+   `GetBackPackGoodsInfo` returns the type-3 item tooltip/refund, `SellBackPackGoods` queues the
+   sale and resets the native ratio; the delayed `SYS_SELL_BACKPACK` mail arrives on the existing
+   `SCGotMail`/mailbox path.
 4. **Trade-info window absent.** `GetProductionZoneGroups` (`stubs.rs:813`),
    `GetSellableZoneGroups` (`:912`), `GetSpecialtyRatioBetween` (`:941`) are stubs; no 0x131
    request or 0x1F4 receipt is decoded. Original: `specialty/info.alb` lists production /
@@ -344,7 +352,9 @@ u32 craftId × count ≤20`; `craft.rs:960-990`), `SCCharacterLaborPowerChanged`
    and offers the bar at 25 m; Bevy uses `skill.max_range + 1` or `BASE_REACH 4 m`
    (`hud/doodad.rs:55-56`) and `batch::command` never checks distance (`craft/batch.rs:180-210`),
    so a Folio left open lets the player craft from anywhere. Fix: gate the action/window and each
-   craft submission on the 2.1 m surface distance.
+   craft submission on the 2.1 m surface distance. **Done (6d00d0d):** `surface_distance` (centre
+   minus player/`sim_radius`) gates opening the Folio and `batch::command`; the bar is offered at
+   25 m.
 6. **Heavy-pack penalties not applied client-side.** Original: pack buff 1454/7221
    ("Overburdened") reduces speed and blocks teleport/glide, with dedicated refusals
    (`CANNOT_USE_PORTAL_WITH_BACKPACK` 610, glider change 543). Bevy applies the item buff
