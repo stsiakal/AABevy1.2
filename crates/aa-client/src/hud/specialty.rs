@@ -156,10 +156,10 @@ pub(super) fn receive(lua: Option<&Lua>, state: &Shared, event: &Event) {
             if *ratio == 0 {
                 // Original error225 is synchronous and precedes the reset to100.
                 // Never hold the shared state borrow across either Lua call.
-                if let Some(lua) = lua {
-                    if let Err(error) = error(lua, 225) {
-                        warn!("hud: specialty error225: {error}");
-                    }
+                if let Some(lua) = lua
+                    && let Err(error) = error(lua, 225)
+                {
+                    warn!("hud: specialty error225: {error}");
                 }
                 state.borrow_mut().specialty.ratio = 100;
             } else {
