@@ -23,6 +23,7 @@ fn load(name: &str) -> Value {
         "bighit" => include_str!("goldens/bighit.json"),
         "token" => include_str!("goldens/token.json"),
         "slot" => include_str!("goldens/slot.json"),
+        "cast" => include_str!("goldens/cast.json"),
         other => panic!("unknown golden file {other}"),
     };
     serde_json::from_str(text).expect("golden JSON parses")
@@ -30,6 +31,10 @@ fn load(name: &str) -> Value {
 
 fn u32_of(value: &Value) -> u32 {
     value.as_u64().expect("unsigned") as u32
+}
+
+fn u32_or_zero(value: &Value) -> u32 {
+    value.as_u64().unwrap_or(0) as u32
 }
 
 fn i32_of(value: &Value) -> i32 {
@@ -435,6 +440,208 @@ fn slot_matches_goldens() {
         );
     }
 }
+
+
+#[test]
+fn cast_queries_match_goldens() {
+    let doc = load("cast");
+    let skill_id = u32_of(&doc["skill_id"]);
+    let local_id = u32_of(&doc["local"]["id"]);
+
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let slots = case["slots"].as_array().expect("slots");
+        let key_of = |i: usize| u32_of(&slots[i]);
+        let unit = CastUnit {
+            cast_key: key_of(0),
+            cast_delay_key: key_of(1),
+            channel_key: key_of(2),
+            channel_delay_key: key_of(3),
+            ..CastUnit::default()
+        };
+        let state = SkillCastState {
+            skill_id,
+            normal_total: u32_or_zero(&case["normal_total"]),
+            computed_delay: 0,
+            channel_total: u32_or_zero(&case["channel_total"]),
+            normal_start: u32_or_zero(&case["normal_start"]),
+            channel_start: u32_or_zero(&case["channel_start"]),
+        };
+        let desc = CastDesc {
+            name: doc["skill_name"].as_str().expect("name").to_string(),
+            show_target_casting_time: case["desc_visible"].as_u64().unwrap_or(0) != 0,
+            ..CastDesc::default()
+        };
+        let lookup_state = |key: u32| {
+            (key != 0 && (key == unit.cast_key || key == unit.channel_key)).then_some(state)
+        };
+        let now = if case["label"] == "channel_mid" || case["label"] == "channel_clamped" {
+            let total = state.channel_total;
+            let current = case["current"].as_f64().unwrap_or(0.0) as u32;
+            state.channel_start + (total - current)
+        } else if state.normal_total != 0 {
+            let current = case["current"].as_f64().unwrap_or(0.0) as u32;
+            state.normal_start + current
+        } else {
+            0
+        };
+        let got = unit_casting_info(
+            case["token"] != "bogus",
+            &unit,
+            now,
+            |id| (id == skill_id).then(|| desc.clone()),
+            lookup_state,
+            |_| None,
+        );
+        if case["kind"] == "nil" {
+            assert_eq!(got, CastingInfo::None, "cast case {index} {}", case["label"]);
+        } else {
+            let CastingInfo::Value { name, total, current, visible } = got else {
+                panic!("cast case {index} {}: expected a value", case["label"]);
+            };
+            assert_eq!(name, doc["skill_name"].as_str().unwrap(), "cast case {index} name");
+            assert_eq!(total, case["total"].as_f64().unwrap() as u32, "cast case {index} total");
+            assert_eq!(
+                current,
+                case["current"].as_f64().unwrap() as u32,
+                "cast case {index} current"
+            );
+            assert_eq!(visible, case["visible"].as_bool().unwrap(), "cast case {index} visible");
+        }
+    }
+
+    for (index, case) in doc["can_cases"].as_array().expect("can").iter().enumerate() {
+        let flag = u32_of(&case["flag"]);
+        let desc = CastDesc {
+            casting_cancelable: case["fn"] == "can_cast" && flag == 1,
+            channeling_cancelable: case["fn"] == "can_channel" && flag == 1,
+            controller_kinds: if case["label"] == "controller_22" { vec![0x22] } else { vec![] },
+            ..CastDesc::default()
+        };
+        let unit = if case["fn"] == "can_cast" {
+            CastUnit { cast_key: 1, ..CastUnit::default() }
+        } else {
+            CastUnit { channel_key: 1, ..CastUnit::default() }
+        };
+        let state = SkillCastState { skill_id, ..SkillCastState::default() };
+        let got = if case["fn"] == "can_cast" {
+            can_cast(&unit, |_| Some(desc.clone()), |key| (key == 1).then_some(state), |_| None)
+        } else {
+            can_channel(&unit, |_| Some(desc.clone()), |key| (key == 1).then_some(state), |_| None)
+        };
+        assert_eq!(got, case["out"].as_bool().unwrap(), "can case {index} {}", case["label"]);
+    }
+
+    for (index, case) in doc["combat_cases"].as_array().expect("combat").iter().enumerate() {
+        let got = unit_combat_state(case["token"] == "player", u32_of(&case["flag"]) != 0);
+        let want = case["out"]["value"].as_u64().unwrap() != 0;
+        assert_eq!(got, want, "combat case {index}");
+    }
+
+    for (index, case) in doc["first_hit_cases"].as_array().expect("first").iter().enumerate() {
+        let text = case["lua"].as_str().expect("lua");
+        let want = text.ends_with(",true");
+        let got = is_first_hit_by_me_or_my_team(
+            true,
+            u32_of(&case["hitter"]),
+            u32_of(&case["team"]),
+            local_id,
+            0xFFFF,
+            0,
+        );
+        assert_eq!(got, want, "first-hit case {index} {text}");
+    }
+
+    for (index, case) in doc["progress_cases"].as_array().expect("progress").iter().enumerate() {
+        let kind = u32_of(&case["kind"]) as u8;
+        let out = case["out"].as_u64().map(|v| v as u32);
+        let (unit, state, now, live_key) = match case["label"].as_str().unwrap() {
+            "cast" => {
+                let total = 5000u32;
+                let current = out.unwrap();
+                (
+                    CastUnit { cast_key: 1, ..CastUnit::default() },
+                    Some(SkillCastState { skill_id, normal_total: total, ..SkillCastState::default() }),
+                    total - current,
+                    1,
+                )
+            }
+            "channel" => {
+                let total = 4000u32;
+                let current = out.unwrap();
+                (
+                    CastUnit { channel_key: 2, ..CastUnit::default() },
+                    Some(SkillCastState { skill_id, channel_total: total, ..SkillCastState::default() }),
+                    total - current,
+                    2,
+                )
+            }
+            _ => (CastUnit::default(), None, 0, 0),
+        };
+        let got = cast_progress(
+            &unit,
+            now,
+            kind,
+            |key| state.filter(|_| key == live_key),
+            |_| None,
+            || out.unwrap_or(0),
+        );
+        if case["label"] == "none" || case["label"] == "unknown" {
+            assert_eq!(got, None, "progress case {index} {}", case["label"]);
+        } else {
+            assert_eq!(got, out, "progress case {index} {}", case["label"]);
+        }
+    }
+}
+
+#[test]
+fn cast_plot_states_and_first_hit_team() {
+    let desc = CastDesc {
+        name: "plot".into(),
+        show_target_casting_time: false,
+        ..CastDesc::default()
+    };
+    let unit = CastUnit { cast_delay_key: 7, ..CastUnit::default() };
+    let plot = PlotCastState {
+        plot_id: 5,
+        cast_total: 900,
+        cast_start: 100,
+        channel_total: 400,
+        channel_start: 200,
+    };
+    assert_eq!(
+        unit_casting_info(
+            true,
+            &unit,
+            600,
+            |id| (id == 5).then(|| desc.clone()),
+            |_| None,
+            |key| (key == 7).then_some(plot)
+        ),
+        CastingInfo::Value { name: "plot".into(), total: 900, current: 500, visible: true }
+    );
+    let unit = CastUnit { channel_delay_key: 7, ..CastUnit::default() };
+    assert_eq!(
+        unit_casting_info(
+            true,
+            &unit,
+            450,
+            |id| (id == 5).then(|| desc.clone()),
+            |_| None,
+            |key| (key == 7).then_some(plot)
+        ),
+        CastingInfo::Value { name: "plot".into(), total: 400, current: 150, visible: true }
+    );
+    assert_eq!(
+        cast_progress(&unit, 450, 7, |_| None, |key| (key == 7).then_some(plot), || 0),
+        Some(150)
+    );
+    assert!(is_first_hit_by_me_or_my_team(true, 77, 4660, 77, 4660, 0));
+    assert!(!is_first_hit_by_me_or_my_team(true, 77, 4661, 77, 4660, 0));
+    assert!(is_first_hit_by_me_or_my_team(true, 0, 0, 77, 4660, 0));
+    assert!(!is_first_hit_by_me_or_my_team(true, 78, 0, 0, 4660, 0));
+    assert!(!is_first_hit_by_me_or_my_team(false, 77, 0, 77, 4660, 0));
+}
+
 
 // ---------------------------------------------------------------- synthetic branches
 

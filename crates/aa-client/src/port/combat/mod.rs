@@ -5,12 +5,13 @@
 //! (`rust/tools/capture_combat_goldens.py` in the `combat-golden` lane); the tests compare the
 //! port with those recordings bit-exactly.
 //!
-//! Scope of this stage: the inline cooldown manager, the two GCD producers, the caster/target
-//! equality leaves, the hit-reaction table and big-hit predicate, the unit-token parser, and the
-//! action-slot cooldown resolver behind `GetActionCooldown`/`GetActionCooldownEx`.
+//! Scope: the inline cooldown manager, the two GCD producers, the caster/target equality leaves,
+//! the hit-reaction table and big-hit predicate, the unit-token parser, the action-slot cooldown
+//! resolver, and the read-only cast/combat queries (`cast`).
 
 #![allow(dead_code, unused_imports)]
 
+pub mod cast;
 pub mod cooldown;
 pub mod equality;
 pub mod reaction;
@@ -20,6 +21,10 @@ pub mod token;
 #[cfg(test)]
 mod tests;
 
+pub use cast::{
+    CastDesc, CastUnit, CastingInfo, PlotCastState, SkillCastState, can_cast, can_channel,
+    cast_progress, is_first_hit_by_me_or_my_team, unit_casting_info, unit_combat_state,
+};
 pub use cooldown::{
     CooldownAppend, CooldownEntry, CooldownFull, CooldownManager, MAX_COOLDOWN_ENTRIES,
     SKILL_LIST_TAG, SkillDesc, custom_gcd_ms, default_gcd_ms,
