@@ -770,6 +770,24 @@ mod tests {
         assert!(app.world().resource::<DecoSeen>().0, "item_housing_decorations uses the decoration builder");
     }
 
+    /// `X2Action:GetActionInfo(slot)` and `HUD.actions[slot]` use the same 1-based global slot; index 0 is
+    /// unused, unlike the bag list whose Lua key is the 1-based bag cell.
+    #[test]
+    fn hud_actions_are_keyed_by_the_global_slot() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let slots = vec![
+            None,
+            None,
+            Some(super::SlotSnap { kind: "skill", id: 18132, ..Default::default() }),
+        ];
+        let t = action_table(&lua, &slots)?;
+        assert!(t.get::<mlua::Value>(0)?.is_nil());
+        assert!(t.get::<mlua::Value>(1)?.is_nil());
+        let s: Table = t.get(2)?;
+        assert_eq!(s.get::<i64>("id")?, 18132);
+        Ok(())
+    }
+
     #[test]
     fn target_combat_state_is_exposed_to_the_target_frame() -> mlua::Result<()> {
         let lua = Lua::new();
