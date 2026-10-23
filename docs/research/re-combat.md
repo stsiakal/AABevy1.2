@@ -150,7 +150,8 @@ target's target** (and `playertarget`, `targettargettarget` work). The target-of
 
 The behaviour is "fan in front within 60 deg/50 m, plus a 4 m round catch, height limit 20 m, remember the
 last 10 targets for 3 s so repeated Tab cycles instead of toggling the nearest" [I from the cvar names and
-defaults; the selection loop itself was not located]. `mouse_clear_targeting` defaults to 0.
+defaults; the selection loop itself was not located]. Bevy applies those defaults in `b332ed5`.
+`mouse_clear_targeting` defaults to 0.
 
 Click selection: a left click on a unit sets the target; a click on empty ground drops it when
 `mouse_clear_targeting` is on. Escape first closes the topmost close-on-escape window, then
@@ -303,7 +304,8 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
 * `[R]` The failure enum, the four `UnitCastingInfo` states, the 32/24 buff arrays, the 85/4 action-bar
   limits, the cooldown-manager layout and the 5-minute resurrection deadline are read in code.
 * `[I]` Tab target selection is a cone (60 deg) within 50 m plus a 4 m round catch, with a 10-entry/3 s
-  history; only the cvar defaults are read, the selection loop was not located.
+  history; the cvar defaults are read from the dump, the selection loop itself was not located. Bevy
+  follows this reading (`b332ed5`).
 * `[I]` GCD length comes from `default_gcd`/`custom_gcd` and `global_cooldown_mul`; the producer that
   writes manager `+8/+0xc` was not found.
 * `[I]` Click-target picking and the `mouse_clear_targeting` rule are engine-side; only the cvars and the
@@ -342,9 +344,10 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
    `ResurrectionOffered` now raises `PLAYER_RESURRECTION` with the caster's unit id; the death window
    resolves its name through `X2Unit:GetUnitNameById` (a new `HUD.unit_name` fallback for a caster
    outside player/target/party) and switches to resurrection mode. Covered by tests.
-6. **Tab targeting does not match the original.** Bevy `hud/targeting.rs:13` uses a 40 m nearest-unit
+6. **Tab targeting does not match the original - done in `b332ed5`.** Bevy used a 40 m nearest-unit
    list sorted by distance, no 60 deg fan, no 50 m fan distance, no 20 m z limit, no 4 m round catch and no
-   3 s/10-entry history. Fix: implement the seven `tab_targeting_*` defaults above (4/50/60/20/3/10).
+   3 s/10-entry history. It now applies the seven `tab_targeting_*` defaults above (4/50/60/20/3/10),
+   including the 3 s / 10-entry history.
 7. **No target-of-target unit token.** Original `FUN_3945fcd0` walks the `target` suffix, and
    `target_to_target.alb` uses `"targettarget"` for name/HP/MP/buffs/cast bar. Bevy's cast info only
    knows `"player"`/`"target"` (`hud/cast.rs:57-61`), and no `targettarget` snapshot exists. Fix: resolve the

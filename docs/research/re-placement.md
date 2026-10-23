@@ -133,7 +133,7 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
    requests the quote and opens the window (`placement.rs:1594-1604`, `Session::locked`). Evidence `FUN_39332200`, `farmhouse_placement.png`. Fix: add a rotation state between; request the quote on the second click.
 2. **Help tooltip missing.** `hud/build_guide.alb` / `BUILDER_STEP` are not wired (only `BUILDER_END`, `ingame/houses.rs:178`). Fire `BUILDER_STEP("position"|"rotation"|"elevation"|"stanby")` every state change; the stock Lua shows the 4-row guide only for `"rotation"`.
 3. **Right-click.** Original: state 2 -> back to state 1 (unlock), state 1 -> cancel; Escape cancels from any state. Bevy cancels on right click everywhere (`placement.rs:1578-1583`). Popup Cancel returns to the rotation state in the original, not free placement.
-4. **Step sizes.** Original Shift = 15 deg (matches), Alt = 0.01 rad = 0.573 deg (Bevy 1 deg, `wheel_turn`), plain = unknown (Bevy 10 deg). Needs one live count; Alt fix is certain.
+4. **Step sizes.** Original Shift = 15 deg (matches), Alt = 0.01 rad = 0.573 deg (Bevy 1 deg, `wheel_turn`), plain = 1 deg (static `0x3999cf98 = 0.017453292`) times the runtime multiplier `X` (`DAT_39adac58->vtbl[3]()`, unresolved; Bevy keeps its 10 deg placeholder). Needs one live count; Alt fix is certain.
 5. **Rotation mode keys.** Original rebinding is hotkey-based (`builder_rotate_mode` in `default_binding.g`; remappable). Bevy hard-codes the wheel. Optional parity: read the binding.
 6. **Cursor images.** Original swaps `housing_rotation.dds` in state 2, `housing_zoom.dds` while Ctrl is held, `housing_invalid.dds` on any error; Bevy only uses position/invalid (`placement.rs:1342`).
 7. **Ghost tint.** Original overrides the ghost with `materials/special/housing_build_invalid` when invalid; Bevy leaves the ghost untinted (red ring only, `docs` "plain, untinted").
@@ -152,7 +152,7 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
 
 ## Open questions
 
-* Normal wheel step (value of `DAT_39adac58->vtbl[3]()` and the wheel pulse value); count the degrees per notch in retail.
+* Normal wheel step multiplier (value of `DAT_39adac58->vtbl[3]()` and the wheel pulse value); the static coefficient is resolved to 1 deg at `0x3999cf98`, the effective step still needs one live count.
 * Initial yaw code ("faces the player") and the dot spacing / gate of `FUN_39334ab0` (guide decal option vs debug).
 * G action on a house under construction (which step skill) and the per-house dynamic action source.
 * The owner's "one click opens the popup" (3.5 retail) contradicts 1.2 code (two clicks); the screenshot with tooltip and no popup supports 1.2. Please re-check in 3.5 whether a second click is needed.
