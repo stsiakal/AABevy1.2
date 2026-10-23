@@ -8,6 +8,8 @@
 
 #![allow(dead_code, unused_imports)]
 
+mod asinf;
+mod asinf_tables;
 mod clamp;
 mod direction;
 mod input;
@@ -22,6 +24,7 @@ mod update;
 #[cfg(test)]
 mod tests;
 
+pub use asinf::libm_sse2_asinf;
 pub use clamp::clamp;
 pub use direction::{MovementParams, direction_factor};
 pub use input::{

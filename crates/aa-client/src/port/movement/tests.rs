@@ -10,6 +10,7 @@ use serde_json::Value;
 
 fn load(name: &str) -> Value {
     let text = match name {
+        "asinf" => include_str!("goldens/asinf.json"),
         "clamp" => include_str!("goldens/clamp.json"),
         "direction_factor" => include_str!("goldens/direction_factor.json"),
         "mouse_yaw" => include_str!("goldens/mouse_yaw.json"),
@@ -69,6 +70,15 @@ fn movement_params(v: &Value) -> MovementParams {
         walk_strafe: f32_of(&v["walk_strafe"]),
         walk_backward_diag: f32_of(&v["walk_backward_diag"]),
         walk_backward: f32_of(&v["walk_backward"]),
+    }
+}
+
+#[test]
+fn asinf_matches_goldens() {
+    let doc = load("asinf");
+    for (i, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let got = libm_sse2_asinf(f32_of(&case["in"]));
+        assert_bits(i, "asinf", got, &case["out"]);
     }
 }
 
