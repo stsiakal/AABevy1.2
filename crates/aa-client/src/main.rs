@@ -11,6 +11,7 @@
 //! * [`script`]: `--script file.txt`, a line-based script that drives the client (with `--headless`: no window)
 //! * [`priority`]: the process runs above normal priority (`AA_PRIORITY=normal` keeps the default)
 
+mod character_ui;
 mod graphics;
 mod hud;
 #[allow(unused_imports)]
@@ -55,7 +56,7 @@ fn main() -> AppExit {
             item_recharge_catalog: hud::item_recharge_catalog(),
             ..Default::default()
         })
-        .add_plugins((login::LoginPlugin, ingame::InGamePlugin, hud::HudPlugin, script::ScriptPlugin, graphics::GraphicsPlugin))
+        .add_plugins((login::LoginPlugin, ingame::InGamePlugin, hud::HudPlugin, script::ScriptPlugin, graphics::GraphicsPlugin, character_ui::CharacterUiPlugin))
         // the game's threads before builds and other programs when the CPU is full (`priority`)
         .add_systems(Startup, (priority::raise, present_mode, hud::install_exp_table));
     logging::startup_line();

@@ -3,11 +3,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use aa_net::{UiDataCommand, UiDataResponse};
 use mlua::{Lua, Table, Value};
 use serde_json::{Map, Value as Json, json};
 
 #[path = "settings/bindings.rs"]
 mod bindings;
+#[path = "settings/character.rs"]
+mod character;
 #[path = "settings/input.rs"]
 mod input;
 #[path = "settings/inventory_order.rs"]
@@ -30,6 +33,8 @@ struct Store {
     pending: Map<String, Json>,
     dirty: bool,
     bindings: Option<Arc<Mutex<bindings::Keymap>>>,
+    /// The active character whose option/key-binding buckets (`character_options`/`character_bindings`) apply; 0 = none.
+    character: u32,
 }
 
 impl Store {
@@ -63,6 +68,7 @@ impl Store {
             pending: Map::new(),
             dirty,
             bindings: None,
+            character: 0,
         }
     }
 
@@ -82,30 +88,231 @@ impl Store {
         self.dirty = false;
         Ok(())
     }
+
+    /// A character-scope option lives in the active character's server bucket (`character_options`); system options and the
+    /// pre-character screens keep the account map.
+    fn option_value(&self, key: &str) -> Option<&Json> {
+        if self.character != 0 && is_character_option(key) {
+            if let Some(value) = self
+                .data
+                .get("character_options")
+                .and_then(|map| map.get(self.character.to_string()))
+                .and_then(|map| map.get(key))
+            {
+                return Some(value);
+            }
+        }
+        // Account values written before the character buckets existed remain the fallback.
+        self.data.get("options")?.get(key)
+    }
+
+    fn set_option_value(&mut self, key: &str, value: Json) -> bool {
+        if self.character != 0 && is_character_option(key) {
+            let owner = self.character.to_string();
+            let map = self.data.entry("character_options").or_insert_with(|| json!({}));
+            if !map.is_object() {
+                *map = json!({});
+            }
+            let record = map.as_object_mut().unwrap().entry(owner).or_insert_with(|| json!({}));
+            if !record.is_object() {
+                *record = json!({});
+            }
+            record[key] = value;
+            return true;
+        }
+        let options = self.data.entry("options").or_insert_with(|| json!({}));
+        if !options.is_object() {
+            *options = json!({});
+        }
+        options[key] = value;
+        false
+    }
+
+    fn bindings_json(&self) -> Option<&Json> {
+        if self.character != 0 {
+            return self
+                .data
+                .get("character_bindings")?
+                .get(self.character.to_string());
+        }
+        self.data.get("bindings")
+    }
+
+    fn set_bindings(&mut self, value: Json) -> bool {
+        if self.character != 0 {
+            let owner = self.character.to_string();
+            let map = self.data.entry("character_bindings").or_insert_with(|| json!({}));
+            if !map.is_object() {
+                *map = json!({});
+            }
+            map[owner] = value;
+            return true;
+        }
+        self.data.insert("bindings".into(), value);
+        false
+    }
+
+    fn character_options(&self, owner: u32) -> Option<&Json> {
+        self.data.get("character_options")?.get(owner.to_string())
+    }
+
+    fn set_character_options(&mut self, owner: u32, value: Json) {
+        let map = self.data.entry("character_options").or_insert_with(|| json!({}));
+        if !map.is_object() {
+            *map = json!({});
+        }
+        map[owner.to_string()] = value;
+    }
+
+    fn character_bindings(&self, owner: u32) -> Option<&Json> {
+        self.data.get("character_bindings")?.get(owner.to_string())
+    }
+
+    fn set_character_bindings(&mut self, owner: u32, value: Json) {
+        let map = self.data.entry("character_bindings").or_insert_with(|| json!({}));
+        if !map.is_object() {
+            *map = json!({});
+        }
+        map[owner.to_string()] = value;
+    }
+
+    fn receive_character_ui(&mut self, response: &UiDataResponse) -> bool {
+        let Some(value) = character::decode(response) else { return false };
+        match response.data_type {
+            character::OPTION_TYPE => self.set_character_options(response.character_id, value),
+            character::BINDING_TYPE => {
+                self.set_character_bindings(response.character_id, value);
+                if self.character == response.character_id {
+                    self.bindings = None;
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn character_ui_saves(&self, owner: u32) -> Vec<UiDataCommand> {
+        if owner == 0 {
+            return Vec::new();
+        }
+        let (options, bindings) = character::dirty_types(owner);
+        let mut out = Vec::new();
+        if options {
+            if let Some(payload) = character::options_payload(self.character_options(owner)) {
+                let command = UiDataCommand::Save {
+                    character_id: owner,
+                    data_type: character::OPTION_TYPE,
+                    payload,
+                };
+                if command.validate().is_ok() {
+                    out.push(command);
+                }
+            }
+        }
+        if bindings {
+            if let Some(payload) = character::bindings_payload(self.character_bindings(owner)) {
+                let command = UiDataCommand::Save {
+                    character_id: owner,
+                    data_type: character::BINDING_TYPE,
+                    payload,
+                };
+                if command.validate().is_ok() {
+                    out.push(command);
+                }
+            }
+        }
+        out
+    }
 }
 
-/// The native options whose 1.2 default is not 0, by option id. The 1.2 scripts create no item for a native option
-/// (`CreateOptionItemFloat` is for the named ones): its checkbox asks `GetOptionItemValue` and gets the default of the cvar the engine
-/// registered it with, and a window with nothing to show leaves the box unchecked (a slider at its lowest step) and saves that over it.
-/// `use_celerity_with_double_forward` (option 55, `x2game+0x107b40`) is registered with 1: Dash starts on a double tap of forward and
-/// ends when the direction keys are let go until the player turns it off.
-///
-/// The graphics page's options are the cvar groups of `game/config64/cvargroups/option_*.cfg`, whose `[default]` is 4 (the highest
-/// level) or 1 (shadows, clouds, water reflection, HDR and DoF on); gamma is 1, the anti-aliasing entry 3 (PostAA 2x, the SMAA the
-/// world camera has always had) and the camera mode 2 (classic, `cl_fov` 42.75: what the running 1.2 the camera is fitted to showed).
+/// `OL_CHARACTER` options (the native levels table: name tags through custom-model limits, ids `42..=87`, plus the named
+/// character options of the interface and action-bar pages). Everything else is `OL_SYSTEM` and stays account-local.
+pub(crate) fn is_character_option(key: &str) -> bool {
+    if let Some(id) = key.strip_prefix("n:").and_then(|id| id.parse::<u32>().ok()) {
+        return (42..=87).contains(&id);
+    }
+    let Some(name) = key.strip_prefix("s:") else { return false };
+    matches!(
+        name,
+        "OptionBackCarryingOrder1st"
+            | "OptionBackCarryingOrder2nd"
+            | "OptionBackCarryingOrder3rd"
+            | "OptionBackCarryingOrder4th"
+            | "ShowHeatlthNumber"
+            | "ShowHealthNumber"
+            | "ShowMagicPointNumber"
+            | "ShowBuffDuration"
+            | "ShowTargetCastingBar"
+            | "ShowTargetToTargetCastingBar"
+            | "ShowPlayerFrameLifeAlertEffect"
+            | "UseQuestDirectingCloseUpCamera"
+            | "FixedTooltipPosition"
+            | "ShowEmptyBagSlotCounter"
+            | "ShowPlayerHelmet"
+            | "ShowMyBackHoldable"
+            | "ShowMyCosplay"
+            | "ShowMyBackPackWithCosplay"
+            | "ShowChatBubble"
+            | "ShowFps"
+            | "ShowActionBar_1"
+            | "ShowActionBar_2"
+            | "ShowActionBar_3"
+            | "ShowActionBar_4"
+    )
+}
+
+/// Every native `OPTION_ITEM_*` id (0..=0x57) and the value 1.2 shows before it was saved. The scripts create no item for a native
+/// option (`CreateOptionItemFloat` is for the named ones): its checkbox asks `GetOptionItemValue` and gets the cvar the engine
+/// registered it with (`0x39493230`), and a window with nothing to show saves the unchecked box (a slider at its lowest step) over it.
+/// The graphics ids are the cvar groups of `game/config64/cvargroups/option_*.cfg` and their `[default]`; the character ids are the
+/// `name_tag_*`, `g_*`, `click_to_move`, `use_celerity_with_double_forward` (1: Dash starts on a double tap of forward), `glider_*`,
+/// `combat_msg_*`, `cr_sensitivity` (20) and tooltip registrations of `x2game`. Gamma is 1, the anti-aliasing entry 3 (PostAA 2x, the
+/// SMAA the world camera has always had) and the camera mode 2 (classic, `cl_fov` 42.75: what the running 1.2 camera is fitted to).
 pub(crate) fn native_default(id: u32) -> Option<f64> {
     match id {
-        3 | 17 | 23 | 26 | 27 | 28 | 55 => Some(1.0),
-        7..=11 | 13..=16 | 18..=22 | 24 | 25 | 33 => Some(4.0),
+        // Fullscreen off, live resolution and the renderer/driver switches are not persisted defaults.
+        0..=2 | 4..=6 => Some(0.0),
+        3 => Some(1.0),
+        7..=16 => Some(4.0),
+        17 => Some(1.0),
+        18..=22 => Some(4.0),
+        23 => Some(1.0),
+        24 | 25 => Some(4.0),
+        26..=28 => Some(1.0),
+        // The page's entry 3 (PostAA 2x) is the SMAA the world camera has always used.
         29 => Some(3.0),
+        30..=32 => Some(0.0),
+        33 | 34 => Some(4.0),
+        35..=40 => Some(1.0),
+        41 => Some(0.0),
+        // `name_tag_*` in `x2game` registers 1 (party selection 2), faction selection and mode 0.
+        42 | 43 | 45..=51 => Some(1.0),
+        44 => Some(2.0),
+        52..=54 => Some(0.0),
+        55 => Some(1.0),
+        56 => Some(0.0),
+        57 | 58 => Some(1.0),
+        59 => Some(1.0),
+        60..=62 => Some(0.0),
+        63 => Some(1.0),
+        64 => Some(50.0),
         65 => Some(2.0),
+        66 => Some(1.0),
+        // `cr_sensitivity`
+        67 => Some(20.0),
+        68 => Some(1.0),
+        69 => Some(0.0),
+        70 => Some(1.0),
+        71..=81 => Some(0.0),
+        82 => Some(1.0),
+        83..=87 => Some(0.0),
         _ => None,
     }
 }
 
 /// Marks an options map written for the defaults of [`native_default`]. `Defaults1` was the stamp before the graphics options had any.
-const OPTIONS_STAMP: &str = "s:AoAOptionDefaults2";
-const OLD_OPTIONS_STAMP: &str = "s:AoAOptionDefaults1";
+const OPTIONS_STAMP: &str = "s:AoAOptionDefaults3";
+const OLD_OPTIONS_STAMP: &str = "s:AoAOptionDefaults2";
 
 /// The graphics options (gamma, the quality sliders and check boxes, anti-aliasing): the window saved what it was shown, the lowest
 /// step of every slider and an unchecked box, over values that were never set (nothing applied them then).
@@ -125,7 +332,10 @@ fn stamp_options(data: &mut Map<String, Json>, migrate: bool) -> bool {
         let id = |k: &str| k.strip_prefix("n:").and_then(|n| n.parse::<u32>().ok());
         let bad: Vec<String> = options
             .iter()
-            .filter(|(k, v)| is_graphics_option(k) || (id(k).and_then(native_default).is_some() && v.as_f64() == Some(0.0)))
+            .filter(|(k, v)| {
+                is_graphics_option(k)
+                    || (id(k).and_then(native_default).is_some_and(|default| default != 0.0) && v.as_f64() == Some(0.0))
+            })
             .map(|(k, _)| k.clone())
             .collect();
         for key in bad {
@@ -235,11 +445,7 @@ fn install_store(lua: &Lua, net: &Table, store: Arc<Mutex<Store>>) -> mlua::Resu
             let id = key(&id);
             lua_scalar(
                 lua,
-                id.and_then(|id| {
-                    s.pending
-                        .get(&id)
-                        .or_else(|| s.data.get("options")?.get(id))
-                }),
+                id.and_then(|id| s.pending.get(&id).or_else(|| s.option_value(&id))),
             )
         })?,
     )?;
@@ -272,16 +478,23 @@ fn install_store(lua: &Lua, net: &Table, store: Arc<Mutex<Store>>) -> mlua::Resu
         "save_settings",
         lua.create_function(move |_, ()| {
             let mut s = s.lock().unwrap_or_else(|e| e.into_inner());
+            let owner = s.character;
             let pending = std::mem::take(&mut s.pending);
+            let mut character_changed = false;
             for (id, value) in pending {
-                let options = s.data.entry("options").or_insert_with(|| json!({}));
-                if !options.is_object() {
-                    *options = json!({});
+                let current = if owner != 0 && is_character_option(&id) {
+                    s.character_options(owner).and_then(|map| map.get(&id))
+                } else {
+                    s.data.get("options").and_then(|map| map.get(&id))
+                };
+                if current == Some(&value) {
+                    continue;
                 }
-                if options.get(&id) != Some(&value) {
-                    options[id] = value;
-                    s.dirty = true;
-                }
+                character_changed |= s.set_option_value(&id, value);
+                s.dirty = true;
+            }
+            if character_changed {
+                character::mark_options(owner);
             }
             if let Err(e) = s.save() {
                 bevy::log::warn!("settings: save: {e:#}");
@@ -428,6 +641,60 @@ pub fn install_options(lua: &Lua) -> mlua::Result<()> {
     lua.load(include_str!("settings_options.lua"))
         .set_name("@settings_options.lua")
         .exec()
+}
+
+/// The character whose `OL_CHARACTER` options and key bindings apply; 0 before the selection or after leaving.
+pub(crate) fn character_id() -> u32 {
+    shared().lock().unwrap_or_else(|e| e.into_inner()).character
+}
+
+pub(crate) fn set_character(id: u32) {
+    let store = shared();
+    let mut s = store.lock().unwrap_or_else(|e| e.into_inner());
+    if s.character == id {
+        return;
+    }
+    // An edit the Options window did not save belongs to the character that showed it.
+    s.character = id;
+    s.pending.clear();
+    s.bindings = None;
+}
+
+/// `CSRequestUIData` for types 1 and 2: the client asks for both when the character list arrives (`0x391eaf20` -> `0x392175f0`).
+pub(crate) fn character_ui_requests(character_id: u32) -> [UiDataCommand; 2] {
+    character::requests(character_id)
+}
+
+/// `SCResponseUIData` for types 1/2: the native blob replaces that character's cached option/key-binding tree.
+pub(crate) fn character_ui_receive(response: &UiDataResponse) -> bool {
+    let store = shared();
+    let mut s = store.lock().unwrap_or_else(|e| e.into_inner());
+    if !s.receive_character_ui(response) {
+        return false;
+    }
+    s.dirty = true;
+    if let Err(e) = s.save() {
+        bevy::log::warn!("settings: character UI data save: {e:#}");
+    }
+    true
+}
+
+/// The modified character blobs as `CSSaveUIData` commands (`0x39217640`); the caller writes them before leaving.
+pub(crate) fn character_ui_take_saves(character_id: u32) -> Vec<UiDataCommand> {
+    if character_id == 0 {
+        return Vec::new();
+    }
+    let store = shared();
+    let s = store.lock().unwrap_or_else(|e| e.into_inner());
+    let out = s.character_ui_saves(character_id);
+    drop(s);
+    character::clear(character_id);
+    out
+}
+
+/// True when a modified blob has waited out the native 500 ms per-type coalescing window (`0x392f3290`).
+pub(crate) fn character_ui_due(character_id: u32, window: std::time::Duration) -> bool {
+    character::dirty_due(character_id, window)
 }
 
 #[cfg(test)]
@@ -581,5 +848,90 @@ mod tests {
         assert!(!stamp_options(&mut data, true));
         assert_eq!(data["options"]["n:10"], json!(2));
         assert!(is_graphics_option("n:18") && !is_graphics_option("n:34") && !is_graphics_option("n:2"));
+    }
+
+    /// Native types 1/2: the per-character option and key-binding buckets, their native Data payloads and their saves.
+    #[test]
+    fn character_options_and_key_bindings_use_ui_data_types_one_and_two() {
+        let path = std::env::temp_dir().join(format!("aa-character-options-{}.json", std::process::id()));
+        let mut store = Store::open(path.clone());
+        store.character = 7;
+        assert!(store.set_option_value("n:42", json!(1)));
+        assert!(!store.set_option_value("s:ui_scale", json!(1.1)));
+        assert_eq!(store.option_value("n:42"), Some(&json!(1)));
+        assert_eq!(store.option_value("s:ui_scale"), Some(&json!(1.1)));
+        assert!(store.character_options(7).unwrap().get("n:42").is_some());
+        assert!(store.data["options"].get("n:42").is_none());
+
+        character::clear(7);
+        character::mark_options(7);
+        let saves = store.character_ui_saves(7);
+        assert_eq!(saves.len(), 1);
+        let UiDataCommand::Save { data_type, payload, .. } = &saves[0] else { panic!() };
+        assert_eq!(*data_type, character::OPTION_TYPE);
+
+        let mut received = Store::open(path.with_extension("received.json"));
+        let response = UiDataResponse {
+            character_id: 7,
+            data_type: character::OPTION_TYPE,
+            payload: payload.clone(),
+            raw_length: payload.len() as i32,
+        };
+        assert!(received.receive_character_ui(&response));
+        received.character = 7;
+        assert_eq!(received.option_value("n:42"), Some(&json!(1)));
+
+        let records = json!({"version": 2, "records": [
+            {"manager": 1, "mode": "normal_mode", "action": "moveleft", "index": 0, "kind": 0, "key": "q"}
+        ]});
+        received.set_character_bindings(7, records.clone());
+        let payload = character::bindings_payload(received.character_bindings(7)).unwrap();
+        let response = UiDataResponse {
+            character_id: 7,
+            data_type: character::BINDING_TYPE,
+            raw_length: payload.len() as i32,
+            payload,
+        };
+        let mut restored = Store::open(path.with_extension("bindings.json"));
+        assert!(restored.receive_character_ui(&response));
+        assert_eq!(restored.character_bindings(7), Some(&records));
+
+        let requests = character_ui_requests(7);
+        assert!(matches!(requests[0], UiDataCommand::Request { data_type: 1, .. }));
+        assert!(matches!(requests[1], UiDataCommand::Request { data_type: 2, .. }));
+    }
+
+    /// Every `OPTION_ITEM_*` the client registers has a default instead of falling through to 0.
+    #[test]
+    fn every_native_option_has_the_original_default() {
+        for id in 0..=0x57 {
+            assert!(native_default(id).is_some(), "option {id}");
+        }
+        for (id, value) in [
+            (8, 4.0), (17, 1.0), (23, 1.0), (26, 1.0), (29, 3.0), (33, 4.0), (34, 4.0),
+            (35, 1.0), (41, 0.0), (42, 1.0), (44, 2.0), (52, 0.0), (54, 0.0), (55, 1.0),
+            (56, 0.0), (63, 1.0), (64, 50.0), (65, 2.0), (66, 1.0), (67, 20.0), (68, 1.0),
+            (69, 0.0), (70, 1.0), (81, 0.0), (82, 1.0), (84, 0.0),
+        ] {
+            assert_eq!(native_default(id), Some(value), "option {id}");
+        }
+    }
+
+    /// `ui_scale` is the saved cvar at stage start; the page's Save writes it back through `SetUIScale(value, true)`.
+    #[test]
+    fn saved_ui_scale_is_applied_at_boot_and_written_back_on_save() -> Result<(), Box<dyn std::error::Error>> {
+        let path = std::env::temp_dir().join(format!("aa-ui-scale-{}.json", std::process::id()));
+        let store = Arc::new(Mutex::new(Store::open(path.clone())));
+        store.lock().unwrap().set_option_value("s:ui_scale", json!(1.2));
+        let mut rt = aa_ui::UiRuntime::new("en_us", 1920.0, 1080.0)?;
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(crate::hud::api::HudData::default()));
+        crate::hud::api::install(&mut rt, &bridge)?;
+        let net: Table = rt.lua.globals().get("NET")?;
+        install_store(&rt.lua, &net, store)?;
+        install_options(&rt.lua)?;
+        assert_eq!(rt.ui_scale(), 1.2);
+        rt.lua.load("UIParent:SetUIScale(0.9, true); X2Option:Save()").exec()?;
+        assert_eq!(Store::open(path).data["options"]["s:ui_scale"], json!(0.9));
+        Ok(())
     }
 }

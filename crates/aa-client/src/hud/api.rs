@@ -1082,6 +1082,10 @@ pub fn handle_requests(
                     if let Some(save) = super::achievement::save_for_leave(&mut bridge.0.borrow_mut(), how) {
                         net.write(NetCommand(Command::UiData(save)));
                     }
+                    // `SaveAll` before `CSLeaveWorld` (`0x390f4420` -> `0x392178d0`): modified character blobs go first.
+                    for save in crate::settings::character_ui_take_saves(bridge.0.borrow().character_id) {
+                        net.write(NetCommand(Command::UiData(save)));
+                    }
                     super::session::leave(how, &mut net);
                 }
             }
