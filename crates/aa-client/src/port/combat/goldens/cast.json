@@ -1,0 +1,457 @@
+{
+  "function": "cast queries FUN_394bcf60/FUN_39395510/FUN_39395d90/FUN_39395e40/FUN_394bd830/FUN_394bd9f0",
+  "module": "x2game.dll",
+  "skill_id": 10024,
+  "skill_name": "|I\u008b8",
+  "local": {
+    "id": 38444,
+    "ptr": 1602265436
+  },
+  "cases": [
+    {
+      "kind": "nil",
+      "label": "none",
+      "token": "player",
+      "slots": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 2,
+          "value": 1
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 500.0,
+      "current": 500.0,
+      "visible": true,
+      "label": "cast_clamped",
+      "token": "player",
+      "slots": [
+        1307305,
+        0,
+        0,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 500,
+      "normal_start": 1616520,
+      "channel_total": 0,
+      "channel_start": 0
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1167867904
+        },
+        {
+          "type": 4,
+          "value": 1141800960
+        },
+        {
+          "type": 2,
+          "value": 1
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 5000.0,
+      "current": 570.0,
+      "visible": true,
+      "label": "cast_mid",
+      "token": "player",
+      "slots": [
+        1307306,
+        0,
+        0,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 5000,
+      "normal_start": 1618195,
+      "channel_total": 0,
+      "channel_start": 0
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1165623296
+        },
+        {
+          "type": 4,
+          "value": 0
+        },
+        {
+          "type": 2,
+          "value": 1
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 4000.0,
+      "current": 0.0,
+      "visible": true,
+      "label": "channel_clamped",
+      "token": "player",
+      "slots": [
+        0,
+        0,
+        1307307,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 0,
+      "normal_start": 1614835,
+      "channel_total": 4000,
+      "channel_start": 1614835
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1165623296
+        },
+        {
+          "type": 4,
+          "value": 1157783552
+        },
+        {
+          "type": 2,
+          "value": 1
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 4000.0,
+      "current": 2086.0,
+      "visible": true,
+      "label": "channel_mid",
+      "token": "player",
+      "slots": [
+        0,
+        0,
+        1307308,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 0,
+      "normal_start": 1620011,
+      "channel_total": 4000,
+      "channel_start": 1620011
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 2,
+          "value": 1
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 500.0,
+      "current": 500.0,
+      "visible": true,
+      "label": "both_normal_first",
+      "token": "player",
+      "slots": [
+        1307309,
+        0,
+        1307310,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 500,
+      "normal_start": 1621189,
+      "channel_total": 4000,
+      "channel_start": 1621678
+    },
+    {
+      "kind": "value",
+      "descriptors": [
+        {
+          "type": 5,
+          "value": 948652412
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 4,
+          "value": 1140457472
+        },
+        {
+          "type": 2,
+          "value": 0
+        }
+      ],
+      "name": "siege weapon - siege tower",
+      "total": 500.0,
+      "current": 500.0,
+      "visible": false,
+      "label": "cast_visible_off",
+      "token": "player",
+      "slots": [
+        1307311,
+        0,
+        0,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 0,
+      "normal_total": 500,
+      "normal_start": 1622812,
+      "channel_total": 0,
+      "channel_start": 0
+    },
+    {
+      "kind": "nil",
+      "label": "invalid_token",
+      "token": "bogus",
+      "slots": [
+        1307312,
+        0,
+        0,
+        0,
+        0
+      ],
+      "show_target_casting_time": 1,
+      "desc_visible": 1,
+      "normal_total": 500,
+      "normal_start": 1624117,
+      "channel_total": 0,
+      "channel_start": 0
+    }
+  ],
+  "can_cases": [
+    {
+      "fn": "can_cast",
+      "label": "no_flags",
+      "flag": 0,
+      "out": false
+    },
+    {
+      "fn": "can_cast",
+      "label": "desc_15a",
+      "flag": 1,
+      "out": true
+    },
+    {
+      "fn": "can_cast",
+      "label": "controller_22",
+      "flag": 34,
+      "out": true
+    },
+    {
+      "fn": "can_channel",
+      "label": "no_flags",
+      "flag": 0,
+      "readback": 0,
+      "out": false
+    },
+    {
+      "fn": "can_channel",
+      "label": "desc_15d",
+      "flag": 1,
+      "readback": 1,
+      "out": true
+    }
+  ],
+  "combat_cases": [
+    {
+      "fn": "combat_state",
+      "token": "player",
+      "flag": 0,
+      "out": {
+        "kind": "value",
+        "type": 2,
+        "value": 0
+      }
+    },
+    {
+      "fn": "combat_state",
+      "token": "bogus",
+      "flag": 0,
+      "out": {
+        "kind": "value",
+        "type": 2,
+        "value": 0
+      }
+    },
+    {
+      "fn": "combat_state",
+      "token": "player",
+      "flag": 1,
+      "out": {
+        "kind": "value",
+        "type": 2,
+        "value": 1
+      }
+    },
+    {
+      "fn": "combat_state",
+      "token": "bogus",
+      "flag": 1,
+      "out": {
+        "kind": "value",
+        "type": 2,
+        "value": 0
+      }
+    }
+  ],
+  "first_hit_cases": [
+    {
+      "hitter": 0,
+      "team": 0,
+      "lua": "true,true"
+    },
+    {
+      "hitter": 38444,
+      "team": 0,
+      "lua": "true,true"
+    },
+    {
+      "hitter": 38444,
+      "team": 4660,
+      "lua": "true,false"
+    },
+    {
+      "hitter": 38445,
+      "team": 0,
+      "lua": "true,false"
+    },
+    {
+      "hitter": 38445,
+      "team": 4660,
+      "lua": "true,false"
+    }
+  ],
+  "progress_cases": [
+    {
+      "label": "none",
+      "kind": 7,
+      "out": null,
+      "manager": null,
+      "slots": [
+        1307315,
+        0,
+        0
+      ]
+    },
+    {
+      "label": "cast",
+      "kind": 7,
+      "out": 4436,
+      "manager": null,
+      "slots": [
+        1307316,
+        1307316,
+        0
+      ]
+    },
+    {
+      "label": "channel",
+      "kind": 7,
+      "out": 2497,
+      "manager": null,
+      "slots": [
+        1307317,
+        0,
+        1307317
+      ]
+    },
+    {
+      "label": "cooldown",
+      "kind": 8,
+      "out": 0,
+      "manager": {
+        "gcd": [
+          0,
+          222
+        ],
+        "tags": [],
+        "skills": [
+          [
+            10024,
+            72,
+            444
+          ]
+        ]
+      },
+      "slots": [
+        1307317,
+        0,
+        0
+      ]
+    },
+    {
+      "label": "unknown",
+      "kind": 9,
+      "out": 0,
+      "manager": null,
+      "slots": [
+        1307317,
+        0,
+        0
+      ]
+    }
+  ]
+}

@@ -348,7 +348,9 @@ four per-unit states in order [R]:
 | cast delay | `+0x3ac8` key | plot map → `FUN_3938c2e0` | `+0x08` plot id, `+0x74` total, `+0x70` start | `min(total, now-start)` |
 | channel delay | `+0x3ad0` key | plot map → `FUN_3938c2e0` | `+0x08` id, `+0x84` total, `+0x80` start | `(start+total) - now` |
 
-It pushes `(desc+0x104 name, total, current, desc+0x13a)`. The Lua `castingbar.alb` treats the
+It pushes `(desc+0x104 name, total, current, desc+0x13a)` through
+`FUN_394bbad0`; the vtable receives the descriptors in that order (**name, total, current,
+visible**), proven by the Stage B fake-callback goldens.  The Lua `castingbar.alb` treats the
 pair as total/current and fills while current grows (cast) or empties while it shrinks (channel).
 When no state is live it pushes nil. Both target and target-of-target frames use the same token
 machinery (`re-combat.md` §2.1).
@@ -401,9 +403,12 @@ Order [R]:
 * `FUN_39396000` (344 B, `SCCastingStopped`): `FUN_39394e70` → `FUN_39395b50` (clear cast), then
   `FUN_39899f90(desc, duration)` (cooldown estimate), `FUN_394e2650` (stop casting VFX) and UI
   event `0x18`.
-* `FUN_39395760` (317 B) / `FUN_3938c520` (291 B): `SCCastingDelayed`; add `duration` to the
-  instance's total (`+0x150` for cast, `+0x88/+0x8c` for channel), scale the animation speed
-  (`game_vtable+0x16c/0x170`) and log `Casting anim speed %f -> %f`.
+* `FUN_39395760` (317 B) / `FUN_3938c520` (291 B): `SCCastingDelayed`.  In the skill map the
+  node pointer is used, so the cast path adds `duration` to the **normal cast total**
+  `value+0x138` (node `+0x150`) and compares against the normal start `value+0x144` (node
+  `+0x15c`); the channel path (`FUN_3938c520`) works on the separate plot state
+  `+0x88/+0x8c`.  Both scale the animation speed (`game_vtable+0x16c/0x170`) and log
+  `Casting anim speed %f -> %f`.
 * `FUN_39395b50` (512 B) is the single "stop casting" primitive: it clears `+0x3ac4/+0x3ac8`
   (normal) or `+0x3acc/+0x3ad0` (channel), stops the skill controller list (`0x18` sub-id 10 →
   `FUN_393b6220`), hides the target cast bar (`FUN_394277f0`) and sends the stop VFX. Its only
@@ -529,6 +534,15 @@ The `X2Action` slot queries resolve a slot to a spell id (`FUN_390898b0` → `FU
   skill total, skill remaining)`. The item-kind-9 branch (`item+0x48 == 9`) overwrites the
   skill/tag pair with the item-use cooldown (`FUN_393a6d90`: remaining = `DAT_3a17a950 - now`,
   total = 2000, when the global is not 0/sentinel and `now < DAT_3a17a950`).
+* `FUN_39395510` (cast/cooldown progress) is **cdecl** with two stack arguments `(unit, out)`
+  and two register inputs: `ECX` = the skill desc and `EAX` = a pointer to the kind byte
+  (`7` = cast states, `8` = cooldown query).  Kind 8 calls `FUN_3989a450(unit+0x2c48, desc)`;
+  kind 7 uses the same four states as `UnitCastingInfo` (normal `+0x138/+0x144`, channel
+  `+0x140/+0x148`, plot `+0x74/+0x70` and `+0x84/+0x80`).  The normal/channel result is
+  `total - min(total, now-start)`; the channel-delay result is `(start+total) - now`.
+* `FUN_39395d90`/`FUN_39395e40` (can cancel) look up the active instance via the unit slot and
+  return true when the desc's `+0x15a` (cast) or `+0x15d` (channel) byte is set; the cast one
+  also accepts a controller of kind `0x22`.
 
 **`SCCooldowns` layout.** `FUN_39899d40` reads a count at `+0`, then 150 rows of 12 bytes
 starting at `+4` in the order `(id, total, remaining)`; the tag count is at `+0x70c` and its rows
@@ -788,6 +802,50 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
   in §4.3. `slot.json` proves the resolver.
 * **Reaction table** — the exact anim ids/flags are in [`structs.md`](structs.md) §9; the weapon
   flag is `FUN_397cd5f0(*(u32*)(unit+0x1000))` and the crit flag is `unit+0x5fc4`.
+
+### Resolved by the Stage B port (`port/combat-b`, 2026-10-23)
+
+* **UnitCastingInfo** — the fake-callback goldens prove the descriptor order
+  `(name, total, current, visible)`.  Normal cast reads `+0x138/+0x144`, channel
+  `+0x140/+0x148`; the two plot branches read `+0x74/+0x70` and `+0x84/+0x80` and always push
+  visible `true`.  `current` is `min(total, now-start)` for cast/cast-delay and
+  `total - min(total, now-start)` for channel; channel-delay is `(start+total)-now`.
+* **Cast progress** — `FUN_39395510` is `cdecl(unit, out)` with `ECX` = desc and `EAX` = the kind
+  byte, not a manager argument; the manager is derived from `unit+0x2c48`.  See §4.3.
+* **Cancel checks** — `FUN_39395d90`/`FUN_39395e40` read desc `+0x15a`/`+0x15d` and controller
+  kind `0x22`; the goldens cover both true and false branches.
+* **StartSkill timings** — the instance value is keyed by the target key.  `value+0x138` is the
+  cast total and `value+0x144` the cast start; `+0x140/+0x148` are channel total/start.  The
+  normal cast slot `Unit+0x3ac4` is set only when the cast-time argument is non-zero; the
+  server-mirror flag (the low byte of the 9th stack argument, `param_10`) creates no instance
+  and only emits event `0x14`.  A zero target key with skill `DAT_39ac769c` (2) arms
+  `Unit+0x3ad5`; any other skill is the "impossible case".
+* **FireSkill timings** — `param_7` lands at `value+0x13c`, `param_9` at `value+0x140` and the
+  current engine time at `value+0x148`.  A non-zero normal total clears `Unit+0x3ac4`; a desc
+  with `+0x6c > 0` sets `Unit+0x3acc` to the instance key.  The fallback path calls StartSkill,
+  so it emits `0x14` before `0x15`.
+* **End/stop/casting stop** — `EndSkill` removes the instance/clears its slots and always emits
+  `0x16` (even when the instance is missing).  `StopSkill` only acts on the auto-attack id and
+  emits `0x17`; `StopCasting` just clears the matching slot; `SCCastingStopped` adds the packet
+  duration as a skill cooldown and emits `0x18`.  `SCCastingDelayed` adds to `+0x138` while the
+  cast is live.
+* **Combo** — `SkillComboMan::Add` keys entries by the current skill id and stores the **next**
+  skill id from controller kind `0x18` sub `0x30` (`values[1]`), the start, the duration and
+  `values[2]` as the expiry margin.  `Update` expires at `start + duration + margin` and clears
+  the next skill's cooldown.  The goldens are synthetic: driving `FUN_3939ce90` in the harness
+  reaches `FUN_3930bb30` for a skill that is not on the action bar and faults there.
+* **Client-only list** — `+0x2d0` fires, `+0x2d4` marks the local damage, `+0x2d4+1000` ends and
+  removes the entry; the fields are in `structs.md` §5.2.  Synthetic tests cover the transitions
+  because the live element and its hit record are created by the game, not the harness.
+* **UI event ids** — `0x14` start, `0x15` fire, `0x16` end, `0x17` auto-attack stop, `0x18`
+  casting stopped.  The harness captures them by redirecting the five `call 0x39202db0` sites to
+  an RWX stub that records the id and tail-jumps; a stub that pushes `pushfd/pushad` and restores
+  them crashed the client, a stub that only clobbers EAX/EDX does not.  Fire's normal path did
+  not reach its event call in the harness (the state writes still matched), so its `0x15` id is
+  from the decompile and the `SPELLCAST_SUCCEEDED` Lua callback.
+* **U7** remains open (no explicit queue margin; the client-only timestamps are fixed
+  `+0x2d0/+0x2d4` with a 1000 ms grace). **U9** remains open (movement/jump cancel is outside the
+  ported timeline; `FUN_39395b50` still has only the three server-driven callers).
 
 
 ---
