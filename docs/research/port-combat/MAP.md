@@ -462,12 +462,25 @@ clear the global/skill/tag entries.
 | `desc+0x9c == 0`, `desc+0x94 > 0` | `FUN_39899df0` (94 B) | `gcd_ms = custom_gcd_ms * 1000 / (1000 + attr(0x4a))` |
 | otherwise (tag/default) | `FUN_39899f30` (90 B) | `gcd_ms = 1_000_000 / (1000 + attr(0x4a))` (= 1 s scaled) |
 
-Both write `+0x8 = +0xc = gcd_ms`; they do **not** write a per-skill cooldown. `attr(0x4a)` is
-`FUN_398a0bc0(unit+0x1aa0, tagKey, 0x4a, 0)`. The stat name is **inferred**: the UI binding
-`FUN_394bdc10`/`394bec40` exposes a `global_cooldown_mul` stat (`0x399e41ac`), and it is the only
-GCD multiplier in the data, so the port can expose `gcd_ms = base_ms * 1000 / (1000 +
-global_cooldown_mul)` with `base = custom_gcd` or `1000` — but the numeric attribute id is not
-proven to be the same row (U6). The tag key is the static object from `FUN_39005b20`.
+Both write `+0x8 = +0xc = gcd_ms`; they do **not** write a per-skill cooldown. The stack
+argument is the **unit**, not a tag key: `FUN_39899df0(manager, unit, custom_ms)` calls
+`FUN_398a0bc0(this = owner+0x1aa0, unit, 0x4a, 0)`; `FUN_39899f30(manager, unit)` calls the same
+getter with one stack argument. `attr(0x4a)` is the attribute row; the UI exposes
+`global_cooldown_mul` (`0x399e41ac`), which is the only GCD multiplier in the data [R for the
+formula and the getter call, I for the row name]. **U6 is resolved** (see §9).
+
+The exact arithmetic is:
+
+```text
+attr_eff = if attr < -999 { -999 } else { attr }     // the -999 floor
+denom    = u32(attr_eff + 1000)                       // wraps for huge attrs
+custom   = u32(i32(custom_ms) * 1000)                 // 32-bit imul, wraps
+gcd      = custom / denom                             // 32-bit unsigned div
+default  = 1_000_000 / denom                          // 32-bit unsigned div
+```
+
+The `-999` floor is what makes the denominator 1 for any attribute at or below `-1000`; it is not
+a "tag key" argument.
 
 **Per-skill cooldowns** come from the server (`SCCooldowns`) and from the local estimate
 `FUN_39899f90`:
@@ -497,6 +510,30 @@ The `X2Action` slot queries resolve a slot to a spell id (`FUN_390898b0` → `FU
   (vtable `+4`) and fires `global_cooldown_start/done`, `skill_cooldown_start/done` on event
   `0x25`; `FUN_39209430` supplies the pair [R].
 
+**Exact query semantics (Stage A, confirmed by disassembly and goldens).**
+
+* `FUN_3989a290(manager, desc, ignore_global, out_remaining, out_total)`: the pair starts at
+  `(gcdRemaining, gcdTotal)` when `ignore_global == 0`, otherwise at `(0, 0)`; the tag vector
+  `desc+0x238..+0x23c` and then the skill row `desc+0` still update it. The update is strictly
+  `>` (`jbe` skips equal values).
+* `FUN_3989a3b0(manager, desc, ignore_global)` returns `remaining != 0`.
+* `FUN_3989a3e0(manager, desc, out_remaining, out_total)` is `a290` with
+  `desc+0xdc` as the flag.
+* `FUN_3989a400(manager, desc)` queries with flag 1, returns 1 if the skill/tag remaining is
+  non-zero, else 2 when `desc+0xdc == 0` and `manager+8 != 0`, else 0.
+* `FUN_3989a450(manager, desc)` returns the remaining pair's first value with `desc+0xdc`.
+* The slot resolver `FUN_393f61c0(slot, out_global_rem, out_global_total, out_skill_rem,
+  out_skill_total)` calls `a3e0` for the global pair and `a290(desc, 1)` for the skill/tag pair.
+  `FUN_3943f310` passes the global pair's `(remaining, total)` to `FUN_3905aca0`; `FUN_3943f420`
+  passes the four values to `FUN_3943ecb0` in the call order `(global total, global remaining,
+  skill total, skill remaining)`. The item-kind-9 branch (`item+0x48 == 9`) overwrites the
+  skill/tag pair with the item-use cooldown (`FUN_393a6d90`: remaining = `DAT_3a17a950 - now`,
+  total = 2000, when the global is not 0/sentinel and `now < DAT_3a17a950`).
+
+**`SCCooldowns` layout.** `FUN_39899d40` reads a count at `+0`, then 150 rows of 12 bytes
+starting at `+4` in the order `(id, total, remaining)`; the tag count is at `+0x70c` and its rows
+start at `+0x710`. Each list is capped at 150 independently.
+
 ### 4.4 Per-weapon value selector (not a cooldown producer)
 
 `FUN_39898ef0` (188 B) chooses one of up to eight values by unit equipment: `unit+0xd88`
@@ -511,10 +548,15 @@ producer (that is §4.2).
 
 ### 5.1 Unit tokens
 
-`FUN_3945fcd0` (1003 B) parses a token string and returns `(kind, unitPtr)`:
-`kind 1` = unit, `kind 2` = position? It recognises `player`, `playerpet`, `target`,
-`watchtarget`, `team`, `loginch`, and repeatedly consumes a trailing `target` suffix, so
-`targettarget` is the target's target and arbitrary chains work [R]. Used by `UnitCastingInfo`,
+`FUN_3945fcd0` (1003 B) parses a token string and returns a 64-bit value: `EAX` = kind
+(`1` unit, `2` team-member object, `3` object, `0` failure), `EDX` = pointer [R, confirmed by the
+capture trampoline]. It recognises the case-sensitive prefixes `player`, `playerpet`, `target`,
+`watchtarget`, `team<n>`, `loginch<n>`, `previewch<a><b>`, `house` and `doodad`; after a unit is
+resolved, every trailing `target` suffix moves to that unit's `+0x1aa0` target id
+(`FUN_39360020`), so `targettarget` and longer chains work [R]. `target` falls back to the focus
+item (`local actor+0x5f90` -> `FUN_39035110`, kind 3) when the target is empty/unresolvable; a
+`target` suffix still left after that fallback is an error. `team<n>` returns kind 2 directly
+when `FUN_3935e370` finds no unit. `doodad` returns kind 3. Used by `UnitCastingInfo`,
 `UnitCombatState`, `UnitHealth/Mana`, `IsFirstHitByMeOrMyTeam` and many `X2Unit` bindings.
 
 `FUN_394270a0` (826 B) is the target setter: it resolves both ids, reads/writes the unit's
@@ -599,10 +641,13 @@ switch but the presentation goes through `FUN_39392480` (heal anim/text).
 ### 6.2 Which reaction animation is requested
 
 `FUN_393917f0` (295 B) maps the hit type (`record+0x48`) to `(animId, kind)` [R]; full table in
-[`structs.md`](structs.md) §9. The table is selected with `FUN_39354600()` (crit vs melee) and
-`FUN_397cd5f0(unit+0x1000)` (one variant). `FUN_39391950` (147 B) decides whether the "attacker
-view" or "victim view" presentation runs: it returns true when there is no hit type or the desc's
-big-hit value (`+0x188`) is > 1.0, i.e. ordinary hits use the victim animation path.
+[`structs.md`](structs.md) §9. The table's two flags are `FUN_39354600(unit)` (reads
+`unit+0x5fc4`, the crit/skill column) and `FUN_397cd5f0(*(u32*)(unit+0x1000))` (the weapon
+variant; `true` when the item type row's `+0x74` is `0x10`) [R]. `FUN_39391950` (147 B) decides
+whether the "attacker view" or "victim view" presentation runs: it returns true when there is no
+hit type or `float(desc+0x188) > 0.0` — the constant at `0x3999c484` is **0.0f**, not 1.0f (the
+1.0f at `0x3999c488` is a different constant). Ordinary hits therefore use the victim animation
+path unless the big-hit value is positive.
 
 `FUN_393985f0` (643 B) builds the hit-effect event (`FUN_3940a0f0` maps caster/weapon to a
 `(type, anim)` pair; `+0x50..0x6c` are the effect values), and `FUN_39398880` (337 B) emits the
@@ -709,9 +754,11 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
    `FUN_394270a0`/CSChangeTarget while pressing Tab and clicking.
 5. **U5 — force-attack request.** The state byte and the `SCForceAttackSet` handler are known;
    the Ctrl+F sender and its eligibility checks were not located.
-6. **U6 — GCD producer arguments.** `FUN_39005b20` returns a static tag-key object; the two stack
-   slots of `FUN_39899df0`/`f30` (`tagKey`, `custom_ms`) are inferred from the call site, not
-   proven. Dump the slots at entry.
+6. **U6 (resolved) — GCD producer arguments.** Disassembly of `FUN_39899df0`/`FUN_39899f30`
+   shows the stack argument is the **unit**, passed to
+   `FUN_398a0bc0(this = owner+0x1aa0, unit, 0x4a, 0)`; there is no tag-key argument. The formulas
+   and the `-999` attribute floor are in §4.2. Goldens: `gcd.json` (`custom` × `attr` × disabled,
+   including `attr = 0`, negative and `i32::MAX`).
 7. **U7 — queue margin.** `queued_skill_margin` is a string with no code xref; the client-only
    list uses fixed `+0x2d0/+0x2d4` timestamps and a 1000 ms grace in `FUN_3939bfd0`. Measure a
    second key press at varying offsets.
@@ -722,6 +769,26 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
    stopped, fire), none from the movement/input layer. The movement-cancel path must be outside
    x2game or is gated by `desc+0x...`; a breakpoint on `FUN_39395b50` during a cast + W press
    settles it.
+
+### Resolved by the Stage A port (`port/combat-a`, 2026-10-23)
+
+* **U6** — the GCD producers take the **unit**, not a tag key; formulas and the `-999` floor are
+  in §4.2. `gcd.json` covers `attr ∈ {0, negative, i32::MAX, …}` and disabled.
+* **Big-hit threshold** — `FUN_39391950` compares against `0.0f` (`DAT_3999c484`), not `1.0`;
+  the `1.0f` at `0x3999c488` is a different constant. `bighit.json` covers every branch.
+* **Cooldown manager** — size `0xE28`; there is no manager-side ignore-global byte (`a3e0` reads
+  `SkillDesc+0xdc`); `SCCooldowns` rows are `(id, total, remaining)` starting at `+4`/`+0x710`.
+  `cooldown.json` covers empty/full/expiry/compaction and all queries.
+* **Token parser** — the 64-bit return is `EAX` = kind (1 unit, 2 team member, 3 object, 0
+  failure), `EDX` = pointer; the exact prefix set, the `target` fallback and the trailing
+  `target` chain are documented in §5.1 and proven by `token.json`.
+* **Slot queries** — `FUN_393f61c0` fills `(global pair, skill/tag pair)`; `FUN_3943f310`
+  passes the global `(remaining, total)` and `FUN_3943f420` the four values in the order
+  `(global total, global remaining, skill total, skill remaining)`; the item kind-9 override is
+  in §4.3. `slot.json` proves the resolver.
+* **Reaction table** — the exact anim ids/flags are in [`structs.md`](structs.md) §9; the weapon
+  flag is `FUN_397cd5f0(*(u32*)(unit+0x1000))` and the crit flag is `unit+0x5fc4`.
+
 
 ---
 

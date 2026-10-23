@@ -1,0 +1,907 @@
+{
+  "function": "hit reaction FUN_393917f0",
+  "module": "x2game.dll",
+  "weapon_item_id": 5569,
+  "weapon_patched": true,
+  "weapon_restored": false,
+  "normal_cases": [
+    {
+      "hit_type": 0,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 0,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 1,
+      "critical": false,
+      "out": [
+        386,
+        3
+      ]
+    },
+    {
+      "hit_type": 1,
+      "critical": true,
+      "out": [
+        14,
+        3
+      ]
+    },
+    {
+      "hit_type": 2,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 2,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 3,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 3,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 4,
+      "critical": false,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 4,
+      "critical": true,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 5,
+      "critical": false,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 5,
+      "critical": true,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 6,
+      "critical": false,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 6,
+      "critical": true,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 7,
+      "critical": false,
+      "out": [
+        10,
+        1
+      ]
+    },
+    {
+      "hit_type": 7,
+      "critical": true,
+      "out": [
+        10,
+        1
+      ]
+    },
+    {
+      "hit_type": 8,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 8,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 9,
+      "critical": false,
+      "out": [
+        386,
+        3
+      ]
+    },
+    {
+      "hit_type": 9,
+      "critical": true,
+      "out": [
+        14,
+        3
+      ]
+    },
+    {
+      "hit_type": 10,
+      "critical": false,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 10,
+      "critical": true,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 11,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 11,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 12,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 12,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 13,
+      "critical": false,
+      "out": [
+        386,
+        3
+      ]
+    },
+    {
+      "hit_type": 13,
+      "critical": true,
+      "out": [
+        14,
+        3
+      ]
+    },
+    {
+      "hit_type": 14,
+      "critical": false,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 14,
+      "critical": true,
+      "out": [
+        256,
+        3
+      ]
+    },
+    {
+      "hit_type": 15,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 15,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 16,
+      "critical": false,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 16,
+      "critical": true,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 17,
+      "critical": false,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 17,
+      "critical": true,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 18,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 18,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 19,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 19,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 20,
+      "critical": false,
+      "out": [
+        10,
+        1
+      ]
+    },
+    {
+      "hit_type": 20,
+      "critical": true,
+      "out": [
+        10,
+        1
+      ]
+    },
+    {
+      "hit_type": 21,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 21,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 22,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 22,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 23,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 23,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 24,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 24,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 255,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 255,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 256,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 256,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 2147483647,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 2147483647,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": -1,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": -1,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": -2,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": -2,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    }
+  ],
+  "weapon_cases": [
+    {
+      "hit_type": 0,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 0,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 1,
+      "critical": false,
+      "out": [
+        387,
+        3
+      ]
+    },
+    {
+      "hit_type": 1,
+      "critical": true,
+      "out": [
+        17,
+        3
+      ]
+    },
+    {
+      "hit_type": 2,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 2,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 3,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 3,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 4,
+      "critical": false,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 4,
+      "critical": true,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 5,
+      "critical": false,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 5,
+      "critical": true,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 6,
+      "critical": false,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 6,
+      "critical": true,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 7,
+      "critical": false,
+      "out": [
+        11,
+        1
+      ]
+    },
+    {
+      "hit_type": 7,
+      "critical": true,
+      "out": [
+        11,
+        1
+      ]
+    },
+    {
+      "hit_type": 8,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 8,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 9,
+      "critical": false,
+      "out": [
+        387,
+        3
+      ]
+    },
+    {
+      "hit_type": 9,
+      "critical": true,
+      "out": [
+        17,
+        3
+      ]
+    },
+    {
+      "hit_type": 10,
+      "critical": false,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 10,
+      "critical": true,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 11,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 11,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 12,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 12,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 13,
+      "critical": false,
+      "out": [
+        387,
+        3
+      ]
+    },
+    {
+      "hit_type": 13,
+      "critical": true,
+      "out": [
+        17,
+        3
+      ]
+    },
+    {
+      "hit_type": 14,
+      "critical": false,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 14,
+      "critical": true,
+      "out": [
+        255,
+        3
+      ]
+    },
+    {
+      "hit_type": 15,
+      "critical": false,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 15,
+      "critical": true,
+      "out": [
+        15,
+        3
+      ]
+    },
+    {
+      "hit_type": 16,
+      "critical": false,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 16,
+      "critical": true,
+      "out": [
+        13,
+        3
+      ]
+    },
+    {
+      "hit_type": 17,
+      "critical": false,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 17,
+      "critical": true,
+      "out": [
+        12,
+        1
+      ]
+    },
+    {
+      "hit_type": 18,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 18,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 19,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 19,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 20,
+      "critical": false,
+      "out": [
+        11,
+        1
+      ]
+    },
+    {
+      "hit_type": 20,
+      "critical": true,
+      "out": [
+        11,
+        1
+      ]
+    },
+    {
+      "hit_type": 21,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 21,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 22,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 22,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 23,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 23,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 24,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 24,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 255,
+      "critical": false,
+      "out": [
+        0,
+        3
+      ]
+    },
+    {
+      "hit_type": 255,
+      "critical": true,
+      "out": [
+        0,
+        3
+      ]
+    }
+  ]
+}
