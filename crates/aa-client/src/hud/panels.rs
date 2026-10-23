@@ -125,8 +125,8 @@ pub struct TargetSnap {
 /// Everything in this module, as of this frame.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Panels {
-    /// Action bar by slot index (0 based); `None` = empty. Empty when the server has not sent the
-    /// bars yet.
+    /// Action bar by global slot (slot 0 unused); `None` = empty. Empty when the server has not
+    /// sent the bars yet.
     pub actions: Vec<Option<SlotSnap>>,
     pub actions_known: bool,
     /// Current action bar page, 0 based (the scripts' page API is 1 based).
@@ -457,6 +457,17 @@ fn slots_table(lua: &Lua, slots: &[Option<SlotSnap>]) -> mlua::Result<Table> {
     Ok(t)
 }
 
+/// `HUD.actions` is keyed like `X2Action`: slot 1 is the first cell, slot 0 is unused.
+fn action_table(lua: &Lua, slots: &[Option<SlotSnap>]) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    for (i, s) in slots.iter().enumerate() {
+        if let Some(s) = s {
+            t.raw_set(i as i64, slot_table(lua, s)?)?;
+        }
+    }
+    Ok(t)
+}
+
 /// Put the changed parts of `new` into the `HUD` table (all of it when `old` is `None`); returns
 /// what changed.
 pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua::Result<Changed> {
@@ -466,7 +477,7 @@ pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua:
         c.slots = true;
     }
     if old.is_none_or(|o| o.actions != new.actions || o.actions_known != new.actions_known) {
-        hud.raw_set("actions", slots_table(lua, &new.actions)?)?;
+        hud.raw_set("actions", action_table(lua, &new.actions)?)?;
         hud.raw_set("actions_known", new.actions_known)?;
         c.slots = true;
     }
@@ -537,7 +548,7 @@ pub struct Changed {
     pub target: bool,
 }
 
-/// Use what is in action bar slot `slot` (0 based): cast the skill, use the item. What the client already knows is
+/// Use what is in global action bar slot `slot` (1 based, 0 unused): cast the skill, use the item. What the client already knows is
 /// refused (no target, too far, no mana ...) is not sent: the alert says why instead ([`UseFailed`]). A press that waits for
 /// the global cooldown, the cast it repeats or the answer to the last press is dropped without an alert ([`Env::held_back`]).
 #[allow(clippy::too_many_arguments)]
@@ -757,6 +768,24 @@ mod tests {
             .add_systems(Update, (press, see).chain());
         app.update();
         assert!(app.world().resource::<DecoSeen>().0, "item_housing_decorations uses the decoration builder");
+    }
+
+    /// `X2Action:GetActionInfo(slot)` and `HUD.actions[slot]` use the same 1-based global slot; index 0 is
+    /// unused, unlike the bag list whose Lua key is the 1-based bag cell.
+    #[test]
+    fn hud_actions_are_keyed_by_the_global_slot() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let slots = vec![
+            None,
+            None,
+            Some(super::SlotSnap { kind: "skill", id: 18132, ..Default::default() }),
+        ];
+        let t = action_table(&lua, &slots)?;
+        assert!(t.get::<mlua::Value>(0)?.is_nil());
+        assert!(t.get::<mlua::Value>(1)?.is_nil());
+        let s: Table = t.get(2)?;
+        assert_eq!(s.get::<i64>("id")?, 18132);
+        Ok(())
     }
 
     #[test]

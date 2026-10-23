@@ -449,25 +449,32 @@ mod tests {
     }
 
     #[test]
-    fn a_page_slot_sends_the_global_action_slot() {
-        let rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
-        let hud = rt.lua.create_table().unwrap();
-        register_functions(&rt.lua, &hud).unwrap();
-        rt.lua.globals().set("HUD", hud).unwrap();
-        rt.lua.load("HUD.drag_action_set(1, 'skill', 18132)").exec().unwrap();
-        let mut bar = ActionBar::default();
-        assert!(bar.set_page(1));
-        let mut app = App::new();
-        app.insert_non_send(rt)
-            .insert_resource(bar)
-            .init_resource::<Inventory>()
-            .add_message::<NetCommand>()
-            .add_systems(Update, apply_requests);
-        app.update();
-        let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|c| c.0).collect();
-        assert!(matches!(
-            &commands[..],
-            [Command::SetActionSlot { slot: 48, action }] if action.kind == ActionKind::Spell && action.id == 18132
-        ), "{commands:?}");
+    fn a_page_slot_sends_the_original_global_slot_and_bytes() {
+        // The oracle's real skill-book drops: page 1 cell 1 -> slot 1, page 2 cell 1 -> slot 49.
+        for (page, skill, want_slot, want_body) in [
+            (0u8, 12039u64, 1u8, [0x01, 0x02, 0x07, 0x2f, 0x00, 0x00]),
+            (1, 16064, 49, [0x31, 0x02, 0xc0, 0x3e, 0x00, 0x00]),
+        ] {
+            let rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
+            let hud = rt.lua.create_table().unwrap();
+            register_functions(&rt.lua, &hud).unwrap();
+            rt.lua.globals().set("HUD", hud).unwrap();
+            rt.lua.load(format!("HUD.drag_action_set(1, 'skill', {skill})")).exec().unwrap();
+            let mut bar = ActionBar::default();
+            assert!(bar.set_page(page));
+            let mut app = App::new();
+            app.insert_non_send(rt)
+                .insert_resource(bar)
+                .init_resource::<Inventory>()
+                .add_message::<NetCommand>()
+                .add_systems(Update, apply_requests);
+            app.update();
+            let commands: Vec<_> = app.world_mut().resource_mut::<Messages<NetCommand>>().drain().map(|c| c.0).collect();
+            let [Command::SetActionSlot { slot, action }] = &commands[..] else { panic!("{commands:?}") };
+            assert_eq!(*slot, want_slot, "page {} cell 1", page + 1);
+            assert_eq!((action.kind, action.id), (ActionKind::Spell, skill));
+            let body = aa_net::game::ClientMsg::UpdateActionSlot { slot: *slot, action: *action }.encode_body();
+            assert_eq!(body, want_body, "page {} cell 1 packet body", page + 1);
+        }
     }
 }

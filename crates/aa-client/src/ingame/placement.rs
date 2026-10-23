@@ -628,7 +628,8 @@ pub struct Session {
     pub quote_requested: bool,
     pub quote: Option<ConstructHouseTax>,
     pub window_open: bool,
-    /// House only: the create was sent (the ghost goes when the frame is done).
+    /// House only: the create was sent and the server has not answered yet; `finish` keeps the
+    /// builder (and the stock Start Construction window) up until `SCMyHouse` or a refusal.
     pub done: bool,
     /// House only: the server's `SCMyHouse` for this build arrived (kept so `finish` does not leave a
     /// stale pending design when the answer beat it to the frame).
@@ -866,8 +867,22 @@ impl Placement {
         }
         let request = session.create_house(auto_use_aa_point).ok_or(CreateRefusal::Blocked("the house cannot be built"))?;
         session.done = true;
+        self.pending_house = session.house_design();
         self.last_create = Some(now);
         Ok(request)
+    }
+
+    /// The server refused the `CSCreateHouse` (`SCErrorMsg`): the builder, the ghost and the quote
+    /// stay for another try (the 5 s limit still runs), instead of ending the placement before the
+    /// server has accepted it. `SCMyHouse` is the only answer that ends the builder.
+    pub fn create_refused(&mut self) {
+        self.pending_house = None;
+        if let Some(session) = self.session.as_mut()
+            && session.done
+            && !session.created
+        {
+            session.done = false;
+        }
     }
 }
 
@@ -977,15 +992,10 @@ fn builder_events(placement: Res<Placement>, rt: Option<NonSend<aa_ui::UiRuntime
     *last = now;
 }
 
-/// A house create was sent: put the ghost, ring, stones and arrow away in this frame.
+/// The server accepted the create (`SCMyHouse`): put the ghost, ring, stones and arrow away in this
+/// frame. A create that is only sent, or refused, keeps the builder up for another try.
 fn finish(mut commands: Commands, mut placement: ResMut<Placement>, visuals: Res<Visuals>) {
-    if placement.session.as_ref().is_some_and(|s| s.done) {
-        if let Some(session) = placement.session.as_ref()
-            && !session.created
-            && let Some(design) = session.house_design()
-        {
-            placement.pending_house = Some(design);
-        }
+    if placement.session.as_ref().is_some_and(|s| s.done && s.created) {
         end_session(&mut commands, &mut placement, &visuals);
     }
 }
@@ -3840,8 +3850,13 @@ mod tests {
         let sent = placement.send_create(true, t0).expect("the first create goes out");
         assert!(matches!(sent, HouseCommand::CreateHouse { auto_use_aa_point: true, .. }), "the real option is sent: {sent:?}");
         assert!(placement.session.as_ref().unwrap().done);
-        // the server refused and the player builds again 1.2 s later
-        placement.session = Some(quoted_house());
+        assert_eq!(placement.pending_house, Some(267));
+        // the server refused (no SCMyHouse): the builder stays up for the retry
+        placement.create_refused();
+        let session = placement.session.as_ref().expect("a refused create keeps the placement");
+        assert!(!session.done && !session.created);
+        assert!(session.window_open && session.quote.is_some(), "the Start Construction window and quote stay");
+        assert_eq!(placement.pending_house, None);
         assert_eq!(placement.send_create(false, t0 + Duration::from_millis(1200)), Err(CreateRefusal::Wait(4)));
         assert!(!placement.session.as_ref().unwrap().done, "a held-back create does not consume the session");
         assert_eq!(placement.send_create(false, t0 + Duration::from_millis(4999)), Err(CreateRefusal::Wait(1)));
@@ -3851,6 +3866,45 @@ mod tests {
         // an unconfirmed session reports its own reason, not the countdown
         placement.session = Some(Session::new(1, house_plantable(267, 4.0), 0.0));
         assert!(matches!(placement.send_create(false, t0 + CREATE_INTERVAL), Err(CreateRefusal::Blocked(_))));
+    }
+
+    /// The oracle's failed build: `CSCreateHouse` goes out, the server answers `SCErrorMsg` (no `SCMyHouse`).
+    /// Bevy used to end the placement on send, so the window closed and there was nothing left to retry; the
+    /// refusal must keep the builder and the quote.
+    #[test]
+    fn the_builder_ends_only_after_the_server_creates_the_house() {
+        let mut sent = quoted_house();
+        sent.done = true;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(Visuals::default())
+            .insert_resource(Placement { session: Some(sent), pending_house: Some(267), ..Default::default() })
+            .add_systems(Update, finish);
+        app.update();
+        assert!(app.world().resource::<Placement>().session.is_some(), "a sent create is not an accepted one");
+        app.world_mut().resource_mut::<Placement>().session.as_mut().unwrap().created = true;
+        app.update();
+        let placement = app.world().resource::<Placement>();
+        assert!(placement.session.is_none(), "SCMyHouse ends the builder");
+        assert_eq!(placement.pending_house, Some(267), "the window close still has the design to match");
+    }
+
+    #[test]
+    fn a_refused_create_keeps_the_build_window_and_the_placement() {
+        let mut session = quoted_house();
+        session.done = true;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_message::<aa_net::NetEvent>()
+            .insert_resource(Placement { session: Some(session), pending_house: Some(267), ..Default::default() })
+            .add_systems(Update, crate::ingame::houses::create_refused);
+        app.world_mut().write_message(aa_net::NetEvent(aa_net::Event::ServerError { code: 481 }));
+        app.update();
+        let placement = app.world().resource::<Placement>();
+        assert_eq!(placement.pending_house, None);
+        let session = placement.session.as_ref().expect("the refused build keeps the placement");
+        assert!(!session.done && !session.created);
+        assert!(session.window_open && session.quote.is_some() && session.rotating);
     }
 
     /// Real `update_input` + `orbit_input` + placement `input`: the wheel zooms the camera before the lock click and

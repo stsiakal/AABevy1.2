@@ -159,7 +159,9 @@ Click selection: a left click on a unit sets the target; a click on empty ground
 ### 2.5 Action bars
 
 The client has **85 action slots, 0..84** (`FUN_3930bc30` scans `< 0x55`) and **4 pages** (0..3;
-`FUN_393f6910` refuses `page >= 4`). Lua sees pages **1-based**: `X2Action:SetActionBarPage(page)` calls
+`FUN_393f6910` refuses `page >= 4`). The slot numbering Lua and `CSUpdateActionSlot` use is **1-based**:
+slot 0 is unused, page 1 cell 1 is slot 1, page 2 cell 1 is slot **49** (a live original drop sent
+`01 02 07 2f 00 00` and `31 02 c0 3e 00 00`). Lua sees pages **1-based**: `X2Action:SetActionBarPage(page)` calls
 `FUN_393f6910(page-1)`, returns `page`; `GetActionBarPage` reads the current 0-based page and pushes
 `index+1` (`FUN_3943f8a0`, `FUN_3943f930`). A change fires `ACTION_BAR_PAGE_CHANGED` with the new 1-based
 page (`FUN_393f6910` event `0x229` = `ACTION_BAR_PAGE_CHANGED`, id 553). Page buttons are `prevPageButton`/`nextPageButton` and
@@ -281,7 +283,7 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
 
 | Item | Value | Source |
 |---|---|---|
-| action slots | 85 (0..84) | `FUN_3930bc30` |
+| action slots | 85 (array 0..84; Lua/CS slots 1..84, 0 unused) | `FUN_3930bc30` |
 | action pages | 4 (Lua 1..4) | `FUN_393f6910` |
 | action types | 0 None, 1 Item, 2 Spell, 3 Macro, 4 Item_Id | `0x39ac9974` table |
 | buff rows / debuff rows | 32 / 24 (+24 hidden) | `FUN_39386e00` |
@@ -311,11 +313,13 @@ The waiting table is `resurrection_waiting_times`: `penalty_duration` 600 s for 
 
 ## 5. Gaps vs Bevy (ranked)
 
-1. **Action-bar pages - done in `88945c4`.** Original has 4 pages, a 1-based Lua page API and
-   `ACTION_BAR_PAGE_CHANGED` (`FUN_393f6910`, `FUN_3943f8a0`). `aa-net::ActionBar` now carries the
-   0-based page, maps the main 12 slots per page (0, 48, 60, 72; `FUN_392c5a50`) and the sub bars
-   stay at 12..23; the real `GetActionBarPage`/`SetActionBarPage`, Shift+Up/Down page keys, the event
-   and the page-aware `CSUpdateActionSlot` are wired in `aa-client`. Original gap text: Bevy's
+1. **Action-bar pages - done in `88945c4`; slot numbering fixed in `c86a280`.** Original has 4 pages, a 1-based
+   Lua page API and `ACTION_BAR_PAGE_CHANGED` (`FUN_393f6910`, `FUN_3943f8a0`). Slot numbers are 1-based
+   too: page 1 is 1..12, pages 2..4 are 49..84 (`FUN_392c5a50` offsets 48/60/72 plus one) and the two
+   6-slot sub bars stay at 13..24; slot 0 is unused (live original drops: page 1 cell 1 -> `01 02 07 2f`,
+   page 2 cell 1 -> `31 02 c0 3e`). `aa-net::ActionBar` carries the 0-based page and the 1-based slots;
+   the real `GetActionBarPage`/`SetActionBarPage`, Shift+Up/Down page keys, the event and the page-aware
+   `CSUpdateActionSlot` are wired in `aa-client`. Original gap text: Bevy's
    `aa-ui/src/lua/stubs.rs:367` (`GetActionBarPage`) and `:1554` (`SetActionBarPage`) were nil stubs
    and `aa-net::ActionBar` had only the flat 85 slots (`aa-net/src/items.rs:121`). Fix: expose page
    state, map page N to slot offset, fire the event, and send the same `CSUpdateActionSlot` when a
