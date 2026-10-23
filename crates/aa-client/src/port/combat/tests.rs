@@ -24,6 +24,7 @@ fn load(name: &str) -> Value {
         "token" => include_str!("goldens/token.json"),
         "slot" => include_str!("goldens/slot.json"),
         "cast" => include_str!("goldens/cast.json"),
+        "timeline" => include_str!("goldens/timeline.json"),
         other => panic!("unknown golden file {other}"),
     };
     serde_json::from_str(text).expect("golden JSON parses")
@@ -642,6 +643,333 @@ fn cast_plot_states_and_first_hit_team() {
     assert!(!is_first_hit_by_me_or_my_team(false, 77, 0, 77, 4660, 0));
 }
 
+
+
+fn timeline_manager(value: &Value) -> CooldownManager {
+    let mut manager = CooldownManager::default();
+    let gcd = value["gcd"].as_array().expect("gcd");
+    manager.gcd_remaining_ms = u32_of(&gcd[0]);
+    manager.gcd_total_ms = u32_of(&gcd[1]);
+    for row in value["tags"].as_array().expect("tags") {
+        manager.tags[manager.tag_count as usize] = CooldownEntry {
+            id: u32_of(&row[0]),
+            remaining_ms: u32_of(&row[1]),
+            total_ms: u32_of(&row[2]),
+        };
+        manager.tag_count += 1;
+    }
+    for row in value["skills"].as_array().expect("skills") {
+        manager.skills[manager.skill_count as usize] = CooldownEntry {
+            id: u32_of(&row[0]),
+            remaining_ms: u32_of(&row[1]),
+            total_ms: u32_of(&row[2]),
+        };
+        manager.skill_count += 1;
+    }
+    manager
+}
+
+fn timeline_desc(id: u32, cast_time: i32, channel_time: i32) -> TimelineDesc {
+    TimelineDesc {
+        id,
+        cast_time,
+        channel_time,
+        cooldown_tag_id: 0,
+        ignore_global_cooldown: true,
+        custom_gcd_valid: false,
+        custom_gcd: 0,
+        target_type: 0,
+        default_gcd: true,
+        show_cast_bar: true,
+        category_index: -1,
+        category_id: 0,
+        controllers: Vec::new(),
+    }
+}
+
+fn timeline_world(local_id: u32, before: &Value) -> TimelineWorld {
+    let mut world = TimelineWorld::default();
+    world.descs.insert(10001, timeline_desc(10001, 0, 0));
+    world.descs.insert(10024, timeline_desc(10024, 500, 0));
+    world.descs.insert(10201, timeline_desc(10201, 0, 4000));
+    world.descs.insert(2, timeline_desc(2, 0, 0));
+    let unit = TimelineUnit {
+        id: local_id,
+        cast_key: u32_of(&before["slots"]["cast"]),
+        cast_delay_key: u32_of(&before["slots"]["cast_delay"]),
+        channel_key: u32_of(&before["slots"]["channel"]),
+        channel_delay_key: u32_of(&before["slots"]["channel_delay"]),
+        auto_attack: u32_of(&before["slots"]["auto_attack"]) != 0,
+        cooldowns: timeline_manager(&before["cooldowns"]),
+    };
+    world.units.insert(local_id, unit);
+    for (key, inst) in before["instances"].as_object().expect("instances") {
+        let key: u32 = key.parse().expect("instance key");
+        let skill_id = u32_of(&inst["skill_id"]);
+        let timing = inst["timing"].as_array().expect("timing");
+        world.instances.insert(
+            key,
+            SkillInstance {
+                key,
+                skill_id,
+                caster: SkillCaster {
+                    kind: 0,
+                    pad: 0,
+                    words: [local_id, 0, 0, 0, 0, 0, 0],
+                },
+                target: SkillCastTarget {
+                    kind: 0,
+                    pad: 0,
+                    words: [key, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                },
+                normal_total: u32_of(&timing[0]),
+                computed_delay: u32_of(&timing[1]),
+                channel_total: u32_of(&timing[2]),
+                normal_start: u32_of(&timing[3]),
+                channel_start: u32_of(&timing[4]),
+            },
+        );
+    }
+    world
+}
+
+fn local_caster(local_id: u32) -> SkillCaster {
+    SkillCaster {
+        kind: 0,
+        pad: 0,
+        words: [local_id, 0, 0, 0, 0, 0, 0],
+    }
+}
+
+fn target_block(key: u32) -> SkillCastTarget {
+    SkillCastTarget {
+        kind: 0,
+        pad: 0,
+        words: [key, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    }
+}
+
+fn expected_events(label: &str) -> Vec<u32> {
+    match label {
+        "start_instant" | "start_cast" | "start_mirror" => vec![EVENT_SKILL_STARTED],
+        "fire_cast" | "fire_channel" => vec![EVENT_SKILL_FIRED],
+        "fire_without_start" => vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED],
+        "end_existing" | "end_missing" => vec![EVENT_SKILL_ENDED],
+        "casting_stopped" => vec![EVENT_CASTING_STOPPED],
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn timeline_matches_goldens() {
+    let doc = load("timeline");
+    let local_id = u32_of(&doc["local"]["id"]);
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        if case["label"] == "client_only_fire" || case["label"] == "client_only_end" {
+            continue;
+        }
+        let label = case["label"].as_str().expect("label");
+        let before = &case["before"];
+        let after = &case["after"];
+        let mut world = timeline_world(local_id, before);
+        let caster = local_caster(local_id);
+        let key = after["instances"]
+            .as_object()
+            .and_then(|m| m.keys().next().cloned())
+            .map(|k| k.parse::<u32>().unwrap())
+            .or_else(|| before["instances"].as_object().and_then(|m| m.keys().next().cloned()).map(|k| k.parse().unwrap()))
+            .unwrap_or(0x1234_5678);
+        let timing = |v: &Value, i: usize| -> u32 {
+            v["instances"]
+                .as_object()
+                .and_then(|m| m.values().next())
+                .and_then(|inst| inst["timing"].as_array())
+                .map(|t| u32_of(&t[i]))
+                .unwrap_or(0)
+        };
+        match label {
+            "start_instant" | "start_cast" => {
+                let cast = if label == "start_instant" { 0 } else { 500 };
+                world.now = timing(after, 3);
+                let out = world.start_skill(
+                    &caster,
+                    &target_block(key),
+                    if label == "start_instant" { 10001 } else { 10024 },
+                    key,
+                    cast,
+                    false,
+                    Some(1000),
+                );
+                assert_eq!(out, StartOutcome::Started, "timeline case {index} {label}");
+                let inst = world.instances.get(&key).expect("instance");
+                assert_eq!(inst.normal_total, cast);
+                assert_eq!(inst.normal_start, timing(after, 3));
+                assert_eq!(
+                    world.units[&local_id].cast_key,
+                    u32_of(&after["slots"]["cast"]),
+                    "case {index} {label} cast slot"
+                );
+                assert_eq!(world.units[&local_id].cooldowns.gcd_total_ms, after["cooldowns"]["gcd"][1].as_u64().unwrap() as u32);
+            }
+            "start_mirror" => {
+                let out = world.start_skill(&caster, &target_block(key), 10024, key, 500, true, Some(1000));
+                assert_eq!(out, StartOutcome::Mirrored);
+                assert!(world.instances.is_empty());
+                assert_eq!(world.units[&local_id].cooldowns.gcd_total_ms, 0);
+                assert_eq!(u32_of(&after["slots"]["cast"]), world.units[&local_id].cast_key);
+            }
+            "start_autoattack_no_target" => {
+                let out = world.start_skill(&caster, &target_block(0), 2, 0, 0, false, None);
+                assert_eq!(out, StartOutcome::AutoAttack);
+                assert!(world.units[&local_id].auto_attack);
+                assert_eq!(u32_of(&after["slots"]["auto_attack"]), 1);
+            }
+            "start_no_target_impossible" => {
+                let out = world.start_skill(&caster, &target_block(0), 10024, 0, 500, false, None);
+                assert_eq!(out, StartOutcome::ImpossibleNoTarget);
+            }
+            "start_invalid_skill" => {
+                let out = world.start_skill(&caster, &target_block(key), 999999, key, 0, false, None);
+                assert_eq!(out, StartOutcome::InvalidSkill);
+            }
+            "fire_cast" | "fire_channel" => {
+                world.now = timing(after, 4);
+                let (skill, time7, time9) = if label == "fire_cast" { (10024, 500, 0) } else { (10201, 0, 4000) };
+                world.fire_skill(&caster, &target_block(key), skill, key, time7, time9, false, None);
+                let got = world.instances.get(&key).expect("instance");
+                assert_eq!(
+                    (got.normal_total, got.computed_delay, got.channel_total, got.normal_start, got.channel_start),
+                    (
+                        timing(after, 0),
+                        timing(after, 1),
+                        timing(after, 2),
+                        timing(after, 3),
+                        timing(after, 4)
+                    ),
+                    "case {index} {label} timing"
+                );
+            }
+            "fire_without_start" => {
+                world.now = timing(after, 3);
+                world.fire_skill(&caster, &target_block(key), 10024, key, 500, 0, false, Some(1000));
+                let got = world.instances.get(&key).expect("instance");
+                assert_eq!(
+                    (got.normal_total, got.computed_delay, got.channel_total, got.normal_start, got.channel_start),
+                    (
+                        timing(after, 0),
+                        timing(after, 1),
+                        timing(after, 2),
+                        timing(after, 3),
+                        timing(after, 4)
+                    ),
+                    "case {index} {label} timing"
+                );
+                assert_eq!(world.units[&local_id].cooldowns.gcd_total_ms, 1000);
+            }
+            "end_existing" | "end_missing" => {
+                let key = before["instances"]
+                    .as_object()
+                    .and_then(|m| m.keys().next().cloned())
+                    .map(|k| k.parse::<u32>().unwrap())
+                    .unwrap_or(0x1234_5678);
+                world.end_skill(key);
+                assert!(world.instances.is_empty());
+                assert_eq!(u32_of(&after["slots"]["cast"]), world.units[&local_id].cast_key);
+            }
+            "stop_other" => {
+                world.stop_skill(local_id, 10024);
+                assert!(!world.units[&local_id].auto_attack);
+            }
+            "casting_stopped" => {
+                let key = local_id;
+                world.casting_stopped(key, 777);
+                let row = world.units[&local_id].cooldowns.skills[0];
+                assert_eq!((row.id, row.total_ms), (10024, 777));
+                assert!(world.instances.contains_key(&key));
+                assert_eq!(u32_of(&after["slots"]["cast"]), world.units[&local_id].cast_key);
+            }
+            "casting_delayed" => {
+                let key = before["instances"]
+                    .as_object()
+                    .and_then(|m| m.keys().next().cloned())
+                    .map(|k| k.parse::<u32>().unwrap())
+                    .expect("key");
+                world.instances.get_mut(&key).unwrap().normal_start = timing(after, 3);
+                world.now = timing(after, 3) + 100;
+                world.casting_delayed(key, 250);
+                assert_eq!(world.instances[&key].normal_total, timing(after, 0));
+            }
+            "stop_casting" => {
+                let key = before["instances"]
+                    .as_object()
+                    .and_then(|m| m.keys().next().cloned())
+                    .map(|k| k.parse::<u32>().unwrap())
+                    .expect("key");
+                assert!(world.stop_casting(key));
+                assert_eq!(u32_of(&after["slots"]["cast"]), world.units[&local_id].cast_key);
+            }
+            other => panic!("unknown timeline case {other}"),
+        }
+        assert_eq!(world.events, expected_events(label), "case {index} {label} events");
+    }
+}
+
+#[test]
+fn timeline_combo_and_client_only() {
+    let local_id = 7;
+    let mut world = TimelineWorld { now: 1000, ..TimelineWorld::default() };
+    let next = timeline_desc(10024, 0, 0);
+    world.descs.insert(10024, next.clone());
+    let current = TimelineDesc {
+        controllers: vec![TimelineController { kind: 0x18, values: vec![0x30, 10024, 100] }],
+        ..timeline_desc(10501, 0, 0)
+    };
+    world.descs.insert(10501, current.clone());
+    world.units.insert(
+        local_id,
+        TimelineUnit { id: local_id, ..TimelineUnit::default() },
+    );
+    assert!(world.combo_add(local_id, &current, 500));
+    assert_eq!(world.combo.len(), 1);
+    assert_eq!(world.combo[0].next_skill_id, 10024);
+    assert_eq!(world.units[&local_id].cooldowns.skills[0].id, 10024);
+    assert_eq!(world.units[&local_id].cooldowns.skills[0].total_ms, 500);
+    world.now = 1599;
+    world.combo_update();
+    assert_eq!(world.combo.len(), 1);
+    world.now = 1600;
+    world.combo_update();
+    assert!(world.combo.is_empty());
+    assert_eq!(world.units[&local_id].cooldowns.skills[0].remaining_ms, 0);
+
+    // client-only: fire, mark damaged, end after +0x2d4 + 1000
+    let mut world = TimelineWorld { now: 200, ..TimelineWorld::default() };
+    world.descs.insert(10024, timeline_desc(10024, 0, 0));
+    world.units.insert(local_id, TimelineUnit { id: local_id, ..TimelineUnit::default() });
+    world.client_only.push(ClientSkill {
+        skill_id: 10024,
+        target_key: 99,
+        normal_total: 0,
+        fire_time: 100,
+        end_time: 500,
+        ..ClientSkill::default()
+    });
+    world.update_client_only();
+    assert!(world.client_only[0].fired);
+    assert_eq!(world.instances.len(), 1);
+    assert_eq!(world.events, vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED]);
+    world.now = 600;
+    world.update_client_only();
+    assert!(world.client_only[0].damaged);
+    world.now = 1600;
+    world.update_client_only();
+    assert!(world.client_only.is_empty());
+    assert!(world.instances.is_empty());
+    assert_eq!(
+        world.events,
+        vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED, EVENT_SKILL_ENDED]
+    );
+}
 
 // ---------------------------------------------------------------- synthetic branches
 

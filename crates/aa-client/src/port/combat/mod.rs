@@ -16,6 +16,7 @@ pub mod cooldown;
 pub mod equality;
 pub mod reaction;
 pub mod slot;
+pub mod timeline;
 pub mod token;
 
 #[cfg(test)]
@@ -31,6 +32,11 @@ pub use cooldown::{
 };
 pub use equality::{SkillCastTarget, SkillCaster, caster_eq, target_eq};
 pub use reaction::{BIG_HIT_THRESHOLD, HitRecordView, Reaction, big_hit, reaction};
+pub use timeline::{
+    AUTO_ATTACK_SKILL, ClientSkill, ComboEntry, EVENT_AUTO_ATTACK_STOPPED, EVENT_CASTING_STOPPED,
+    EVENT_SKILL_ENDED, EVENT_SKILL_FIRED, EVENT_SKILL_STARTED, NO_TARGET, SkillInstance,
+    StartOutcome, TimelineController, TimelineDesc, TimelineUnit, TimelineWorld,
+};
 pub use slot::{ActionSlot, ItemAction, SlotCooldowns, get_action_cooldown, get_action_cooldown_ex};
 pub use token::{
     EMPTY_TARGET_ID, TeamMember, TokenRef, TokenUnit, TokenWorld, TOKEN_KIND_NONE, TOKEN_KIND_OBJECT,

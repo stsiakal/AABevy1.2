@@ -228,7 +228,7 @@ pub fn can_cast(
 ) -> bool {
     match active_desc(unit, false, lookup_desc, lookup_state, lookup_plot) {
         Some(desc) => {
-            desc.casting_cancelable || desc.controller_kinds.iter().any(|kind| *kind == 0x22)
+            desc.casting_cancelable || desc.controller_kinds.contains(&0x22)
         }
         None => false,
     }
