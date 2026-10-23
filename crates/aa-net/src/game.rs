@@ -83,6 +83,12 @@ pub enum ClientMsg {
     NotifyInGameCompleted,
     Move { obj_id: u32, movement: Movement },
     Chat { chat_type: i16, target: String, message: String },
+    /// `CSJoinUserChatChannel`: create (`create`) or join a player channel.
+    JoinUserChatChannel { name: String, password: String, create: bool },
+    /// `CSLeaveChatChannel`: the opaque `(faction << 32) | (sub_type << 16) | chat_type` identity.
+    LeaveChatChannel { chat_id: i64 },
+    /// `CSRollDice`: `/dice` with a maximum in `2..=1000000`.
+    RollDice { max: i32 },
     ChangeTarget { obj_id: u32 },
     /// `CSUpdateActionSlot`: puts `action` into hotbar slot `slot` (0 based).
     UpdateActionSlot { slot: u8, action: ActionSlot },
@@ -209,6 +215,9 @@ impl ClientMsg {
             Self::NotifyInGameCompleted => cs::CSNotifyInGameCompletedPacket,
             Self::Move { .. } => cs::CSMoveUnitPacket,
             Self::Chat { .. } => cs::CSSendChatMessagePacket,
+            Self::JoinUserChatChannel { .. } => cs::CSJoinUserChatChannelPacket,
+            Self::LeaveChatChannel { .. } => cs::CSLeaveChatChannelPacket,
+            Self::RollDice { .. } => cs::CSRollDicePacket,
             Self::ChangeTarget { .. } => cs::CSChangeTargetPacket,
             Self::UpdateActionSlot { .. } => cs::CSUpdateActionSlotPacket,
             Self::SwapItems(_) => cs::CSSwapItemsPacket,
@@ -424,6 +433,15 @@ impl ClientMsg {
                     .string(message)
                     .u8(0) // language
                     .i32(0); // ability
+            }
+            Self::JoinUserChatChannel { name, password, create } => {
+                w.string(name).string(password).bool(*create);
+            }
+            Self::LeaveChatChannel { chat_id } => {
+                w.i64(*chat_id);
+            }
+            Self::RollDice { max } => {
+                w.i32(*max);
             }
             Self::TeleportEnded { pos } => {
                 w.i64(crate::wire::coord_to_long(pos.x))
@@ -1374,6 +1392,32 @@ mod tests {
         let b = ClientMsg::TeleportEnded { pos: Pos::new(1.0, 2.0, 3.0) }.encode_body();
         assert_eq!(b.len(), 8 + 8 + 4 + 12 + 4);
         assert_eq!(&b[b.len() - 4..], &[0, 0, 0x80, 0x3f]);
+    }
+
+    #[test]
+    fn slash_command_packets_match_the_server_readers() {
+        // CSJoinUserChatChannel: name, password, create.
+        let join = ClientMsg::JoinUserChatChannel {
+            name: "Ab".into(),
+            password: "p".into(),
+            create: true,
+        };
+        assert_eq!(join.opcode(), cs::CSJoinUserChatChannelPacket);
+        assert_eq!(join.encode_body(), [2, 0, b'A', b'b', 1, 0, b'p', 1]);
+        let enter = ClientMsg::JoinUserChatChannel {
+            name: "Ab".into(),
+            password: String::new(),
+            create: false,
+        };
+        assert_eq!(enter.encode_body(), [2, 0, b'A', b'b', 0, 0, 0]);
+        // CSLeaveChatChannel: the i64 identity.
+        let leave = ClientMsg::LeaveChatChannel { chat_id: 0x0000_0009_0000_000f };
+        assert_eq!(leave.opcode(), cs::CSLeaveChatChannelPacket);
+        assert_eq!(leave.encode_body(), [15, 0, 0, 0, 9, 0, 0, 0]);
+        // CSRollDice: the maximum.
+        let dice = ClientMsg::RollDice { max: 100 };
+        assert_eq!(dice.opcode(), cs::CSRollDicePacket);
+        assert_eq!(dice.encode_body(), [100, 0, 0, 0]);
     }
 
     #[test]

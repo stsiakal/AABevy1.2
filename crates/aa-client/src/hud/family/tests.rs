@@ -425,3 +425,34 @@ fn original_family_tab_and_captured_invitation_buttons_use_received_data() -> Re
     }
     Ok(())
 }
+
+#[test]
+fn slash_requests_share_the_native_family_checks_and_queue() -> Result<(), Box<dyn std::error::Error>> {
+    let (rt, bridge, _player) = setup()?;
+    dispatch(Some(&rt), &bridge, &Event::Family(E::Described(roster(12))));
+    let mut data = bridge.borrow_mut();
+    data.family.changes = Some(true);
+    let view = &mut data.family;
+    assert_eq!(slash_request(view, 0, b"Newcomer", b"Kin"), Ok(()));
+    assert!(matches!(
+        &view.requests[..],
+        [(47, FamilyCommand::Invite { name, title })] if name == b"Newcomer" && title == b"Kin"
+    ));
+    view.requests.clear();
+    assert_eq!(slash_request(view, 2, b"Friend", &[]), Ok(()));
+    assert!(matches!(
+        &view.requests[..],
+        [(47, FamilyCommand::Kick { member_id: 48 })]
+    ));
+    assert_eq!(slash_request(view, 2, b"Nobody", &[]), Err(0x16f));
+    view.requests.clear();
+    assert_eq!(slash_request(view, 3, b"Friend", b"Brother"), Ok(()));
+    assert!(matches!(
+        &view.requests[..],
+        [(47, FamilyCommand::ChangeTitle { member_id: 48, title })] if title == b"Brother"
+    ));
+    view.requests.clear();
+    assert_eq!(slash_request(view, 1, &[], &[]), Ok(()));
+    assert!(matches!(&view.requests[..], [(47, FamilyCommand::Leave)]));
+    Ok(())
+}

@@ -233,6 +233,12 @@ pub enum Command {
     /// type 3 ship movement; the client never writes that body.
     SteerShip { obj_id: u32, throttle: i8, steering: i8 },
     Chat { chat_type: i16, target: String, message: String },
+    /// `CSJoinUserChatChannel`: `/create_channel` or `/enter_channel`.
+    JoinUserChatChannel { name: String, password: String, create: bool },
+    /// `CSLeaveChatChannel`: the opaque identity from the joined `SCJoinedChatChannel`.
+    LeaveChatChannel { chat_id: i64 },
+    /// `CSRollDice`: `/dice [max]`.
+    RollDice { max: i32 },
     /// Put `action` into hotbar slot `slot` (0 based). The server does not echo it: the session
     /// reports `ActionSlotChanged` itself.
     SetActionSlot { slot: u8, action: ActionSlot },
@@ -1123,6 +1129,15 @@ impl Session {
             Command::SteerShip { obj_id, throttle, steering } => self.send_steer_ship(obj_id, throttle, steering).await,
             Command::Chat { chat_type, target, message } => {
                 self.send_game(game::ClientMsg::Chat { chat_type, target, message }).await;
+            }
+            Command::JoinUserChatChannel { name, password, create } => {
+                self.send_game(game::ClientMsg::JoinUserChatChannel { name, password, create }).await;
+            }
+            Command::LeaveChatChannel { chat_id } => {
+                self.send_game(game::ClientMsg::LeaveChatChannel { chat_id }).await;
+            }
+            Command::RollDice { max } => {
+                self.send_game(game::ClientMsg::RollDice { max }).await;
             }
             Command::SetActionSlot { slot, action } => {
                 if self.send_game(game::ClientMsg::UpdateActionSlot { slot, action }).await {

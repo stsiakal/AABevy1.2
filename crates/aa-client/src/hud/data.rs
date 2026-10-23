@@ -268,6 +268,8 @@ fn parse_quest_areas(text: &str, origin: (f32, f32), out: &mut Vec<QuestArea>) {
 #[derive(Default)]
 pub struct GameData {
     pub(super) expedition: super::expedition::Tables,
+    /// `slash_commands` / `slash_functions` (`slash.rs`).
+    pub(super) slash: super::slash::Tables,
     pub(super) achievements: super::achievement::Tables,
     pub(super) ranking: super::ranking::Tables,
     pub skills: HashMap<u32, SkillInfo>,
@@ -759,6 +761,7 @@ impl GameData {
                 data.group_faction.entry(*group).or_insert(*faction);
             }
         }
+        data.slash = super::slash::Tables::load(&conn)?;
         data.stats = StatTables::load(&conn)?;
         data.quests = QuestTables::load(&conn)?;
         data.tips = super::tipcalc::TipTables::load(&conn, &text)?;

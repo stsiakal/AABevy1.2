@@ -96,6 +96,7 @@ mod ring;
 pub(crate) mod script_api;
 mod session;
 mod skillbook;
+mod slash;
 mod stats;
 mod store;
 mod targeting;

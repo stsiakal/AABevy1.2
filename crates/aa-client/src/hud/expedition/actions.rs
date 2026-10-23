@@ -48,7 +48,7 @@ fn dismiss(view: &View) -> Result<(Command, u8), i16> {
     Ok((Command::Dismiss, 27))
 }
 
-fn plan(view: &View, kind: u8, name: &[u8], new_role: Option<u8>) -> Result<Option<(Command, u8)>, i16> {
+pub(super) fn plan(view: &View, kind: u8, name: &[u8], new_role: Option<u8>) -> Result<Option<(Command, u8)>, i16> {
     let cache = &view.cache;
     if cache.local_character_id.is_none() || cache.local_object_id.is_none() {
         return Ok(None);

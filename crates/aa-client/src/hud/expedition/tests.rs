@@ -706,3 +706,20 @@ fn received_guild_service_list_opens_original_npc_preconfirmation_and_closes_sta
     }
     Ok(())
 }
+
+#[test]
+fn slash_requests_use_the_native_admission_and_confirmation_tasks() {
+    let bridge = std::rc::Rc::new(std::cell::RefCell::new(super::super::api::HudData::default()));
+    fixture::seed(&bridge);
+    let mut data = bridge.borrow_mut();
+    assert_eq!(slash_request(&mut data.expedition, 0, b"Newcomer"), Ok(()));
+    assert!(matches!(
+        &data.expedition.requests[..],
+        [(47, 100, aa_net::ExpeditionCommand::Invite { name })] if name == b"Newcomer"
+    ));
+    data.expedition.requests.clear();
+    assert_eq!(slash_request(&mut data.expedition, 2, b"Nobody"), Err(0x135));
+    // A received leader cannot leave a multi-member expedition, as in the native planner.
+    assert_eq!(slash_request(&mut data.expedition, 1, &[]), Err(0x136));
+    assert!(data.expedition.requests.is_empty());
+}
