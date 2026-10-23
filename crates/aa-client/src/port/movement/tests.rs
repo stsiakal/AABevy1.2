@@ -408,16 +408,7 @@ fn phase_b_smoothing_matches_goldens() {
                 1 => smooth_velocity(&mut state, v, f32_of(&case["dt"])),
                 _ => {
                     for (j, want) in v.iter().enumerate() {
-                        // The captured dt is the live frame time read just before the
-                        // original call; a frame tick can move it by one frame.  The
-                        // formula is exact; the recorded live frame dt can differ by one frame (<= 2%).
-                        let scale = want.abs().max(1.0);
-                        assert!(
-                            (state.smoothed_vel[j] - *want).abs() <= 2e-2 * scale,
-                            "smoothing case {i} component {j}: got {:?} want {:?}",
-                            state.smoothed_vel[j],
-                            want
-                        );
+                        assert_bits(j, "smoothing", state.smoothed_vel[j], &values[j]);
                     }
                 }
             }
@@ -446,13 +437,6 @@ fn phase_b_sequences_match_goldens() {
                 if (0x24..0x28).contains(&off) || off == 0x7f {
                     continue; // uninitialised stack bytes in the original ctor
                 }
-                if (0x44..0x48).contains(&off) {
-                    // The z of the turn-delta block is `axis * min(dt, 0.033) * ...`.
-                    // The captured dt is the frame time at submit; below the 0.033 cap
-                    // one frame of jitter moves this float.  The rest of the request
-                    // (including all flags and the velocity) is exact.
-                    continue;
-                }
                 assert_eq!(
                     got_b[off], want_b[off],
                     "{name} step {i}: request byte 0x{off:02x} got {:02x} want {:02x}",
@@ -462,17 +446,22 @@ fn phase_b_sequences_match_goldens() {
             let got_s = state.to_bytes();
             let want_s = hex_bytes(step["out_state"].as_str().expect("out_state"));
             for off in 0..INPUT_STATE_SIZE {
-                if (0x18..0x30).contains(&off) || (0x38..0x3c).contains(&off) || (0x9c..0xb0).contains(&off) {
-                    // External/smoothed velocity, the turn ramp and press/turn-start timestamps use the live
-                    // frame clock at the point the original reads it; they do not
-                    // affect the request in these cases.  The smoothing formula is
-                    // checked separately in `phase_b_smoothing_matches_goldens`.
+                if (0x24..0x30).contains(&off) {
                     continue;
                 }
                 assert_eq!(
                     got_s[off], want_s[off],
                     "{name} step {i}: state byte 0x{off:02x} got {:02x} want {:02x}",
                     got_s[off], want_s[off]
+                );
+            }
+            for off in [0x24usize, 0x28, 0x2c] {
+                let got = f32::from_le_bytes(got_s[off..off + 4].try_into().unwrap());
+                let want = f32::from_le_bytes(want_s[off..off + 4].try_into().unwrap());
+                let scale = want.abs().max(1.0);
+                assert!(
+                    (got - want).abs() <= 1e-6 * scale,
+                    "{name} step {i}: state float 0x{off:02x} got {got:?} want {want:?}"
                 );
             }
         }
@@ -523,3 +512,4 @@ fn phase_b_external_target_formula() {
     });
     assert_eq!(zero, [0.0, 0.0, 0.0]);
 }
+
