@@ -41,12 +41,42 @@ pub enum UnitBuild {
     },
     /// A monster / NPC model of its own (`.cdf`, `.chr`, `.cgf`).
     Creature { file: String, cdf: Option<Box<aa_anim::Cdf>>, models: Vec<PreparedModel> },
-    /// A ship: the static brushes of its prefab (hull, rudder, cannons, cargo), each at its place on the ship.
-    Ship { parts: Vec<super::data::ShipPart>, models: Vec<PreparedModel> },
+    /// A ship: the variant prefab's brushes plus the doodads of its installed equipment, each at its
+    /// place on the ship, and the variant's particle effects (the dead hull's water).
+    Ship {
+        parts: Vec<super::data::ShipPart>,
+        models: Vec<PreparedModel>,
+        effects: Vec<aa_world::placement::PlacedEffect>,
+        /// The health state and equipment the parts were built from, so a later change can rebuild them.
+        visual: Option<ShipVisual>,
+    },
     /// Particle effects only (a prefab model without a model, the summoned portal gates), positions relative to the unit.
     Effects(Vec<aa_world::placement::PlacedEffect>),
     /// Nothing we can draw, and why (logged once by [`super::units`]).
     None(String),
+}
+
+/// The ship parts' inputs on the unit (damage state and equipment), put on the ship root to notice
+/// an `SCUnitEquipmentsChanged` / `SCSlaveEquipmentChanged` or health change and rebuild the brushes.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct ShipVisual {
+    pub model_id: u32,
+    pub state: u8,
+    pub equipment: [u32; aa_net::model::slot::COUNT],
+}
+
+impl ShipVisual {
+    fn of(unit: &Unit) -> Self {
+        Self { model_id: unit.model_id, state: super::data::ship_damage_state(unit.hp, unit.max_hp), equipment: unit.equipment.template_ids() }
+    }
+
+    pub fn matches(&self, unit: &Unit) -> bool {
+        self.matches_inputs(unit.model_id, super::data::ship_damage_state(unit.hp, unit.max_hp), &unit.equipment.template_ids())
+    }
+
+    pub fn matches_inputs(&self, model_id: u32, state: u8, equipment: &[u32; aa_net::model::slot::COUNT]) -> bool {
+        self.model_id == model_id && self.state == state && self.equipment == *equipment
+    }
 }
 
 /// A doodad that is ready to be spawned.
@@ -76,14 +106,19 @@ pub fn humanoid_of_file(file: &str) -> Option<(Race, Gender)> {
 pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Unit) -> UnitBuild {
     let _t = aa_cry::prof::scope("unit.prepare");
     if db.is_ship(unit.model_id) {
-        let parts = db.ship_parts(unit.model_id);
-        if !parts.is_empty() {
-            let mut paths = parts.iter().map(|p| p.path.as_str()).collect::<Vec<_>>();
+        let template = match unit.kind {
+            UnitKind::Slave { template_id, .. } => template_id,
+            _ => 0,
+        };
+        let visual = ShipVisual::of(unit);
+        let build = db.ship_visual(template, unit.model_id, visual.state, &unit.equipment);
+        if !build.parts.is_empty() {
+            let mut paths = build.parts.iter().map(|p| p.path.as_str()).collect::<Vec<_>>();
             paths.sort_unstable();
             paths.dedup();
             let options = ModelOptions::default();
             let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
-            return UnitBuild::Ship { parts, models };
+            return UnitBuild::Ship { parts: build.parts, models, effects: build.effects, visual: Some(visual) };
         }
     }
     if matches!(unit.kind, UnitKind::Transfer { .. }) {
@@ -96,7 +131,7 @@ pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Uni
             paths.dedup();
             let options = ModelOptions::default();
             let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
-            return UnitBuild::Ship { parts, models };
+            return UnitBuild::Ship { parts, models, effects: Vec::new(), visual: None };
         }
     }
     if !unit.is_character() {
@@ -107,7 +142,7 @@ pub fn prepare_unit(db: &Db, loader: &CryLoader, clips: &ClipLibrary, unit: &Uni
             paths.dedup();
             let options = ModelOptions::default();
             let models = paths.into_iter().filter_map(|path| loader.prepare_model(path, &options).ok()).collect();
-            return UnitBuild::Ship { parts, models };
+            return UnitBuild::Ship { parts, models, effects: Vec::new(), visual: None };
         }
     }
     let file = db.actor_model_file(unit.model_id);
