@@ -7,8 +7,9 @@
 //!   how far the top of the capsule sticks out of the water while it swims), the walk / backward / strafe multipliers, the jump
 //!   height (1.3 m) and gravity (25 m/s^2).
 //! * `x2game.dll` registers these cvars (defaults read from the registration code): `swim_up_speed_mul` 0.7,
-//!   `swim_down_speed_mul` 0.5, `swim_back_speed_mul` 0.8, `swim_buoy_speed` 2.0 (the speed a diver floats up at),
-//!   `swim_jump_permission_range` 0.2 and `swim_jump_end_depth` 0.2 (m), `swim_jump_speed` 12.
+//!   `swim_down_speed_mul` 0.5, `swim_back_speed_mul` 0.8, `swim_side_speed_mul` 0.6 (`0x399a24cc`),
+//!   `swim_buoy_speed` 2.0 (the speed a diver floats up at), `swim_jump_permission_range` 0.2 and
+//!   `swim_jump_end_depth` 0.2 (m), `swim_jump_speed` 12.
 //! * `x2game.dll` (and `crygame.dll`) register `cl_shallowWaterDepthLo` 0.3, `cl_shallowWaterDepthHi` 1.0 and `cl_shallowWaterSpeedMulPlayer`
 //!   0.6: wading slows a player down from 0.3 m of water (none) to 1 m (to 0.6 times the speed).
 //! * The swim locomotion groups (`lmg_files/fist_mo_swim_run.lmg`) are authored for 3.0 m/s forward and to the side and
@@ -37,6 +38,8 @@ use super::player::{LocalPlayer, Mover};
 pub const BASE_SPEED: f32 = 3.0;
 /// `swim_back_speed_mul`: swimming backwards (and diagonally backwards).
 pub const BACK_MUL: f32 = 0.8;
+/// `swim_side_speed_mul` (`0x399a24cc`): strafing while swimming.
+pub const SIDE_MUL: f32 = 0.6;
 /// `swim_up_speed_mul`, `swim_down_speed_mul`: diving and surfacing with Space / X.
 pub const UP_MUL: f32 = 0.7;
 pub const DOWN_MUL: f32 = 0.5;
@@ -169,8 +172,8 @@ pub fn should_swim(swimming: bool, feet: f32, wet: Option<Wet>, enter: f32) -> b
 /// Speed (m/s) in the local frame (x right, y forward) of a swimmer pressing `dir`.
 pub fn local_velocity(dir: Vec2) -> Vec2 {
     let d = dir.normalize_or_zero();
-    let speed = if d.y < -0.1 { BASE_SPEED * BACK_MUL } else { BASE_SPEED };
-    d * speed
+    let back = if d.y < -0.1 { BACK_MUL } else { 1.0 };
+    Vec2::new(d.x * SIDE_MUL, d.y * back) * BASE_SPEED
 }
 
 /// The vertical speed (m/s) a swimmer wants: `vertical` is -1 (X), 0 or 1 (Space); `z` its height, `rest` the height the body
@@ -317,9 +320,12 @@ mod tests {
     fn swim_speed_depends_on_the_direction() {
         assert_eq!(local_velocity(Vec2::ZERO), Vec2::ZERO);
         assert!((local_velocity(Vec2::Y).length() - 3.0).abs() < 1e-5);
-        assert!((local_velocity(Vec2::X).length() - 3.0).abs() < 1e-5);
+        // `swim_side_speed_mul` 0.6
+        assert!((local_velocity(Vec2::X).length() - 1.8).abs() < 1e-5);
         assert!((local_velocity(-Vec2::Y).length() - 2.4).abs() < 1e-5);
-        assert!((local_velocity(Vec2::new(1.0, -1.0)).length() - 2.4).abs() < 1e-5);
+        let diagonal_back = local_velocity(Vec2::new(1.0, -1.0));
+        assert!((diagonal_back.x - 1.8 / std::f32::consts::SQRT_2).abs() < 1e-5);
+        assert!((diagonal_back.y + 2.4 / std::f32::consts::SQRT_2).abs() < 1e-5);
     }
 
     #[test]
