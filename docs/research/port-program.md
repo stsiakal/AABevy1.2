@@ -53,7 +53,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
 | F7 | Remote-unit smoothing (interpolation/extrapolation of other units) | movement section 6 + [`port-vehicles/`](port-vehicles/MAP.md) D | mapped |
-| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 running |
+| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **ported, bit-exact** (cooldown manager, GCD, equality, reaction table, big-hit, token parser, slot resolver; ~760 goldens, `5ddc8a6`) |
 | S2 | Doodad and NPC interaction rules: range gates, interaction selection, gathering/farming, coffers, phases, loot | [`port-interaction/`](port-interaction/MAP.md), 220 fn / 57 KB | mapped |
 | S3 | Vehicles and ships: wagon/cart driving, helm, boarding, cannons, transfers | [`port-vehicles/`](port-vehicles/MAP.md), 191 fn / 115 KB | mapped |
 | S4 | Housing and decoration placement, construction display, seeds | [`port-housing/`](port-housing/MAP.md), 197 fn / 84 KB | mapped |
@@ -77,7 +77,9 @@ client confirms it.
 | Keyboard turn on foot | axis x min(dt, 0.033) x `keyboard_rotate_speed` (0.5) x pi = 90 deg/s | `FUN_39402e00`, `.data 0x3999c47c`; 30 goldens bit-exact |
 | Turn ramp (state `+0x1c1 == 4`) | accumulator 0..3 s x `unit+0x174` x 1/3, reset on release | `FUN_39402e00`, `0x399d5ed0`=3.0, `0x399a1c40`=1/3 |
 | Mouse turn fold | `clamp(axis x -0.002, -c, c)` | movement U12, goldens bit-exact |
-| Global cooldown | 1,000,000 / (1000 + attribute 0x4a), floor -999; custom GCD x1000/(1000+attr) | `FUN_39899f30`, `FUN_39899df0` |
+| Global cooldown | 1,000,000 / (1000 + attribute 0x4a), floor -999, unsigned/wrapping; custom GCD x1000/(1000+attr); the stack argument is the unit | `FUN_39899f30`, `FUN_39899df0`; 160 goldens bit-exact |
+| Cooldown manager | inline at `unit+0x2c48`, 150 entries, size 0xE28; `SCCooldowns` rows `(id,total,remaining)` | combat step 1, 115 goldens |
+| Big-hit threshold | `0.0f` | `FUN_39391950`, 111 goldens |
 | Interaction ranges | 3 m units/houses (3.5 m mounted), 4 m bind, surface gap not origin distance | `FUN_39093860` -> `FUN_3989bf90` -> `FUN_398b1ab0`; client `75d7ca7` |
 | Placement wheel step | 1 deg x `builder_rotate_angle` (5.0) per notch | [`port-housing/`](port-housing/MAP.md); name from 10.x, value in 1.2 |
 | Plot dots | rotate with the model, 6 m spread | [`port-housing/`](port-housing/MAP.md) |
@@ -102,6 +104,7 @@ client confirms it.
 | `command_unmount` is on the F bar | it is on the mode action bar (R/T/Y/U), only for a ridden mount that is not one's own mate | [`port-mount-anim/`](port-mount-anim/MAP.md) B |
 | Plot dots 3 m apart | 6 m | [`port-housing/`](port-housing/MAP.md) |
 | Ladder axis pairing, combiner order | corrected per goldens | movement phase A, `MAP.md` 1.4 / 2.3 |
+| Big-hit threshold 1.0 | 0.0f | combat step 1 goldens |
 | `0x115` is a portal packet | not portal related | [`port-portals/`](port-portals/MAP.md) U-E1 |
 
 ### Suspects (need a capture before any server change)
