@@ -5,15 +5,18 @@
 //! the way the original does:
 //!
 //! * an NPC starts the quests whose *Start* component (`quest_components.component_kind_id` 2) has a
-//!   `QuestActConAcceptNpc` act for it. The quest is on offer (a yellow "!") when the player has not
+//!   `QuestActConAcceptNpc` act for it. The quest is on offer when the player has not
 //!   done or taken it (a repeatable quest may be done before) and the component's `unit_reqs` hold:
 //!   level, race, which other quests are done, items owned ... (all of them, or any when
 //!   `or_unit_reqs`);
 //! * an NPC is where a quest is handed in when the quest's *Ready* component (kind 6) has a
-//!   `QuestActConReportNpc` act for it: a yellow "?" when the player's quest is ready, a grey "?"
-//!   while it is still being worked on;
+//!   `QuestActConReportNpc` act for it: a "?" when the player's quest is ready, a grey "?" while it
+//!   is still being worked on;
 //! * an NPC has a talk objective for the player when a *Progress* component (kind 4) of an active
 //!   quest has a `QuestActObjTalk` act for it that is not done yet.
+//!
+//! The marker itself is the original's `stype`: [`Mark`] selects the prefab for green/yellow/repeat
+//! offers, the green/yellow/more/half/grey questions and the hunt/flower special cases.
 //!
 //! A quest's steps are its components in the server's order (kind, then id); the objectives of a step
 //! are its acts that count (`QuestActObj*` and a few `QuestActCon*`), numbered across all components of
@@ -43,15 +46,92 @@ pub mod kind {
     pub const REWARD: u8 = 8;
 }
 
-/// What marker an NPC carries.
+/// The original's per-unit quest mark style (`stype`): the selector `FUN_393821f0` maps these codes
+/// to the prefabs of `prefabs/quest_mark.xml` (see `re-quests.md` §2.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mark {
-    /// A quest to take ("!").
-    Available,
-    /// A quest ready to be handed in ("?").
-    Ready,
+    /// `marker.question_mark_blue`, the selector's default for 0, 4, 10 and unknown codes.
+    BlueQuestion,
+    /// A main quest to take ("!", green).
+    GreenOffer,
+    /// A normal quest to take ("!", yellow).
+    YellowOffer,
+    /// A repeatable quest to take ("!", repeat).
+    RepeatOffer,
     /// A quest being worked on that is handed in here (grey "?").
     InProgress,
+    /// A main quest ready to be handed in ("?", green).
+    MainReady,
+    /// A normal quest ready to be handed in ("?", yellow).
+    Ready,
+    /// A hand-in plus more quests at this NPC ("?", more).
+    More,
+    /// A hand-in whose objective is partly done ("?", half).
+    Half,
+    /// A red level-70 "!".
+    Red70,
+    /// A blue level-70 "!".
+    Blue70,
+    /// The hunt sign (`huntsign`, quest detail 8/11).
+    Hunt,
+    /// The first flower mark (`flower_mark_01`, quest detail 10).
+    Flower1,
+    /// The second flower mark (`flower_mark_02`, a detail 8/11 hand-in).
+    Flower2,
+}
+
+impl Mark {
+    /// The style code the original stores on the unit (0 is "no mark").
+    pub fn code(self) -> u8 {
+        match self {
+            Self::BlueQuestion => 0,
+            Self::GreenOffer => 1,
+            Self::YellowOffer => 2,
+            Self::RepeatOffer => 3,
+            Self::InProgress => 5,
+            Self::MainReady => 6,
+            Self::Ready => 7,
+            Self::More => 8,
+            Self::Half => 9,
+            Self::Red70 => 0xB,
+            Self::Blue70 => 0xC,
+            Self::Hunt => 0xD,
+            Self::Flower1 => 0xE,
+            Self::Flower2 => 0xF,
+        }
+    }
+
+    /// The style a code selects; 0, 4, 10 and unknown codes use the selector's default prefab.
+    pub fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::GreenOffer,
+            2 => Self::YellowOffer,
+            3 => Self::RepeatOffer,
+            5 => Self::InProgress,
+            6 => Self::MainReady,
+            7 => Self::Ready,
+            8 => Self::More,
+            9 => Self::Half,
+            0xB => Self::Red70,
+            0xC => Self::Blue70,
+            0xD => Self::Hunt,
+            0xE => Self::Flower1,
+            0xF => Self::Flower2,
+            _ => Self::BlueQuestion,
+        }
+    }
+
+    pub fn is_offer(self) -> bool {
+        matches!(self, Self::GreenOffer | Self::YellowOffer | Self::RepeatOffer | Self::Hunt | Self::Flower1 | Self::BlueQuestion | Self::Red70 | Self::Blue70)
+    }
+
+    pub fn is_ready(self) -> bool {
+        matches!(self, Self::MainReady | Self::Ready | Self::More | Self::Half | Self::Flower2)
+    }
+
+    pub fn is_progress(self) -> bool {
+        self == Self::InProgress
+    }
 }
 
 /// A Start component: the quest it starts and what the player needs.
@@ -76,6 +156,8 @@ pub struct QuestDef {
     pub zone_id: u32,
     pub selective: bool,
     pub let_it_done: bool,
+    /// `quest_contexts.repeatable`: the original's repeat offer ("!", repeat).
+    pub repeatable: bool,
     /// Its components, in the server's order (kind, then id).
     pub components: Vec<u32>,
 }
@@ -370,7 +452,8 @@ impl QuestTables {
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id = any_int(r, 0)? as u32;
-                if any_flag(r, 4)? {
+                let repeatable = any_flag(r, 4)?;
+                if repeatable {
                     t.repeatable.insert(id);
                 }
                 let fallback: Option<String> = r.get(1)?;
@@ -382,6 +465,7 @@ impl QuestTables {
                         level: any_int(r, 3)?.clamp(0, 255) as u8,
                         selective: any_flag(r, 5)?,
                         let_it_done: any_flag(r, 6)?,
+                        repeatable,
                         detail: any_int(r, 7)? as u32,
                         chapter: any_int(r, 8)? as u32,
                         zone_id: any_int(r, 9)? as u32,
@@ -684,18 +768,66 @@ impl QuestTables {
         out
     }
 
-    /// The marker of NPC template `npc` for this player: a quest to hand in first, then one to take,
-    /// then one in progress; `None` when the NPC has nothing to do with the player's quests.
+    /// Whether an objective of `q` is partly done (`FUN_397d6320`'s half mark).
+    fn partly_done(&self, q: &Quest) -> bool {
+        self.parts_of(q.template_id, kind::PROGRESS).flat_map(|c| &c.acts).any(|a| {
+            a.objective.is_some_and(|i| {
+                let done = q.objectives.get(usize::from(i)).copied().unwrap_or(0);
+                done > 0 && done < a.count
+            })
+        })
+    }
+
+    /// The original per-NPC quest mark style (`FUN_393838f0`), from the NPC's ready, offer and talk
+    /// lists and each quest's detail type; `None` when the NPC has nothing to do with the player's
+    /// quests (the original stores style 0, which clears the mark).
     pub fn mark(&self, npc: u32, player: &PlayerFacts) -> Option<Mark> {
-        let reported = self.reporters.get(&npc).map_or(&[][..], Vec::as_slice);
-        let statuses = || reported.iter().filter_map(|q| player.status_of(*q));
-        if statuses().any(|s| s == status::READY) || !self.talks(npc, player).is_empty() {
+        let offers = self.offers(npc, player);
+        let ready = self.completes(npc, player);
+        if let Some(&quest) = ready.first() {
+            let def = self.def(quest);
+            // An additional quest at the same NPC ("more"), except for a main quest hand-in.
+            if def.is_some_and(|d| !d.is_main()) && offers.iter().any(|q| !ready.contains(q)) {
+                return Some(Mark::More);
+            }
+            if def.is_some_and(QuestDef::is_main) {
+                return Some(Mark::MainReady);
+            }
+            if def.is_some_and(QuestDef::is_livelihood) {
+                return Some(Mark::Flower2);
+            }
             return Some(Mark::Ready);
         }
-        if !self.offers(npc, player).is_empty() {
-            return Some(Mark::Available);
+        if let Some(&quest) = offers.first() {
+            let def = self.def(quest);
+            if offers.len() == 1 && def.is_some_and(|d| d.repeatable) {
+                return Some(Mark::RepeatOffer);
+            }
+            if def.is_some_and(QuestDef::is_main) {
+                return Some(Mark::GreenOffer);
+            }
+            if def.is_some_and(|d| d.detail == 10) {
+                return Some(Mark::Flower1);
+            }
+            if def.is_some_and(|d| matches!(d.detail, 8 | 11)) {
+                return Some(Mark::Hunt);
+            }
+            return Some(Mark::YellowOffer);
         }
-        statuses().any(|s| s == status::PROGRESS).then_some(Mark::InProgress)
+        // Worked on and handed in here: the grey "?" (half when an objective is partly done).
+        let quests = player.quests?;
+        let waiting: Vec<&Quest> = quests
+            .active
+            .iter()
+            .filter(|q| q.status == status::PROGRESS && self.report_npc(q.template_id) == Some(npc))
+            .collect();
+        if !waiting.is_empty() || !self.talks(npc, player).is_empty() {
+            if waiting.iter().any(|q| self.partly_done(q)) {
+                return Some(Mark::Half);
+            }
+            return Some(Mark::InProgress);
+        }
+        None
     }
 }
 
@@ -843,16 +975,16 @@ mod tests {
         // Maude (npcs.id 3597) starts quest 330 for a level 1 character; Maison (10688) starts nothing
         let quests = Quests::default();
         let new = PlayerFacts { level: 1, race: 1, quests: Some(&quests), ..PlayerFacts::default() };
-        assert_eq!(t.mark(3597, &new), Some(Mark::Available));
+        assert_eq!(t.mark(3597, &new), Some(Mark::YellowOffer));
         assert_eq!(t.offers(3597, &new), vec![330]);
         assert_eq!(t.mark(10688, &new), None);
         // taken: no longer on offer, and Maude is not where it is handed in (or: it is, in progress)
         let taken = Quests { active: vec![Quest { template_id: 330, status: status::READY, ..Quest::default() }], ..Quests::default() };
         let facts = PlayerFacts { level: 1, race: 1, quests: Some(&taken), ..PlayerFacts::default() };
-        assert_ne!(t.mark(3597, &facts), Some(Mark::Available));
-        // ready: handed in at Woodcutter Gallagher (3511)
+        assert_ne!(t.mark(3597, &facts), Some(Mark::YellowOffer));
+        // ready: handed in at Woodcutter Gallagher (3511), who also has the next quest to give
         assert_eq!(t.completes(3511, &facts), vec![330]);
-        assert_eq!(t.mark(3511, &facts), Some(Mark::Ready));
+        assert_eq!(t.mark(3511, &facts), Some(Mark::More));
         assert_eq!(t.report_npc(330), Some(3511));
         // done: gone
         let done = Quests { completed: vec![CompletedBlock { id: 330 / 64, bits: 1 << (330 % 64) }], ..Quests::default() };
@@ -860,6 +992,100 @@ mod tests {
         assert_eq!(t.mark(3597, &facts), None);
         // Gallagher then offers "The Mayor's Advice"
         assert_eq!(t.offers(3511, &facts), vec![6198]);
+    }
+
+    fn offer_style(npc: u32, quest: u32, detail: u32, repeatable: bool) -> QuestTables {
+        let mut t = QuestTables::default();
+        t.defs.insert(quest, QuestDef { detail, repeatable, components: vec![1], ..QuestDef::default() });
+        t.parts.insert(1, ComponentDef { id: 1, quest, kind: kind::START, ..ComponentDef::default() });
+        t.components.insert(1, StartComponent { quest, ..StartComponent::default() });
+        t.starters.insert(npc, vec![1]);
+        t
+    }
+
+    fn with_ready(mut t: QuestTables, npc: u32, quest: u32) -> QuestTables {
+        t.defs.get_mut(&quest).unwrap().components.push(2);
+        t.parts.insert(
+            2,
+            ComponentDef {
+                id: 2,
+                quest,
+                kind: kind::READY,
+                acts: vec![ActDef { ty: "ConReportNpc".into(), target: npc, count: 1, ..ActDef::default() }],
+                ..ComponentDef::default()
+            },
+        );
+        t.reporters.entry(npc).or_default().push(quest);
+        t
+    }
+
+    #[test]
+    fn the_original_quest_mark_styles_follow_the_lists_and_quest_detail() {
+        let quests = Quests::default();
+        let new = PlayerFacts { level: 1, quests: Some(&quests), ..PlayerFacts::default() };
+        for (detail, repeatable, style) in [
+            (1, false, Mark::YellowOffer),
+            (2, false, Mark::GreenOffer),
+            (1, true, Mark::RepeatOffer),
+            (10, false, Mark::Flower1),
+            (8, false, Mark::Hunt),
+            (11, false, Mark::Hunt),
+        ] {
+            assert_eq!(offer_style(1, 100, detail, repeatable).mark(1, &new), Some(style), "detail {detail}");
+        }
+        assert_eq!(offer_style(1, 100, 1, false).mark(2, &new), None);
+
+        for (detail, style) in [(1, Mark::Ready), (2, Mark::MainReady), (8, Mark::Flower2), (11, Mark::Flower2)] {
+            let t = with_ready(offer_style(1, 100, detail, false), 1, 100);
+            let ready = Quests { active: vec![Quest { template_id: 100, status: status::READY, ..Quest::default() }], ..Quests::default() };
+            let facts = PlayerFacts { level: 1, quests: Some(&ready), ..PlayerFacts::default() };
+            assert_eq!(t.mark(1, &facts), Some(style), "ready detail {detail}");
+        }
+
+        // A ready hand-in plus another quest on offer is the "more" question mark.
+        let mut t = with_ready(offer_style(1, 100, 1, false), 1, 100);
+        t.defs.insert(101, QuestDef { detail: 1, components: vec![3], ..QuestDef::default() });
+        t.parts.insert(3, ComponentDef { id: 3, quest: 101, kind: kind::START, ..ComponentDef::default() });
+        t.components.insert(3, StartComponent { quest: 101, ..StartComponent::default() });
+        t.starters.get_mut(&1).unwrap().push(3);
+        let ready = Quests { active: vec![Quest { template_id: 100, status: status::READY, ..Quest::default() }], ..Quests::default() };
+        let facts = PlayerFacts { level: 1, quests: Some(&ready), ..PlayerFacts::default() };
+        assert_eq!(t.mark(1, &facts), Some(Mark::More));
+
+        // Worked on and handed in here: grey while untouched, half when an objective is partly done.
+        let mut t = with_ready(offer_style(1, 100, 1, false), 1, 100);
+        t.defs.get_mut(&100).unwrap().components.push(3);
+        t.parts.insert(
+            3,
+            ComponentDef {
+                id: 3,
+                quest: 100,
+                kind: kind::PROGRESS,
+                acts: vec![ActDef { ty: "ObjMonsterHunt".into(), target: 3492, count: 3, objective: Some(0), ..ActDef::default() }],
+                ..ComponentDef::default()
+            },
+        );
+        let progress = |done| Quests {
+            active: vec![Quest { template_id: 100, status: status::PROGRESS, objectives: [done, 0, 0, 0, 0], ..Quest::default() }],
+            ..Quests::default()
+        };
+        let untouched = progress(0);
+        let facts = PlayerFacts { level: 1, quests: Some(&untouched), ..PlayerFacts::default() };
+        assert_eq!(t.mark(1, &facts), Some(Mark::InProgress));
+        let started = progress(1);
+        let facts = PlayerFacts { level: 1, quests: Some(&started), ..PlayerFacts::default() };
+        assert_eq!(t.mark(1, &facts), Some(Mark::Half));
+    }
+
+    #[test]
+    fn mark_codes_select_the_original_prefabs() {
+        for code in [1, 2, 3, 5, 6, 7, 8, 9, 0xB, 0xC, 0xD, 0xE, 0xF] {
+            let mark = Mark::from_code(code);
+            assert_eq!(mark.code(), code);
+        }
+        for code in [0, 4, 10, 0x10] {
+            assert_eq!(Mark::from_code(code), Mark::BlueQuestion);
+        }
     }
 
     #[test]

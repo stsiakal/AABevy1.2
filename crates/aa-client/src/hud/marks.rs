@@ -1,7 +1,8 @@
-//! Quest markers over NPCs: the yellow "!" of a quest to take, the yellow "?" of one to hand in and
-//! the white "?" of one in progress, floating above the name plate and turning slowly, like the
-//! original's `objects/ui/quest_mark/*` models (skinned `.chr` files; the `.cdf` picks the material and
-//! the light beam particle effect `X2_EFFECTS.doodad_effect.quest_mark_addon_*_loop`, drawn by `aa-fx`).
+//! Quest markers over NPCs: the original's 15 `stype` prefabs (green/yellow/repeat "!", blue/green/
+//! yellow/more/half "?", the red/blue 70 marks, the hunt sign and two flower marks), floating above
+//! the name plate and turning slowly. The originals are `objects/ui/quest_mark/*` models (skinned
+//! `.chr` files) with the prefab material and the effect its `.cdf` binds (the light beams
+//! `X2_EFFECTS.doodad_effect.quest_mark_addon_*_loop` and the repeat/more effects, drawn by `aa-fx`).
 //!
 //! Which NPC gets which marker is [`super::quests`]; this module spawns a model per marked NPC in
 //! range, keeps it above the NPC's head and takes it away when the quest state changes.
@@ -48,12 +49,122 @@ pub struct MarkState {
     ramp: Option<Handle<Image>>,
 }
 
-/// The model and material of a marker.
-fn variant(mark: Mark) -> (&'static str, &'static str) {
+/// One original quest-mark prefab: the model and material of its entity and the effect its `.cdf`
+/// attaches to the root bone (`prefabs/quest_mark.xml`, `objects/ui/quest_mark/*.cdf`).
+struct Variant {
+    model: &'static str,
+    /// `None` uses the model's own `.mtl` (the hunt sign).
+    material: Option<&'static str>,
+    /// The prefab entity's scale (2, or 2.6 for the half question mark).
+    scale: f32,
+    /// The particle effect after `X2_EFFECTS.`, if the `.cdf` binds one.
+    effect: Option<&'static str>,
+    /// The measured yellow ramp replaces the material's own texture.
+    ramp: bool,
+}
+
+/// The model, material and effect of each style's original prefab.
+fn variant(mark: Mark) -> Variant {
+    debug_assert_eq!(Mark::from_code(mark.code()), mark);
     match mark {
-        Mark::Available => ("objects/ui/quest_mark/exclamation_mark_red/exclamation_mark_red.chr", "objects/ui/quest_mark/exclamation_mark_yellow/exclamation_mark_yellow_mul.mtl"),
-        Mark::Ready => ("objects/ui/quest_mark/question_mark_red/question_mark_red.chr", "objects/ui/quest_mark/question_mark_yellow/question_mark_yellow_mul.mtl"),
-        Mark::InProgress => ("objects/ui/quest_mark/question_mark_red/question_mark_red.chr", "objects/ui/quest_mark/question_mark_ing/question_mark_ing_mul.mtl"),
+        Mark::GreenOffer => Variant {
+            model: "objects/ui/quest_mark/exclamation_mark_red/exclamation_mark_red.chr",
+            material: Some("objects/ui/quest_mark/exclamation_mark_green/exclamation_mark_green_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_green_loop"),
+            ramp: false,
+        },
+        Mark::YellowOffer => Variant {
+            model: "objects/ui/quest_mark/exclamation_mark_red/exclamation_mark_red.chr",
+            material: Some("objects/ui/quest_mark/exclamation_mark_yellow/exclamation_mark_yellow_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_yellow_loop"),
+            ramp: true,
+        },
+        Mark::RepeatOffer => Variant {
+            model: "objects/ui/quest_mark/exclamation_mark_red/exclamation_mark_red.chr",
+            material: Some("objects/ui/quest_mark/exclamation_mark_yellow/exclamation_mark_yellow_mul.mtl"),
+            scale: SCALE,
+            effect: Some("ui.exclamation_mark_repeat"),
+            ramp: true,
+        },
+        Mark::InProgress => Variant {
+            model: "objects/ui/quest_mark/question_mark_red/question_mark_red.chr",
+            material: Some("objects/ui/quest_mark/question_mark_ing/question_mark_ing_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_white_loop"),
+            ramp: false,
+        },
+        Mark::MainReady => Variant {
+            model: "objects/ui/quest_mark/question_mark_red/question_mark_red.chr",
+            material: Some("objects/ui/quest_mark/question_mark_green/question_mark_green_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_green_loop"),
+            ramp: false,
+        },
+        Mark::Ready => Variant {
+            model: "objects/ui/quest_mark/question_mark_red/question_mark_red.chr",
+            material: Some("objects/ui/quest_mark/question_mark_yellow/question_mark_yellow_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_yellow_loop"),
+            ramp: true,
+        },
+        Mark::More => Variant {
+            model: "objects/ui/quest_mark/question_mark_red/question_mark_red.chr",
+            material: Some("objects/ui/quest_mark/question_mark_yellow/question_mark_yellow_mul.mtl"),
+            scale: SCALE,
+            effect: Some("ui.asterisk_yellow_more"),
+            ramp: true,
+        },
+        Mark::Half => Variant {
+            model: "objects/ui/quest_mark/question_mark_half/question_mark_half.chr",
+            material: Some("objects/ui/quest_mark/question_mark_half/question_mark_half_mul.mtl"),
+            scale: 2.6,
+            effect: Some("doodad_effect.quest_mark_addon_yellow_loop"),
+            ramp: false,
+        },
+        Mark::Red70 => Variant {
+            model: "objects/ui/quest_mark/exclamation_mark_red_70/exclamation_mark_red_70.chr",
+            material: Some("objects/ui/quest_mark/exclamation_mark_red_70/exclamation_mark_red_70_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_red_loop"),
+            ramp: false,
+        },
+        Mark::Blue70 => Variant {
+            model: "objects/ui/quest_mark/exclamation_mark_red_70/exclamation_mark_red_70.chr",
+            material: Some("objects/ui/quest_mark/exclamation_mark_blue_70/exclamation_mark_blue_70_mul.mtl"),
+            scale: SCALE,
+            effect: None,
+            ramp: false,
+        },
+        Mark::Hunt => Variant {
+            model: "objects/env/01_nuia/001_ncom/ncom_huntsign.chr",
+            material: None,
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_yellow_loop"),
+            ramp: false,
+        },
+        Mark::Flower1 => Variant {
+            model: "objects/ui/quest_mark/flower_mark_01/flower_mark_01.chr",
+            material: Some("objects/ui/quest_mark/flower_mark_01/flower_mark-01_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_green_loop"),
+            ramp: false,
+        },
+        Mark::Flower2 => Variant {
+            model: "objects/ui/quest_mark/flower_mark_02/flower_mark_02.chr",
+            material: Some("objects/ui/quest_mark/flower_mark_01/flower_mark-01_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_green_loop"),
+            ramp: false,
+        },
+        Mark::BlueQuestion => Variant {
+            model: "objects/ui/quest_mark/question_mark_red/question_mark_red.chr",
+            material: Some("objects/ui/quest_mark/question_mark_blue/question_mark_blue_mul.mtl"),
+            scale: SCALE,
+            effect: Some("doodad_effect.quest_mark_addon_blue_loop"),
+            ramp: false,
+        },
     }
 }
 
@@ -112,10 +223,11 @@ fn ramp_image() -> Image {
 }
 
 /// Unlit like the original's glowing marks; the shell sub-material without a texture is invisible.
-/// `ramp` replaces the texture of the yellow marks (see [`RAMP_TOP`]).
-fn options(material: &str, ramp: Option<Handle<Image>>) -> ModelOptions {
+/// `ramp` replaces the texture of the yellow marks (see [`RAMP_TOP`]); `None` keeps the model's own
+/// material (the hunt sign).
+fn options(material: Option<&str>, ramp: Option<Handle<Image>>) -> ModelOptions {
     ModelOptions {
-        material: Some(material.to_string()),
+        material: material.map(str::to_string),
         material_hook: Some(MaterialHook::new(move |_, m| {
             m.unlit = true;
             m.double_sided = true;
@@ -186,23 +298,23 @@ pub fn update_marks(
             if state.placed.contains_key(&id) {
                 continue;
             }
-            let (model, material) = variant(mark);
-            let yellow = mark != Mark::InProgress;
-            let ramp = yellow.then(|| state.ramp.get_or_insert_with(|| cry.images.add(ramp_image())).clone());
-            let opts = options(material, ramp);
-            match cry.load_model(model, &opts) {
+            let v = variant(mark);
+            let ramp = v.ramp.then(|| state.ramp.get_or_insert_with(|| cry.images.add(ramp_image())).clone());
+            let opts = options(v.material, ramp);
+            match cry.load_model(v.model, &opts) {
                 Ok(loaded) => {
-                    let root = aa_cry::scene::spawn_loaded(&mut commands, model, &loaded, &opts);
+                    let root = aa_cry::scene::spawn_loaded(&mut commands, v.model, &loaded, &opts);
                     let anchor = commands
-                        .spawn((Name::new(format!("quest mark {id}")), QuestMark, Transform::from_scale(Vec3::splat(SCALE)), Visibility::Inherited))
+                        .spawn((Name::new(format!("quest mark {id}")), QuestMark, Transform::from_scale(Vec3::splat(v.scale)), Visibility::Inherited))
                         .add_child(root)
                         .id();
-                    // the original's `.cdf` attaches a light beam effect to the model's root bone (white for "in progress")
-                    let fx = if mark == Mark::InProgress { "doodad_effect.quest_mark_addon_white_loop" } else { "doodad_effect.quest_mark_addon_yellow_loop" };
-                    commands.spawn((aa_fx::Effect::new(format!("X2_EFFECTS.{fx}")), ChildOf(anchor)));
+                    // the original's `.cdf` attaches an effect to the model's root bone
+                    if let Some(fx) = v.effect {
+                        commands.spawn((aa_fx::Effect::new(format!("X2_EFFECTS.{fx}")), ChildOf(anchor)));
+                    }
                     state.placed.insert(id, Placed { entity: anchor, mark });
                 }
-                Err(e) => warn!("hud: quest mark {model}: {e}"),
+                Err(e) => warn!("hud: quest mark {}: {e}", v.model),
             }
         }
     }
@@ -238,4 +350,46 @@ pub fn despawn(mut commands: Commands, mut state: ResMut<MarkState>, marks: Quer
     }
     let ramp = state.ramp.take();
     *state = MarkState { ramp, ..MarkState::default() };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_style_uses_its_original_prefab() {
+        let v = variant(Mark::GreenOffer);
+        assert_eq!((v.model, v.material), ("objects/ui/quest_mark/exclamation_mark_red/exclamation_mark_red.chr", Some("objects/ui/quest_mark/exclamation_mark_green/exclamation_mark_green_mul.mtl")));
+        assert_eq!(v.effect, Some("doodad_effect.quest_mark_addon_green_loop"));
+
+        let v = variant(Mark::YellowOffer);
+        assert_eq!(v.material, Some("objects/ui/quest_mark/exclamation_mark_yellow/exclamation_mark_yellow_mul.mtl"));
+        assert!(v.ramp);
+
+        assert_eq!(variant(Mark::RepeatOffer).effect, Some("ui.exclamation_mark_repeat"));
+        assert_eq!(variant(Mark::More).effect, Some("ui.asterisk_yellow_more"));
+        assert_eq!(variant(Mark::InProgress).effect, Some("doodad_effect.quest_mark_addon_white_loop"));
+
+        let v = variant(Mark::MainReady);
+        assert_eq!((v.model, v.material), ("objects/ui/quest_mark/question_mark_red/question_mark_red.chr", Some("objects/ui/quest_mark/question_mark_green/question_mark_green_mul.mtl")));
+        assert_eq!(variant(Mark::Ready).material, Some("objects/ui/quest_mark/question_mark_yellow/question_mark_yellow_mul.mtl"));
+        assert_eq!(variant(Mark::Half).scale, 2.6);
+        assert_eq!(variant(Mark::Half).model, "objects/ui/quest_mark/question_mark_half/question_mark_half.chr");
+
+        assert_eq!(variant(Mark::Red70).model, "objects/ui/quest_mark/exclamation_mark_red_70/exclamation_mark_red_70.chr");
+        assert_eq!(variant(Mark::Blue70).material, Some("objects/ui/quest_mark/exclamation_mark_blue_70/exclamation_mark_blue_70_mul.mtl"));
+        assert_eq!(variant(Mark::Blue70).effect, None);
+
+        let v = variant(Mark::Hunt);
+        assert_eq!((v.model, v.material), ("objects/env/01_nuia/001_ncom/ncom_huntsign.chr", None));
+
+        let v = variant(Mark::Flower1);
+        assert_eq!((v.model, v.material), ("objects/ui/quest_mark/flower_mark_01/flower_mark_01.chr", Some("objects/ui/quest_mark/flower_mark_01/flower_mark-01_mul.mtl")));
+        assert_eq!(variant(Mark::Flower2).model, "objects/ui/quest_mark/flower_mark_02/flower_mark_02.chr");
+        assert_eq!(variant(Mark::Flower2).material, v.material);
+
+        let v = variant(Mark::BlueQuestion);
+        assert_eq!(v.material, Some("objects/ui/quest_mark/question_mark_blue/question_mark_blue_mul.mtl"));
+        assert_eq!(v.effect, Some("doodad_effect.quest_mark_addon_blue_loop"));
+    }
 }

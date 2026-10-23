@@ -323,33 +323,30 @@ pub fn plugin(app: &mut App) {
 /// Quest icon of an NPC for the player: the kind of the quests it offers, takes in or waits for.
 fn quest_icon(game: &GameData, facts: &PlayerFacts, quests: &Quests, npc: u32, mark: Mark) -> &'static str {
     let defs = |ids: &[u32]| ids.iter().filter_map(|q| game.quests.def(*q)).collect::<Vec<_>>();
-    match mark {
-        Mark::Available => {
-            let offered = defs(&game.quests.offers(npc, facts));
-            if offered.iter().any(|d| d.is_main()) {
-                "quest_main_gives"
-            } else if offered.iter().any(|d| !d.is_daily() && !d.is_livelihood()) {
-                "quest_zone_gives"
-            } else if offered.iter().any(|d| d.is_livelihood()) {
-                "quest_livelihood_gives"
-            } else {
-                "quest_repeat"
-            }
+    if mark.is_offer() {
+        let offered = defs(&game.quests.offers(npc, facts));
+        if offered.iter().any(|d| d.is_main()) {
+            "quest_main_gives"
+        } else if offered.iter().any(|d| !d.is_daily() && !d.is_livelihood()) {
+            "quest_zone_gives"
+        } else if offered.iter().any(|d| d.is_livelihood()) {
+            "quest_livelihood_gives"
+        } else {
+            "quest_repeat"
         }
-        Mark::Ready => {
-            let done = defs(&game.quests.completes(npc, facts));
-            if done.iter().any(|d| d.is_main()) {
-                "quest_main_completes"
-            } else if done.iter().any(|d| d.is_livelihood()) {
-                "quest_livelihood_complete"
-            } else {
-                "quest_zone_completes"
-            }
+    } else if mark.is_ready() {
+        let done = defs(&game.quests.completes(npc, facts));
+        if done.iter().any(|d| d.is_main()) {
+            "quest_main_completes"
+        } else if done.iter().any(|d| d.is_livelihood()) {
+            "quest_livelihood_complete"
+        } else {
+            "quest_zone_completes"
         }
-        Mark::InProgress => {
-            let waiting: Vec<u32> = quests.active.iter().map(|q| q.template_id).filter(|q| game.quests.report_npc(*q) == Some(npc)).collect();
-            if defs(&waiting).iter().any(|d| d.is_main()) { "quest_main_progress" } else { "quest_zone_progress" }
-        }
+    } else {
+        debug_assert!(mark.is_progress());
+        let waiting: Vec<u32> = quests.active.iter().map(|q| q.template_id).filter(|q| game.quests.report_npc(*q) == Some(npc)).collect();
+        if defs(&waiting).iter().any(|d| d.is_main()) { "quest_main_progress" } else { "quest_zone_progress" }
     }
 }
 
