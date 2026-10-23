@@ -115,8 +115,8 @@ pub struct HudData {
     pub passive_buffs: Vec<u32>,
     /// Timed received cooldowns and cast observations; read at widget tick time.
     pub cooldowns: aa_net::state::Skills,
-    /// Received initial-config bytes1/8; unknown differs from a received zero.
-    pub feature_limits: (Option<u8>, Option<u8>),
+    /// Received initial-config FeatureSet bytes; empty until `SCInitialConfig` arrives.
+    pub feature_bytes: Vec<u8>,
     /// The client's own combat state: the server only ever says "cleared" (`CombatChanged`); the client
     /// enters combat itself when it attacks or is attacked (`combat::route_combat`).
     pub local_combat: bool,
@@ -207,7 +207,7 @@ impl Default for HudData {
             skill_levels: Default::default(),
             passive_buffs: Vec::new(),
             cooldowns: Default::default(),
-            feature_limits: Default::default(),
+            feature_bytes: Vec::new(),
             local_combat: false,
             pvp: Default::default(),
             radar: Default::default(),
@@ -383,27 +383,49 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::sorting::install(lua, bridge)
 }
 
-/// Native39496b20 returns numeric feature bytes, never the fallback's boolean placeholders.
+/// `FUN_39496b20`: the boolean `X2Player:GetFeatureSet()` fields and the FeatureSet bit each
+/// reads (bit = byte * 8 + bit, from the assembled `+0x14` array).
+const FEATURE_FIELDS: [(&str, u8); 19] = [
+    ("siege", 0),
+    ("premium", 4),
+    ("ranking", 36),
+    ("ingamecashshop", 38),
+    ("customsaveload", 40),
+    ("bm_mileage", 43),
+    ("itemSecure", 45),
+    ("secondpass", 46),
+    ("slave_customize", 48),
+    ("beautyshopBypass", 52),
+    ("ingameshopSecondpass", 55),
+    ("backpackProfitShare", 56),
+    ("sensitiveOpeartion", 58),
+    ("taxItem", 59),
+    ("achievement", 63),
+    ("dwarfWarborn", 74),
+    ("mailCoolTime", 75),
+    ("hudAuctionButton", 81),
+    ("auctionPostBuff", 83),
+];
+
+/// `FUN_39496b20`: the received FeatureSet, or the native empty table before one arrives.
 fn install_feature_limits(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
     let player: Table = lua.globals().get("X2Player")?;
-    let previous: mlua::Function = player.get("GetFeatureSet")?;
     let state = bridge.clone();
     player.set(
         "GetFeatureSet",
-        lua.create_function(move |_, this: Value| {
-            let (level, mate) = state.borrow().feature_limits;
-            let out: Table = previous.call(this)?;
-            // Until initial configuration arrives, zero leaves the original tooltip's upper
-            // restriction unset. Do not invent a positive cap from experience-table length.
-            out.set("levelLimit", f64::from(level.unwrap_or(0)))?;
-            out.set("mateLevelLimit", f64::from(mate.unwrap_or(0)))?;
-            out.set("achievement", state.borrow().achievement.cache.native_enabled == Some(true))?;
-            // the 1.2 server's `Feature::TaxItem` (housing taxes are paid with certificates, item 31891)
-            out.set("taxItem", true)?;
-            // the server serves the auction house only at an auctioneer: no remote button
-            out.set("hudAuctionButton", false)?;
-            // the bag's four-button lock window (item_lock.alb, sort_bag.alb:281-347)
-            out.set("itemSecure", true)?;
+        lua.create_function(move |lua, _: Value| {
+            let bytes = state.borrow().feature_bytes.clone();
+            let out = lua.create_table()?;
+            if bytes.is_empty() {
+                // DAT_39b02294 is null: the native binding pushes an empty table.
+                return Ok(out);
+            }
+            for (name, bit) in FEATURE_FIELDS {
+                out.set(name, aa_net::initial_config::feature_bit(&bytes, bit))?;
+            }
+            // Bytes 1 and 8 are the level caps, not bit fields. Missing bytes read zero.
+            out.set("levelLimit", i64::from(bytes.get(1).copied().unwrap_or(0)))?;
+            out.set("mateLevelLimit", i64::from(bytes.get(8).copied().unwrap_or(0)))?;
             Ok(out)
         })?,
     )
@@ -708,12 +730,10 @@ fn find_player(world: &mut World, name: &str) -> Option<Entity> {
 
 /// Recompute the snapshot from the Bevy world.
 pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
-    bridge.borrow_mut().feature_limits = world
+    bridge.borrow_mut().feature_bytes = world
         .get_resource::<aa_net::GameConfig>()
         .and_then(|config| config.received.as_ref())
-        .map_or((None, None), |config| {
-            (config.player_level_limit(), config.mate_level_limit())
-        });
+        .map_or_else(Vec::new, |config| config.feature_bytes.clone());
     let Some(spawn) = world.resource::<Player>().spawn.clone() else {
         bridge.borrow_mut().pvp = Default::default();
         bridge.borrow_mut().radar = Default::default();
@@ -1265,22 +1285,49 @@ mod tests {
     }
 
     #[test]
-    fn received_feature_level_caps_are_numeric_and_preserve_zero_without_xp_defaults()
+    fn feature_set_fields_follow_received_bits_and_default_to_empty_before_config()
     -> mlua::Result<()> {
         let lua = Lua::new();
-        lua.load("X2Player={GetFeatureSet=function()return{levelLimit=false,mateLevelLimit=false,premium=false}end}").exec()?;
+        // The fallback's placeholder table must not leak into the native binding.
+        lua.load("X2Player={GetFeatureSet=function()return{wrong=true}end}").exec()?;
         let bridge = Rc::new(RefCell::new(HudData::default()));
         install_feature_limits(&lua, &bridge)?;
-        lua.load("local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==0 and f.premium==false and f.taxItem==true and f.itemSecure==true)").exec()?;
-        bridge.borrow_mut().feature_limits = (Some(55), Some(50));
         lua.load(
-            "local f=X2Player:GetFeatureSet();assert(f.levelLimit==55 and f.mateLevelLimit==50)",
+            "local f=X2Player:GetFeatureSet(); assert(next(f)==nil and f.itemSecure==nil and f.taxItem==nil and f.levelLimit==nil)",
         )
         .exec()?;
-        bridge.borrow_mut().feature_limits = (Some(0), Some(255));
-        lua.load(
-            "local f=X2Player:GetFeatureSet();assert(f.levelLimit==0 and f.mateLevelLimit==255)",
-        )
+        let all = [
+            "siege", "premium", "ranking", "ingamecashshop", "customsaveload", "bm_mileage",
+            "itemSecure", "secondpass", "slave_customize", "beautyshopBypass",
+            "ingameshopSecondpass", "backpackProfitShare", "sensitiveOpeartion", "taxItem",
+            "achievement", "dwarfWarborn", "mailCoolTime", "hudAuctionButton", "auctionPostBuff",
+        ];
+        let fields = all.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(",");
+        bridge.borrow_mut().feature_bytes = vec![0; 11];
+        lua.load(format!(
+            "local f=X2Player:GetFeatureSet(); for _,k in ipairs({{{fields}}}) do assert(f[k]==false,k) end; assert(f.levelLimit==0 and f.mateLevelLimit==0)"
+        ))
+        .exec()?;
+        // Feature::ItemSecure = 45 (byte 5 bit 5); Feature::TaxItem = 59 (byte 7 bit 3).
+        let mut bytes = vec![0; 11];
+        bytes[5] = 0x20;
+        bridge.borrow_mut().feature_bytes = bytes.clone();
+        lua.load("local f=X2Player:GetFeatureSet(); assert(f.itemSecure==true and f.taxItem==false)")
+            .exec()?;
+        bytes[5] = 0;
+        bytes[7] = 0x08;
+        bridge.borrow_mut().feature_bytes = bytes.clone();
+        lua.load("local f=X2Player:GetFeatureSet(); assert(f.taxItem==true and f.itemSecure==false)")
+            .exec()?;
+        bytes[1] = 55;
+        bytes[8] = 50;
+        bridge.borrow_mut().feature_bytes = bytes;
+        lua.load("local f=X2Player:GetFeatureSet(); assert(f.levelLimit==55 and f.mateLevelLimit==50)")
+            .exec()?;
+        bridge.borrow_mut().feature_bytes = vec![0xff; 11];
+        lua.load(format!(
+            "local f=X2Player:GetFeatureSet(); for _,k in ipairs({{{fields}}}) do assert(f[k]==true,k) end; assert(f.levelLimit==255 and f.mateLevelLimit==255 and f.itemSecure==true and f.taxItem==true)"
+        ))
         .exec()
     }
 

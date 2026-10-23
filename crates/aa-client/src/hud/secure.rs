@@ -123,7 +123,10 @@ mod tests {
     #[test]
     #[ignore = "loads the original world-stage scripts and read-only game catalog"]
     fn original_lock_button_opens_the_four_button_window_and_item_modes() -> Result<(), Box<dyn std::error::Error>> {
-        let (rt, bridge, path, _) = super::super::expansion::fixture::runtime(1280.0, 720.0)?;
+        let mut features = super::super::breath::fixture::FEATURES;
+        features[5] |= 0x20; // Feature::ItemSecure = 45
+        let (rt, bridge, path, _) = super::super::expansion::fixture::runtime_with_features(1280.0, 720.0, &features)?;
+        assert!(rt.lua.load("return X2Player:GetFeatureSet().itemSecure == true").eval::<bool>()?);
         // The server's SCItemTaskSuccess sets the Secure bit. Deliver it before any lock mode
         // is active, so the bag's normal update path draws the padlock.
         bridge.borrow_mut().panels.bag[4].as_mut().unwrap().flags = Some(aa_net::secure::FLAG_SECURE);
@@ -176,6 +179,25 @@ mod tests {
                 Request::SecureItem { request: second, lock: true }
             ] if first.item_id() == 9_007_199_254_740_993 && second.item_id() == 9_007_199_254_740_993
         ), "{requests:?}");
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "loads the original world-stage scripts and read-only game catalog"]
+    fn original_bag_hides_the_lock_button_when_item_secure_is_off() -> Result<(), Box<dyn std::error::Error>> {
+        let (rt, _bridge, path, _) = super::super::expansion::fixture::runtime(1280.0, 720.0)?;
+        rt.lua
+            .load(
+                r#"
+        local f = X2Player:GetFeatureSet()
+        assert(f.itemSecure == false and f.taxItem == true)
+        assert(newbag:IsVisible() and newbag.lockButton == nil)
+    "#,
+            )
+            .exec()?;
         if path.exists() {
             std::fs::remove_file(path)?;
         }

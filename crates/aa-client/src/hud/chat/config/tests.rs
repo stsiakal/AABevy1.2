@@ -9,7 +9,7 @@ fn restart(state: &Shared, path: &std::path::Path) -> Result<(UiRuntime, Shared)
         let mut target = other.borrow_mut();
         target.game = source.game.clone();
         target.snapshot = source.snapshot.clone();
-        target.feature_limits = source.feature_limits;
+        target.feature_bytes = source.feature_bytes.clone();
         target.panels = source.panels.clone();
         target.chat_config.identity(source.chat_config.world, source.chat_config.owner);
     }
@@ -384,7 +384,7 @@ fn original_chat_controls_and_character_scoped_restart_keep_native_rows() -> Res
         let mut target = other.borrow_mut();
         target.game = source.game.clone();
         target.snapshot = source.snapshot.clone();
-        target.feature_limits = source.feature_limits;
+        target.feature_bytes = source.feature_bytes.clone();
         target.panels = source.panels.clone();
     }
     other.borrow_mut().chat_config.identity(Some(17), 0x8000_0001);

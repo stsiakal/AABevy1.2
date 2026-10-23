@@ -60,7 +60,15 @@ pub(crate) fn spawn() -> aa_net::PlayerSpawn {
 }
 
 pub(crate) fn runtime(width: f32, height: f32) -> Result<(UiRuntime, api::Shared, PathBuf, Inventory), Box<dyn std::error::Error>> {
-    let (rt, bridge, path) = super::super::breath::fixture::runtime(width, height)?;
+    runtime_with_features(width, height, &super::super::breath::fixture::FEATURES)
+}
+
+pub(crate) fn runtime_with_features(
+    width: f32,
+    height: f32,
+    features: &[u8; 11],
+) -> Result<(UiRuntime, api::Shared, PathBuf, Inventory), Box<dyn std::error::Error>> {
+    let (rt, bridge, path) = super::super::breath::fixture::runtime_with_features(width, height, features)?;
     api::mark_pushed(&bridge);
     let mut inventory = Inventory::default();
     inventory.bag_slots = 50;

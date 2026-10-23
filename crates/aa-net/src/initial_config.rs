@@ -67,6 +67,14 @@ impl InitialConfig {
     }
 }
 
+/// `FeatureSet::Check((Feature)bit)`: feature index / 8, bit % 8. Missing bytes read as unset,
+/// as the server always writes the fixed 11-byte array.
+pub fn feature_bit(bytes: &[u8], bit: u8) -> bool {
+    bytes
+        .get(usize::from(bit / 8))
+        .is_some_and(|b| b & (1 << (bit % 8)) != 0)
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "bevy", derive(bevy::ecs::resource::Resource))]
 pub struct GameConfig {
@@ -127,6 +135,11 @@ mod tests {
                 (254, 255, 0xabcd)
             );
             assert_eq!((config.player_level_limit(), config.mate_level_limit()), (Some(55), Some(50)));
+            assert!(feature_bit(&config.feature_bytes, 0));
+            assert!(feature_bit(&config.feature_bytes, 25));
+            assert!(feature_bit(&config.feature_bytes, 33));
+            assert!(!feature_bit(&config.feature_bytes, 11));
+            assert!(!feature_bit(&config.feature_bytes, 88));
             let mut inner = Writer::new();
             inner
                 .u16(0)

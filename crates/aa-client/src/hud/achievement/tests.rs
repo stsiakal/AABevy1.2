@@ -16,7 +16,12 @@ fn setup() -> Result<(UiRuntime, Shared), Box<dyn std::error::Error>> {
 }
 
 fn enable(bridge: &Shared) {
-    bridge.borrow_mut().achievement.cache.native_enabled = Some(true);
+    let mut data = bridge.borrow_mut();
+    data.achievement.cache.native_enabled = Some(true);
+    if data.feature_bytes.len() < 11 {
+        data.feature_bytes.resize(11, 0);
+    }
+    data.feature_bytes[7] |= 0x80;
 }
 
 #[test]
