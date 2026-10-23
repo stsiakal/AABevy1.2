@@ -113,3 +113,15 @@ end
 X2Option.EnumAAFormats = function(self) return {} end
 X2Option.GetModifiedRestartOption = function(self) return false end
 X2Option.GetMinxMaxOfMouseSensitivity = function(self) return 0.1, 3 end
+-- `ui_scale` is the screen page's `funcDefaultValue`: the saved cvar when one exists, else the resolution default the runtime
+-- already applied (`GetDefaultUIScaleByResolution`). The page's Save calls `SetUIScale(value, true)`, which stores the cvar.
+do
+  local set = UIParent._aaSetUIScale or UIParent.SetUIScale
+  UIParent._aaSetUIScale = set
+  local saved = NET.option_get('ui_scale')
+  if type(saved) == 'number' then set(UIParent, saved, false) end
+  UIParent.SetUIScale = function(self, value, apply)
+    set(self, value, apply)
+    if apply and type(value) == 'number' then NET.option_set('ui_scale', value) end
+  end
+end
