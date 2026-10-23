@@ -31,6 +31,7 @@ use crate::scene::Shading;
 pub mod backlight;
 mod eye;
 pub mod hair;
+pub mod illum;
 pub mod skin;
 mod ucc;
 
@@ -44,6 +45,9 @@ pub(crate) fn convert_material(prep: &mut crate::loader::Prep<'_>, m: &CryMateri
         && out.base_color.to_linear().alpha >= threshold
         && !m.shader.to_ascii_lowercase().starts_with("veg")
         && !m.shader.eq_ignore_ascii_case("grass")
+        // Diffuse opacity alone cannot prove alpha-test redundant when native
+        // Illum also reads vertex alpha (ALPHAGLOW replaces diffuse alpha).
+        && !illum::uses_vertex_alpha(m)
     {
         let opaque = m
             .texture(&TextureMap::Diffuse)
@@ -69,11 +73,17 @@ pub(crate) fn convert_material(prep: &mut crate::loader::Prep<'_>, m: &CryMateri
         } else {
             backlight::TAG
         };
-        bake_specular(prep, m, &mut out);
+        // Native Illum composition replaces the metallic/roughness approximation.
+        if !illum::prepare(prep, m, &mut out) {
+            bake_specular(prep, m, &mut out);
+        }
         // hair gets the strand shading of `hair::HairMaterial` (tagged here, swapped by `hair::HairPlugin`)
         hair::prepare(prep, m, &mut out);
         // skin gets the HumanSkin shading of `skin::SkinMaterial` (tagged here, swapped by `skin::SkinPlugin`)
         skin::prepare(prep, m, &mut out);
+    } else {
+        // World brushes use Basic shading but still need the native post-lighting vertex colour term.
+        illum::prepare(prep, m, &mut out);
     }
     Some(out)
 }

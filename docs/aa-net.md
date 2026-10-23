@@ -95,9 +95,10 @@ CAEnterWorld(id)    ─► ACWorldQueue* ─► ACWorldCookie (cookie, game serv
 | game → client | `X2EnterWorldResponse`, `ChangeState`, `Pong`, `SCReconnectAuth`, `SCGetSlotCount`, `SCAccountInfo`, `SCUpdatePremiumPoint`, `SCRaceCongestion`, `SCCharacterList`, `SCCreateCharacterResponse`, `SCCharacterCreationFailed`, `SCDeleteCharacterResponse`, `SCCancelCharacterDeleteResponse`, `SCCharacterDeleted`, `SCCharacterState`, `SCUnitState` (all unit kinds), `SCUnitsRemoved`, `SCOneUnitMovement`, `SCUnitPoints`, `SCUnitDeath`, `SCTeleportUnit`, `SCDoodadCreated/sCreated`, `SCDoodadRemoved/sRemoved`, `SCDoodadPhaseChanged`, `SCChatMessage`, `SCEmotionExpressed`, `SCChatBubble`, `SCAreaChatBubble`, `SCErrorMsg`, `SCKicked`, `SCPrepareLeaveWorld`, `SCLeaveWorldGranted`, `SCLeaveWorldCanceled`; for the HUD (see "In-game HUD data"): `SCExpChanged`, `SCAbilityExpChanged`, `SCRecoverableExp`, `SCLevelChanged`, `SCAbilitySwapped`, `SCCharacterLaborPowerChanged`, `SCCharacterGamePoints`, `SCGamePointChanged`, `SCBmPoint`, `SCCombatEngaged/Cleared`, `SCUnitFactionChanged`, `SCCharacterResurrected`, `SCBuffCreated/Removed/Learned`, `SCActionSlots`, `SCCharacterInvenInit/Contents`, `SCItemTaskSuccess`, `SCUnitEquipmentsChanged`, `SCInvenExpanded`, `SCTimeOfDay`, `SCDetailedTimeOfDay`, `SCOnOffSnow`, `SCConflictZoneState`, `SCJoinedChatChannel`, `SCLeavedChatChannel`, `SCTargetChanged`, `SCSkillStarted/Fired/Ended/Stopped`, `SCCastingStopped`, `SCLootableState`, `SCUnitLootingState`, `SCLootBagData`, `SCLootItemTook`, `SCLootItemFailed`, `SCLootDice/Notify/Summary`, `SCCooldowns`, `SCSkillCooldownReset`, `SCSkillLearned/Upgraded`, `SCSkillsReset`, `SCUnitDamaged`, `SCUnitHealed`, `SCCombatText`, `SCPlotEvent/Ended/CastingStopped/ChannelingStopped`, `SCQuests`, `SCCompletedQuests`, `SCQuestContextStarted/Updated/Completed/Reset`, `SCNpcInteractionSkillList`, `SCDoodadQuestAccept`, `SCQuestRewardedByMail`, `SCNpcChatMessage`, `SCAppellations`, `SCAppellationGained`, `SCAppellationChanged` (see "Titles"), `SCHouseState`, `SCHouseBuildProgress`, `SCHouseBuildPayChanged`, `SCHousePermissionChanged`, `SCHouseDemolished`, `SCMyHouse`, `SCMyHouseRemoved`, `SCHouseFarm`, `SCHouseTaxInfo`, `SCConstructHouseTax`, `SCHousingRecoverToggle`, `SCHouseSetForSale`, `SCHouseResetForSale`, `SCHouseSold`, `SCHouseOwnerNameChanged`, `SCLoginCharInfoHouse`, `SCResponseCommonFarmList`, `SCShowCommonFarm`, `SCIsUnitInFarm` (see "Housing and public farms"), `CompressedGamePackets` |
 | client ↔ stream | `CTJoin`, `TCJoinResponse` (joined and kept open, other traffic ignored) |
 
-Everything else the server sends (guilds, mount-owner packets ...) is decoded as
-`game::ServerMsg::Unhandled { level, opcode, len }` and skipped: frames are length delimited, so an
-unknown or undecodable packet never desynchronises the stream.
+Everything else the server sends is decoded as `game::ServerMsg::Unhandled { level, opcode, len }`
+and skipped: frames are length delimited, so an unknown or undecodable packet never desynchronises
+the stream (inside a `DD04` batch see "Compressed packet batches"). The packets the lane can still
+send undecoded are listed in "Small server messages" at the end, with who owns them.
 
 ## Compressed packet batches
 
@@ -118,11 +119,15 @@ are not an additional byte stream. Empty final streams are accepted.
 
 The session logs a wire error and continues with the next length-delimited TCP frame.
 The old `ServerMsg::Compressed` skip variant and stored-only `game::inflate_stored`
-helper are removed. Once compression is valid, existing packet-body semantics remain:
-an unknown opcode reports `Unhandled` and ends that batch; a malformed packet body ends
-it after already decoded packets, because DD04 bodies have no individual lengths.
-The header's count is retained as a diagnostic hint rather than invented per-packet
-lengths or permission to scan past an unknown body.
+helper are removed. DD04 bodies have no individual lengths: the `u16` before each opcode is
+always 0 (the lane's `CompressedGamePackets::raw_payload` and the C# it ports), not a size. A
+packet that cannot be decoded (unknown opcode: `Unhandled` with `len` = the skipped body; bad
+body: `DecodeFailed`) is skipped by resynchronising (`ServerMsg::batch_resync`): the batch resumes
+at the one later `[00 00][opcode]` from which exactly the header's remaining count of packets
+decodes and ends the stream. Two such starts (a body can contain bytes that look like a packet)
+are not guessed between, session-control packets (enter world, reconnect, character list or state,
+kick, leave) never count in a resynchronised tail, at most 512 candidate starts are tried, and
+without a unique start the batch ends there as before (`warn` with the number of lost packets).
 
 `crates/aa-net/tests/fixtures/deflate/generate.py` independently produces the checked-in
 goldens with Python zlib 1.2.13 (`wbits=-15`), validates them using zlib, and records
@@ -1980,26 +1985,29 @@ library and 2 scripted-session tests, with 9 live tests ignored;
 
 ## Known gaps
 
+Refreshed 2026-10-23 (the list before named slave, mate equipment, buff update and guild packets as
+undecoded; they are decoded, see their sections).
+
 * Korean auth flows (challenge, OTP, ARS) and Mail.Ru / Tencent logins; only the Trion ticket.
-* Server → client packets not decoded (skipped): premium grade of the lobby, guilds,
-  `SCBuffUpdated` (the lane server never sends it and has no writer for it, so its
-  layout is unknown; a buff's time is refreshed by `SCBuffCreated` with the same index). Houses in
-  the character list (`SCLoginCharInfoHouse`), slave creation/bound/removal/despawn/position/escape/
-  state and slave/mate equipment changes are decoded (see the housing and slave/mate sections);
-  remaining slave/ship UI-specific packets are listed there. Add a
-  variant to `game::ServerMsg` + `Event` for each as the UI needs it. A packet in a `DD04` batch
-  that is not decoded ends that batch.
-* Client → server: skills, items, target, action bar, resurrect, chat, logout, NPC talk and quests,
-  shops (buy/sell/buyback), bank money/expansion, item moves (swap, split, destroy), player trade, auctions,
-  priest blessing (`CSBuyPriestBuff`), doodad coin purchases (`CSBuyCoinItem`) and item-look
-  conversion (`CSConvertItemLook`). NPC-hosted coin shops and the other NPC functions still
-  need a server path.
+* Server → client: the packets the lane can still send undecoded are listed in "Small server
+  messages" below (mount / ship / glider and doodad packets other work owns, `SCCharDetail`, the
+  chat spam configuration). A packet in a `DD04` batch that is not decoded is skipped when the batch
+  can be resynchronised (see "Compressed packet batches"). Houses in the character list
+  (`SCLoginCharInfoHouse`), slave creation/bound/removal/despawn/position/escape/state and
+  slave/mate equipment changes are decoded (see the housing and slave/mate sections); remaining
+  slave/ship UI-specific packets are listed there.
+* Client → server: requests exist for the systems the HUD drives (skills, items, chat, NPC talk,
+  quests, shops, bank, mail, trade, auction, party, family, expedition, duel, salon, lobby refresh /
+  labor power manager ...), including the fork's priest blessing (`CSBuyPriestBuff`), doodad coin
+  purchases (`CSBuyCoinItem`) and item-look conversion (`CSConvertItemLook`). NPC-hosted coin shops
+  and the other NPC functions still need a server path. Not written: the cash shop (`CSICS*`),
+  `CSCharDetail` (inspect), user music, vehicle / ship / hanging movement (N4).
 * No maximum HP / MP on the wire: `PlayerStats::max_hp` is the highest value seen (a character that
   spawns dead or hurt shows too small a maximum until it has been at full health once) unless the
   application sets the formula value with `PlayerStats::set_max` (the HUD does).
 * Quests: `SCQuestContextFailed`, `SCQuestUnitReqFailed` and the quest error notices are not decoded
   (the lane server never sends them). The objective texts are not on the wire: the HUD makes them from
-  the game database.
+  the game database. Quest cinemas are reported watched, not rendered (see "Small server messages").
 * The sub zone name of the minimap header is not sent: derive it from the position and the
   `sub_zones` table. The zone group follows the zone chat channel (Shout).
 * NPC names are empty on the wire (the client resolves them from the NPC template); `Unit.kind` has the
@@ -2008,9 +2016,9 @@ library and 2 scripted-session tests, with 9 live tests ignored;
   (`MoveVehicle`) and the type-4 ship request (`SteerShip`) are written; type-3 ship bodies are read and
   written, while standing-on/hanging-from support blocks are read but not written. The server does not
   echo our own movement back.
-* Reconnect after a dropped game connection is not attempted (the session reports `Disconnected` and
-  returns to idle).
-
+* A dropped game connection is not reconnected, as in the 1.2 client: the session reports
+  `Disconnected` and returns to idle, the HUD shows the original disconnect dialog (see "Small server
+  messages", reconnect).
 
 ### Exact item detail payloads (2026-10-17)
 
@@ -2251,7 +2259,7 @@ body, not measured traffic frequency:
 
 All three now have exact body consumption, typed `ServerMsg` and `session::Event` variants,
 and public plain data. None changes settled world, player, unit or inventory resources or sends an
-automatic response. Unknown opcodes still stop a DD04 batch: this is a focused coverage milestone,
+automatic response. (Unknown opcodes stopped a DD04 batch then; they are skipped since 2026-10-23.) This was a focused coverage milestone,
 not a claim that all lane packets are decoded. Gimmick elevator/raft lifecycle `0x13c/0x13d/0x13e`
 was the next coordinated family and is covered below together with its required `0x13f` boundary. Login configuration/faction snapshots, expedition state,
 shipyard state, district/portal lists, duel/crime state and notices remain further audit candidates.
@@ -7750,3 +7758,589 @@ slave slot. `validate()` rejects zero ids, other containers, slots above 26, no 
 items without their received detail bytes. The reply `SCSlaveEquipmentChanged` stays an
 `Event::Slave(EquipmentChanged)` (it never touches `Slaves`); the worn parts are the slave unit's
 `equipment.slots` (28 slots cover the 27 slave equip slots), updated by `SCUnitEquipmentsChanged`.
+
+## Small server messages, lobby replies and quest cinemas (2026-10-23)
+
+### Coverage method
+
+Every opcode 0..0x230 was fed to `ServerMsg::decode` with an empty body; the ones answering
+`Unhandled` were intersected with the lane's sent list (`rust/tools/opcode_coverage/sc_usage.py`,
+regenerated against the lane source by the interrupted agent: 348 sent packets). The recovered
+four modules decode 37 opcodes, with layouts taken from the lane writer and checked against
+the 1.2 client's reader (`x2game_unpacked.dll`; the opcode-to-handler table is the registration
+function 391eb9d0, each `OnX` handler stores into `this + 4 + 4 * opcode`):
+
+| module | packets |
+|---|---|
+| `notice` (`NoticeEvent`) | `SCDominionTaxRate` 0x020, `SCNoticeMessage` 0x0d0, `SCSiegeMember` 0x0ec, `SCSiegeAlert` 0x0ed, `SCConflictZoneHonorPointSum` 0x0ef, `SCTowerDefList/Start/End/WaveStart` 0x16b..0x16e, `SCCriminalArrested` 0x170, `SCBotSuspectReported` 0x184, `SCProcessingInstance` 0x198, `SCTutorialSaved` 0x1a7, `SCPlaySound` 0x1de, `SCSendUserMusic` / `SCUserNoteLoaded` / `SCPauseUserMusic` 0x1df..0x1e1, `SCSpecialtyCurrent` 0x1f4 |
+| `unit_fx` (`UnitFxEvent`) | `SCActiveWeaponChanged` 0x06f, `SCUnitImpulse` 0x079, `SCUnitVisualOptions` 0x1cb, `SCUnitIdleStatus` 0x1f5 |
+| `account` (`AccountEvent`, `AccountCommand`) | `SCTrionConfig` 0x007, `SCFactionRelationList` 0x009, `SCLpManaged` 0x048, `SCAccountWarned` 0x1a1, `SCRefreshInCharacterList` 0x1cd, `SCResultRestrictCheck` 0x1ce, `SCAccountAttributeConfig` 0x215, `SCLevelRestrictionConfig` 0x217; requests `CSRefreshInCharacterList` 0x021, `CSSetLpManageCharacter` 0x0fe |
+| `cash_shop` (`CashShopEvent`) | `SCICSMenuList` .. `SCICSSyncGood` 0x1cf..0x1d4, `SCPremiumServiceList` 0x1d8 (replies to requests this client does not send) |
+
+Still deferred: `SCSkillControllerState` 0x06d, `SCUnitFlyingStateChanged` 0x07a,
+`SCHung` / `SCUnhung` / `SCBondDoodad` / `SCUnbondDoodad` 0x137..0x13a, `SCShipyardState` 0x1aa
+(mount / ship / glider / doodad work), and
+`SCCharDetail` 0x053 (only the answer of `CSCharDetail`, which is not sent; its body is the full
+character with every equipment item). `SCDiceValue` 0x134 and the salon packets 0x1f1 / 0x1f3 are
+decoded by `chat_command` / `salon`.
+
+Lane layouts that differ from the client's reader (decoded here as the client reads them; fixed by
+the server PR "fix/net-wire-layouts"):
+
+* `SCCriminalArrested`: the lane writes the criminal's obj id as `u32`, the client (397b6870) reads a
+  3-byte bc, so the real client read both names one byte off.
+* `SCTowerDefList`: the lane writes the count as `i32`, the client (397caad0) reads a `u8` (at most 100).
+* `SCPlaySound` kind 2: the lane writes the NPC as `u32`, the client (397bea30) a bc (one stray byte).
+* `SCCharacterGenderAndModelModified` ends with `bool genderTransfer` in the client (397c47c0); the lane
+  writes `u32 0` (three stray bytes, the value is right). Left to the salon work.
+* `SCUnitImpulse`: the lane writes `f32::from_bits(obj_id << 8)` after the obj id; the client reads it
+  as its target union (`u8` kind 0, bc unit id), which those four bytes are. Decoded as the union.
+
+### What the HUD shows (`aa-client` `hud/notices.rs`)
+
+The client's handlers raise these UI events, which the original scripts handle:
+`NOTICE_MESSAGE(kind, alpha, visibleMs, text)` (391d8d60 -> 393c2780),
+`DOMINION_GUARD_TOWER_STATE_NOTICE(alert, name)` for alerts 0..6 (391d9520),
+`SHOW_ACCUMULATE_HONOR_POINT_DURING_HPW(zone group name, sum)` (39028ca0),
+`TOWER_DEF_MSG(text, title, "start" | "end" | "progress")` (3936f8c0 / 3936f9d0 / 3936fae0: the
+`tower_defs` start / end message or the wave's `tower_def_progs.msg`, `$1` = the event zone name),
+`SYSMSG(TRIAL_TEXT criminal_arrested(criminal, arrestor))` (3907ee60), `BOT_SUSPECT_REPORTED(reporter,
+suspect)` (3907ca80) and the `waiting_instance` notice dialog of `SCProcessingInstance` (3936d000).
+Not shown yet: `SCPlaySound` (the bubble's voice on the NPC, 393f4f70), the impulse (the client pushes
+the unit's physical entity, 391d7750), the idle flag (unit + 0x3ae0 and a name tag refresh, 391e23a0),
+the siege member list (`DOMINION_SIEGE_PARTICIPANT_COUNT_CHANGED` only for the player's own siege side,
+392f5f60). `SCUnitPvPPointsChanged` 0x204 was already decoded and folded into `Unit::pvp_honor` /
+`pvp_kills` (391e2500 updates the unit's points the same way).
+
+### Lobby (`aa-client` `login/`)
+
+* `X2LoginCharacter:RequestCharacterListRefresh` (39484860) sends `CSRefreshInCharacterList` 0x021,
+  not a new character list; the answer `SCRefreshInCharacterList` (391d2ff0) stores the nine race
+  congestion values and raises `LOGIN_CHARACTER_UPDATED("refreshed")`. The lobby now does the same
+  (`AccountCommand::RefreshInCharacterList`); the full list still comes after creating / deleting.
+* `RequestLpManageCharacter(i)` sends `CSSetLpManageCharacter`; `SCLpManaged` (394d33e0) raises
+  `LP_MANAGE_CHARACTER_CHANGED(character, index)` and `GetLpManagedCharacterIdx` returns that index
+  (`Characters::lp_managed`).
+* `GetLoginCharacterPremiumGrade(i)` (39485a00 -> 397a7d10): the highest `premium_grades.grade_id`
+  whose `point` the character's premium points reach (the character entry's `point` at + 0x17e4, after
+  `prevPoint`), at least 1.
+* Houses in the character list: `SCLoginCharInfoHouse` arrives once per house after the list (the
+  handler 391e9480 only stores it); `GetLoginCharacterInfo(i).houseCount` and
+  `GetLoginCharacterInfoHouse(i, n)` (39485c20: `owner`, `name`, `x`, `y`, `curstep`, `allstep`,
+  `type` = `house` / `farm` / `fishfarm`, the last two from `housings.category_id` 16 / 17 and 7)
+  read them. The house's `zone` key (the zone under the house) is not filled.
+
+### Quest cinemas (`aa-client` `hud/cinema.rs`)
+
+The server never starts a cinema: a step with an `ObjCinema` act (12 story steps, `cinemas.name`
+`id_300_*`) is done when the client reports `CSStartedCinema` 0x0cf then `CSCompletedCinema` 0x0ce
+(`Interact::Cinema`). These empty request codecs are available, but receiving a quest does **not**
+send either request or report a cinema watched/skipped. Native track-view playback and the user's
+explicit skip flow remain unimplemented; `X2Quest:UseQuestCamera` stays false.
+
+### Reconnect (N2)
+
+The 1.2 client does not reconnect a dropped world connection. Its network game object raises
+`DISCONNECTED_BY_WORLD(title, body)` (CGame vtable 399a6290 slot 3, 390f33c0; it also stops the game
+state unless already leaving), and `baselib/disconnect.lua` answers OK with
+`X2World:LeaveWorld(EXIT_CLIENT)`, which quits. aa-net therefore keeps reporting `Disconnected` and
+going idle; the HUD shows the same dialog and, instead of quitting, returns to the server list with a
+fresh login (`hud/session.rs`), a deliberate convenience of this client.
+
+Run this crate's complete recovery checks with `cargo test -p aa-net --features bevy`.
+
+### Packet and session recovery follow-up (2026-10-23)
+
+All inherited staged/unstaged `aa-net` changes were recovered together, including `chat_command`,
+`coffer`, the priest blessing request, the vegetation receipt, and the DD04 shop test expectation
+that now preserves the snow packet after a malformed item task. Existing command/event variants
+and consumer field names remain available. No mount implementation or client consumer is changed.
+
+Additional decoded packets:
+
+* `SCDiceValue` 0x134 (`ServerMsg::Dice` / `Event::Dice`), plus requests `ChatCommand::RollDice`,
+  `JoinChannel` and `LeaveChannel`. Channel identity packs the received faction/subtype/type bits;
+  join passwords are redacted through all command debug wrappers.
+* `SCCofferContentsUpdate` 0x096 (`CofferEvent::Contents`), and `CofferCommand::Interact`, `Swap`,
+  `Split` / `moving`. Lane `systems/npcs/doodad/coffer.rs` and `economy/item_handlers.rs` match the
+  codecs: bc doodad, u64 container, u8 slot count, then u8 slot plus full unpadded `Item` (u32 zero
+  for empty); requests append the u64 container after the normal item-move block, with i32 count
+  first for a split. Native factory 391ab290 stores opcode 096/vtable 399b5c34; reader 397ca1e0
+  confirms the bc/u64/count/slot/item sequence and its 30-entry inline item array.
+* `SCVegetationCutdowning` 0x081: bc unit, bc doodad, forwarded as `Event::VegetationCutdown`.
+* `SCCharBrief` 0x058: u32 character, string name, u8 race. It becomes
+  `HousingEvent::CharacterBrief`, cached by character ID in `Houses::character_briefs` as
+  `(name, race)`; it is never treated as a unit/house spawn. Native opcode store 391b4f2e and
+  vtable 399b3f18 select 397cab60 -> 397c7e40, which reads these exact fields.
+* `SCChatSpamDelay` 0x0d3: u8 version, fifteen u8 chat groups, fifteen f32 delays, apply/detect
+  strings. `Event::ChatSpamDelay` updates `Chat::spam_delay`; no local throttling/retry is invented.
+  Native factory 391adfd0/opcode store 391ae018/vtable 399b5d00 selects 397b45d0 -> 397b20c0;
+  helper 397b2060 performs the two fifteen-entry loops. This closes the root's observed L1 0x0d3.
+* Proxy `SetGameType` 0x00f: string level, u64 checksum, raw u8 immersive, matching the lane's
+  `packets/proxy.rs` writer. `proxy::GameType`, `ServerMsg::GameType`, and `Event::GameType`
+  preserve that descriptor without pretending a world has loaded or changing the handshake.
+  This closes the root's observed L2 0x00f; its codec evidence is the lane writer.
+
+`Inventory::coffer` folds paged slots and authoritative item tasks using container 4. Identical
+pages leave change detection alone; changing either doodad or container identity drops old slots.
+Character selection, leaving/disconnecting, and removal of that doodad clear its state, including
+the previously missed coffer-only inventory. Closing the window still requires the consumer's
+existing explicit `coffer.close()` and close command: the server sends no close acknowledgement.
+Wire-shape validation refuses zero/overflow doodad IDs, zero container IDs, empty/self moves and
+invalid splits before transmission; permissions, range, restrictions and outcomes remain server-owned.
+The normal UI uses bag/coffer endpoints; the codec also retains the lane's equipment/bank endpoints.
+
+Housing character briefs clear with housing state on selection/leave/disconnect. Chat-delay
+configuration clears on leave/disconnect. Lobby LP/congestion replies survive own character spawn
+and return to character select, but clear on a new authentication/world-select phase so another
+world/account cannot inherit them.
+
+Dropped-game handling stays idle and reports `Disconnected`; it never auto-reconnects. Teardown
+now clears selected/own object IDs, buffered character state and ping deadlines. Previously an old
+nonzero own object ID could make an explicit fresh login miss its own `PlayerSpawn`. The existing
+server-authorized `SCReconnectAuth` path back to world select is retained.
+
+`tests/recovered_packets.rs` covers all 42 recovered/new L1 opcodes in standalone frames and DD04
+batches with a following sentinel, and checks every truncated nonempty body. The lane's empty
+unknown-song `SCUserNoteLoaded` reply is accepted standalone; inside a lengthless DD04 batch it
+remains ambiguous and is reported as `DecodeFailed` while the next packet is recovered. Session
+tests exercise guarded requests, ordered event forwarding, idle-on-loss and explicit-login spawn.
+These are protocol/state changes with no visual deliverable; screenshot/FPS validation belongs to
+the root's integrated client run. Final validation: `cargo test -p aa-net --features bevy -- --quiet`
+passed 685 unit tests, 2 scripted-login tests and all 3 recovery integration tests (690 total,
+zero failures; 9 live tests ignored). The unit suite includes the three new session recovery tests.
+The recovery integration test exercises 42 L1 opcodes, the proxy descriptor, every body truncation,
+DD04 sentinel alignment and scoped-cache lifecycle. No live account or server was modified here.
+
+Integration needs: consume the new character-brief and proxy descriptor events where useful;
+unit impulse/idle/visibility rendering and actual cinema playback/skip remain client work. The
+current lane still has the three native layout mismatches above (tower-list i32 count, criminal
+u32 object ID, bubble NPC u32); the stopped agent's server fix was PR 41 on `NickMesser/AAEmu`.
+Do not paper over these with ambiguous client decoding. Root's live salon apply receipt `hair: 0`
+is also preserved exactly: the missing-original-hair server bug is separate from the correct salon
+wire codec and requires a server fix.
+
+## Native outbound player music (2026-10-23)
+
+`aa_net::MusicCommand` and `Command::Music { character_id, command }` now expose
+the four original requests. `game::ClientMsg::Music` is the low-level encoder;
+call `MusicCommand::validate()` first when bypassing the session. The session
+requires InWorld, a nonzero own actor, the same selected persistent character ID,
+and its actual captured character header for **all four** variants. It validates
+before writing. `Event::MusicRequested { character_id, command }` means only a
+successful local socket write; `MusicRequestRejected` reports validation, stale
+identity, missing-connection or failed-write rejection. Neither is a server ACK.
+There is no new score/MIDI cache, pending success state, automatic skill request,
+timer, synthetic music notice, or automatic playback completion in aa-net.
+
+| Command | Opcode | Exact body, in order |
+| --- | --- | --- |
+| `CacheMidi { midi }` | CS121 | u32 byte count; u16 blob byte count; exact MIDI bytes, **no added NUL** |
+| `UploadNotes { item_id, slot_type, slot, title, notes }` | CS122 | u32 notes UTF-8 byte count **excluding NUL**; u64 item ID; u8 bag SlotType; u8 physical slot; u16 title byte count + title **without NUL**; u16 (notes byte count + 1) + notes + **one NUL** |
+| `RequestNotes { note_id, is_tooltip, show_buff_only }` | CS123 | u64 note ID; bool isTooltip; bool showBuffOnly |
+| `End` | CS124 | empty |
+
+Upload requires a nonzero source item in the main bag: `slot_type` is wire
+`items::container::INVENTORY` **2**, not Lua's bag selector. `slot` is the
+zero-based physical bag position, not a sorted visual index or a one-based UI
+ordinal. Native lookup `3961e9a0` returns location bytes packed at offsets1/3 of
+its u32: constructor `397acd20` copies that u32; serializer `397bc740` writes
+only its bag/index bytes at packet+19/+1b. It zeros the other two location bytes.
+The existing lane enum is `aaemu-game/src/models/container.rs::slot_type`.
+
+Packet limits are title1..96 UTF-8 bytes, notes1..12000 UTF-8 bytes, and
+MIDI1..32768 bytes. Title/notes embedded NULs are rejected rather than silently
+cutting the text at the native C-string boundary. The byte encoder does not
+parse MIDI, count editor characters, enforce proficiency, select equipment or
+compile MML; aa-client owns those checks using aa-midi. Native Lua's title12 /
+score1000 character limits and proficiency200/400/600/800/1000 limits remain
+separate. All u8 physical slot values are representable; the app must resolve an
+actual received item. Request note ID0 and both raw flags remain representable:
+no invented “song exists” or flag-combination validation is performed by net.
+
+Original flow evidence is `data/extract/ghidra/out/music{2,3,9,10,11,12,13}.c`
+and extracted `x2ui/music/{music,user_music,user_music_view,percussion_view}.alb`
+(read-only Lua decompilations in `data/extract/aa-lua/decompiled/x2ui/music/`).
+Original DLL image base38ff0000, SHA256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+
+- `PreSaveNotes390799e0`: checks item/title/text, actual bag lookup and proficiency
+  length, then `39083c60` stages the item/location/title/notes and validates them
+  by compiling. It returns a local boolean and sends **no packet**. Lua opens
+  the confirmation dialog only on that boolean.
+- `SaveNotes39079640`: repeats those checks and staging, constructs an item
+  caster through `39044360`, sets the composition-grade parameter (`39081f80`),
+  and starts the existing sheet-item skill. It does not directly upload notes.
+  In skill path `3939b010`, the own-player special-action97 branch calls
+  `39081e60` at `3939b5fa`; that routine constructs/sends CS122 from staged data.
+  Constructor `397acd20` uses actual `xlcommon!XlStringSize330199a0` (UTF-8 byte
+  scan), and serializer `397bc740` adds the notes NUL but not a title NUL.
+- Native score lookup `39082550` uses an existing local cache when possible.
+  A miss sends CS123 `(isTooltip, false)`; a cache-hit playing request sends
+  `(false, true)` and copies cached notes for the coming performance. Tooltip
+  hits need no request. Cache ownership/lifetime and deduplication stay in client.
+  Executed follow-up below corrects a key assumption: the DB key formats only
+  low32, while pending equality and outbound requests preserve the full u64.
+- Play/pause are existing skills, not additional music wire opcodes. In skill
+  path `3939a810`, own-player special action93 calls `39083ba0` at `3939ae37`
+  to compile staged notes and send CS121 (`397acd00` / serializer`397b1400`).
+  Action94 calls `39081e30` at `3939ae12` to send empty CS124. Natural own voice
+  disappearance separately sends CS124 in `390844a0`. The application must use
+  its actual playback lifecycle; aa-net does not infer that a song has finished.
+- `TestPlayNotes39079b90` compiles and starts a **local preview**, while
+  `StopPlayNotes390797f0` calls `390840f0` to stop that local voice. Neither is
+  a network play/pause command. The composition OnHide invokes StopPlayNotes.
+  This describes entry/explicit stop only: natural preview completion **does**
+  send CS124 through the shared manager, as executed in the follow-up below.
+- Request constructor`397acd70` and serializer`397b1480` prove independent bool
+  flag bytes. `End` uses empty serializer`3901c170`. Original SC1e0 handler
+  `391e169b` widens its received signed32 note ID before the local cache callback;
+  this does not make the SC1e0 field a u64.
+
+Read-only lane references (under `D:/aaemu-wt/bevy/rust/crates/aaemu-game/src/`):
+`systems/services/music.rs` implements all four request readers/handlers and the
+note writer; `systems/services/mod.rs` registers CS121..124; `opcodes.rs` names
+the offsets; `systems/skills/effects/special/items.rs` actions93/94/97 consume the
+cached performance/upload and broadcast genuine notices; `systems/skills/packets_special.rs`
+writes SC1df/1e1. The native upload callback is a received-fire callback, not a
+pre-CS052 hook; the distinction and exact handoff are detailed below.
+No server source or running lane was edited, built, started or stopped here.
+
+Known original/server differences, deliberately preserved:
+
+- The lane merges the two CS123 bool bytes into `value2:u16`. It handles only1
+  (tooltip request: load notes) and256 (showBuffOnly: add ScoreMemorized6010).
+  **Native playing cache miss `(false,false)=0` is currently ignored by the lane**,
+  as is257. It truncates the u64 request ID to u32 for lookup and hardcodes the
+  returned tooltip flag to true. Net does not rewrite these native request flags.
+  This is the inspected pre-fix bevy checkout. PR44 fixes the reply/flag branch;
+  the executed follow-up below distinguishes it from native pending/key behavior.
+- The lane ignores CS122 declared byte count and bag/slot (`value2`) and queues
+  by item ID. It performs actual sheet creation in the item-skill effect; upload
+  alone is not a save receipt. CS121 only caches bytes; actual PlayUserMusic
+  broadcasts them and applies the instrument buff. PauseUserMusic broadcasts
+  SC1e1; Close the Score22217 also removes play buffs. CS124 removes play buffs
+  only when ScoreMemorized is absent and is not a direct pause broadcast.
+- SC1e0's lane length field counts UTF-16 code units; native outbound CS122
+  counts UTF-8 bytes. The existing inbound note length remains uninterpreted.
+  The lane's notes blob includes one NUL, stripped after consuming the whole blob.
+  Its empty unknown-song reply is accepted as None standalone (or at a batch
+  end); nonfinal empty SC1e0 in lengthless DD04 remains ambiguous and is reported
+  as DecodeFailed with safe following-packet recovery, not a fabricated note.
+
+SC1df now reads its MIDI blob length as unsigned u16 and checks repeated counts
+against the32768-byte cap. Generic `Reader::blob` treats `0x8000` as negative,
+which previously dropped the maximum-size performance and lost DD04 alignment.
+Zero-byte received performances remain valid receipts (the lane can broadcast
+an empty cache), while outbound compile results must be nonempty. Malformed
+negative/oversize/mismatched counts fail explicitly before MIDI allocation.
+
+Retained evidence: `crates/aa-net/tests/music_oracle.py` runs original x86
+constructors/serializers and the actual xlcommon StringSize loop in Unicorn.
+Only archive primitive/blob sinks, CopyString and memcpy are mocked; it does not
+load a DLL into a game process. `tests/fixtures/music/native.tsv` retains11 small
+goldens (UTF-8, flag combinations, native empty/C-string cases and empty End),
+plus binary maximum-size MIDI/notes writer fixtures. `tests/fixtures/music/lane.rs`
+contains verbatim actual server reader/writer method bodies with original file
+SHA256s, in a minimal std-only scaffold. Cargo tests execute those methods;
+this is not a live server/DB/handler test. Regenerate on the RE machine with
+`python crates/aa-net/tests/music_oracle.py` (pefile/unicorn are RE-only packages).
+
+Validation:
+
+```
+python crates/aa-net/tests/music_oracle.py
+cargo test --locked -p aa-net --lib music -- --nocapture
+cargo test --locked -p aa-net --features bevy -- --quiet
+```
+
+Original oracle regeneration passed. Focused music selection:9 passed (8 new
+tests plus the existing music notice decoder). Full Bevy-feature suite:693 unit
+tests,2 scripted-login tests and3 recovery integration tests passed (**698 total**,
+zero failures;9 live-server tests ignored). The new tests execute the retained
+native byte fixtures and actual lane readers/writers, check every truncated MIDI /
+nonempty note body prefix, maximum-size payloads, both UTF-8 and UTF-16 length
+semantics, exact bag/slot bytes, DD04 following-packet alignment, malformed-count
+recovery, all four variants' identity/phase/header/actor gates, missing and failed
+socket writes, exact session forwarding and absence of synthetic success or
+automatic End. `git -c core.whitespace=cr-at-eol diff --check` passed (the existing
+session source uses CRLF). This protocol task creates no window; FPS/screenshots
+and live composition/audio verification remain root's client integration work.
+No Cargo.lock, other-crate, server, README or game-asset edits, Ghidra project
+copies, scratch executables, alternate targets, workspace runs or process kills
+were used. Native fixtures and the reproducible oracle remain as evidence.
+
+## Captured native composition cast and received-fire handoff (2026-10-23)
+
+Public API:
+
+```rust
+let request = aa_net::MusicComposeRequest::new(
+    aa_net::item_effect::CapturedBagItem { slot: physical_bag_slot, item: received_item },
+    grade, // u8, selected from actual music_note_limits rows
+)?;
+let command = aa_net::Command::ComposeMusic { character_id, request };
+```
+
+`MusicComposeRequest` retains the complete source capture and grade with full
+`Clone + Eq` semantics. Its accessors are `source()`, `grade()`, `skill_id()`
+(always22215); `recheck_native(&NativeItemRecords)` checks the actual main-bag
+physical slot. `write(&mut Writer, self_obj_id)` and
+`game::ClientMsg::ComposeMusic { self_obj_id, request }` are the typed low-level
+CS052 writer. Existing no-object casts and all four `MusicCommand` variants are
+unchanged. There is no generic arbitrary SkillObject/packet escape hatch.
+
+`Command::ComposeMusic` uses the ItemEffect request boundaries: InWorld,
+nonzero matching selected persistent character ID, actual selected header,
+nonzero BC3-representable own actor, matching native record owner, and equality
+of every field of the captured Item at its enabled main-bag slot. Unknown,
+invalidated, empty, moved, bank-only or changed records reject before any
+write; the legacy Inventory is never a fallback. The complete item UID stays
+u64, including values above2^53. `MusicComposeRequested { character_id,
+request }` means **only a successful local CS052 socket write**.
+`MusicComposeRejected { character_id, request, message }` covers guard,
+missing-connection and write failures, preserving the exact request for caller
+matching. No receipt, saved success, item mutation, score cache, automatic
+upload, MIDI or End packet is produced.
+
+Native SaveNotes39079640 checks nonempty item/title/text, own actor, actual
+main-bag item lookup3961e9a0, proficiency length39082130, and successful local
+stage/compile39083c60. It builds the complete item caster39044360, self unit
+target, and SkillObject local147=1, local144=5, local140[0]=39081f80(notes),
+then calls the ordinary skill planner thunk3ab63fb7. That planner is not
+implemented by this transport. The application owns compilation, actual table
+lookup, proficiency, confirmation and local staging. Grade selector39081f80
+uses **XlStringLen**, walks the ordered music_note_limits table, and returns
+the first row step whose note_length is at least that character length (or0
+if none); this is separate from the CS122 UTF-8 byte counts. Restricting the
+transport to Music Paper27902/use_skill22215 and supplied grade0..10 is a
+deliberate boundary for the currently verified original rows. Native SaveNotes
+does not itself impose this numeric grade range or compare all captured Item
+fields; the full-record/owner/phase guards are defensive stale-input checks.
+No speculative musical skill variants are admitted.
+
+The exact CS052 body is u32(22215), item-caster type2, BC3 own actor,
+u64 source Item.id, u32 source template27902, **u8 source Item.grade**,
+u32 source Item.made_unit_id, self-target type0 + BC3 own actor, then object
+flag5 + **u32 composition grade**. Item grade and composition grade are
+independent. Original397cad20 invokes397c85b0/397bfa90/397bfd50;
+type5 branches to397bff73 and archive primitive+4c for the four-byte grade.
+Executing those original x86 bytes, including39044360, supplies22 retained
+full-body goldens across grades0..10, a nonzero item grade/maker, maximum item
+grade/maker, large and maximum u64 UID, and BC3 maximum actor. The actual
+read-only lane SkillObject::read maps flag5 to Unk5(read_i32); its extracted
+reader and exact primitive methods run against these goldens in Rust tests.
+This cross-check proves framing, not server save semantics.
+
+**Timing: CS052 first, actual received SCSkillFired, then CS122.** The retained
+registration391eb9d0 passes handler391d58a0 to391bf000; packet factory391ab7c0
+sets opcode0xa2. That handler
+reads received packet members and calls3939b010 at391d5931. Its own-player
+special-action97 branch at3939b5e1..3939b5fa calls39081e60 to upload the staged
+score. It is not a pre-send planner hook. The later own callback is the call
+at3939b77d (return address3939b782) to3939ce90, the existing cooldown producer;
+it does **not** send CS052. A nonzero received result code exits3939b010 before
+the action loop; upload requires the successful received-fire path. By
+comparison, received-start handler391d57f0 calls
+3939a810 at391d586e; that path runs action93 compiled CS121 and action94 End.
+Function names alone do not establish this ordering: received packet member
+loads, handler registration, exact calls and own-actor/action conditions are
+retained in tests/fixtures/music/native-compose-source.txt.
+
+Consequently this API sends only the type5 CS052 cast. Do not bundle CS122
+before CS052 or upload in response to MusicComposeRequested/SkillStarted.
+The application retains its staged score and sends existing
+Command::Music(UploadNotes) at the matching actual own item-caster SkillFired
+boundary with result.code0. Native3939b010 can also synthesize missing local *skill presentation*
+through3939a810 while handling a received fire; this is still after the server
+receipt, never a reason to pre-send a score. Matching casts, pending UI state,
+and reacting to actual save/inventory receipts remain application-owned. A
+server that consumes the uploaded notes synchronously before this callback
+needs a server timing fix; changing the native client sequence would hide the
+mismatch. No server/lane source, process or runtime was changed in this task.
+
+Retained reproduction: `python crates/aa-net/tests/music_compose_oracle.py`
+(reads the original DLL only; pefile/unicorn/capstone required for RE, not
+normal builds). Fixtures include native-compose.tsv, native-compose-source.txt
+and lane-skill-object.rs under crates/aa-net/tests/fixtures/music/. The oracle
+mocks archive primitives and BC3 only; it does not execute the protected skill
+planner, proficiency/table catalog, compiler, server or whole live callbacks.
+Loopback tests assert exact frames and sequence counters, received-start vs
+received-fire forwarding with no automatic output, explicit later CS122,
+complete stale-item/physical-slot/main-bag guards, all non-world phases,
+identity/header/owner/actor guards, missing/closed writes, full rejection
+request equality and absence of synthetic success. No live save transaction or
+visual deliverable is claimed. Validation: `cargo test -p aa-net` passed 682 unit
+and 5 integration tests (nine live-lane tests ignored), including all seven new
+compose tests; the executed-x86 oracle passed 22 cases.
+`cargo check -p aa-net --features bevy` and owned-path whitespace validation
+also passed. No clippy run or additional build target directory was needed.
+
+## Executed stored-score, preview End and Started dispatch corrections (2026-10-23)
+
+Research only: no net API, application caller, server or audio-device changes. Run
+`python -B tools/user_music_lifecycle_oracle.py` and
+`python -B tools/user_music_catalog_oracle.py`. Retained results and original
+disassembly are in `tools/evidence/user_music_lifecycle/`. The lifecycle oracle
+passes **142 original-instruction cases**; the catalog oracle executes four real
+music rows through each of three original loaders and the actual attachment loop.
+The x2game input is SHA256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+SDK, LevelDB, SQLite, allocation/index construction, presentation endpoints and
+the compiler body are explicit fixtures. These results assert client control
+flow, memory mutation and packet-sink arguments, not successful live wire/audio,
+protected initialization, a complete timeline manager, or server settlement.
+
+**Correction: the disk cache key is low32, not full64.** Actual
+`xlcommon!XlFormatString3301b6a0` and its native formatter execute, with only CRT
+memcpy/memset substituted. Both `39082550` and `39082260` use
+`user_music_%02x_%016lx`; Windows `long` consumes the low32 argument and ignores
+the separately pushed high32. For world255 and note`fedcba9876543210`, the actual
+key is `user_music_ff_0000000076543210`. This is observed at the DB endpoint,
+not generated by a substitute formatter. An earlier exploratory fixture that
+formatted both words as a u64 was wrong and is superseded by these goldens.
+
+Pending equality in `39082550`/`39082200` still compares **both** words, and
+actual constructor`397acd70` retains both for CS123. Consequently high64 aliases
+share DB contents but remain distinct pending requests. SC1e0 callback`391e1640`
+uses CDQ at`391e1691` to sign-extend raw32. A zero-extended request`0000000080000000`
+and reply`ffffffff80000000` therefore share the same DB key, but receipt does not
+remove that original pending request. A later hit succeeds and emits buff-only
+with the original full request ID; it does not repair pending. The pending list
+also has no world byte in its comparison. **Claims that IDs>=2^31 cannot hit the
+native cache because of sign extension are incorrect.** Earlier client notes or
+PR discussions describing that as a general cache limit must be read with this
+correction; the pending-cleanup mismatch and low32 aliasing are the real limits.
+
+**Receipt does not retry use or create a buff/skill.** Cache misses send
+CS123`(isTooltip,false)` once per full pending ID, including deduplication across
+tooltip/use overlap. Complete executed `391e1640 ->39082260` receipts format the
+key, zero scratch, copy title/notes, save, unlink the exact pending ID and copy
+notes into manager+28. The `isTooltip` and declared noteLen arguments are unused.
+Failed DB saves still unlink/copy, with no follow-up CS123, CS052, MIDI, End or
+Lua callback. Actual CopyString byte limits are96/12000, stopping at NUL; a
+boundary can split a UTF-8 sequence. The persisted value is97 fixed title bytes
+plus notes bytes excluding the notes NUL. Later tooltip hits are quiet; later
+use hits send`(false,true)` and stage the cached notes. Full-u64 pending and
+low32 DB alias cases are retained separately in `native-cases.json`.
+
+The inspected old C# and pre-fix bevy handlers only handle packed1/256, ignoring
+the native miss0. [PR44](https://github.com/NickMesser/AAEmu/pull/44) fixes independent
+flags and returns notes for miss0, but its handler still adds ScoreMemorized6010
+only for showBuffOnly. Thus that fixed server's miss response alone does not
+grant the score skills; a later native use hit or a separate authoritative buff
+receipt is still needed. The actual compact `buff_skills` rows476/477/478 bind
+6010 to22213/22214/22217. This establishes the remaining first-use behavior of
+that server implementation. It does **not** establish an official-server rule
+that justifies adding an automatic client retry or an invented local buff.
+No running server was contacted, changed or restarted for this investigation.
+
+**Natural preview completion does send End.** Preview`39079b90` and received
+music`390824e0` both load singleton`39ae4674` and call the same `390846d0`.
+Constructor`39084890` stores this singleton at`3908496b`; its caller stores the
+same returned pointer into game+44 at`390f758d`. MainGame entry`390f6a20` begins
+with a protected jump; vtable slot`399a646c` identifies it independently of the
+sparse sweep index. Its plaintext continuation calls game+44's `390844a0` at
+`390f6c96`. First, framework+20 must return true at`390f6bf1`, or the frame
+returns before music update. Then engine virtual+a8 mode must differ from2.
+Both gates execute in the oracle. The protected prologue is not emulated. Earlier
+sweep-based labels390f5800 and an exploratory390f5910 label are incorrect;
+390f5910 is the unrelated CustomizeEntityToNpc function.
+
+Actual preview entry, manager admission, native tree helpers and update execute
+together. When an admitted own voice is absent at SDK lookup, update sends one
+CS124 then stops/removes that actor's entry; the next frame sends none. There is
+no preview marker or preview exception. Both current-player and fallback identity
+comparisons remain native. Actual StopPlayNotes`390797f0 ->390840f0` stops/removes
+directly, so later update sends none. Replacement removes the old entry before
+trying the new create; failed creation or missing actor leaves no entry and no
+End. Successful replacement sends no End for the old voice. Mere actor registry
+loss while a sound still exists leaves its tracked entry alive. `native-cases.json`
+includes received/preview entry cases, own/other removal, replacement failures
+and both framework admission outcomes with caller modes0/1/2/3. A blanket application rule that preview
+completion never generates wire output is not native fidelity. The application
+owns that distinction; aa-audio must continue to emit no network commands.
+
+**Catalog dispatch comes from skill_effects, without an application-method filter.**
+Read-only Ghidra exports `catalog-decompiled.c` and
+`catalog-binding-decompiled.c` accompany the executed `native-catalog.json`:
+
+- `39730ee0` loads `skill_effects`. SELECT column2 application_method_id becomes
+  row+4, column8 effect_id resolves the generic effect pointer at row+1c, and
+  column15 skill_id becomes row+30. Rows have stride54.
+- `39730620` loads `effects(id,actual_type,actual_id)`. Its literal
+  SpecialEffect branch`39730b74..99` writes category24 and resolves actual_id
+  through`396e8d40`. `3972c390` loads special_effects, whose20-byte payload is
+  special_effect_type_id followed by value1..4.
+- `39731870`'s actual loop`39732e50..39732f0c` walks every loaded skill-effect
+  row, resolves row+30 through the skill catalog and appends that row pointer
+  into SkillDesc+1e8..1ec. No application_method filter is present.
+
+The source-backed SQL join is therefore `skill_effects.skill_id = receivedSkillId`,
+`effects.id = skill_effects.effect_id AND effects.actual_type='SpecialEffect'`,
+then `special_effects.id = effects.actual_id`. It does not select a skills.effect_id
+or skill_fx_group. Current rows are24560/22213/action93/method3,
+24561/22214/action94/method3,24817/22217/action94/method3, and
+24814/22215/action97/method1. Native Started's loop itself only checks category24
+and action93/94. Executed method0/1/2/3/4/5 variants reach the same callbacks.
+The C# and Rust application-method enums call3 **SourceOnce**, a targeting rule,
+not OnStart. It must not determine received Started versus Fired timing.
+
+Complete `391d57f0 ->3939a810` execution verifies result.code0, valid skill
+descriptor, ordinary nonzero timeline and successful local timeline construction
+before the action loop. Raw caster0/3 resolves object+8; type2 resolves object+14;
+types1/4 use sentinel0. The resolved pointer must equal actual game+10c for93/94.
+An item/mount raw caster resolving to that own actor can pass; a legacy projected
+own object ID from type1/4 cannot. Failed results, foreign/missing actors, invalid
+effect category and failed descriptor/timeline fixtures send none. Timeline
+construction is a fixture here; this does not prove duplicate/admission semantics
+of a complete timeline manager. Action97 sends no upload on Started: preserve
+the existing successful received-Fired CS122 handoff.
+
+Normal action93 calls original `39083ba0` synchronously at`3939ae37`. It reads
+the **current** manager+28 staged notes, checks XlStringLen>0, calls`39083960`
+with MIDI capacity32768 and parameter`[39ac37a0]=33`, constructs397acd00/CS121
+and sends. Action94 calls39081e30/CS124 at`3939ae12`; this also covers Close the
+Score22217, not just Pause22214. The parameter33, preview0, bypass0 and fallback
+instrument constants80/81 are retained from the pre-existing read-only
+`D:/aa-re/housing-audit/native12-data-readonly.bin` (.data base39ac3000,
+SHA256`7082573df48d7d5229e1f909845733f0cf9ded6ea1a4e3c41a5e276fccde8c9e`).
+Every researched x2game instruction range also matches that capture's text;
+no live process access was required.
+
+Instrument fallback follow-up is executed in ten cases in `native-instruments.json`.
+`39695dc0` resolves the **general ItemDesc** by equipped template, not an
+ItemWeapon/holdable descriptor. Original items SQL`39a00d90` column9 is
+`items.category_id`; `396cb5b3..b8` writes local-128, and copy constructor
+`396ba730` copies rowbase-140+18 into ItemDesc+18 at`396ba772..75`. The native
+wrapper compares this field to categories80/81. It does not read holdable_id or
+holdables.slot_type_id for fallback. Read-only decompilation is retained in
+`instrument-decompiled.c`; the column/store/copy/general-item lookup and actual
+instrument-map lookup all execute before the wrapper's compiler sink.
+
+Actual instrument_sounds lookup uses ItemDesc.id, loaded from SQL`39a08240`
+`SELECT item_id,midi FROM instrument_sounds`. A nonzero mapped MIDI overrides
+the fallback; missing mapping or exactly0 falls back. The static native table
+`399a1e94..399a1ea0` is program106/bank0 for category80, program73/bank0 for81;
+other categories report error1 and return0. It is a nonzero check, not a native
+signed-positive/range-validation check. Native compiler-body admissibility for
+arbitrary invalid program integers is not asserted by this wrapper oracle.
+
+Actual DB examples34598/category80/holdable21 and34599/category81/holdable23
+have no instrument_sounds rows and execute those106/73 fallbacks. Category96
+examples6183/holdable21 and14047/holdable23 fail with error1. Item6177 has MIDI24,
+which takes precedence over its category80 fallback. Holdable21 maps to111
+category80 items **and18 category96 items**; holdable23 maps to90 category81
+and12 category96 items. Therefore the old21/23 fallback shortcut is not the
+native catalog rule, even though it agrees for ordinary instrument categories.
+
+Inside39083960, actual `xlcommon!XlMultiToWide3301a100` receives3001 **u32** slots.
+It strips one leading UTF-8 BOM, decodes at most3000 code points, appends u32 NUL
+and returns storedCount+1. Supplementary characters occupy one slot. The wrapper
+ignores its return and compiles the converted prefix; cached notes can exceed
+that prefix's byte/character length. It does not perform UTF-8 validity checks.
+Nine direct conversion cases and five normal-entry/wrapper cases retain empty,
+BOM, embedded-NUL, Unicode and truncation boundaries. Compiler-body fixtures
+only establish arguments/order; original MML synthesis fidelity remains the
+separate aa-midi oracle's responsibility. No Cargo build, clippy, window or
+visual/FPS claim applies to this research-only change.

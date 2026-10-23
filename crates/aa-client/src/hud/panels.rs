@@ -67,6 +67,8 @@ pub struct SlotSnap {
     pub gems: [u32; 7],
     /// The crafter's name when the unit is known (the tooltip's GRAY `crafter` line).
     pub crafter: String,
+    /// Gems, enchant, dye, look and lock of the instance (the tooltip's sockets and bonuses).
+    pub extra: super::tips::ItemExtra,
     /// Action bar slots that cannot be used now (the icon goes dark, the hotkey red): the skill result that refuses them
     /// (`usable::code`), `None` when the slot is lit.
     pub blocked: Option<u8>,
@@ -146,6 +148,8 @@ pub struct Panels {
     pub bag_slots: u32,
     pub bank: Vec<Option<SlotSnap>>,
     pub bank_slots: u32,
+    /// The open coffer's slots (`coffer.lua`).
+    pub coffer: Vec<Option<SlotSnap>>,
     /// Worn items by aa-net slot index (`model::slot`, the scripts' `ES_*` minus one); body parts
     /// are not items to the window.
     pub equipment: Vec<Option<SlotSnap>>,
@@ -184,6 +188,7 @@ pub(in crate::hud) fn item_slot(game: Option<&GameData>, template: u32, count: i
         look_type: 0,
         gems: [0; 7],
         crafter: String::new(),
+        extra: Default::default(),
         blocked: None,
     }
 }
@@ -203,6 +208,7 @@ impl SlotSnap {
         self.create_time = it.create_time;
         self.lifespan_mins = i64::from(it.lifespan_mins);
         self.made_unit_id = it.made_unit_id;
+        self.extra = super::tips::ItemExtra::of_item(it);
         self
     }
 }
@@ -288,6 +294,7 @@ pub(in crate::hud) fn skill_slot(game: Option<&GameData>, skills: Option<&Skills
         look_type: 0,
         gems: [0; 7],
         crafter: String::new(),
+        extra: Default::default(),
         blocked: None,
     }
 }
@@ -332,7 +339,7 @@ pub(super) fn buff_lists(game: Option<&GameData>, entries: &[aa_net::state::Buff
 }
 
 /// The original manager folds repeats in place. Keep raw lane icons only while its history is unknown.
-fn unit_buff_lists(game: Option<&GameData>, buffs: &Buffs, obj_id: u32, start: Instant) -> BuffLists {
+pub(super) fn unit_buff_lists(game: Option<&GameData>, buffs: &Buffs, obj_id: u32, start: Instant) -> BuffLists {
     buff_lists(game, buffs.native.of(obj_id).unwrap_or_else(|| buffs.of(obj_id)), start)
 }
 
@@ -380,8 +387,9 @@ pub fn refresh(world: &World, game: Option<&GameData>, own_faction: u32, own_obj
         let slot = |it: &aa_net::model::Item| instance_slot(game, skills, units, own_obj_id, &me.name, it, start);
         p.bag_slots = inv.bag_slots;
         p.bank_slots = inv.bank_slots;
-        p.bank = inv.bank.iter().map(|it| it.as_ref().map(&slot)).collect();
-        p.bag = inv.bag.iter().map(|it| it.as_ref().map(&slot)).collect();
+        p.bank = inv.bank.iter().map(|it| it.as_ref().map(slot)).collect();
+        p.coffer = inv.coffer.slots.iter().map(|it| it.as_ref().map(slot)).collect();
+        p.bag = inv.bag.iter().map(|it| it.as_ref().map(slot)).collect();
         p.equipment = inv
             .equipment
             .slots
@@ -481,6 +489,7 @@ pub(in crate::hud) fn slot_table(lua: &Lua, s: &SlotSnap) -> mlua::Result<Table>
     t.raw_set("tm", i64::from(s.temper.1))?;
     if let Some(f) = s.flags {
         t.raw_set("fl", i64::from(f))?;
+        s.extra.write(&t, lua)?;
     }
     if s.unsecure_time != 0 {
         t.raw_set("un", s.unsecure_time)?;
@@ -578,6 +587,10 @@ pub fn push(lua: &Lua, hud: &Table, new: &Panels, old: Option<&Panels>) -> mlua:
         hud.raw_set("bank", slots_table(lua, &new.bank)?)?;
         hud.raw_set("bank_slots", i64::from(new.bank_slots))?;
         c.bank = true;
+    }
+    if old.is_none_or(|o| o.coffer != new.coffer) {
+        hud.raw_set("coffer", slots_table(lua, &new.coffer)?)?;
+        hud.raw_set("coffer_slots", new.coffer.len() as i64)?;
     }
     if old.is_none_or(|o| o.equipment != new.equipment) {
         hud.raw_set("equipment", slots_table(lua, &new.equipment)?)?;

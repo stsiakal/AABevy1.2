@@ -60,6 +60,12 @@ pub enum Request {
     Party(aa_net::party::PartyCommand),
     Friend(aa_net::friend::FriendCommand),
     Target { obj_id: u32 },
+    /// A chat command with a packet of its own: the dice, player channels (`chat/commands.rs`).
+    ChatCommand(aa_net::ChatCommand),
+    /// A chat command that uses a skill (`/report Name`), on the unit of this name when one is given.
+    Skill { skill: u32, target_name: String },
+    /// `/target Name`: select the unit of this name in view.
+    TargetByName { name: String },
     ItemEffect { character_id: u32, request: aa_net::item_effect::ItemEffectRequest },
     /// `HUD.secure_item(slot, lock)`: lock or start unlocking the bag item in real slot `slot` (1 based).
     SecureItem { request: aa_net::secure::ItemSecurityRequest, lock: bool },
@@ -135,6 +141,7 @@ pub struct HudData {
     pub(super) expansion: super::expansion::View,
     pub(super) repair: super::repair::View,
     pub(super) crafting: super::crafting::View,
+    pub(super) user_music: super::user_music::View,
     pub(super) pets: super::pets::View,
     pub(super) vehicles: super::vehicles::View,
     /// The transfer bar's boarded transfer and the leave button (`transfer.rs`).
@@ -231,6 +238,7 @@ impl Default for HudData {
             expansion: Default::default(),
             repair: Default::default(),
             crafting: Default::default(),
+            user_music: Default::default(),
             pets: Default::default(),
             vehicles: Default::default(),
             transfer: Default::default(),
@@ -303,6 +311,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     // 1. the X2* objects and constants (the login screens' install, with an empty bridge)
     gameapi::install(rt, &gameapi::new_shared())?;
     let lua = &rt.lua;
+    let before_fakes = super::stubs::snapshot(lua);
     // the table the fake file keeps its helpers in
     let fake = lua.create_table()?;
     fake.raw_set("locale", "en_us")?;
@@ -329,6 +338,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
             warn!("hud: {name}: {e}");
         }
     }
+    let fakes = super::stubs::snapshot(lua);
     // The fallback has its own option store. Restore the account-backed methods after it.
     crate::settings::install_options(lua)?;
     aa_ui::lua::keyboard::install_input(lua)?;
@@ -344,10 +354,10 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::buffs::query::install(lua, &hud, bridge)?;
     super::markers::install(lua, &hud)?;
     super::party::install(lua, &hud, bridge)?;
+    super::chat::commands::install(lua, &hud, bridge)?;
     super::friends::install(lua, bridge)?;
     super::store::install(lua, &hud, bridge)?;
     lua.globals().raw_set("HUD", hud.clone())?;
-    super::services::install(lua, bridge)?;
     push_snapshot(lua, &hud, &bridge.borrow().snapshot)?;
     panels::push(lua, &hud, &bridge.borrow().panels, None)?;
     let frames: Table = lua.load(ROAD_FRAMES_LUA).set_name("@road_frames.lua").eval()?;
@@ -363,6 +373,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::skillbook::load_script(lua)?;
     super::dialog::load_script(lua)?;
     super::party::load_script(lua)?;
+    super::chat::commands::load_script(lua)?;
     super::store::load_script(lua)?;
     super::specialty::install(lua, bridge)?;
     super::mail::install(lua, bridge)?;
@@ -379,28 +390,35 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::expansion::install(lua, bridge)?;
     super::repair::install(lua, bridge)?;
     super::crafting::install(lua, bridge)?;
+    super::user_music::install(lua, bridge)?;
     super::pets::install(lua, bridge)?;
     super::vehicles::install(lua, bridge)?;
     super::transfer::install(lua, bridge)?;
     super::family::install(lua, bridge)?;
     super::farm::install(lua, bridge)?;
+    super::housing::install(lua, bridge)?;
     super::houses::install(lua, bridge)?;
     super::expedition::install(lua, bridge)?;
     super::achievement::install(lua, bridge)?;
     crate::settings::install_hud(lua)?;
     super::chat::config::install(lua, bridge)?;
     super::chat::channels::install(lua, bridge)?;
+    super::chat::ui_data::install(lua, bridge)?;
     super::crime::install(lua, bridge)?;
     super::speech::install(lua, bridge)?;
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
     super::look::install(lua, bridge)?;
+    super::store::services::load_script(lua)?;
+    super::services::install(lua, bridge)?;
     super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;
     super::ranking::install(lua, bridge)?;
     super::buffs::cancel::install(lua, bridge)?;
-    super::sorting::install(lua, bridge)
+    super::salon::install(lua)?;
+    super::sorting::install(lua, bridge)?;
+    super::stubs::instrument(lua, &before_fakes, &fakes)
 }
 
 /// `FUN_39496b20`: the boolean `X2Player:GetFeatureSet()` fields and the FeatureSet bit each
@@ -633,10 +651,18 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
     let b = bridge.clone();
     hud.raw_set(
         "item_tip",
-        lua.create_function(move |lua, (id, grade, count, slot): (u32, Option<i64>, Option<i64>, Option<Table>)| {
+        lua.create_function(move |lua, (id, grade, count, slot, flags): (u32, Option<i64>, Option<i64>, Option<Table>, mlua::Variadic<Value>)| {
             let d = b.borrow();
             match d.game.get() {
-                Some(g) => super::tips::item_tip(lua, g, &d.tips, id, grade, count, super::tips::Instance::of(slot.as_ref())),
+                Some(g) => {
+                    if super::tips::native_info_flags(flags.first()) == -1 {
+                        return super::tips::item_tip_of_slot(lua, g, &d.tips, id, grade, count, slot.as_ref());
+                    }
+                    let mut extra = super::tips::ItemExtra::of(slot.as_ref());
+                    extra.music_note = None;
+                    super::tips::item_tip_with(lua, g, &d.tips, id, grade, count,
+                        super::tips::Instance::of(slot.as_ref()), &extra)
+                }
                 None => Ok(None),
             }
         })?,
@@ -932,6 +958,8 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
         if let (Some(g), Some(inv)) = (shared.get(), world.get_resource::<aa_net::state::Inventory>()) {
             let buffs = world.get_resource::<aa_net::state::Buffs>().map_or_else(Vec::new, |b| super::stats::buff_list(b.of(spawn.obj_id)));
             data.tips.refresh(g, level, &inv.equipment, buffs, &ability_exp);
+            let return_point = world.get_resource::<aa_net::Portals>().and_then(|b| b.districts.iter().find(|p| p.id == b.return_point_id)).map(|p| (g.zone(p.zone_id).map_or_else(String::new, |(_, z, _)| z.text.clone()), p.name.clone()));
+            data.tips.set_context(crate::settings::option_number("n:69").is_some_and(|v| v != 0.0), return_point);
         }
     }
     let own_obj_id = spawn.obj_id;
@@ -1106,6 +1134,19 @@ pub fn handle_requests(
                     info!("housing: build window cancelled; the placement stays");
                 }
                 session.cancel_popup();
+            }
+            Request::ChatCommand(command) => { net.write(NetCommand(Command::ChatCommand(command))); }
+            Request::TargetByName { name } => {
+                if let Some(obj_id) = units.as_ref().and_then(|units| super::chat::commands::unit_named(units, &name)) {
+                    net.write(NetCommand(Command::Target { obj_id }));
+                }
+            }
+            Request::Skill { skill, target_name } => {
+                let named = units.as_ref().and_then(|units| super::chat::commands::unit_named(units, &target_name));
+                if let Some(obj_id) = named {
+                    net.write(NetCommand(Command::Target { obj_id }));
+                }
+                pressed.write(crate::ingame::ground_target::SkillPressed { skill, item: None, target_obj_id: named.or(selected).unwrap_or(0), gcd: false, water: false, caster: None });
             }
             Request::ItemEffect { character_id, request } => {
                 // The typed request was captured by the original enchant API.
@@ -1475,6 +1516,7 @@ mod tests {
         });
         let mut app = App::new();
         app.insert_non_send(HudBridge(bridge)).init_resource::<NextState<crate::Screen>>()
+            .init_resource::<aa_net::state::Units>()
             .init_resource::<aa_net::state::ActionBar>().init_resource::<aa_net::state::Inventory>()
             .init_resource::<aa_net::state::Target>().init_resource::<aa_net::state::Skills>().init_resource::<aa_net::state::Buffs>()
             .init_resource::<super::super::usable::InFlight>()

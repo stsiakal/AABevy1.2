@@ -45,6 +45,7 @@ dependencies = [
  "aa-dev",
  "aa-fx",
  "aa-lua",
+ "aa-midi",
  "aa-net",
  "aa-pak",
  "aa-ui",
@@ -98,6 +99,14 @@ dependencies = [
  "mlua",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "aa-midi"
+version = "0.1.0"
+dependencies = [
+ "aa-pak",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

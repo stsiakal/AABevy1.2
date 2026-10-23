@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use aa_audio::{AaAudioPlugin, Engine, Settings, Sound, SpatialListener, Volumes};
+use aa_audio::{AaAudioPlugin, Category, Engine, PcmClip, PcmOptions, Settings, Sound, SpatialListener, Volumes};
 use bevy::prelude::*;
 use bevy::transform::TransformPlugin;
 
@@ -65,6 +65,41 @@ fn volumes_resource_is_inserted_and_engine_is_shared() {
     // play_2d works from anywhere that holds the engine
     engine.play_2d("sounds/x2interface:login_stage:button_login");
     assert!(eventually(&app, |e| e.stats().requested == 1));
+}
+
+#[test]
+fn tracked_pcm_observers_survive_the_plugins_global_completion_drain() {
+    let mut app = app();
+    let engine = app.world().resource::<Engine>().clone();
+    let clip = PcmClip::mono(24_000, &[0.1]).unwrap();
+    let (id, observer) = engine.play_pcm_tracked(&clip, PcmOptions::new(Category::UserMusic)).unwrap();
+    let clone = observer.clone();
+    assert!(engine.wait_idle(Duration::from_secs(5)));
+    assert!(observer.is_finished() && !observer.was_started());
+    app.update(); // AaAudioPlugin consumes take_finished(), including this external PCM voice.
+    assert!(engine.take_finished().is_empty());
+    assert!(!engine.is_playing(id));
+    drop(engine);
+    drop(app);
+    drop(clip);
+    assert!(clone.is_finished() && !clone.was_started());
+}
+
+#[test]
+#[ignore = "needs the game pak; opens no audio device"]
+fn failed_sounds_are_reaped_and_despawn_when_requested() {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, TransformPlugin, AaAudioPlugin::with(Settings { audible: true, max_voices: 0, ..Settings::default() })));
+    let missing = app.world_mut().spawn((Transform::default(), Sound::event("sounds/x2voice_prologue:system:6170"))).id();
+    let refused = app.world_mut().spawn((Transform::default(), Sound::event("sounds/x2interface:interface:button_default").despawn_when_done())).id();
+    app.update();
+    assert!(app.world().resource::<Engine>().wait_idle(Duration::from_secs(5)));
+    app.update();
+    assert!(app.world().get::<Sound>(missing).is_none());
+    assert!(app.world().get_entity(refused).is_err());
+    let stats = app.world().resource::<Engine>().stats();
+    assert_eq!((stats.unknown_events, stats.refused), (1, 1));
+    assert_eq!(stats.started, 0);
 }
 
 #[test]

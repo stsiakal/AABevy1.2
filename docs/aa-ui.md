@@ -142,7 +142,7 @@ cargo build lock. `cmp_tree.py` drops the runtime ids that tables are keyed by f
 | `lua/tooltip.rs` | `gametooltip` lines (`AddLine`, `AddAnotherSideLine`, line spaces, `GetHeightToLastLine`), wrapping, sizing to the lines, drawing |
 | `lua/slot.rs`, `lua/statusbar.rs` | `slot` (action bar and skill icons bound to game slots, cooldown sweeps) and `statusbar` (HP / MP / exp / labor bars) |
 | `lua/grid.rs` | `grid` cells, rows and selection (the quest list and the quest tracker) |
-| `lua/bounds.rs` | `OnBoundChanged` after layout changes |
+| `lua/bounds.rs` | synchronous native event33, source then live anchor dependents |
 | `lua/chat.rs` | `message` frames and the tabbed `chatwindow`, `X2Chat:DispatchChatMessage` |
 | `lua/chat_input.rs` | the chat input's slash commands (`/s`, `/p`, `/w Name`, ...), channel and whisper target, sending through `AAUI.ChatSend` |
 | `lua/roadmap.rs` | the `roadmap` zone map overlay (player cursor, markers); `listbox` tree images |
@@ -208,7 +208,8 @@ frame. Content: the first mutable access to an object in a frame keeps a copy of
 change (the HUD scripts re-anchor, re-texture, re-text and re-show their unit frames and buffs
 every frame). `Tree::touch` marks changes outside the objects (hover, pressed button, focus,
 caret, grid rows, screen size). The layout cache follows `generation`, which every mutable
-access bumps; the `OnBoundChanged` and grid passes skip frames without a net change. Text
+access bumps; the grid pass skips frames without a net change. Bound notifications run in
+native size setters, independently of the rendering change comparison. Text
 layouts are cached by font, size, text and width (`Fonts::layout_size` measures without a copy).
 Cost of the in-game HUD (release, standing at the Nuian spawn, `AA_PROFILE=1`, main thread
 `update` slice of aa-client, 3 alternating runs each): 4.4-6.6 ms before this (the scripts'
@@ -287,9 +288,11 @@ never runs inside a borrowed native. `UiRuntime::fire_event` raises an event now
 `queue_event` raises it at the next frame (use it for game API answers that the client gets
 from the server later). Every frame `tick` advances fades (`Show(true, ms)`), fires
 `OnEndFadeIn` / `OnEndFadeOut` and calls `OnUpdate(self, dtMs)` and `OnEffect(self, dtMs)` on
-visible widgets. `OnBoundChanged(self)` runs in the tick after a widget's laid-out rectangle
-changed (the first layout counts, hidden widgets too; up to 4 passes when a handler moves other
-widgets that have one): the skill window's scroll windows place their columns there.
+visible widgets. `OnBoundChanged(self)` is event33: an admitted size setter first finishes
+event32 anchor propagation, then sends event33 to the source and recursively to its live
+anchor dependents. Identical sizes still notify; registration/first layout, anchor moves,
+removal and native scale alone do not. Hidden widgets participate. See the native bound
+dispatch evidence below for silent controls, drawable barriers and reentry/lifetime limits.
 `folder:ToggleState` raises `FOLDER_STATE_CHANGED(title)`.
 
 ### Input
@@ -6743,3 +6746,928 @@ Tests: `tests/listctrl_keys.rs` (6). In game (account `bevytest`, the book's `X2
 because `bevyportal` was online in another session): `shots/aa-ui/listctrl/after_book_rows.png` (Default Site, 3 rows),
 `after_book_recorded_tab.png` (Recorded Site, 10 rows, page 1/2, row 3 selected, buttons enabled), against
 `before_book_empty.png` (empty rows); `achievement.png` (Summary with the recent list, unchanged). fps 75-100.
+
+### Window-position persistence callback recovery (2026-10-23)
+
+Recovered the inherited `src/lua/drag.rs` / `tests/drag.rs` changes and validated
+the actual original-script save path. Native evidence corrects the inherited
+"only if visible and final rectangle differs" guard: Lua binding `392651e0`
+calls `39278ab0` on its receiver regardless of capture, visibility or movement.
+The stop clears the manager capture through `392a6a10(0)`, resets the cursor,
+then invokes receiver virtual `+138`. Script chat `395129b0` sends event 31;
+table `39ac6ab0[31]` names it `OnMovedPosition`. Manager cleanup `392aa910`
+calls stop only for a captured widget. Consequently an original title-bar
+click sends this callback even without movement, while an ordinary chat-tab
+click (no capture/explicit stop) does not. Repeated explicit stops each notify;
+an explicit stop on another widget cancels capture and notifies that receiver.
+
+The toolkit now distinguishes the existing pointer-release entry from the Lua
+method without changing public signatures. Automatic release consumes capture
+and notifies once, including outside the OS window and a move returned to its
+starting rectangle. The title's explicit stop clears capture before the later
+release fallback, preventing duplicate callbacks. Capture and its move image
+are cleared, and the UI borrow is dropped, before Lua runs. A handler can read
+final bounds, change anchors, retire its window or start a new capture. Existing
+retirement removes capture without inventing a movement callback. The existing
+hidden-resize cancellation also completes through the callback rather than
+silently dropping capture; its visibility cancellation policy is retained,
+not newly claimed as a fully audited native manager policy. Handler errors do
+not restore capture or retry delivery on another release.
+
+Evidence: ignored `data/extract/aa-ui/moved_position_oracle.py`,
+`native-moved-position-oracle-20261023.json` and
+`native-moved-position-source-20261023.txt`. Eight offline groups execute the
+actual binding, stop, capture setter and script-chat virtual: matching/no/other
+capture, hidden and unchanged bounds, repeated stops, a callback installing a
+new capture, and failed host cast. Host/class casts, GUI lookup, pointer query,
+cursor reset, final script delivery and base-chat continuation are controlled
+endpoints; callback selection and capture clearing execute unchanged. The JSON
+records the read-only original PE SHA-256. Source also records the manager stop
+and retirement sites; those manager sites are disassembly evidence, not extra
+executed groups. No live client or local configuration is modified.
+
+`tests/window_bounds.rs` runs unchanged pak bytecode for `ui_management.alb`,
+`chat/chat_window.alb` and their ordinary World-stage dependencies. The actual
+chat `OnScale` installs `AddUISaveHandlerByKey`, native first-tab movement or
+border sizing reaches `OnMovedPosition -> SaveBound -> X2:SetCharacterUiData`,
+and the original `ApplyLastWindowBound` restores a newly created window. Tests
+check `ui_bound_chatWindow[0]`, final x/y/width/height, screen resolution, one
+completion save before the next layout tick, and no save from a plain chat-tab
+click or another release. The following tick can independently save through
+the original `OnBoundChanged`; it does not repeat movement completion. Only the
+application-owned X2 storage boundary is
+an in-memory fixture: on-disk persistence, character isolation and account
+switching remain aa-client's separate responsibility/tests. No new integration
+hook or aa-client change is required.
+
+Validation: `cargo test -p aa-ui --lib --test drag --test resizing --test
+window_bounds --test chat_lock --test chat_reset --test chat_lifecycle --test
+popup_lifecycle --test button_fading --test event_handlers --test widget_frame`
+passes **108 tests**, with the existing optional font-metrics test ignored.
+Seven recovered/new drag regressions cover arity/receiver identity, duplicate
+release prevention, explicit stops, outside release, returned motion,
+reentrancy, retirement, hidden sizing and expected handler failure; two
+original-script regressions cover persistence. Only aa-ui targets were built,
+using the shared target directory. No drawing, movement geometry, visual
+example or GUI process changed in this behavioral slice, so no new PNG/FPS
+claim is made; no copied executables or temporary native binaries remain.
+
+Limits: in the original-chat fixture the message child wins hit testing over
+the side/bottom resize strips; the acceptance test uses its exposed top border.
+Child-versus-owner resize arbitration needs its own native input audit.
+Secondary-tab splitting/cross-window reparenting remain the previously recorded
+chat boundary. Native `OnChangedAnchor` dispatch is still absent; the existing
+tick-based `OnBoundChanged` path is unchanged. This slice closes completion
+notification and original-script bounds persistence, not those toolkit gaps.
+
+## Native OnChangedAnchor dispatch (2026-10-23)
+
+`OnChangedAnchor(self)` is native event **32**, with no additional arguments.
+The script-chat VT `399e7400 + d4` points at `395129d0`, which calls
+`3927b8b0(32)` before its chat continuation `392ca030`. Event-name table
+`39ac6ab0[32]` names it `OnChangedAnchor`. Actual `3927b8b0` and
+`39279ae0` marshalling push one ScriptAnyValue(type 6), the receiver's script
+table. This is a synchronous native setter/propagation notification, not a
+rectangle comparison in the later `OnBoundChanged` tick.
+
+`39276dd0` installs/replaces an anchor, rejects dependency cycles through
+`39275e70`, and calls `39276350(1)` even for an identical anchor. Its final
+sixth argument is not consulted by this body. `39276940` / `39276a70` remove
+all anchors and dependency records without emitting the event. Replaced
+points retain their old target dependency record until removal: changing the
+old target still propagates, even if the current point targets another widget.
+The retained records also participate in native cycle rejection.
+
+`39276350` resolves its source, then walks its **live** dependent vector
+(`+44..48`) in registration order before invoking source virtual `+d4`.
+The tree relation is independent of widget parenting and visibility. New
+target installation invalidates downstream records via `39275ec0`; a node
+whose targets are not all ready is skipped by `39275f10`. Existing-target
+updates do not perform that invalidation. A diamond therefore sends one
+downstream callback on the first new-target propagation, but can send two on
+an existing-target update. Native integer-coordinate controls expose width
+99 followed by 100 in those two callbacks, before returning to final width
+100. The toolkit preserves these intermediate target bounds during dispatch,
+without replacing its ordinary final layout/cache outside dispatch.
+
+Native width/height/extent bodies `392763c0`, `39276410`, `39276460` propagate
+even for unchanged values. Bindings `39261740`, `392617c0`, `39261840` read
+their notification control at Lua parameter **2**. For SetExtent this is the
+height, not a third flag: zero height suppresses notifications, and a third
+false does not suppress a nonzero-height extent. Actual Cry GetParam
+`3550a460` / conversion `3550bf90` execute in the oracle; bools and numeric
+zero/nonzero control delivery, while failed optional conversions retain true.
+Silent size setters still resolve/propagate bounds, including during another
+handler. Required numeric setter arguments and invalid anchor targets/pairs
+are rejected before a notification can be invented.
+
+The existing implemented anchor, size, drawable and status-bar child-anchor
+setters now use this dispatch. Native `39278a10` installs the absolute anchor
+before manager capture; movement/resize continuation `3927a4ab` propagates
+after its geometry writes. Capture start and subsequent admitted toolkit motion
+now dispatch, retaining dependency readiness during motion. Native scale
+`3927d120` / `3927b2f0` first recurse through owned children and propagate
+their anchors, then propagate the source before OnScale. The existing explicit,
+started, inherited and stepped scale entries use that same callback ordering.
+The source's native `+7c` readiness override remains active through its anchor
+callbacks, including a reentrant scale while another target is pending, and is
+cleared before OnScale. Alpha-only changes do not acquire an anchor notification.
+
+No Ui borrow survives into Lua. Reentrant setters run before the outer setter
+returns; live handler replacement, self-unanchoring and appended dependents are
+observed. Retirement detaches incoming/outgoing anchor records and notifies
+surviving dependents (`39276a80` / `39276750`), without later dispatch to dead
+objects. A handler error does not enqueue a retry. Native active-vector
+invalidation is not reproduced as unsafe memory access: toolkit lifetime and
+vector bounds checks remain. The append oracle explicitly supplies spare
+capacity; it does not claim native safety after iterator-invalidating growth.
+Composite retirement retains the toolkit's existing batching; the executed
+detach controls do not prove every composite-destructor interleaving.
+
+Evidence retained, git-ignored, under `data/extract/aa-ui/`:
+`changed_anchor_oracle.py`, `native-changed-anchor-oracle-20261023.json`, and
+`native-changed-anchor-source-20261023.txt`. **40 offline native groups**
+execute anchor installation/removal, readiness, propagation, size bodies and
+optional controls, event marshalling, reentry, stable live-vector mutations,
+detach and scale propagation. Allocator/free/memmove, script VM primitives,
+host/class lookup, final clip-cache geometry and chat-specific continuations
+are explicit endpoints; callback admission/order and anchor geometry execute.
+The original x2game SHA-256 is
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+the JSON also records the original CryScriptSystem hash. FPCW is explicitly
+037f; no real-runtime FPCW, fractional-layout precision or live-client claim
+is inferred. No Ghidra project or original client/configuration file was opened
+for modification.
+
+`tests/changed_anchor.rs` covers synchronous identity/arity, no-op and rejected
+setters, silent controls, hidden/nonchild and diamond ordering/intermediate
+bounds, retained targets/cycles, reentry, live mutations, retirement, handler
+failure, drawable dependencies, scale order and captured parent movement.
+`tests/window_bounds.rs` still runs unchanged original World-stage bytecode:
+its actual OnChangedAnchor invokes SaveBound and ProcChangedAnchor before a
+layout tick, without setting isMoved or inventing OnMovedPosition. Repeating
+an anchor/extent still saves a previously moved window. Original
+ApplyLastWindowBound restores the saved rectangle and now produces its two
+expected synchronous saves (anchor, then extent). Only the X2 storage boundary
+is an in-memory fixture; account/disk persistence remains owned by aa-client.
+
+No public API, integration hook, dependency, manifest, or aa-client change is
+added. The existing tick-based OnBoundChanged behavior remains unchanged.
+Child-covered resize arbitration and secondary-tab splitting remain separate
+gaps; this is not a claim that the whole UI is complete. This behavioral change
+has no new visual example/window, PNG or FPS measurement.
+
+Validation: `cargo test -p aa-ui --lib --test changed_anchor --test
+window_bounds --test drag --test resizing --test chat_lock --test chat_reset
+--test chat_lifecycle --test popup_lifecycle --test button_fading --test
+event_handlers --test widget_frame --test widget_channel --test
+animation_inherit --test screen_bounds --test statusbar --test natives` passes
+**175 checks across 17 targets**, with the existing optional font-metrics test
+ignored. After the final capture-baseline/cache fix, the **37 affected checks**
+in changed_anchor, drag, resizing and window_bounds pass again. Twelve new
+dispatch regressions plus the additional original-chat persistence regression
+are included. Only aa-ui targets were selected, using the shared target
+directory. One `cargo clippy -p aa-ui --lib --test changed_anchor --test
+window_bounds` run exits successfully, retaining 27 warnings in unchanged
+aa-ui code (plus the existing aa-dev dependency/aa-client manifest warnings).
+Its output is retained in ignored
+`data/extract/aa-ui/changed-anchor-clippy-20261023.log`. No automatic lint fixes
+or other crate changes were applied.
+
+## Child-covered chat resize borders (2026-10-23)
+
+The original World/chat fixture now resizes through its message-covered left,
+right, bottom and bottom-corner borders. Hit priority remains with the child.
+Native script-chat hit virtual `39513d00` visits children before considering its
+own border; script-message `395126c0` also visits its children first. Generic
+`3927c6d0` retains reverse child order. Resizing through a message is a conditional
+mouse-down continuation, rather than a parent substituted by hit testing.
+
+Base press `3927cb20` admits automatic sizing only with resizing enabled, the
+receiver enabled, physical LeftButton (1), no held cursor (`3a5a4e68 == 0`), and
+a valid border point from `39277580`. It starts capture and returns before the
+owner's script mouse-down. Otherwise event 14 (`OnMouseDown`) requests a boolean
+result through `3927b990` / `390243b0`. Continuation at `3927cc1d` requires an
+unconsumed result and no `OnDragStart` handler at `+1d4`, before calling parent
+virtual `+16c`. The barrier is that handler record, not just RegisterForDrag.
+Cry `3550c380 -> 3550bf90` confirms boolean/numeric return conversion: true and
+nonzero consume, false/zero do not; nil and strings fail conversion and retain
+false. A failed handler leaves that false default, so an otherwise eligible
+base continuation can still resize; it does not enqueue a callback retry.
+
+Class priority matters. Registered ButtonWidget press `39283a80` consumes before
+that base fallback; an unregistered button can use it. Selectable textbox
+`3929c1e0`, ordinary multiline-edit `39294b60`, and slider `392c2a80` retain
+their own press paths. The slider's actual `+58` cast at VT `399c93c0` is
+`392c1e30`; the original message constructor resolves its `slider` through this
+cast at `395122a3..2bf`. Both thumb and track entries were executed. Text-position
+lookup and slider value update are controlled endpoints, not a claim that their
+whole selection/value algorithms were recovered in this task.
+
+Resize predicate virtual `+118` provides a second guard. Chat `392ca3c0` rejects
+hovered tab buttons and delegates to the selected message. Script-message
+`39511d00` rejects its hovered up/down/bottom buttons, and rejects the native
+slider's rectangle even while the slider is hidden. These references now live
+in private message data, independently of script field/getter replacement.
+The toolkit uses its existing mouse-over chain for those native hover flags.
+AllowTabSwitch remains a separate drag policy; it is not substituted for
+UseResizing, and locking does not acquire a move through this continuation.
+
+The implemented press continuation is bounded to a covered chat border and
+the audited inherited base classes (message, empty/window/label, unregistered
+button). It rereads live state after each admitted handler, stops at drag and
+consumption barriers, and never holds a Ui borrow into Lua. Other widget-class
+continuations and generic parent bubbling elsewhere remain unchanged. It does
+not turn arbitrary interactive child presses into owner resizing. Existing
+mouse target identity, global mouse-event payloads, button/selection/slider
+input and explicit StartSizing remain on their existing paths.
+
+Native release has a useful distinction: the press identity is still the
+message, while sizing capture belongs to the chat. Manager `392a7506` records
+the press identity; `392aa410` freezes hover updates during capture. Actual
+`39277da0` / `3927cc70` / click query `392a71e0` can still admit a message click
+when its press/release identity matches, including after StopMovingOrSizing.
+The covered-child path preserves this; it does not invent sticky click
+suppression after cancellation. Its release requires the same hit identity,
+so a different button under the message cannot acquire that click after an
+explicit stop. Existing direct-owner border click behavior is unchanged.
+The toolkit's general hover/capture traversal is unchanged; the oracle supplies
+the retained native hover/press identities. It records terminal click dispatch;
+full link activation after a resize is outside its claim.
+
+Existing capture completion stays native: stop `39278ab0` clears capture through
+`392a6a10`, then receiver virtual `+138` (script chat `395129b0`, event 31).
+Another receiver's explicit stop cancels the chat capture and notifies that
+receiver. Completion can install another capture. Retirement clears owned
+references without movement completion (`392aa7e0`, retained disassembly).
+Disabling automatic resizing during capture does not cancel existing sizing.
+The toolkit's previously documented hidden-sizing cancellation remains;
+this task does not claim a new audit of every native visibility/capture policy.
+
+Evidence retained, git-ignored, under `data/extract/aa-ui/`:
+`chat_resize_input_oracle.py`,
+`native-chat-resize-input-oracle-20261023.json`, and
+`native-chat-resize-input-source-20261023.txt`. **49 fresh offline native groups**
+execute hit walks, eight border points, admission/control/handler barriers,
+class press priority, boolean-return conversion, release/click admission,
+explicit stops and callback capture replacement. Geometry/transform providers,
+GUI/focus/press bookkeeping, final script/click delivery, button art/timing/sound,
+text-position lookup, slider value update and Lua primitives are explicit
+endpoints. Capture installation's anchor work is an endpoint followed by the
+actual capture setter; the prior anchor/motion audit is not rerun or expanded.
+The original x2game SHA-256 remains
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+the JSON also records CryScriptSystem's hash. FPCW is explicitly 037f. No live
+client/configuration, database or original asset was modified; no Ghidra project
+or copied native executable was created.
+
+`tests/window_bounds.rs` runs the unchanged original World/chat bytecode and
+native save callbacks. Five directions use the authored overlapping message;
+the three exposed top directions use a synthetic base child of that original
+chat. All eight press/drag/release directions reach final bounds, one movement
+completion save before the layout tick, and original ApplyLastWindowBound
+restore. Other regressions cover locked/disabled sizing, interior/outside/right
+presses, handler returns and reconfiguration, registered/unregistered buttons,
+edit text selection, textbox/slider priority, native scroll controls and tabs,
+hidden slider admission, explicit/other-receiver stop, disable/hide/retirement,
+retirement during child dispatch, completion starting another capture, and a
+different interactive descendant receiving release after an explicit stop.
+The X2 storage boundary remains in memory; account/disk persistence is aa-client's
+responsibility. No public API, manifest, dependency or integration change is added.
+
+Validation: **72 checks across seven focused targets pass**: button_fading (8),
+changed_anchor (12), chat_lock (7), drag (18), popup_lifecycle (9), resizing (5)
+and window_bounds (13). The final window_bounds/resizing/popup_lifecycle run
+passes all **27** checks after the final covered-child release-identity guard.
+One `cargo clippy -p aa-ui --lib --test window_bounds --test resizing` run succeeds
+with 27 warnings in unchanged aa-ui code, plus the existing aa-dev dependency
+and aa-client manifest warnings. Its log is retained in ignored
+`data/extract/aa-ui/chat-resize-clippy-20261023.log`. That single lint run preceded
+the final small release-identity guard and its regression; the final checks
+above followed it. No second clippy run or automatic lint fixes were applied.
+The earlier
+175-check selection, optional font test and 40-group anchor oracle were not
+rerun wholesale. All Cargo commands selected aa-ui and used the shared target.
+This is behavioral validation; no new visual window, screenshot or FPS claim
+is made. Secondary-tab splitting, general OnBoundChanged timing, other native
+class fallback configurations and whole-chat parity remain outside this slice.
+
+## Native GetTextLength unblock (2026-10-23)
+
+`editboxmultiline:GetTextLength()` and `textbox:GetTextLength()` now return the
+current native text-buffer length as a script number. Native registrations
+`3923b820..b87a` and `3925ca98..caef` bind `3923b270` (multiline scalar-count
+field) and `3925c410` (textbox text virtual, then imported XlStringLen at
+`38ff6c5c`). Their host casts reject incompatible receivers. The captured
+native class method lists expose this getter on those two classes; ordinary
+single-line `editbox` has no such native getter. No class surface is expanded.
+The implementation reads the buffer directly, including inside synchronous
+OnTextChanged; it does not invoke a replaceable Lua GetText or synthesize a
+digit fallback. Textbox length stops at its native C-string terminator.
+
+The parent-owned read-only `tools/user_music_oracle.py` executes xlcommon
+`3301b000`: `é도😀` is three scalars and `e` plus combining acute is two.
+This task retains the getter registrations/wrappers in ignored
+`data/extract/aa-ui/native-text-length-source-20261023.txt`. The focused
+`tests/text_length.rs` checks both classes, Unicode, immediate change-handler
+visibility, direct buffer access and incompatible receiver rejection. This is
+an implementation unblock for the original composer bytecode; the parent's
+composer integration tests and captures remain parent-owned.
+
+Validation: cargo test -p aa-ui --test text_length passes its focused check. No clippy run is used for this unblock; the single final lint run remains reserved for the tab work. No visual claim is made for this getter change.
+
+## Native secondary chat-tab splitting and window drops (2026-10-23)
+
+A physical LeftButton drag of a secondary original chat tab now creates an
+independent chat window. It transfers the existing button and message frame;
+scrollback, filters, palette, handlers, original raw ID and Lua table identity
+survive. It does not re-run OnCreateChatMessage, OnCreateChatTabButton or
+OnSetChatTabId. Ordinary clicks still select, locked drags still notify, and
+first-tab drags still move the whole window. No original Lua behavior is
+replaced and no original X2 method/event is invented.
+
+Native button event4 reaches `392cc600`: its secondary branch calls
+`392cc4a0`. Factory `39512e90` requests `chatwindow/dup` with the old parent
+and source widget. Base `3927a9f0` and chat `392cb742..392cb8ac` copy plain
+configuration before the original OnCreateChatWindow callback. This toolkit
+copies supported extent, base alpha, layer/enable/resize configuration and
+chat layout/notification configuration; it retains fresh native children,
+handlers, input state and rows. Original callbacks may override those copied
+settings. Native `39512e90` then enables tab switching. `395142f0` allocates
+an empty model window and calls original OnDuplicatedChatWindow(widget,id),
+which installs the original window-save handlers.
+
+Detach `392cae10` removes the row/child relationships, forces selection of
+max(oldIndex-1,0), then virtual `39512830` moves its metadata into native
+pending storage. Insert `392cc2a0` reparents the SAME objects, reanchors all
+content, selects/binds the destination input raw ID and fires selection
+callbacks before `39512c30` attaches/saves metadata. The new window is placed
+at the former tab's top-left, shown, and captured for ordinary movement.
+The existing movement-completion callback saves its final bounds. Script
+OnDragStart precedes this internal start; script OnDragStop precedes native
+internal release event5. Live locking is reread after those handlers.
+
+Release `392cca60 ->392cc8c0` scans the native window creation list for an
+unlocked window whose internal tab-strip rectangle contains the cursor.
+That rectangle spans the entire window width, including tab-area insets;
+its stored vertical anchors supply its height. It does not substitute the
+generic mouse target or require the pointer to be on a particular button.
+The first matching window wins, including the source itself. A source
+containing raw ID0 cannot transfer all its rows (`392c9790/39513080`). The
+nearest destination button is selected by squared center distance; ties keep
+the earlier row, and equality at its horizontal center inserts AFTER it.
+Insertion before an existing raw-ID-zero row is refused; appending is legal.
+Secondary-start splitting itself has no raw-zero predicate, as the executed
+adversarial raw-zero-secondary control confirms; no additional tab rule is
+invented. Native bulk `392cbef0` detaches ALL rows/model records while the
+source's original row vector and selection remain observable, then clears
+source selection to -1. `392cc430` inserts/selects/attaches rows in order;
+the final inserted row is selected. An emptied configured window retires at
+the next toolkit update, preserving transferred children.
+
+### Application-owned configuration and failure handling
+
+Four OPTIONAL AAUI hooks integrate the parent's authoritative configuration:
+
+| Hook | Contract |
+|---|---|
+| `ChatAllocateWindow()` | Return an allocated empty window ID 0..7, or nil on failure. Native chooses the lowest free ID. Configure extra selected 0/method 0 and unlocked state in the app. Without this hook only, the standalone toolkit chooses the lowest ID absent from live windows. |
+| `ChatTabDetached(windowId,rawTabId)` | Runs AFTER forced source selection/ChatSelection/OnSelectedChatTab during a split; bulk detach has no source-selection callback. Remove the raw ID from source order, preserve metadata/history pending. |
+| `ChatTabAttached(windowId,rawTabId,zeroBasedIndex)` | Transfer: runs AFTER physical insertion, input binding, ChatSelection and OnSelectedChatTab. Same-owner release reorder: runs AFTER paired-vector/layout change, with no Detached/ChatSelection/input rebind. Insert or reorder the owner/order record and save while retaining metadata/history and numeric selection. |
+| `ChatReleaseWindow(windowId)` | Idempotently release an allocated still-empty duplicate on an aborted split. Never delete a tab. |
+
+No UI borrow survives into these hooks or original callbacks. The parent
+owns account/disk persistence, raw-ID metadata and method ownership; it must
+retain detached metadata and avoid resolving a pending raw ID back to its
+former live window. Bounds still flow through unchanged original Lua/X2
+storage handlers. This task changes no aa-client, root manifest/dependency,
+README or other crate.
+
+The original allocator `39505ca0` searches 0..7. Its full case returns false
+to the VOID `395142f0` callback, yet the outer native split still transfers
+into an unconfigured duplicate with ID-1. That native data-loss bug is NOT
+reproduced: nil/error allocation retires the fresh empty duplicate without
+removing the source row. The allocator hook must commit plain state atomically
+before returning an ID, and undo its own changes if it throws or cannot save:
+an unreturned ID is unknowable to the toolkit. Lua errors in original handlers
+log and continue; no retry is scheduled. Notification hooks likewise log errors
+and retain native UI continuation, so app detach/attach hooks must make their
+synchronous plain-state mutations reliable; these hooks are not an ACK protocol.
+A Rust callback panic is not an application transaction and must be unwound or
+rolled back by the callback owner; no catch_unwind recovery is promised.
+
+Live ownership is checked after callbacks. If the destination retires before
+detach, the empty allocated duplicate is released. If it retires after detach
+while the original row objects/source survive, the toolkit restores the source
+row at the old index (clamped for external row changes), selects it through the
+usual callbacks, then calls ChatTabAttached(source,rawId,index) and releases
+the empty duplicate. If both owners retire or a callback destroys the row
+objects, physical rollback is impossible: the toolkit retains manager history
+and retires surviving orphan objects. The parent's detached metadata remains
+pending with its recovery owner for later rehydration. Rehydration keeps fresh
+native scroll-control references rather than stale controls from the retired
+history frame. Arbitrary callback-driven deletion/reallocation and external
+panics are not a general cross-layer transaction guarantee.
+
+### Evidence and bounded validation
+
+Retained ignored evidence under `data/extract/aa-ui/`:
+`chat_split_oracle.py`, `native-chat-split-oracle-20261023.json`, and
+`native-chat-split-source-20261023.txt`. **32 offline native groups** execute
+actual duplicate wrappers, split detach/insert/select, release target traversal,
+bulk transfer, nearest/side math, raw-zero/locking guards, the allocation-search
+prefix and the 24-field chat clone-copy block. The full-allocation bug is an
+explicit executed control. Factory/object allocation, vector storage primitives,
+child/observer operations, transform/center providers, Lua delivery, model maps,
+saves, input rebinding and capture are explicit endpoints. It is a control-flow
+and data-operation oracle, not a live-client capture or full runtime emulation.
+The original x2game SHA-256 remains
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+FPCW is explicitly 037f. No original client/configuration file or RE project
+is modified.
+
+`tests/chat_split.rs` combines toolkit ordering/error/retirement regressions
+with the unchanged original World/chat bytecode and meaningful physical
+press/drag/release. It checks split placement, original save callbacks,
+rejoining onto the original raw-zero window, deferred empty-window retirement,
+retained messages/handlers/objects, callback locking, full allocation, callback
+overrides of cloned configuration and pending-history recovery.
+
+This is the original bounded split/reparent checkpoint. The later drag-preview
+section below implements native caret/overflow sliding and release-time row
+reordering, and the bound-change audit below supersedes the event33 limit.
+Other widget-class press fallbacks, hover traversal and link activation retain
+their separately documented limits; this is not a whole-chat parity claim. The checked-in
+real-client spawn reference is used to inspect original HUD/chat art and text;
+there is no supplied real-client split screenshot or new live-client capture.
+
+Validation: `cargo check -p aa-ui`, `cargo build -p aa-ui --example
+native_chat_split`, and **84 checks across ten focused targets** pass:
+button_fading (8), chat_alpha (6), chat_lifecycle (9), chat_lock (7), chat_method (5),
+chat_split (12), drag (18), resizing (5), text_length (1) and window_bounds (13). The test
+output is retained in `data/extract/aa-ui/chat-split-tests-20261023.log`.
+One final `cargo clippy -p aa-ui --lib --test chat_split --test text_length`
+succeeds, with 27 pre-existing aa-ui warnings, the existing aa-dev warning
+and aa-client manifest warning; no new-file warning or automatic lint fix.
+Its log is `data/extract/aa-ui/chat-split-clippy-20261023.log`. All Cargo
+commands selected aa-ui and used the shared target directory; lock waits
+were allowed to finish.
+
+The aa-dev example `native_chat_split` retains the matched 1920x1080 captures
+`shots/aa-ui/native-chat-split-before-20261023.png` and
+`shots/aa-ui/native-chat-split-after-20261023.png`. The BEFORE capture runs
+the same physical drag against the prior toolkit and logs one window; AFTER
+logs two and the same button's new parent. Both PNGs were inspected: the old
+All frame retains all three lines, and independent Harbor retains its two
+filtered lines, original tab/add art and unchanged text styling. The source
+window stays in place. Both runs report zero script errors and 43 unchanged
+World-fixture stubbed natives, with no runtime warning/error. The final
+AFTER process records exit 0 after saving its screenshot. Logged FPS is
+**263.1-389.9 before**, **196.8-244.5 after**; other builds/sessions were active,
+so these are capture observations, not an isolated performance comparison.
+Logs are `data/extract/aa-ui/chat-split-before-20261023.log` and
+`chat-split-after-20261023.log`. Temporary copied executables/debug probes
+were removed; screenshots, test/lint logs and native evidence are retained.
+
+## Native OnBoundChanged timing and propagation (2026-10-23)
+
+`OnBoundChanged(self)` is native event **33**, distinct from anchor event32.
+`39ac6ab0[33] -> 399bfb44` supplies its exact name. SetHandler registration
+`39269420..39269470` binds `39264ff0`, which reaches `392792e0` (name lookup
+`3922c160`) and `39279260` (handler-slot storage/replacement). Registration,
+replacement and release do not notify. The executed registration control
+changes only slot `+184 + 33*4`; the next unchanged-size setter calls the new
+handler. Actual `3927b8b0 -> 39279ae0` marshals just the receiver table, with
+no extra Lua arguments.
+
+Width/height/extent bodies `392763c0`, `39276410`, `39276460` first call
+`39276350(notify)` to finish event32 propagation, THEN call source virtual
+`+d8` when notify is true. Script-chat `399e7400+d8 -> 39512990` dispatches
+event33 before `392ca020 -> 3927b5e0`; generic widget `3927bd60` has the same
+script-first continuation. That continuation walks the **live anchor-dependent
+vector** in registration order, invoking each dependent's `+d8` recursively.
+For W -> C -> G and W -> O, size-setter order is G32,C32,O32,W32,
+W33,C33,G33,O33. A diamond can repeat event33 on the same descendant.
+Visibility, ownership parenting, rectangle equality and anchor readiness do
+not filter bound propagation. An owned child without an anchor dependency
+does not receive it. A source without a handler still walks its dependents.
+
+The same-value size calls still notify. The existing binding rule remains:
+optional notification control is read at Lua parameter **2**, including
+SetExtent's height; zero height suppresses both events, while a third false
+does not suppress a nonzero-height extent. Failed optional bool conversion
+retains true. Silent setters still update geometry/anchor readiness. Event33
+can run while event32's source readiness check rejects propagation, as the
+executed reentrant pending-target size control demonstrates.
+
+Anchor install/update `39276dd0`, silent removal `39276940`, target detach
+`39276a80` and scale `3927d120/3927b2f0` do not themselves invoke event33.
+The retained motion tail `3927a435..3927a4e6` likewise finishes through
+`39276350(1)`; completion remains its separate event31 path. Lua callbacks on
+these routes may explicitly call a size setter, which legitimately emits
+event33. Native drawable-base VT `399c6c90+d8 -> 3928aab0` returns directly:
+it is a bound-propagation barrier, including for a widget anchored through a
+drawable; anchor event32 still traverses that dependency.
+
+`lua/bounds.rs` now implements this synchronous source/dependent walk.
+`anchors::size_changed` calls it after the existing complete event32 path.
+The periodic Seen-rectangle scan, first-layout notification and four-pass cap
+are removed. This supersedes the earlier tick-based descriptions in this
+document, including historical resize/anchor milestones. No guessed periodic
+fallback, delayed retry or no-op suppression is retained. Rendering's content
+comparison is independent and still suppresses unchanged mesh rebuilds.
+
+Every callback runs without a Ui borrow. Reentry completes before the outer
+walk continues; live handler removal/replacement and source-callback dependency
+changes are observed. Retirement checks stop later delivery to dead objects
+and retain existing composite-retirement batching. The oracle mutates a
+source's dependent vector only before that source captures its iterator.
+It never tests iterator-invalidating removal/growth during an active native
+walk. Toolkit vector/lifetime checks remain safe; native undefined behavior
+is not reproduced or claimed as defined ordering.
+
+### Evidence and remaining scope
+
+`crates/aa-ui/tools/native_bound_oracle.py` is a repeatable read-only offline
+oracle. **48 native groups pass**, executing registration, handler replacement,
+three size bindings/bodies, marshalling, anchor geometry/readiness, both bound
+continuations, hidden/nonchild/diamond/no-op/silent controls and safe reentry.
+Allocator/free/memmove, imported string comparison, script VM primitives,
+host casts, chat layout, clip-cache and final scale geometry are explicit
+endpoints. The actual control flow and callback ordering are not endpoints.
+Native motion is retained source evidence, not newly emulated full input.
+
+Ignored retained evidence in `data/extract/aa-ui/`:
+`native-bound-oracle-20261023.json`, `native-bound-source-20261023.txt` and
+`bound-before-20261023.log`. The before regression fails because an identical
+SetWidth returns with only G32,C32,O32,W32, missing all four native bound
+callbacks. x2game SHA-256 is unchanged:
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+CryScriptSystem is
+`75ad3b0e7b483b12a113fd6cb28bcab785259f28bca145cb3f28e0fa8e72f162`.
+FPCW is explicitly 037f. No live-client/configuration/database/original asset,
+Ghidra project or copied native executable is modified or created.
+
+`tests/bound_changed.rs` checks the ordering, no-op/silent/invalid controls,
+registration/first-frame negatives, hidden diamonds, retained dependencies,
+parent extent, reentry/readiness, live handlers, drawable barriers, movement,
+scale, errors and retirement in either phase. `tests/original_bound_changed.rs`
+runs unchanged original World/ui_management/general-skill bytecode: real save
+closures observe native source/dependent order before the setter returns;
+original general-skill columns reflow synchronously; movement/scale use the
+original anchor/completion saves; reset inside the original bound continuation
+has no stale dispatch. The World harness retains its existing fake game data;
+within the save callbacks, X2 storage and Proc* observation are fixture
+boundaries, and no original handler is replaced. Existing original-chat
+bounds/restore tests now expect anchor + extent-anchor + extent-bound saves
+(three synchronous saves).
+
+This slice proves general setter and registered dependency delivery. It does
+not newly audit every widget-class internal geometry continuation, tab/grid
+synthetic anchor construction, automatic text sizing or raw host Tree writes.
+Those callers must acquire their own proven native mutation/notification path;
+there is no periodic callback to mask missing class behavior. Root screen
+change integration, hover/class/link expansion, native unsafe-vector behavior,
+live-runtime floating precision and whole-client parity are outside this
+claim. No public API, dependency, manifest, aa-client integration or f6f0929
+hook-contract change is required. This is a behavioral deliverable with no
+new visual harness, screenshot or FPS claim.
+
+Validation: **225 distinct checks across 23 aa-ui targets pass**, with the
+existing optional font-metrics test ignored. Targets: lib (29), bound_changed
+(10), original_bound_changed (4), changed_anchor (12), chat_reset (7),
+grid_bounds (4), window_bounds (13), animation_inherit (8), auto_clip (6),
+auto_clip_scale (8), chat_lifecycle (9), chat_lock (7), chat_split (12), drag
+(18), natives (21), popup_lifecycle (9), resizing (5), screen_bounds (3),
+statusbar (11), tab_active (6), tab_custom (2), widget_channel (11),
+widget_frame (10). Logs: `bound-focused-20261023.log`,
+`bound-regressions-20261023.log` and `bound-final-20261023.log` in the ignored
+evidence directory. The initial expanded run caught a reset-fixture omission:
+the original first chat window delays save-handler registration until its
+first OnScale. The fixture now invokes that original bootstrap; its four
+original-Lua checks and the remaining eight targets pass with exit0. This
+required no implementation change. `bound-native-20261023.log` records the
+final 48-group native run. All Cargo commands select aa-ui and use the shared
+target; other sessions' build locks were allowed to finish.
+
+One final `cargo clippy -p aa-ui --lib --test bound_changed --test
+original_bound_changed --test window_bounds` succeeds (exit0), retaining
+27 pre-existing aa-ui warnings plus the existing aa-dev dependency and
+aa-client manifest warnings. No warning points to new behavior/tests and no
+automatic fixes or second lint run were used. Its retained log is
+`bound-clippy-20261023.log`. New Rust tests were formatted directly; owned
+`git diff --check` passes. No temporary copied executable was needed or left.
+
+## Native chat drag preview, overflow sliding and release reorder (2026-10-23)
+
+The original frame update does **not** reorder rows on hover. `392cb310` scans
+for a dragging chat, then calls overflow repeat `392ca150` and caret preparation
+`392caff0`. `SetSlideTimeInDragging` stores milliseconds directly at +30c; it is
+an overflow-arrow repeat interval, not a tab animation duration. The accumulator
+uses a strict `elapsed > interval`, resets even with neither arrow hovered,
+and retains its remainder across pointer exits. Native `<-` / `->` buttons are
+20x20 outside the left/right edges of the tab area, hidden unless
+UseSlidingButton is enabled and content overflows. Each step uses maximum tab
+width, with original first/end clamps. No animated tab interpolation is added.
+
+The original script's GetCaretDrawable artwork is centered on the nearest tab's
+left/right top corner plus SetCaretOffset. Center equality chooses RIGHT;
+nearest-distance ties retain the first row. Both strip edges are inclusive.
+Hiding retains the last anchor and side flag. Preview rejects the moving owner and insertion before raw0, but never changes
+owners, rows, selection, message content or input binding. The caret is outside
+the tab clipping area. Original manager preparation `39502100` freezes the
+three drawable layers of chats whose native input is hidden at their OVER
+values; `395021b0` restores dynamics and forces only the completing owner OVER.
+The input predicate is its own shown flag (`395128e0 ->392778a0(false)`), not
+keyboard focus or inherited visibility. Explicit capture stop, hidden/retired
+owners and pointer release clean transient state safely.
+
+Release dispatch `392a7a00` invokes the drag-over button's OnDragReceive before
+MouseUp and source OnDragStop. Button `39281350` calls Lua event22 first, then
+chat internal event16 through `392ccb30`. The same-owner branch `392cc780 ->
+392cc520` moves paired button/message entries and relayouts. Its LEFT/RIGHT flag
+only controls adjacent no-op guards: the insertion index is **not adjusted**
+after removal. Numeric selection and the previous input raw binding stay put;
+there is no native selection callback or skin callback. The approved app-only
+`AAUI.ChatTabAttached(windowId, rawId, finalIndex0)` persists a real reorder
+AFTER vector/layout mutation, without Detached or ChatSelection. The existing
+parent adapter accepts a raw ID already owned by this window. No new hook,
+public Rust API, dependency, manifest or aa-client edit is required.
+
+A foreign receiving tab uses the existing detach/select/attach path, preserving
+its exact button/message/handler objects and history, and checking protected raw0.
+Whole-window release remains the separately traced creation-order strip scan
+and bulk transfer from f6f0929. SetTabButtonAlpha remains its prior stub.
+General held-item receive timing, generic hover
+traversal, input capture replacement across unrelated widget classes and the
+native unsafe vector-iterator bug are outside this bounded change. In particular,
+no hover-time mutation or modern index-normalization rule is introduced.
+
+Retained evidence: `crates/aa-ui/tools/native_chat_drag_oracle.py` executes
+**32 offline native groups**, writing ignored
+`data/extract/aa-ui/native-chat-drag-oracle-20261023.json` and
+`native-chat-drag-source-20261023.txt`. Actual caret predicates/anchor calls,
+frame dispatch, repeat/slide arithmetic, paired-vector reorder, GUI release
+ordering, input-visibility predicate and manager preparation/restore traversal execute under Unicorn with
+FPCW=037f against the original x2game SHA-256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+Geometry, raw-zero admission, widget/vector primitives and final Lua/model
+operations are controlled endpoints. No live original client/configuration,
+read-only pak, RE project or server data is modified. The retained source also
+identifies the input-visibility predicate; no full native renderer claim is made.
+
+`tests/chat_drag.rs` adds ten physical/runtime checks: original bytecode and
+artwork/anchor preservation; no hover mutation; inclusive raw0 center rule;
+exit/reentry, release outside the OS window, locking, cancellation and owner
+retirement; original repeat threshold and last-step/reset behavior; receiving
+button eligibility; paired identities/history and old input binding; receiver
+before MouseUp/DragStop; foreign-owner transfer; reentrant selection/retirement;
+and no repaint from an unchanged preview/repeat clock. Repeat clocks live in
+DragState outside widget repaint data and are discarded on owner retirement.
+
+The aa-dev example `native_chat_drag` retains matched original-script
+1920x1080 captures:
+`shots/aa-ui/native-chat-drag-before-20261023.png` and
+`shots/aa-ui/native-chat-drag-after-20261023.png`. Both use the same physical
+press/threshold/motion and held pointer (130,235); no release occurs before the
+capture. BEFORE uses the pre-change toolkit. AFTER shows the original cyan HUD
+caret at the traced insertion edge; neither capture transfers the hovering row.
+Both PNGs were inspected against each other and the real-client spawn art/text
+reference. There is no retained real-client drag capture, so native instructions
+and the original-script caret-rectangle test establish its exact placement.
+The first baseline harness's logging-only borrow error was fixed before the
+matched captures. The baseline was rebuilt with saved pre-change source, then
+all owned in-progress code restored; no foreign path was reverted or edited.
+
+Harness FPS: BEFORE 228.2 / 195.0 / 265.0 (4.45 / 5.31 / 3.80 ms), AFTER
+225.0 / 182.4 / 218.7 (4.51 / 5.72 / 4.70 ms). Other shared builds/apps were
+active and sample loads differ; these are bounded capture observations, not
+an isolated performance comparison. Both runs close via `--shot`. Logs and
+native evidence remain under ignored `data/extract/aa-ui/chat-drag-*`;
+matched captures remain under ignored `shots/aa-ui/`.
+
+Final validation: **271 checks across 30 aa-ui targets pass**, with only the
+existing optional font-metrics test ignored. This reruns all 23 targets from
+the 225-check event33 checkpoint plus animation, attachment, chat_alpha,
+chat_drag, chat_method, chat_tab_layout and listctrl_geometry. The ten new drag
+checks pass on the final source, including the unchanged-preview repaint test.
+The complete final log is `chat-drag-final-20261023.log`; prior focused and
+expanded logs are retained alongside it. All builds select aa-ui and use the
+shared target; lock waits were allowed to complete. No workspace run, alternate
+target, cargo clean, foreign process termination or push was performed.
+
+The single `cargo clippy -p aa-ui --lib --test chat_drag --example
+native_chat_drag` completes successfully (exit0), retaining 27 pre-existing
+library warnings plus the existing aa-dev dependency and aa-client manifest
+warnings. It also identified duplicate inclusion of the original example's
+fake module in the new harness; the harness now imports that existing fixture
+instead, with only its example-local visibility widened. A final example-only
+cargo check verifies the fixture cleanup; no second Clippy run or automatic
+fix was used. The retained lint log is `chat-drag-clippy-20261023.log`.
+Owned diff-check passes. Copied QA executables, saved-source scratch and this
+task's Python bytecode cache have been removed; evidence/logs/PNGs are retained.
+
+## Native SetTabButtonAlpha storage and inherited tab drawing (2026-10-23)
+
+This closes the stub named in the preceding drag checkpoint. Original 1.2
+registration `3925af17..68` names its parameters **selectedAlpha,
+unselectedAlpha** and binds `39259fa0 ->3922f380 ->39258d90 ->392c8730`.
+Both Lua parameters must be numbers. Missing/nil, strings (including numeric
+strings), booleans and tables reject the entire pair; extra arguments are
+ignored. The successful setter copies two raw f32 values to chat +358/+35c.
+Constructor `392cb9d5/e5` initializes **1.0/0.3**, and duplicate configuration
+`392cb87c..88e` copies them before the original creation callback. There is no
+clamp, layout, selection callback, owner-layer update or scheduled fade.
+
+The pair is stored but visually inactive in this client version. Complete
+chat-widget/script-chat body inspection finds only constructor/setter writes
+and the configuration-copy reads. Both native chat vtables inherit draw prep
+`3927b420` and owner-layer drawing `3927af50`; script chat's frame is
+`395130e0`. Executed hover/capture, unclipped/clipped preparation/render and
+drag prepare/restore controls produce identical draw calls and restored render
+alpha for 1.0/0.3, 0.05/0.95 and 1.5/-0.25. Actual manager `39502100/395021b0`
+and global-pair configuration `39512a40` run too: hidden-input drag preparation
+freezes OVER, and restoration enables dynamics then forces the completing
+owner OVER and others LEAVE. None reads the tab-alpha pair or changes the
+button/drawable alpha fields. Existing generic widget fading remains separate.
+
+`ChatData` now holds a private pair, its Lua method follows the strict native
+marshaller, and duplication copies it before OnCreateChatWindow. No public
+Rust API, app hook, dependency, manifest or aa-client change is required.
+The directly related old per-frame opacity estimate is removed: it forcibly
+hid every tab drawable while idle and rewrote selected/unselected/add-button
+opacity to 1.0/0.6. It had no matching instruction path. Original script
+artwork, text colors, global dynamic drawable layers, explicit SetAlpha calls,
+selection and drag preparation/restore now compose without that extra write.
+This supersedes the older estimated tab-decoration behavior/gap descriptions,
+including the alpha notes around the earlier native chat-options milestone.
+
+`tools/native_chat_tab_alpha_oracle.py` retains **25 executed native groups**
+and an instruction/vtable/property-access listing. FPCW is 037f. Read-only
+x2game SHA-256 remains
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+CryScriptSystem remains
+`75ad3b0e7b483b12a113fd6cb28bcab785259f28bca145cb3f28e0fa8e72f162`.
+Lua VM primitives, host casts, pointer/capture geometry, font submission,
+device color/clip submission and unrelated child frame primitives are explicit
+endpoints. Native registration, typed conversion, property stores/copy,
+script-chat frame, inherited draw traversal, dynamic layer propagation and
+render-alpha push/restore are executed. This is not a full native font/GPU
+renderer or undefined iterator-behavior claim. The JSON and source listing
+remain in ignored `data/extract/aa-ui/native-chat-tab-alpha-*-20261023.*`.
+
+The before regression records idle input replacing explicit alpha values with
+`[1,0,.6,0,.6]`. New focused tests cover typed raw storage/defaults/zero-result
+arity, configuration copy before reentrant creation overrides, retirement,
+explicit alpha across physical hover/time changes, rendered layer factors,
+visually inactive pair changes, original World/chat bytecode and physical
+split/release with retained button/message identity and scrollback. The
+existing bound and chat drag suites continue to protect synchronous callbacks,
+caret/sliding/reorder, app-hook contracts and transient-state cleanup.
+
+The aa-dev example `native_chat_tab_alpha` uses unchanged original World/chat
+bytecode and artwork with two tabs, the same idle physical pointer and
+SetTabButtonAlpha(.15,.85) in both captures. Matched 1920x1080 PNGs remain at
+`shots/aa-ui/native-chat-tab-alpha-before-20261023.png` and
+`shots/aa-ui/native-chat-tab-alpha-after-20261023.png`. Both were inspected
+against each other and `reference/ingame/spawn/real.png`: AFTER retains the
+authored selected/unselected tab backgrounds and original text colors, which
+the estimated path suppressed/dimmed in BEFORE. The reference confirms the
+idle art remains present; it is not a reference capture of this custom two-tab
+fixture or a native SetTabButtonAlpha variation. Instruction execution supplies
+the property-invariance proof. Both examples report zero script errors and
+close through --shot after eight seconds.
+
+FPS samples: BEFORE **386.4 / 409.6 / 441.3 / 395.3** (2.63 / 2.47 / 2.30 /
+2.56 ms); AFTER **358.3 / 442.4 / 419.5 / 431.1** (2.81 / 2.28 / 2.42 /
+2.35 ms). These are shared-machine capture observations, not an isolated
+performance comparison. Build/capture logs remain in ignored
+`data/extract/aa-ui/chat-tab-alpha-{before,after}-*-20261023.log`.
+
+Final validation: **285 passing Rust checks across 32 aa-ui targets**, with
+only the existing optional font-metrics test ignored. These are all 30 targets
+from the preceding drag checkpoint plus chat_tab_alpha (4) and button_fading
+(8); lib includes the two new private-storage/copy checks (31 passing total).
+The complete exit0 run is `chat-tab-alpha-verified-20261023.log`. The new native
+oracle's 25 groups, existing drag oracle's 32 and bounds oracle's 48 also pass;
+their three `chat-tab-alpha-*-native-20261023.log` /
+`chat-tab-alpha-native-20261023.log` logs are retained alongside the JSON/source.
+Initial test runs caught fixture issues rather than implementation defects:
+ColorDrawable does not expose SetAlpha (its common object factor is now
+explicit host fixture data); pending hide retirement completes at the existing
+frame boundary; a split window follows the release pointer and remains OVER
+until a physical leave. Corrected controls test those existing contracts.
+
+The single final `cargo clippy -p aa-ui --lib --test chat_tab_alpha --test
+chat_drag --example native_chat_tab_alpha` succeeds (exit0), retaining the
+same 27 pre-existing library warnings and existing aa-dev dependency/aa-client
+manifest warnings. No new test/example warning, automatic fix or second lint
+run is involved. Log: `chat-tab-alpha-clippy-20261023.log`. Owned diff-check
+passes. All Cargo operations select aa-ui and the shared target; build-lock
+waits were honored. Copied QA executables were removed; evidence/logs/PNGs
+remain. No foreign path, original client/configuration/assets, server,
+dependency or app integration was changed, and no push was performed.
+
+This proves the bounded stored property and inherited drawing path. It does
+not add a selected/unselected fade, a modern opacity policy, a native font/GPU
+renderer, broader hover routing, or full chat/client parity. The prior drag
+preview/release, retirement/reentrancy and synchronous bound behavior is
+preserved without a new application contract.
+
+### Query-driven slot tooltip providers (2026-10-23)
+
+The existing `AAUI.SlotContent`, `SkillContent` and `ItemContent` tables may now
+carry either `tooltip = existingTable` or `tooltip = function() return tableOrNil
+end`. Only `slot:GetTooltip()` invokes a function, with **zero arguments**. The
+existing table path keeps its identity and the live empty-slot path still
+returns one nil. A provider's first result must be table/nil; no results become
+nil, extra results are discarded, invalid result types raise a conversion error,
+and provider errors propagate through the native method to its Lua caller. The
+result is not stored back into the content table. Callable tables remain tables.
+
+`GetTooltip` resolves its stored Lua value before calling the provider. No UI,
+tree, registry app-data or slot-state borrow survives the call. A provider can
+reenter the getter, change widget geometry, rebind the same slot, or retire its
+owner. Its current table/nil/error result is preserved; subsequent calls on a
+retired object retain the existing zero-result method behavior. Binding, content
+copy, refresh, animation inheritance and frame updates never call the provider.
+Original X2 method names/signatures and the Rust runtime API are unchanged.
+
+The application-owned integration is an item-content closure such as
+`function() return HUD.item_tip(s.id, s.grade, s.count, s) end`, carrying the
+same item instance/detail8 data. There is no new arrival event or forced hover.
+This patch changes only the toolkit getter; the application owns its producer
+and score cache.
+
+Read-only original evidence remains in ignored `data/extract/aa-ui/`:
+`research_score_tooltip_native.py` and `research-score-tooltip-native.json`
+execute four controls through original `392565b0` and `392c3c60`. Two calls on
+the same bound item slot each reach the `39423560` tooltip builder. VM primitives,
+host/accessor resolution and the builder itself are explicit endpoints. The
+existing `music10.c`/`tip1.c` builder calls `39082550(id, true)` for a complete
+stored-score tooltip; `391e1640 -> 39082260` saves/removes pending/copies notes
+without an item-tooltip refresh in that body. LevelDB internals are not emulated.
+
+`research_score_tooltip_lua.py` and `research-score-tooltip-lua.json` execute
+original Lua 5.1 bytecode, retaining instruction streams while widening only the
+chunk layout/constants. Original `inventory/sort_inventory.alb` hover queries
+the adapter again; hovered `Update()` runs leave/enter again. Original
+`baselib/tooltip/tooltip_view.alb` executes 100 item-tooltip frames with zero
+additional item queries. Availability changes alone leave the open snapshot
+unchanged; rehover obtains the title. Original score-section bytecode also emits
+the two requirement/title rows with controlled text/native-provider inputs.
+
+The related original bag-mask contract was checked separately, without changing
+the application. Both `UpdateIcon()` and `OnEnter()` omit `needInfo` in the
+original sort-inventory bytecode; `sort_bag.alb`'s adapter omits a nil argument.
+Native `3944d6a0` defaults an omitted third argument to numeric mask -1. An
+explicit third argument starts at zero and uses typed numeric reader
+`39058d10 -> 3550a460/3550bf90`: explicit nil/false/true leave zero; numeric masks
+are retained. Only exact -1 enters `39423560`'s full instance branch containing
+the user-music query. Thus ordinary bag icon updates can prefetch a score, while
+an explicitly restricted mask must not acquire the full score extras. Eight
+executed wrapper/conversion cases are retained in
+`research_score_tooltip_flags.py` / `research-score-tooltip-bag-flags.json`.
+
+`tests/slot_tooltip.rs` adds six meaningful controls: existing table/callable
+table/nil identity and arity; all three binding sources plus copy/refresh/100
+frames; provider result/error/recovery; recursive query and same-slot rebinding;
+table/nil/error during immediate owner retirement; and physical hit-tested
+original action-slot entry. The latter runs unchanged World/action-slot/tooltip
+bytecode, keeps the displayed lines and query count unchanged for 100 frames
+after metadata availability, then leaves/reenters and observes the original
+Harbor title row. It does not call the hover handler directly.
+
+The aa-dev example `native_slot_tooltip` uses that same original action slot and
+the database-backed item 28051 icon `icon_item_1260.dds`. Its controlled provider
+becomes available at 2.5s, the pointer leaves/reenters at 4.0/4.3s, and the capture
+exits unattended. `--snapshot` selects the existing eager-table producer as the
+BEFORE comparison; this is a table-versus-provider comparison in one binary,
+not a pre-patch executable. All three 1920x1080 PNGs were inspected:
+
+- `shots/aa-ui/slot-tooltip-snapshot-before-20261023.png`: one bind-time query,
+  no score title after rehover.
+- `shots/aa-ui/slot-tooltip-provider-stationary-20261023.png`: provider available
+  but the open tooltip still has no title.
+- `shots/aa-ui/slot-tooltip-provider-after-20261023.png`: two hover queries and
+  the original Artistry requirement / Title: Harbor rows after rehover.
+
+The item tooltip's art, header and text hierarchy were compared with
+`reference/ingame/tooltip_item/real.png`; that reference is a Teleport Book, not
+this controlled score fixture. This example supplies metadata availability,
+not a network/cache roundtrip. Parent-owned application fixtures cover that
+integration. All captures report zero script errors. FPS observations: BEFORE
+425.6/425.7/448.2/407.4; AFTER 344.2/292.9/420.4/369.8; stationary 408.3/432.4.
+These are shared-machine observations, not an isolated performance comparison.
+Capture/build logs remain at `data/extract/aa-ui/slot-tooltip-*-20261023.log`.
+
+Final validation: **100 passing checks across 10 selected aa-ui targets**, with
+only the existing optional font test ignored: lib 31, bound_changed 10,
+changed_anchor 12, chat_drag 10, chat_tab_alpha 4, slot_completion 7,
+slot_native_cooldown 6, slot_state 1, slot_tooltip 6, window_bounds 13. Log:
+`slot-tooltip-tests-20261023.log`. The single final
+`cargo clippy -p aa-ui --lib --test slot_tooltip --example native_slot_tooltip`
+passes with the existing 27 library warnings and no new test/example warning;
+log `slot-tooltip-clippy-20261023.log`. No alpha/drag/bounds path, manifest,
+foreign crate, original asset, server or process was edited. The copied QA
+executable was removed after capture; retained evidence and PNGs remain.

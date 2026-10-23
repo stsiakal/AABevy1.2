@@ -38,6 +38,8 @@ use super::{call_handler, method, new_object_table, none, object_table, ret, ui,
 use crate::tree::{Align, Anchor, DrawKind, DrawLayer, Id, Point, Rect, TextBlock};
 
 mod lifecycle;
+mod transfer;
+mod interaction;
 pub(crate) mod alpha;
 pub use alpha::set_alpha_options;
 pub use lifecycle::{
@@ -60,6 +62,9 @@ pub struct MessageData {
     /// Lines of the live view still within `time_visible` at the last frame: when one times
     /// out this changes, and the change redraws the frame.
     pub live: usize,
+    /// Original script-message native controls: up, down, bottom and slider.
+    /// Kept apart from script fields/getter replacement, like the native pointers.
+    controls: Option<[Id; 4]>,
 }
 
 impl Default for MessageData {
@@ -73,6 +78,7 @@ impl Default for MessageData {
             time_visible: None,
             scroll: 0,
             live: 0,
+            controls: None,
         }
     }
 }
@@ -88,6 +94,9 @@ pub struct ChatTab {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChatData {
+    pub(crate) interaction: interaction::Interaction,
+    /// Native +358/+35c: stored/copied only; inherited draw preparation does not read it.
+    tab_button_alpha: [f32; 2],
     /// Native active-window flag, independent of edit keyboard focus.
     pub(crate) active: bool,
     pub(crate) links: Vec<super::chat_input::InputLink>,
@@ -189,9 +198,30 @@ pub(crate) fn drag_started(lua: &Lua, button: Id) {
     };
     if allowed && index == 0 {
         // Native starts the entire window before checking raw-tab-zero split protection.
-        // Secondary-tab splitting and cross-window reparenting need the manager path.
         super::drag::start_moving(lua, window);
+        interaction::begin(lua, button, window);
+    } else if allowed {
+        transfer::split(lua, window, button);
     }
+}
+
+/// Native button internal event 8 follows the source's Lua OnDragStop.
+pub(crate) fn drag_stopped(lua: &Lua, button: Id) {
+    interaction::finish(lua, button);
+    transfer::drop_window(lua, button);
+}
+
+/// Native receiving button dispatches Lua event22, then chat internal event16,
+/// before the GUI's mouse-up and source drag-stop continuations.
+pub(crate) fn drag_receive(lua: &Lua, source: Id, target: Id) {
+    let eligible = {
+        let u = ui(lua);
+        tab_owner(&u, source).is_some() && tab_owner(&u, target).is_some()
+            && u.tree.widget(target).is_some_and(|w| w.enabled)
+    };
+    if !eligible || super::widget::button_ignores_fading_input(lua, target) { return; }
+    call_handler(lua, target, "OnDragReceive", vec![Value::String(lua.create_string("LeftButton").unwrap())]);
+    transfer::receive(lua, source, target);
 }
 
 fn notify_tick(u: &mut super::Ui, id: Id, dt_ms: f32) {
@@ -717,14 +747,16 @@ fn create_tab_message(lua: &Lua, window: Id, i: usize) -> mlua::Result<(Id, Tabl
         false,
     )?;
     let id = value_id(lua, &Value::Table(t.clone())).unwrap();
-    for (getter, class, name) in [
+    let mut controls = [crate::tree::ROOT; 4];
+    for (index, (getter, class, name)) in [
         ("GetUpButton", "button", "upButton"),
         ("GetDownButton", "button", "downButton"),
         ("GetDownToBottomButton", "button", "downToBottomButton"),
         ("GetSlider", "slider", "slider"),
-    ] {
+    ].into_iter().enumerate() {
         // Scroll controls show on mouse over in the client; hidden here.
         let (cid, c) = native_child(lua, id, name, class, name, false)?;
+        controls[index] = cid;
         if class == "slider" {
             // A native slider comes with its thumb (`GetThumbButtonWidget`).
             let (thumb, _) = native_child(lua, cid, "thumb", "button", "thumb", true)?;
@@ -734,13 +766,40 @@ fn create_tab_message(lua: &Lua, window: Id, i: usize) -> mlua::Result<(Id, Tabl
         }
         set_getter(lua, &t, getter, c)?;
     }
-    with_msg(lua, id, |m| m.max_lines = 300);
+    with_msg(lua, id, |m| {
+        m.max_lines = 300;
+        m.controls = Some(controls);
+    });
     alpha::scroll_pairs(lua, id);
     Ok((id, t))
 }
 
+/// Native virtual +118: 392ca3c0 (chat) / 39511d00 (script message).
+/// Tabs/scroll buttons use mouse-over; the slider tests its rectangle even hidden.
+pub(crate) fn resize_allowed(u: &super::Ui, id: Id, pointer: (f32, f32)) -> bool {
+    let Some(w) = u.tree.widget(id) else { return false };
+    if let Some(c) = &w.chat {
+        if c.tabs.iter().any(|tab| u.entered.contains(&tab.button)) {
+            return false;
+        }
+        return c.tabs.get(c.selected).is_none_or(|tab| {
+            tab.message == crate::tree::ROOT || resize_allowed(u, tab.message, pointer)
+        });
+    }
+    let Some([up, down, bottom, slider]) = w.message.as_ref().and_then(|m| m.controls) else {
+        return true;
+    };
+    ![up, down, bottom].iter().any(|id| u.entered.contains(id))
+        && (!u.tree.get(slider).alive
+            || !u.animations.widget_rect(&u.tree, slider).contains(pointer.0, pointer.1))
+}
+
 /// Called when a chat window is created: its edit box, buttons and line drawables.
 pub(crate) fn init_window(lua: &Lua, id: Id, t: &Table) -> mlua::Result<()> {
+    init_window_from(lua, id, t, None)
+}
+
+fn init_window_from(lua: &Lua, id: Id, t: &Table, source: Option<Id>) -> mlua::Result<()> {
     let (edit, _) = native_child(lua, id, "chatEdit", "editbox", "chatEdit", false)?;
     let (add, _) = native_child(lua, id, "addButton", "button", "addButton", false)?;
     {
@@ -778,6 +837,18 @@ pub(crate) fn init_window(lua: &Lua, id: Id, t: &Table) -> mlua::Result<()> {
     }
     let (lock_notify, _) = native_drawable(lua, id, "lockNotify")?;
     let (caret, _) = native_drawable(lua, id, "caret")?;
+    let (slide_left, _) = native_child(lua, id, "slideLeft", "button", "tab", false)?;
+    let (slide_right, _) = native_child(lua, id, "slideRight", "button", "tab", false)?;
+    for (slide, text, point, rel) in [
+        (slide_left, "<-", Point::Right, Point::Left),
+        (slide_right, "->", Point::Left, Point::Right),
+    ] {
+        let mut u = ui(lua);
+        let o = u.tree.get_mut(slide);
+        o.width = 20.; o.height = 20.;
+        o.anchors = vec![Anchor { point, target: id, rel, x: 0., y: 0. }];
+        if let Some(t) = o.text_mut() { t.text = text.into(); }
+    }
     ui(lua).tree.get_mut(lock_notify).shown = false;
     ui(lua).tree.get_mut(lock_notify).anchors = vec![Anchor {
         point: Point::BottomLeft, target: id, rel: Point::TopLeft, x: 0.0, y: 0.0,
@@ -785,6 +856,8 @@ pub(crate) fn init_window(lua: &Lua, id: Id, t: &Table) -> mlua::Result<()> {
     ui(lua).tree.get_mut(caret).shown = false;
     if let Some(w) = ui(lua).tree.widget_mut(id) {
         w.chat = Some(ChatData {
+            interaction: interaction::Interaction { caret, slides: [slide_left, slide_right], ..Default::default() },
+            tab_button_alpha: [1.0, 0.3],
             active: false,
             links: Vec::new(),
             window_id: -1,
@@ -818,6 +891,9 @@ pub(crate) fn init_window(lua: &Lua, id: Id, t: &Table) -> mlua::Result<()> {
             layout_extent: [0.0; 2],
             hydrated: false,
         });
+    }
+    if let Some(source) = source {
+        transfer::copy_configuration(lua, source, id);
     }
     super::chat_input::activate(lua, id);
     alpha::configure(lua, id);
@@ -883,7 +959,7 @@ fn layout(lua: &Lua, id: Id) {
     for (i, tab) in c.tabs.iter().enumerate() {
         let o = u.tree.get_mut(tab.button);
         o.anchors = vec![if i == 0 {
-            anchor(Point::TopLeft, c.tab_offset + c.tab_inset[0], c.tab_inset[1])
+            anchor(Point::TopLeft, c.tab_offset + c.interaction.offset + c.tab_inset[0], c.tab_inset[1])
         } else {
             Anchor {
                 point: Point::TopLeft,
@@ -916,6 +992,25 @@ fn layout(lua: &Lua, id: Id) {
         }];
     }
     o.shown = c.use_add_button;
+    let first = u.tree.rect(c.tabs[0].button);
+    let last = u.tree.rect(if c.use_add_button { c.add_button } else { c.tabs.last().unwrap().button });
+    let overflow = last.right() - first.x + c.tab_offset > wr.w;
+    let sliding = c.interaction.use_slides && overflow;
+    for (i, slide) in c.interaction.slides.into_iter().enumerate() {
+        let o = u.tree.get_mut(slide);
+        o.shown = sliding;
+        o.anchors = vec![Anchor {
+            point: if i == 0 { Point::Right } else { Point::Left }, target: id,
+            rel: if i == 0 { Point::TopLeft } else { Point::TopRight },
+            x: 0., y: c.tab_area_height * 0.5,
+        }];
+    }
+    if !sliding && c.interaction.offset != 0. {
+        if let Some(c) = u.tree.widget_mut(id).and_then(|w| w.chat.as_mut()) { c.interaction.offset = 0.; }
+        drop(g);
+        layout(lua, id);
+        return;
+    }
     layout_lines(u, id, &c);
     u.tree.touch();
 }
@@ -1022,7 +1117,6 @@ fn select_inner(lua: &Lua, id: Id, idx: usize, force: bool) {
         && let Some(ch) = w.chat.as_mut()
     {
         ch.selected = idx;
-        // Skins change on selection: apply the hover fade again.
         ch.hovered = None;
     }
     layout(lua, id);
@@ -1059,6 +1153,10 @@ pub(crate) fn button_clicked(lua: &Lua, target: Id) -> bool {
     let Some(c) = chat(lua, parent) else {
         return false;
     };
+    if let Some(side) = c.interaction.slides.iter().position(|&b| b == target) {
+        interaction::slide(lua, parent, side == 1);
+        return true;
+    }
     match c.tabs.iter().position(|t| t.button == target) {
         Some(i) => {
             select(lua, parent, i);
@@ -1119,8 +1217,7 @@ fn apply_chat_options(lua: &Lua, msg: Id) {
     }
 }
 
-/// Per frame: tab button backgrounds show only while the cursor is over the chat window (the
-/// tab names stay), like the client's fading chat decorations.
+/// Native chat frame state, timed messages, lock notification and drag preview.
 pub(crate) fn update(lua: &Lua, dt_ms: f32) {
     let windows = ui(lua).tree.of_class("chatwindow");
     for id in windows {
@@ -1130,6 +1227,7 @@ pub(crate) fn update(lua: &Lua, dt_ms: f32) {
         }
         geometry(lua, id);
     }
+    interaction::update(lua, dt_ms);
     let mut g = ui(lua);
     let u = &mut *g;
     // Lines that time out (`SetTimeVisible`) leave the live view without a call.
@@ -1164,28 +1262,6 @@ pub(crate) fn update(lua: &Lua, dt_ms: f32) {
         let inside = u.tree.visible(id) && u.tree.rect(id).contains(cx, cy);
         // Native395130e0 applies dynamic state every frame, including newly attached children.
         alpha::state(u, id, inside);
-        let Some(c) = u.tree.widget(id).and_then(|w| w.chat.clone()) else {
-            continue;
-        };
-        if c.hovered == Some(inside) {
-            continue;
-        }
-        // Away from the cursor the tab backgrounds go, the unselected tabs and the add button
-        // fade (the real client's idle chat window, `reference/ingame/spawn`).
-        const IDLE_ALPHA: f32 = 0.6;
-        for (i, t) in c.tabs.iter().enumerate() {
-            let ds = u
-                .tree
-                .widget(t.button)
-                .map(|w| w.drawables.clone())
-                .unwrap_or_default();
-            for d in ds {
-                u.tree.get_mut(d).alpha = if inside { 1.0 } else { 0.0 };
-            }
-            let selected = i == c.selected;
-            u.tree.get_mut(t.button).alpha = if inside || selected { 1.0 } else { IDLE_ALPHA };
-        }
-        u.tree.get_mut(c.add_button).alpha = if inside { 1.0 } else { IDLE_ALPHA };
         if let Some(ch) = u.tree.widget_mut(id).and_then(|w| w.chat.as_mut()) {
             ch.hovered = Some(inside);
         }
@@ -1629,13 +1705,30 @@ pub(crate) fn window_methods(lua: &Lua, m: &Table) -> mlua::Result<()> {
             none()
         })?)?;
     }
-    for name in [
-        "SetCaretOffset",
-        "SetSlideTimeInDragging",
-        "UseSlidingButton",
-        "SetTabButtonAlpha",
-    ] {
-        def(name, method(lua, |_, _, _| none())?)?;
-    }
+    def("SetCaretOffset", method(lua, |lua, id, a| {
+        if let Some(c) = ui(lua).tree.widget_mut(id).and_then(|w| w.chat.as_mut()) {
+            c.interaction.caret_offset = [a.f(1), a.f(2)];
+            c.interaction.preview = None;
+        }
+        none()
+    })?)?;
+    def("SetSlideTimeInDragging", method(lua, |lua, id, a| {
+        if let Some(c) = ui(lua).tree.widget_mut(id).and_then(|w| w.chat.as_mut()) { c.interaction.slide_ms = a.f(1); }
+        none()
+    })?)?;
+    def("UseSlidingButton", method(lua, |lua, id, a| {
+        set(lua, id, |c| c.interaction.use_slides = a.b(1, true));
+        none()
+    })?)?;
+    def("SetTabButtonAlpha", method(lua, |lua, id, a| {
+        //39259fa0/3922f380: both parameters must be numbers. No clamp,
+        // layout, callback, dynamic-layer update or fade is performed.
+        if a.is_num(1) && a.is_num(2)
+            && let Some(c) = ui(lua).tree.widget_mut(id).and_then(|w| w.chat.as_mut())
+        {
+            c.tab_button_alpha = [a.f(1), a.f(2)];
+        }
+        none()
+    })?)?;
     Ok(())
 }

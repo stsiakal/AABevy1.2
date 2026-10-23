@@ -37,12 +37,15 @@ pub(crate) mod addons;
 mod achievement;
 mod alerts;
 mod auction;
+#[allow(dead_code, clippy::type_complexity)]
+mod housing;
 mod battlefield;
 mod breath;
 mod buffs;
 pub(crate) mod api;
 mod cameras;
 mod cast;
+mod cinema;
 mod chat;
 mod combat;
 mod cooldown;
@@ -77,6 +80,7 @@ mod look;
 mod mail;
 mod marks;
 mod markers;
+mod notices;
 mod panels;
 mod party;
 mod period;
@@ -84,6 +88,7 @@ mod portal;
 mod doodad;
 pub(crate) use portal::{OPEN_PORTAL_SKILL, PortalBookUsed};
 mod pets;
+mod overhead;
 mod plates;
 mod pvp;
 mod radar;
@@ -94,11 +99,13 @@ mod services;
 mod quests;
 mod ring;
 pub(crate) mod script_api;
+mod salon;
 mod session;
 mod skillbook;
 mod slash;
 mod stats;
 mod store;
+mod stubs;
 mod targeting;
 mod tipcalc;
 mod tipitem;
@@ -108,6 +115,8 @@ mod trial;
 mod usable;
 mod slave_equipment;
 mod transfer;
+mod user_music;
+pub(crate) use user_music::MusicItemUsed;
 mod vehicles;
 
 #[allow(dead_code)]
@@ -195,6 +204,12 @@ pub(crate) fn specialty_fixture() {
 pub(crate) fn crafting_fixture() {
     crafting::fixture::run();
 }
+
+#[allow(dead_code)]
+pub(crate) fn user_music_fixture() { user_music::fixture::run(); }
+
+#[allow(dead_code)]
+pub(crate) fn stored_music_fixture() { user_music::cache::fixture::run(); }
 
 #[allow(dead_code)]
 pub(crate) fn stablehand_fixture() {
@@ -460,6 +475,7 @@ impl Plugin for HudPlugin {
         crafting::plugin(app);
         look::plugin(app);
         services::plugin(app);
+        user_music::plugin(app);
         pets::plugin(app);
         vehicles::plugin(app);
         transfer::plugin(app);
@@ -467,6 +483,7 @@ impl Plugin for HudPlugin {
         dialog::plugin(app);
         ring::plugin(app);
         markers::plugin(app);
+        stubs::plugin(app);
         drag::plugin(app);
         party::plugin(app);
         friends::plugin(app);
@@ -489,6 +506,9 @@ impl Plugin for HudPlugin {
         trade::plugin(app);
         store::plugin(app);
         portal::plugin(app);
+        salon::plugin(app);
+        notices::plugin(app);
+        cinema::plugin(app);
         doodad::plugin(app);
         house_maintain::plugin(app);
         app.add_systems(Update, alerts::track_death.before(sync_hud).run_if(crate::ingame::world_screens));

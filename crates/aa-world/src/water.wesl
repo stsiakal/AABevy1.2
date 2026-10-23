@@ -42,7 +42,7 @@ struct WaterParams {
     // w: the material's ReflectionAmount (scales the reflected colour)
     misc: vec4<f32>,
     // x: foam intersection factor (how deep the foam reaches), y: waves speed (drifts the foam), z: mip level of the environment
-    // cube map lookup, w: unused
+    // cube map lookup; private qualified sea w: source SoftIntersectionFactor
     foam: vec4<f32>,
     // rgb: foam colour: (sun + sky) times the material's foam multiplier (pre-exposed); zero = no foam
     foam_col: vec4<f32>,
@@ -51,7 +51,8 @@ struct WaterParams {
     env_lit: vec4<f32>,
     // authored mesh UV / NO_FLOW / diagnostic time (-1 live) / output (1 wave, 2 alpha,
     // 3 sun, 4 reflection, 5 NdotI/Fresnel, 6 compressed bump; +10 old-normal diagnostics,
-    // 8 injected cube-sampler ray; -1 old softness, -2 old normal stages, -3 old refraction)
+    // 8 injected cube-sampler ray; -1 old softness, -2 old normal stages, -3 old refraction).
+    // Private source-qualified sea: x=-1, y=RefractionBumpScale; not authored NO_FLOW.
     motion: vec4<f32>,
     // sea only (`water.cfx` FOAM): FoamSoftIntersectionFactor, FoamCoverFactor, FoamCoverOffset, FoamCoverBlendWeight
     ocean_foam: vec4<f32>,
@@ -63,8 +64,11 @@ struct WaterParams {
     ocean_sky: vec4<f32>,
     // sea only (deferredcaustics.cfx): rgb sun colour x 0.5 x CausticIntensity (pre-exposed, zero = off), a: CausticDepth
     caustic_col: vec4<f32>,
-    // sea only: x CausticsTilling, y caustics distance
+    // sea only: x CausticsTilling, y caustics distance; private qualified sea zw: source FresnelBias/Power
     caustics: vec4<f32>,
+    // sea only: the swell (vertex displacement): x peak height in metres (0 = flat), y repeat length of the base wave (m),
+    // z speed factor, w wind direction (radians, Cry XY)
+    ocean_wave: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> water: WaterParams;
@@ -87,6 +91,34 @@ const AUTHORED_WATER_CUBE: f32 = 2.0;
 // Same source gate, loaded ordinary 2D DDS: native TT3_TCUBE is absent.
 const AUTHORED_WATER_ENVIRONMENT_2D: f32 = 3.0;
 
+// The sea's swell: four sine waves around the wind direction with the wavelengths `y / 1, 2, 4, 8` (the base wave is the repeat
+// length of the engine's FFT texture, `water.cfx` `ApplyVertexDisplacement`) and a spectrum falling with the frequency; deep
+// water dispersion `w = sqrt(g k)`. Returns the height in x and the slopes dh/dx, dh/dz in yz. Each wave fades out with the
+// distance at which the polar grid (2.45 % cell size) no longer samples it (4 cells per wavelength), and all of them within
+// 2 m of the camera (`fDisplaceAtten = saturate(dist x 0.5)^2`).
+fn swell(xz: vec2<f32>, time: f32, dist: f32) -> vec3<f32> {
+    let wind = vec2<f32>(cos(water.ocean_wave.w), -sin(water.ocean_wave.w));
+    var h = 0.0;
+    var slope = vec2<f32>(0.0);
+    var weights = array<f32, 4>(0.45, 0.30, 0.18, 0.07);
+    var angles = array<f32, 4>(0.0, 0.45, -0.55, 1.0);
+    for (var i = 0; i < 4; i++) {
+        let wavelength = water.ocean_wave.y / f32(1 << u32(i));
+        let k = 6.2831853 / wavelength;
+        let c = cos(angles[i]);
+        let s = sin(angles[i]);
+        let dir = vec2<f32>(wind.x * c - wind.y * s, wind.x * s + wind.y * c);
+        let phase = k * dot(dir, xz) - sqrt(9.81 * k) * water.ocean_wave.z * time + f32(i) * 1.7;
+        let fade = 1.0 - smoothstep(0.6, 1.0, dist / (wavelength * 10.0));
+        let amp = water.ocean_wave.x * weights[i] * fade;
+        h += amp * sin(phase);
+        slope += dir * (amp * k * cos(phase));
+    }
+    let near = clamp(dist * 0.5, 0.0, 1.0);
+    let atten = near * near;
+    return vec3<f32>(h * atten, slope * atten);
+}
+
 // Static authored water and ocean meshes use the standard Bevy world transform.
 // Native WaterSurfaceVS carries endpoint alpha twice: RGB untouched and A near-faded.
 @vertex
@@ -95,6 +127,9 @@ fn vertex(input: Vertex) -> VertexOutput {
     let matrix=mesh_functions::get_world_from_local(input.instance_index);
     var out: VertexOutput;
     out.world_position=mesh_functions::mesh_position_local_to_world(matrix,vec4<f32>(vertex.position,1.0));
+    if water.ocean_wave.x > 0.0 {
+        out.world_position.y += swell(out.world_position.xz, globals.time, distance(out.world_position.xz, view.world_position.xz)).x;
+    }
     out.position=position_world_to_clip(out.world_position.xyz);
     out.world_normal=mesh_functions::mesh_normal_local_to_world(vertex.normal,input.instance_index);
     @if(VERTEX_UVS_A) {out.uv=vertex.uv;}
@@ -177,7 +212,13 @@ fn wave_normal(p: vec2<f32>, mesh_uv: vec2<f32>, time: f32) -> vec3<f32> {
     let high = (c + d) * water.waves.y - vec2<f32>(water.waves.y);
     let t = (low + high) * water.refl.z;
     // texture x -> world +X, texture y -> cry +Y = bevy -Z
-    return normalize(vec3<f32>(t.x, 1.0, -t.y));
+    var normal = vec3<f32>(t.x, 1.0, -t.y);
+    if water.ocean_wave.x > 0.0 {
+        // the swell tilts the surface: the normal of the height field is (-dh/dx, 1, -dh/dz)
+        let s = swell(p, globals.time, distance(p, view.world_position.xz));
+        normal = vec3<f32>(normal.x - s.y, 1.0, normal.z - s.z);
+    }
+    return normalize(normal);
 }
 
 // The ocean's deferred caustics (`deferredcaustics.cfx` DeferredCasticsPS) at a sea bed point `bed` (Bevy world):
@@ -295,16 +336,45 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let n = sun_normal(wave_normal(p.xz,in.uv,globals.time),dist,native_normals);
     let bump = bump_normal(n,native_normals);
     let nr = normalize(bump);
+    // Exact private tag plus bounded source bundle, depth AND colour copy.
+    // Normal modes 0/1/2/3 and missing inputs keep their old branches.
+    // Qualified foam uses this bundle on both sides; refraction/Fresnel only
+    // use it below. The sea's generated normals are still approximated.
+    var qualified_ocean = false;
+    @if(DEPTH_PREPASS) {
+        @if(VIEW_TRANSMISSION_TEXTURE) {
+            qualified_ocean = water.motion.x == -1.0
+                && water.motion.y >= 0.0 && water.motion.y <= 1.0
+                && water.foam.w >= 0.0 && water.foam.w <= 1000.0
+                && water.caustics.z >= 0.0 && water.caustics.z <= 1.0
+                && water.caustics.w >= 0.0 && water.caustics.w <= 5.0;
+        }
+    }
+    let ocean_underside = qualified_ocean && view.world_position.y < p.y;
     // Native Fresnel deliberately uses the compressed, unnormalized bump.
-    let ndotv = clamp(abs(dot(v, select(nr,bump,native_normals))), 0.0, 1.0);
+    var ndotv = clamp(abs(dot(v, select(nr,bump,native_normals))), 0.0, 1.0);
     let f0 = water.refl.x;
-    let fresnel = clamp((f0 + (1.0 - f0) * pow(1.0 - ndotv, 5.0)) * water.refl.y, 0.0, 1.0);
+    var fresnel = clamp((f0 + (1.0 - f0) * pow(1.0 - ndotv, 5.0)) * water.refl.y, 0.0, 1.0);
+    if ocean_underside {
+        // water.cfx: dot(full vNormal,view)*sign(view.z), then GetFresnel.
+        // Negative signed incidence saturates the internal reflection to one;
+        // abs(dot) is a different shader's convention (WaterSurface).
+        ndotv = dot(v,n) * sign(v.y);
+        fresnel = clamp(water.caustics.z + (1.0-water.caustics.z)*pow(1.0-ndotv,water.caustics.w),0.0,1.0);
+    }
     if inspect_mode == 6.0 { return vec4<f32>(bump*0.5+vec3<f32>(0.5),1.0); }
     if inspect_mode == 5.0 { return vec4<f32>(ndotv,fresnel,0.0,1.0); }
     if inspect_mode == 4.0 { return vec4<f32>(nr*0.5+vec3<f32>(0.5),1.0); }
     if inspect_mode == 3.0 { return vec4<f32>(n*0.5+vec3<f32>(0.5),1.0); }
-    // From below, the surface remains the post pass's responsibility.
-    if view.world_position.y < p.y { discard; }
+    // WaterSurfacePS is two-sided: its abs(NdotI) and refraction depth mask
+    // also run inside water. The separately qualified WaterPS sea uses its own
+    // source refraction below; unqualified/missing-input fallbacks still discard.
+    var underside_supported = false;
+    @if(DEPTH_PREPASS) {
+        @if(VIEW_TRANSMISSION_TEXTURE) { underside_supported = water.motion.x > 0.5; }
+    }
+    let authored_underside = underside_supported && view.world_position.y < p.y;
+    if view.world_position.y < p.y && !authored_underside && !ocean_underside { discard; }
     // the foam is looked up unconditionally (uniform control flow), see below
     let native_foam=water.motion.x>0.5;
     let foam_time=select(globals.time,water.motion.z,native_foam && water.motion.z>=0.0);
@@ -334,6 +404,20 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if native_refraction {
         let shifted=refraction_uv(pixel,bump,view.viewport,size);
         if refraction_behind(frag.z,scene_depth(shifted*size)) {uv=shifted;}
+    } else if ocean_underside {
+        // Non-tessellated D3D10 WaterPS: axial-depth softness, full Cry XY
+        // normal, source RefractionBumpScale and VS screenProj.z attenuation.
+        // Do not reuse WaterSurface's compressed constant .1 offset or the
+        // calibrated misc.y. Strict reverse-Z mask rejects equality/foreground.
+        var behind = 1.0e4;
+        if scene_ndc > 0.0 { behind = max(linear_depth(scene_ndc)-linear_depth(frag.z),0.0); }
+        let soft_intersect = clamp(water.foam.w*behind,0.0,1.0);
+        let depth_scale = clamp(1.0-0.15*sqrt(clamp(1.0/frag.w,0.0,1.0)),0.0,1.0);
+        let delta = vec2<f32>(n.x,-n.z)*water.motion.y*soft_intersect*depth_scale;
+        let shifted = clamp((pixel+delta*view.viewport.zw)/size,
+            (view.viewport.xy+vec2<f32>(0.5))/size,
+            (view.viewport.xy+view.viewport.zw-vec2<f32>(0.5))/size);
+        if refraction_behind(frag.z,scene_depth(shifted*size)) {uv=shifted;}
     } else {
         let shift = n.xz * vec2<f32>(1.0, -1.0) * water.misc.y * clamp(thickness, 0.0, 1.0);
         let shifted = uv + shift;
@@ -342,7 +426,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
     var refracted: vec3<f32>;
-    if native_refraction {refracted=scene_color_point(uv);} else {refracted=scene_color(uv);}
+    if native_refraction || ocean_underside {refracted=scene_color_point(uv);} else {refracted=scene_color(uv);}
     // Sea bed caustics (looked up unconditionally: uniform control flow for the implicit derivatives)
     let bed = p - v * thickness;
     let caustic = ocean_caustics(bed, p.y, length(view.world_position - bed), globals.time);
@@ -350,7 +434,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         refracted = refracted * (1.0 - caustic.a) + caustic.rgb;
     }
     // WaterVolumeInto uses 1-a+T*a, independently of the surface's nonlinear fade.
-    let transmit = 1.0-endpoints.x+exp(-water.body.a*thickness)*endpoints.x;
+    // The separate native Into fog only draws from above. The underwater
+    // eye-to-surface volume Outof is applied by the post pass, once.
+    let transmit = select(1.0-endpoints.x+exp(-water.body.a*thickness)*endpoints.x,1.0,authored_underside);
     let fogged_background=mix(water.body.rgb,scene_color(pixel/size),transmit);
     var colour = mix(water.body.rgb, refracted, transmit);
 
@@ -405,7 +491,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // sun glint on the ripples
     let rs = reflect(-v, n);
     let glint = pow(clamp(dot(rs, water.sun_dir.xyz), 0.0, 1.0), water.refl.w);
-    colour = colour + water.sun.rgb * glint * water.sun_dir.w * contribution_soft;
+    // Native selfshadowK = viewVec.z < 0 ? 0 : 1.
+    colour = colour + water.sun.rgb * glint * water.sun_dir.w * contribution_soft * select(1.0,0.0,authored_underside);
 
     // procedural foam: the engine's two drifting lookups of the foam texture, strongest where the water is shallow
     // (around legs and objects, at the shore) but not where it vanishes
@@ -428,7 +515,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         var sea_foam = sea_foam_tex * clamp(-fsi * (1.0 + (sea_gloss * 2.0 - 1.0)) + sea_foam_tex, 0.0, 1.0);
         sea_foam = sea_foam * clamp(fsi - pow(clamp(fsi - water.ocean_foam.z, 0.0, 1.0), water.ocean_foam.w), 0.0, 1.0);
         let ndotl = clamp(dot(n, water.sun_dir.xyz), 0.0, 1.0) * water.sun_dir.w;
-        colour = colour + sea_foam * (water.ocean_sun.rgb * ndotl + water.ocean_sky.rgb);
+        if qualified_ocean {
+            // WaterPS1497-1502 keeps fFoam scalar: the light multiply takes
+            // red, then adds the result equally to RGB. Both camera sides
+            // also use saturate(screenProj.w-.33); fragment W is reciprocal
+            // clip W, including the native orthographic clip W=1 case.
+            // Reflection-derived shadow and receiver selection remain open.
+            let light = water.ocean_sun.r * ndotl + water.ocean_sky.r;
+            let camera_soft = clamp(1.0 / frag.w - 0.33, 0.0, 1.0);
+            colour = colour + vec3<f32>(sea_foam * light * camera_soft);
+        } else {
+            colour = colour + sea_foam * (water.ocean_sun.rgb * ndotl + water.ocean_sky.rgb);
+        }
     }
 
     // Native surface SRC_ALPHA blending, folded into the combined fog/surface pass.

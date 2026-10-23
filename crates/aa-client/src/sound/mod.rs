@@ -5,10 +5,11 @@
 //!   Lua state by [`bind`].
 //! * [`music`]: the one music director. The login screens play what the original scripts play (`PlayMusic` in the stage
 //!   scripts, the screen's default where the scripts are silent); in game the zone's `soundmood_*` pack decides.
-//! * [`zone`]: the sound pack of the zone and sub zone under the player.
+//! * [`zone`]: the sound packs of the zone and sub zone under the player.
 //! * the listener: the active 3D camera of a screen (the login stage camera, the in-game orbit camera).
 //! * [`reverb`]: the preset of the `ReverbVolume` around the player goes to the engine's one global reverb.
-//! * [`moods`]: the sound mood (death, combat, underwater, indoor) the original's `soundmoods.xml` mixes by.
+//! * [`moods`]: the sound mood (death, combat, underwater, low health, falling, driving, indoor ...) the original's
+//!   `soundmoods.xml` mixes by, the sounds the packs attach to the moods and the dive sounds.
 //! * [`events`]: level up, quest jingles, target select, NPC greetings, item pickup / use sounds, coins.
 //! * placed sounds (ambient volumes, random sounds, spots, reverb volumes) are `aa-world`'s (`objects::sounds`).
 //!
@@ -70,6 +71,10 @@ pub(crate) struct Options {
     /// Effects: skills, ambience, voices and the UI.
     pub sfx: f32,
     pub cinema: f32,
+    /// Native s_MIDIVolume, independent of BGM and SFX.
+    pub user_music: f32,
+    /// Native user_music_disable_others. Own preview/performance stays audible.
+    pub mute_other_music: bool,
     /// `OPTION_ITEM_USE_COMBAT_SOUND`: the combat music.
     pub combat_music: bool,
     pub changed: bool,
@@ -79,13 +84,13 @@ impl Default for Options {
     /// Full volume; `AA_VOLUME=0.1` starts the master slider there (quiet checks on a shared machine).
     fn default() -> Self {
         let master = std::env::var("AA_VOLUME").ok().and_then(|v| v.parse::<f32>().ok()).map(|v| v.clamp(0.0, 1.0));
-        Options { master: master.unwrap_or(1.0), bgm: 1.0, sfx: 1.0, cinema: 1.0, combat_music: true, changed: master.is_some() }
+        Options { master: master.unwrap_or(1.0), bgm: 1.0, sfx: 1.0, cinema: 1.0, user_music: 1.0, mute_other_music: false, combat_music: true, changed: master.is_some() }
     }
 }
 
 impl Options {
     pub fn volumes(&self) -> Volumes {
-        Volumes { master: self.master, music: self.bgm, sfx: self.sfx, ambience: self.sfx, voice: self.sfx, ui: self.sfx }
+        Volumes { master: self.master, music: self.bgm, sfx: self.sfx, ambience: self.sfx, voice: self.sfx, ui: self.sfx, user_music: self.user_music }
     }
 }
 
@@ -97,6 +102,11 @@ pub(crate) struct Binding {
 }
 
 static BINDING: OnceLock<Binding> = OnceLock::new();
+
+pub(crate) fn mute_other_music() -> bool {
+    BINDING.get().is_some_and(|binding| binding.shared.options.lock()
+        .unwrap_or_else(|e|e.into_inner()).mute_other_music)
+}
 
 pub struct SoundPlugin;
 
@@ -117,11 +127,12 @@ impl Plugin for SoundPlugin {
         app.insert_resource(packs)
             .insert_resource(zones)
             .insert_resource(tables)
+            .init_resource::<zone::ZonePacks>()
             .insert_resource(ui::Gate(shared.clone()))
             .insert_resource(music::Director::new(shared, no_login))
             .add_systems(
                 Update,
-                (ui::sync_options, ui::sync_gate, assign_listener, music::drive_music, reverb::drive_reverb, moods::drive_moods, events::game_sounds, log_stats).chain(),
+                (ui::sync_options, ui::sync_gate, assign_listener, zone::track_zone_packs, music::drive_music, reverb::drive_reverb, moods::drive_moods, events::game_sounds, log_stats).chain(),
             );
     }
 }

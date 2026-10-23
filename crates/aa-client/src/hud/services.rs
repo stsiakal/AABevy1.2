@@ -522,7 +522,7 @@ pub(super) fn update(
     let current = bridge.0.borrow().dialog.npc.map(|n| n.0);
     for (buff, npc) in buys {
         if current == Some(npc) {
-            net.write(NetCommand(Command::Shop(ShopCommand::PriestBuff { npc_obj_id: npc, priest_buff_id: buff })));
+            net.write(NetCommand(Command::Shop(ShopCommand::BuyPriestBuff { priest_buff_id: buff, npc_obj_id: npc })));
         }
     }
 }
@@ -869,7 +869,7 @@ mod tests {
         let commands = drain(&mut app);
         assert!(matches!(
             commands.as_slice(),
-            [Command::Shop(ShopCommand::PriestBuff { npc_obj_id: 200, priest_buff_id: 1 })]
+            [Command::Shop(ShopCommand::BuyPriestBuff { priest_buff_id: 1, npc_obj_id: 200 })]
         ));
         assert_eq!(bridge.borrow().services.buys.len(), 0, "the request is drained once");
         Ok(())
@@ -941,7 +941,7 @@ mod tests {
     let commands = drain(&mut app);
     assert!(matches!(
         commands.as_slice(),
-        [Command::Shop(ShopCommand::PriestBuff { npc_obj_id: 200, priest_buff_id: 1 })]
+        [Command::Shop(ShopCommand::BuyPriestBuff { priest_buff_id: 1, npc_obj_id: 200 })]
     ));
     // Quests and two services share the original greeting window; the chosen row opens the shop.
     bridge.borrow_mut().dialog.start = vec![1];

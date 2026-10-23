@@ -15,6 +15,7 @@ mod locks;
 mod model;
 mod reset;
 mod table;
+mod transfer;
 #[cfg(test)]
 mod tests;
 use model::Model;
@@ -27,6 +28,7 @@ pub(in crate::hud) struct View {
     model: Model,
     options: [f32; 2],
     locks: [bool; 8],
+    transfers: transfer::Pending,
 }
 impl Default for View {
     fn default() -> Self {
@@ -38,10 +40,15 @@ impl Default for View {
             model: Model::default(),
             options: [0.7, 0.5],
             locks: [false; 8],
+            transfers: Default::default(),
         }
     }
 }
 impl View {
+    /// `<world>:<character>` once the selected world and the character are known (the key of the stored records).
+    pub(in crate::hud) fn character_key(&self) -> Option<String> {
+        self.key()
+    }
     fn key(&self) -> Option<String> {
         let world = self.world?;
         if self.owner == 0 {
@@ -55,6 +62,7 @@ impl View {
             self.owner = owner;
             self.loaded = false;
             self.model = Model::default();
+            self.transfers.clear();
         }
     }
 }
@@ -130,9 +138,9 @@ fn save(lua: &Lua, state: &Shared, suffix: &str) -> bool {
     let Some(key) = view.key() else { return false };
     let value = match suffix {
         "tabs" => view.model.tabs_json(),
-        "extra" => view.model.extra_json(),
+        "extra" => transfer::extra_json(view),
         "options" => json!(view.options.map(f32::to_bits)),
-        "locks" => json!(view.locks),
+        "locks" => json!(transfer::saved_locks(view)),
         _ => return false,
     };
     crate::settings::chat_save(lua, &key, suffix, value)
@@ -148,6 +156,7 @@ fn live_window(lua: &Lua, window: i32) -> Option<Id> {
 }
 
 pub(in crate::hud) fn install(lua: &Lua, state: &Shared) -> mlua::Result<()> {
+    transfer::install(lua, state)?;
     locks::install(lua, state)?;
     reset::install(lua, state)?;
     let api: Table = lua.globals().get("X2Chat")?;
@@ -184,6 +193,7 @@ pub(in crate::hud) fn install(lua: &Lua, state: &Shared) -> mlua::Result<()> {
     hooks.raw_set(
         "ChatSelection",
         lua.create_function(move |lua, (window, selected): (i32, i32)| {
+            if !(0..8).contains(&window) { return Ok(()); }
             ensure(lua, &s)?;
             s.borrow_mut().chat_config.model.extra.entry(window).or_default().selected = selected;
             save(lua, &s, "extra");
@@ -197,7 +207,7 @@ pub(in crate::hud) fn install(lua: &Lua, state: &Shared) -> mlua::Result<()> {
             ensure(lua, &s)?;
             let mut data = s.borrow_mut();
             let model = &mut data.chat_config.model;
-            let Some(window) = model.tabs.get(&raw_id).map(|tab| tab.window) else {
+            let Some(window) = model.current_window(raw_id) else {
                 return Ok(());
             };
             model.extra.entry(window).or_default().method = method;
@@ -424,6 +434,7 @@ fn track(mut events: MessageReader<NetEvent>, state: NonSend<HudBridge>, rt: Opt
     }
 }
 pub(in crate::hud) fn plugin(app: &mut App) {
+    super::ui_data::plugin(app);
     app.add_systems(
         Update,
         track

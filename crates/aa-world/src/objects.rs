@@ -56,6 +56,10 @@ pub mod lights;
 pub mod rigid;
 pub mod voxels;
 pub mod lod;
+pub mod lod_transition;
+pub mod dissolve;
+pub mod sprites;
+pub(crate) mod distance;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -66,9 +70,9 @@ pub enum Kind {
     Entity,
     /// Playing rigid CGA render slots from `entities.xml`.
     Animated,
-    /// Small vegetation (instances whose own view distance is at most [`WorldConfig::vegetation_distance`]).
+    /// Small vegetation at initial binning (own distance at most [`WorldConfig::vegetation_distance`]).
     Vegetation,
-    /// Large vegetation (trees): own view distance beyond `vegetation_distance`, drawn up to
+    /// Large vegetation at initial binning (trees): own view distance beyond `vegetation_distance`, drawn up to
     /// [`WorldConfig::tree_distance`].
     Trees,
 }
@@ -76,8 +80,8 @@ pub enum Kind {
 /// Brushes seen farther than this go to [`Kind::FarBrush`] (when [`WorldConfig::brush_distance`] is larger).
 pub const NEAR_BRUSH_DISTANCE: f32 = 1000.0;
 
-/// How far instances are drawn (m), taken from [`WorldConfig`] when a cell's placement is binned.
-#[derive(Clone, Copy, Debug)]
+/// How far instances are drawn (m), refreshed from [`WorldConfig`] for loaded cells too.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewLimits {
     /// [`WorldConfig::view_dist_scale`].
     pub scale: f32,
@@ -107,20 +111,32 @@ impl ViewLimits {
 
     /// A brush's view distance and its kind.
     pub fn brush(&self, b: &crate::placement::Brush) -> (f32, Kind) {
-        let view = self.own(b.max_view_dist, self.near);
+        self.brush_view(b.max_view_dist)
+    }
+
+    fn brush_view(&self, compiled: f32) -> (f32, Kind) {
+        let view = self.own(compiled, self.near);
         if view > self.near { (view.min(self.far), Kind::FarBrush) } else { (view, Kind::Brush) }
     }
 
     /// A vegetation instance's view distance and its kind. Small plants keep their compiled distance (the scale
     /// would add half again as many grass and bush entities near the camera, for no visible gain).
     pub fn vegetation(&self, v: &crate::placement::Vegetation) -> (f32, Kind) {
-        let view = self.own(v.max_view_dist, self.vegetation);
+        self.vegetation_view(v.max_view_dist)
+    }
+
+    fn vegetation_view(&self, compiled: f32) -> (f32, Kind) {
+        let view = self.own(compiled, self.vegetation);
         if view > self.vegetation {
             (view.min(self.trees), Kind::Trees)
         } else {
-            let compiled = if v.max_view_dist > 1.0 { v.max_view_dist } else { self.vegetation };
+            let compiled = if compiled > 1.0 { compiled } else { self.vegetation };
             (compiled, Kind::Vegetation)
         }
+    }
+
+    fn vegetation_changed(self, other: Self) -> bool {
+        (self.scale, self.vegetation, self.trees) != (other.scale, other.vegetation, other.trees)
     }
 }
 
@@ -133,7 +149,9 @@ impl Default for ViewLimits {
 /// Number of [`Kind`]s, for per-kind arrays.
 const KINDS: usize = 6;
 
-/// Placement data of one cell, binned by 64 m sector.
+/// Placement data of one cell, binned by 64 m sector. Bin membership stays fixed until unload;
+/// [`CellObjectData::limits`] and sector view distances follow runtime settings.
+#[derive(Clone)]
 pub struct CellObjectData {
     pub objects: CellObjects,
     pub limits: ViewLimits,
@@ -236,8 +254,21 @@ struct SectorState {
     waiting: Vec<(u32, u32)>,
     /// The sector is built hidden (after a level of detail change) until it is complete.
     hidden: bool,
+    /// A completed brush replacement retains its previous root while native pairs dissolve.
+    transitioning: bool,
     /// Roots of the previous level of detail, dropped when this one is complete.
     retired: Vec<Entity>,
+    /// Shared sprite meshes used in this sector (diagnostics only).
+    sprite_models: Vec<bevy::asset::AssetId<Mesh>>,
+    sprite_view: Option<sprites::View>,
+    /// Settings used to build this sector's mesh/sprite handoff.
+    view_limits: ViewLimits,
+    /// Rebuild when the camera comes closer than this (an instance drawn as a sprite only would need its mesh) or
+    /// goes farther than `refresh_above` (meshes only drawn as sprites by then can go).
+    refresh_below: f32,
+    refresh_above: f32,
+    /// Sprite instances drawn, for [`ObjectStats`].
+    drawn_sprites: usize,
 }
 
 impl SectorState {
@@ -252,6 +283,8 @@ struct ModelKey {
     path: String,
     material: Option<String>,
     lod: u8,
+    /// Also bake the vegetation sprite atlas of the model.
+    sprite: bool,
 }
 
 /// A model ready to be instanced: the loaded assets and the model space transform of each drawn node.
@@ -262,6 +295,7 @@ struct Instanced {
     rigid: Option<Arc<rigid::Clip>>,
     color_materials: vegetation_color::Materials,
     ao_meshes: vegetation_color::ao::Meshes,
+    sprite: Option<Arc<sprites::Atlas>>,
 }
 
 enum ModelState {
@@ -279,8 +313,8 @@ struct Models {
     keys: Vec<ModelKey>,
     states: Vec<ModelState>,
     by_key: HashMap<ModelKey, u32>,
-    /// `(cell, kind, model/group/entity index, material, lod)` -> id: no per-frame strings.
-    fast: HashMap<(i32, i32, Kind, u32, i32, u8), u32>,
+    /// `(cell, kind, model/group/entity index, material, lod, sprites)` -> id: no per-frame strings.
+    fast: HashMap<(i32, i32, Kind, u32, i32, u8, bool), u32>,
 }
 
 impl Models {
@@ -297,7 +331,7 @@ impl Models {
 }
 
 /// A model prepared by a worker.
-type ModelResult = (u32, Result<(PreparedModel, Option<Arc<rigid::Clip>>, Vec<vegetation_color::ao::Prepared>), aa_cry::Error>);
+type ModelResult = (u32, Result<(PreparedModel, Option<Arc<rigid::Clip>>, Vec<vegetation_color::ao::Prepared>, Option<Arc<sprites::Baked>>), aa_cry::Error>);
 
 /// Most model jobs queued on the workers at once; the rest wait their turn in `Wanted`, so the queue holds what is near.
 const MAX_QUEUED_MODELS: usize = 48;
@@ -328,6 +362,8 @@ pub struct ObjectState {
     road_assets: RoadAssets,
     color_mirrors: vegetation_color::Mirrors,
     ao_mirrors: vegetation_color::ao::Mirrors,
+    sprite_atlases: sprites::Atlases,
+    sprite_bakes: Arc<sprites::Bakes>,
     /// The particle effects of each cell ([`effects`]).
     effects: HashMap<(i32, i32), Vec<Entity>>,
     /// The placed sounds of each cell ([`sounds`]).
@@ -359,6 +395,8 @@ pub struct ObjectStats {
     pub brush_lod_checks: usize,
     pub brush_lod_instances: usize,
     pub brush_lod_rebuilds: usize,
+    pub brush_lod_pairs: usize,
+    pub brush_lod_extra_parts: usize,
     pub models_cached: usize,
     pub water_cells: usize,
     pub roads: usize,
@@ -382,6 +420,9 @@ pub struct ObjectStats {
     /// Sectors in range not completely drawn yet, and the instances waiting for their model.
     pub sectors_incomplete: usize,
     pub instances_waiting: usize,
+    /// Sprite instances prepared (hidden near the camera) and their shared model meshes.
+    pub sprites: usize,
+    pub sprite_models: usize,
 }
 
 impl ObjectState {
@@ -410,6 +451,8 @@ impl ObjectState {
             road_assets: RoadAssets::default(),
             color_mirrors: vegetation_color::Mirrors::default(),
             ao_mirrors: vegetation_color::ao::Mirrors::default(),
+            sprite_atlases: sprites::Atlases::default(),
+            sprite_bakes: Arc::default(),
             effects: HashMap::new(),
             sounds: HashMap::new(),
             lights: HashMap::new(),
@@ -488,6 +531,8 @@ impl ObjectState {
         self.groups_requested = false;
         self.color_mirrors = vegetation_color::Mirrors::default();
         self.ao_mirrors = vegetation_color::ao::Mirrors::default();
+        self.sprite_atlases.clear();
+        self.sprite_bakes = Arc::default();
         self.busy_ticks = 0;
         self.lod_sector_cursor = 0;
         self.stats = ObjectStats::default();
@@ -548,7 +593,7 @@ pub fn stream_objects(
     mut water_materials: ResMut<Assets<WaterMaterial>>,
     mut road_materials: ResMut<Assets<RoadMaterial>>,
     mut voxel_materials: ResMut<Assets<voxels::VoxelMaterial>>,
-    mut vegetation_materials: ResMut<Assets<VegetationMaterial>>,
+    (mut vegetation_materials, mut sprite_materials): (ResMut<Assets<VegetationMaterial>>, ResMut<Assets<sprites::SpriteMaterial>>),
     mut fog_assets: crate::fog::FogAssets,
     terrain: Res<crate::TerrainQuery>,
     focus: Query<&GlobalTransform, With<WorldFocus>>,
@@ -564,6 +609,7 @@ pub fn stream_objects(
     // A portrait camera on another layer must not drive world LOD. Multiple world
     // views and orthographic projections retain the previous sector policy.
     let view = lod::select_view(cameras.iter());
+    let sprite_view = cfg.vegetation_sprites.then(|| sprites::select_view(cameras.iter())).flatten();
     let state = &mut *state;
     let _t = timers.as_deref().map(|t| t.time("objects.stream"));
     // vegetation groups (world level)
@@ -672,11 +718,13 @@ pub fn stream_objects(
         let rx = state.rx.lock().unwrap();
         std::iter::from_fn(|| rx.try_recv().ok()).collect()
     };
-    for (c, data, water, roads, decals, voxels) in received {
+    for (c, mut data, water, roads, decals, voxels) in received {
         state.loading.remove(&c);
         if !loaded.contains(&c) {
             continue;
         }
+        // The option can change while placement is being prepared on a worker.
+        data.refresh_limits(&limits);
         let mut entities = Vec::new();
         for (style, mesh) in water {
             let material = water_styles.material(&style, &mut water_materials, &mut cry.images);
@@ -710,6 +758,7 @@ pub fn stream_objects(
                     end_margin: end..end + 20.0,
                     use_aabb: true,
                 },
+                distance::ViewDistance::Road { compiled: road.distance, radius: road.radius },
                 NotShadowCaster,
             ));
             if early { entity.insert(crate::sky_material::composite::RoadSurfacePass); }
@@ -730,6 +779,7 @@ pub fn stream_objects(
                 MeshMaterial3d(material),
                 Transform::from_translation(cry_to_bevy(cell_origin(c.0, c.1))),
                 VisibilityRange { start_margin: 0.0..0.0, end_margin: end..end + 20.0, use_aabb: true },
+                distance::ViewDistance::Road { compiled: decal.distance, radius: decal.radius },
                 NotShadowCaster,
             ));
             if deferred { entity.insert(crate::sky_material::composite::DeferredDecalPass); }
@@ -794,7 +844,7 @@ pub fn stream_objects(
     while let Some((id, result)) = state.model_queue.pop_front() {
         let key_path = state.models.keys[id as usize].path.clone();
         state.models.states[id as usize] = match result {
-            Ok((prepared, rigid, ao)) => {
+            Ok((prepared, rigid, ao, baked)) => {
                 let loaded = cry.finish_model(prepared);
                 if state.checked_models.insert(Arc::as_ptr(&loaded) as usize) {
                     // the renderer prepares every material asset: a cube map in a 2D slot is a wgpu validation error
@@ -810,12 +860,13 @@ pub fn stream_objects(
                 // Once per prepared model, include only authored matching group variants.
                 let key = &state.models.keys[id as usize];
                 let styles = groups.styles(&key.path, key.material.as_deref());
+                let sprite = baked.map(|b| state.sprite_atlases.atlas(&b, &styles, &mut cry.images, &mut cry.meshes, &mut sprite_materials));
                 let epoch=vegetation_color::epoch(&time);
                 // Native SetupBending uses the group's LOD0 stat object's height, even when rendering another LOD.
                 // Separate LOD assets have no retained original root bounds here, so leave that path unsupported.
                 let wind=(key.lod == 0).then_some(groups.wind);
                 let color_materials = vegetation_color::prepare(&mut cry, &loaded, &ao_meshes, &styles, wind, epoch, &mut state.color_mirrors, &mut vegetation_materials);
-                ModelState::Ready(Arc::new(Instanced { lod: key.lod, loaded, nodes, rigid, color_materials, ao_meshes }))
+                ModelState::Ready(Arc::new(Instanced { lod: key.lod, loaded, nodes, rigid, color_materials, ao_meshes, sprite }))
             }
             Err(e) => {
                 debug!("aa-world: model {key_path}: {e}");
@@ -881,7 +932,7 @@ pub fn stream_objects(
         let Some(s) = state.sectors.get_mut(&key) else { continue };
         let data = &state.cells[&cell];
         let bin = bin_of(data, kind, sector);
-        if s.hidden || !s.complete(bin.len()) { continue; }
+        if s.hidden || s.transitioning || !s.complete(bin.len()) { continue; }
         s.lod = object_lod(kind, distance, Some(s.lod));
         let levels = s.brush_lods.as_mut().unwrap();
         let (checked, changed) = levels.scan(lod::MAX_CHECKS - state.stats.brush_lod_checks, |i| {
@@ -899,7 +950,11 @@ pub fn stream_objects(
             if matches!(k.3, Kind::Brush | Kind::FarBrush) { return None; }
             let d = sector_distance(p, (k.0, k.1), k.2 as usize);
             let lod = object_lod(k.3, d, Some(s.lod));
-            (lod != s.lod).then_some((*k, lod))
+            // vegetation also when instances should switch between mesh and sprite-only
+            let sprites = !s.hidden && (d < s.refresh_below || d > s.refresh_above
+                || ((s.sprite_view != sprite_view || s.view_limits.vegetation_changed(limits))
+                    && matches!(k.3, Kind::Vegetation | Kind::Trees)));
+            (lod != s.lod || sprites).then_some((*k, lod))
         })
         .collect();
     for (k, lod) in relod.into_iter().chain(brush_relod) {
@@ -913,6 +968,10 @@ pub fn stream_objects(
         s.next = 0;
         s.spawned = 0;
         s.waiting.clear();
+        s.sprite_models.clear();
+        s.sprite_view = sprite_view;
+        s.view_limits = limits;
+        (s.refresh_below, s.refresh_above, s.drawn_sprites) = (f32::MIN, f32::MAX, 0);
     }
 
     // spawn, nearest first, within the time budget
@@ -939,8 +998,10 @@ pub fn stream_objects(
                 .id();
             SectorState { entity: root, translation, lod: object_lod(kind, d, None),
                 brush_lods: matches!(kind, Kind::Brush | Kind::FarBrush).then(lod::BrushLods::default),
-                next: 0, spawned: 0, waiting: Vec::new(), hidden: false, retired: Vec::new() }
+                next: 0, spawned: 0, waiting: Vec::new(), hidden: false, transitioning: false, retired: Vec::new(),
+                sprite_models: Vec::new(), sprite_view, view_limits: limits, refresh_below: f32::MIN, refresh_above: f32::MAX, drawn_sprites: 0 }
         });
+        let sector_sprite_view = entry.sprite_view;
         let models = &mut state.models;
         let model_tx = &state.model_tx;
 
@@ -951,6 +1012,7 @@ pub fn stream_objects(
                 queued += 1;
                 let tx = model_tx.clone();
                 let loader = loader.clone();
+                let bakes = state.sprite_bakes.clone();
                 let key = models.keys[id as usize].clone();
                 workers.spawn(d, move || {
                     let options = ModelOptions { lod: key.lod as u32, material: key.material.clone(), cry_space: true, ..default() };
@@ -964,7 +1026,10 @@ pub fn stream_objects(
                             }
                         } else { None };
                         let ao = vegetation_color::ao::prepare(&loader, prepared.loaded());
-                        Ok((prepared, rigid, ao))
+                        let loaded = prepared.loaded();
+                        let baked = key.sprite.then(|| sprites::baked(&bakes, &loader, &key.path, key.material.as_deref(),
+                            (key.lod == 0).then_some(loaded.model.as_ref()), loaded.material_path.as_deref())).flatten();
+                        Ok((prepared, rigid, ao, baked))
                     }))
                         .unwrap_or_else(|_| Err(aa_cry::Error::Invalid(format!("panic while preparing {}", key.path))));
                     let _ = tx.send((id, result));
@@ -980,7 +1045,7 @@ pub fn stream_objects(
                 match &models.states[id as usize] {
                     ModelState::Ready(inst) => {
                         let inst = inst.clone();
-                        spawn_instance(&mut commands, entry, c, &data, kind, idx as usize, &inst, sector_origin, &groups);
+                        spawn_instance(&mut commands, entry, c, &data, kind, idx as usize, &inst, sector_origin, &groups, d, sector_sprite_view);
                     }
                     ModelState::Failed => {}
                     _ => {
@@ -1003,12 +1068,14 @@ pub fn stream_objects(
                 levels.initial(bin_index, requested)
             } else { entry.lod };
             let Some((a, b)) = instance_model(&data, kind, idx as usize, &groups) else { continue };
-            let fast = (c.0, c.1, kind, a, b, lod);
+            let fast = (c.0, c.1, kind, a, b, lod, cfg.vegetation_sprites);
             let id = match models.fast.get(&fast) {
                 Some(&id) => id,
                 None => {
                     let Some((path, material)) = model_names(&data, kind, a, b, &groups) else { continue };
-                    let id = models.id(ModelKey { path, material, lod });
+                    let sprite = cfg.vegetation_sprites && matches!(kind, Kind::Vegetation | Kind::Trees)
+                        && groups.groups.get(&(a as u16)).is_some_and(|g| g.use_sprites);
+                    let id = models.id(ModelKey { path, material, lod, sprite });
                     models.fast.insert(fast, id);
                     id
                 }
@@ -1016,7 +1083,7 @@ pub fn stream_objects(
             match &models.states[id as usize] {
                 ModelState::Ready(inst) => {
                     let inst = inst.clone();
-                    spawn_instance(&mut commands, entry, c, &data, kind, idx as usize, &inst, sector_origin, &groups);
+                    spawn_instance(&mut commands, entry, c, &data, kind, idx as usize, &inst, sector_origin, &groups, d, sector_sprite_view);
                 }
                 ModelState::Failed => {}
                 _ => {
@@ -1027,9 +1094,14 @@ pub fn stream_objects(
         }
         if entry.hidden && entry.complete(bin.len()) {
             entry.hidden = false;
-            commands.entity(entry.entity).insert(Visibility::Inherited);
-            for e in entry.retired.drain(..) {
-                commands.entity(e).despawn();
+            if matches!(kind, Kind::Brush | Kind::FarBrush) && view.is_some() {
+                entry.transitioning = true;
+                commands.entity(entry.entity).insert(lod_transition::PendingSwap { old: entry.retired.clone() });
+            } else {
+                commands.entity(entry.entity).insert(Visibility::Inherited);
+                for e in entry.retired.drain(..) {
+                    commands.entity(e).despawn();
+                }
             }
         }
     }
@@ -1043,6 +1115,8 @@ pub fn stream_objects(
         })
         .count();
     state.stats.instances_waiting = waiting;
+    state.stats.sprites = state.sectors.values().map(|s| s.drawn_sprites).sum();
+    state.stats.sprite_models = state.sectors.values().flat_map(|s| s.sprite_models.iter().copied()).collect::<HashSet<_>>().len();
     // models on their way; a `Wanted` one that no sector waits for any more (its sector went out of range) is not pending, and
     // the instances that do wait for one are `waiting`
     let pending = state.models.states.iter().filter(|m| matches!(m, ModelState::Loading)).count() + state.model_queue.len();
@@ -1117,6 +1191,8 @@ fn spawn_instance(
     inst: &Instanced,
     sector_origin: Vec3,
     groups: &VegGroups,
+    sector_distance: f32,
+    sprite_view: Option<sprites::View>,
 ) {
     let limits = &data.limits;
     let (matrix, view) = match kind {
@@ -1132,6 +1208,41 @@ fn spawn_instance(
         }
     };
     let pre = Mat4::from_quat(CRY_TO_BEVY) * Mat4::from_translation(-sector_origin) * matrix;
+    // Vegetation sprite: drawn from the native switch distance on, the mesh hands over to it there; a sector
+    // wholly beyond the switch distance spawns no mesh for the instance (the sector is rebuilt when that changes).
+    let mut mesh_view = view;
+    if let (Some(atlas), Kind::Vegetation | Kind::Trees, Some(sprite_view)) = (&inst.sprite, kind, sprite_view) {
+        let v = &data.objects.vegetation[idx];
+        if let Some(group) = groups.groups.get(&v.group)
+            && group.material_layers == 0 && !group.use_terrain_color
+            && v.angle_x == 0 && v.angle_y == 0
+        {
+            let switch = sprite_view.switch(atlas.radius, group.size, group.sprite_dist_ratio, v.scale);
+            if switch < view {
+                let variation = if inst.color_materials.values().any(|m| m.variation) {
+                    vegetation_color::pack(v.color_variation)
+                } else {
+                    vegetation_color::NO_COLOR_VARIATION
+                };
+                let brightness = group.style().brightness;
+                commands.spawn((Mesh3d(atlas.mesh.clone()), MeshMaterial3d(atlas.material(brightness)),
+                    atlas.aabb, sprites::transform(v, sector_origin), dissolve::range(view),
+                    distance::ViewDistance::Vegetation { compiled: v.max_view_dist, mesh_until: f32::INFINITY },
+                    MeshTag::with_type::<sprites::SpriteMaterial>(sprites::tag(switch, variation)), NotShadowCaster, ChildOf(entry.entity)));
+                entry.drawn_sprites += 1;
+                entry.spawned += 1;
+                if !entry.sprite_models.contains(&atlas.mesh.id()) { entry.sprite_models.push(atlas.mesh.id()); }
+                let reach = sprites::mesh_reach(switch);
+                if sector_distance > reach {
+                    entry.refresh_below = entry.refresh_below.max(reach - 16.0);
+                    return;
+                }
+                let above = reach + 32.0;
+                entry.refresh_above = if entry.refresh_above == f32::MAX { above } else { entry.refresh_above.max(above) };
+                mesh_view = switch;
+            }
+        }
+    }
     if kind == Kind::Animated {
         if let Some(clip) = &inst.rigid {
             entry.spawned += rigid::spawn(commands, entry.entity, cell, &data.objects.animated_props[idx],
@@ -1150,7 +1261,15 @@ fn spawn_instance(
                 Mesh3d(part.mesh.clone()),
                 transform,
                 part.aabb,
-                VisibilityRange::abrupt(0.0, view),
+                dissolve::range(mesh_view),
+                match kind {
+                    Kind::Brush | Kind::FarBrush => distance::ViewDistance::Brush(data.objects.brushes[idx].max_view_dist),
+                    Kind::Vegetation | Kind::Trees => distance::ViewDistance::Vegetation {
+                        compiled: data.objects.vegetation[idx].max_view_dist,
+                        mesh_until: if mesh_view < view { mesh_view } else { f32::INFINITY },
+                    },
+                    Kind::Entity | Kind::Animated => distance::ViewDistance::Near,
+                },
                 ChildOf(entry.entity),
             ));
             // Native ordinary shadow collector301EE5E0 requires node flags&0x8.
@@ -1162,7 +1281,7 @@ fn spawn_instance(
             };
             if no_ordinary_shadow { entity.insert(NotShadowCaster); }
             if matches!(kind, Kind::Brush | Kind::FarBrush) {
-                entity.insert(lod::BrushLodPart { cell, index: idx as u32, requested: inst.lod });
+                entity.insert((lod::BrushLodPart { cell, index: idx as u32, requested: inst.lod }, lod_transition::MeshLodDither::default()));
             }
             if matches!(kind, Kind::Vegetation | Kind::Trees)
                 && let Some(group) = groups.groups.get(&data.objects.vegetation[idx].group)

@@ -29,7 +29,8 @@ struct Post {
     balance: vec4<f32>,
     // under water: x water level (world Y), y extinction per metre, z in-scattering gain, w 1 when the camera is below the surface
     under: vec4<f32>,
-    // under water: rgb colour of the deep water at the surface (pre-exposed)
+    // under water: rgb colour of the deep water at the surface (pre-exposed),
+    // private a: 1 volume Outof, -1 source-qualified sea, 0 legacy ocean fallback
     under_color: vec4<f32>,
     // bloom: x brightness scale (`r_HDRBrightLevel / 0.18`), y threshold, z offset (the engine's `HDRBrightPassFilterPS`)
     bloom: vec4<f32>,
@@ -37,8 +38,8 @@ struct Post {
     bloom_color: vec4<f32>,
     // radial motion blur: x reach towards the centre (0 = off), yz the centre (uv)
     motion: vec4<f32>,
-    // sun shafts: x strength added to the exposed scene (0 = off), y length of the rays (fraction of the way to the sun),
-    // z attenuation with the distance from the sun
+    // HDR shafts: x RaysAmount * tuning gain, y finite-projection bridge scale,
+    // z clamped RaysAttenuation, w world view limit for the depth bridge (metres)
     shafts: vec4<f32>,
     // sun shafts: rgb colour of the rays
     shafts_color: vec4<f32>,
@@ -46,6 +47,12 @@ struct Post {
     adapt: vec4<f32>,
     // eye adaptation: x log2 luminance of the calibrated exposure, y luminance cap, z blend per frame towards a darker scene
     adapt2: vec4<f32>,
+    // colour grading (`AdjustLevels`): x 1 / gamma, y max input (0..1); the min input is grade.z
+    levels: vec4<f32>,
+    // colour grading (`ApplyPhotoFilter`): rgb filter colour (display), w density (0 = off)
+    photo: vec4<f32>,
+    // colour grading (`AdjustColor`): x saturation, y contrast, z brightness (1 = neutral), w 1 when the grading is on
+    color: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -68,11 +75,15 @@ fn luminance(c: vec3<f32>) -> f32 {
 }
 
 // The exposure multiplier of the time of day times the eye's adaptation to the scene (a dark scene brightens, a bright one dims).
+// The engine's `FilmicMapping`: `exposure = clamp(key / lerp(r_EyeAdaptationBase, luminance, r_EyeAdaptationFactor), 0.36, 2.8)`
+// with key = base = 0.18 and factor 0.4 (`cryrenderd3d10.dll` defaults); `state` is log2(luminance / calibrated luminance), so the
+// calibrated look is exposure 1: `1 / (0.6 + 0.4 2^state)`. post.adapt.y scales the state (1 = the engine's).
+const EYE_FACTOR = 0.4;
 fn exposure() -> f32 {
     var gain = 1.0;
     if post.adapt.y > 0.0 {
-        let state = textureLoad(adapt_texture, vec2<i32>(0, 0), 0).r;
-        gain = exp2(clamp(-state * post.adapt.y, post.adapt.z, post.adapt.w));
+        let state = textureLoad(adapt_texture, vec2<i32>(0, 0), 0).r * post.adapt.y;
+        gain = clamp(1.0 / (1.0 - EYE_FACTOR + EYE_FACTOR * exp2(state)), exp2(post.adapt.z), exp2(post.adapt.w));
     }
     return post.grade.w * gain;
 }
@@ -117,8 +128,18 @@ fn scene_color(pixel: vec2<i32>, uv: vec2<f32>) -> vec3<f32> {
         let level = post.under.x;
         let k = post.under.y;
         let depth_cam = max(level - view.world_position.y, 0.0);
-        // a ray that reaches the surface before the scene leaves the water: through the window of the surface (Snell's cone,
-        // 49 degrees around the vertical) it sees what is above, outside it the surface is a mirror of the water below
+        if post.under_color.a > 0.5 {
+            // Original WaterVolumeOutofPS: eye-to-opaque depth, limited by
+            // the surface plane. No ocean scatter, receiver-depth term or
+            // synthetic angular window. The native upload converts density
+            // to log2(e) before exp2, equivalent to this natural exponential.
+            var volume_path = dist;
+            if dir.y > 0.0 { volume_path = min(volume_path, depth_cam / dir.y); }
+            color = mix(post.under_color.rgb, color, exp(-k * volume_path));
+        } else {
+        // Retain the calibrated sea path/scatter. Original OceanOutofPS has no
+        // angular mask: only the exact qualified tag bypasses the old cone.
+        // This is not a port of its distinct scatter integral or shallow colour.
         var path = dist;
         var seen_depth = max(level - world.y, 0.0);
         var window = 1.0;
@@ -136,7 +157,9 @@ fn scene_color(pixel: vec2<i32>, uv: vec2<f32>) -> vec3<f32> {
         let far_along = select((exp(kt * 20000.0) - 1.0) / kt, 20000.0, abs(kt) < 1e-6);
         let far_scatter = post.under_color.rgb * (exp(-k * depth_cam) * far_along * k * post.under.z);
         let seen = color * exp(-k * (path + seen_depth)) + scatter;
-        color = mix(far_scatter, seen, window);
+        if post.under_color.a == -1.0 { color = seen; }
+        else { color = mix(far_scatter, seen, window); }
+        }
     }
 
     // ---- fog ----
@@ -234,21 +257,17 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     var c = select(vec3<f32>(0.0), color, color == color) * exposure();
     // the engine adds the bloom to the exposed scene before the grading (`exposure * scene + bloom * 0.5`)
     c = c + textureSampleLevel(bloom_texture, bloom_sampler, in.uv, 0.0).rgb * post.bloom_color.rgb;
-    // sun shafts: the radially blurred sky around the sun, weaker with the distance from it
-    if post.shafts.x > 0.0 {
-        let sun = sun_screen();
-        let aspect = view.viewport.z / view.viewport.w;
-        let d = length((in.uv - sun.xy) * vec2<f32>(aspect, 1.0));
-        let shafts = textureSampleLevel(shafts_texture, bloom_sampler, in.uv, 0.0).rgb;
-        c = c + shafts * post.shafts_color.rgb * (post.shafts.x * exp(-d * post.shafts.z * 0.4));
-    }
     c = vec3<f32>(key) + post.grade.y * (c - vec3<f32>(key));
     c = c * post.balance.rgb;
     let l = luminance(c);
     c = max(vec3<f32>(l) + post.grade.x * (c - vec3<f32>(l)), vec3<f32>(0.0));
-    var g = film_curve(c);
-    // levels: the black point
-    g = clamp((g - vec3<f32>(post.grade.z)) / (1.0 - post.grade.z), vec3<f32>(0.0), vec3<f32>(1.0));
+    var g = clamp(film_curve(c), vec3<f32>(0.0), vec3<f32>(1.0));
+    // HDRFinalScenePS: screen blend on the gamma-encoded film result, before grading.
+    if post.shafts.x > 0.0 {
+        let shafts = textureSampleLevel(shafts_texture, bloom_sampler, in.uv, 0.0).rgb;
+        g += shafts * post.shafts_color.rgb * post.shafts.x * (vec3<f32>(1.0) - g);
+    }
+    g = color_grade(g);
     // debug (AA_TUNE adapt_debug=1): the adaptation state as a grey, linear 0.5 + state / 8
     if post.adapt2.w > 0.5 {
         return vec4<f32>(vec3<f32>(0.5 + textureLoad(adapt_texture, vec2<i32>(0, 0), 0).r / 8.0), 1.0);
@@ -257,68 +276,89 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(pow(g, vec3<f32>(2.2)), 1.0);
 }
 
+// The colour grading effect of the time of day on the tone mapped (gamma encoded) colour, in the engine's order: `AdjustLevels`,
+// `ApplyPhotoFilter`, `AdjustColor` (`posteffectsgame.cfx`, technique `ColorGrading`). The levels' black point acts alone when
+// the grading is off (the earlier look).
+fn color_grade(g_in: vec3<f32>) -> vec3<f32> {
+    let lo = post.grade.z;
+    var g = g_in;
+    if post.color.w < 0.5 {
+        return clamp((g - vec3<f32>(lo)) / (1.0 - lo), vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    // levels: (c 255 - min) / (max - min), then ^ (1 / gamma)
+    g = pow(max((g - vec3<f32>(lo)) / max(post.levels.y - lo, 1e-3), vec3<f32>(0.0)), vec3<f32>(post.levels.x));
+    // photo filter: the colour curve black -> filter colour (at luminance 0.5) -> white, blended in by luminance x density
+    let lum = dot(g, vec3<f32>(0.33, 0.59, 0.11));
+    var curve = mix(vec3<f32>(0.0), post.photo.rgb, saturate(lum * 2.0));
+    curve = mix(curve, vec3<f32>(1.0), saturate(lum - 0.5) * 2.0);
+    g = mix(g, curve, saturate(lum * post.photo.w));
+    // colour matrix: brightness, contrast, saturation
+    g = g * post.color.z;
+    g = (g - vec3<f32>(0.5)) * post.color.y + vec3<f32>(0.5);
+    let l = dot(g, vec3<f32>(0.299, 0.587, 0.114));
+    g = vec3<f32>(l) + post.color.x * (g - vec3<f32>(l));
+    return clamp(g, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 // ---- sun shafts (`post_shafts.rs`) ----
 
-// The sun on the screen: xy uv, z how much the view faces it (0 = away, 1 = towards).
+// SetSunDir (Cry3DEngine 30126C30) stores normalized direction * 7500;
+// GenerateSunShafts (3815D290) projects that absolute position * 1000.
+// Infinite reversed-Z clip.z is NOT the native signed forward projection.
 fn sun_screen() -> vec3<f32> {
-    let clip = view.clip_from_world * vec4<f32>(view.world_position + post.sun_dir.xyz * 1000.0, 1.0);
-    let ndc = clip.xy / max(abs(clip.w), 1e-4) * sign(clip.w);
-    let uv = ndc * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-    let facing = select(0.0, smoothstep(0.0, 0.5, 1.0 - 0.5 * length(ndc)), clip.w > 0.0);
-    return vec3<f32>(uv, facing);
+    let clip = view.clip_from_world * vec4<f32>(post.sun_dir.xyz * 7500000.0, 1.0);
+    let uv = vec2<f32>(clip.x + clip.w, clip.w - clip.y) * 0.5 / (clip.w + 1e-6);
+    let forward = -(view.view_from_world * vec4<f32>(post.sun_dir.xyz, 0.0)).z;
+    return vec3<f32>(uv, forward * post.shafts.y);
 }
 
-// Quarter resolution mask: the sky (depth at or beyond the dome) weighted by how close it is to the sun, in exposed colour.
-// Everything in front of the sky (trees, buildings, hills) is black, so the blur draws their shadows as rays.
+// Native scene Z is axial distance / camera far (CommonZPass.cfi), not scene
+// brightness or a binary sky mask. Reconstruct it from Bevy's reversed depth.
+fn shaft_depth(uv: vec2<f32>) -> f32 {
+    let pixel = clamp(vec2<i32>(uv * view.viewport.zw), vec2<i32>(0), vec2<i32>(view.viewport.zw) - vec2<i32>(1));
+    let depth = textureLoad(depth_texture, pixel, 0);
+    let vp = view.view_from_clip * vec4<f32>(0.0, 0.0, max(depth, 1e-9), 1.0);
+    return saturate(-vp.z / vp.w / max(post.shafts.w, 1e-3));
+}
+
 @fragment
 fn shafts_mask_fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let size = vec2<i32>(view.viewport.zw);
-    let base = vec2<i32>(in.position.xy) * 4;
-    let ex = exposure();
-    let sky_radius = post.fog_params.w;
-    var sum = vec3<f32>(0.0);
-    for (var i = 0; i < 4; i++) {
-        let pixel = min(base + vec2<i32>(1 + 2 * (i & 1), 1 + 2 * (i >> 1)), size - vec2<i32>(1));
-        let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / view.viewport.zw;
-        let depth = textureLoad(depth_texture, pixel, 0);
-        let ndc = vec3<f32>(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), max(depth, 1e-9));
-        let wp = view.world_from_clip * vec4<f32>(ndc, 1.0);
-        let to = wp.xyz / wp.w - view.world_position;
-        let dist = length(to);
-        if dist >= sky_radius * 0.9 {
-            // (the direction from the near plane: a point at infinity has no reliable position)
-            let near = view.world_from_clip * vec4<f32>(ndc.xy, 1.0, 1.0);
-            let dir = normalize(near.xyz / near.w - view.world_position);
-            let near_sun = pow(max(dot(dir, post.sun_dir.xyz), 0.0), 24.0);
-            let c = clamp(textureLoad(color_texture, pixel, 0).rgb * ex, vec3<f32>(0.0), vec3<f32>(3.0));
-            sum += c * near_sun;
-        }
-    }
-    return vec4<f32>(sum * 0.25 * sun_screen().z, 1.0);
+    let pixel = 1.0 / view.viewport.zw;
+    let d = (shaft_depth(in.uv + vec2<f32>(0.0, 1.0) * pixel)
+           + shaft_depth(in.uv + vec2<f32>(1.0, 0.65) * pixel)
+           + shaft_depth(in.uv + vec2<f32>(-1.0, 0.65) * pixel)) * 0.333;
+    return vec4<f32>(d, d, d, 1.0 - d);
 }
 
-// Radial blur of the input (the bloom slot) towards the sun: 12 samples over `reach` of the way. The first pass blurs a
-// twelfth of the final length, the second spreads that over all of it.
+// SunShaftsGenPS: eight weighted taps. The native reaches are constants and the
+// signed facing and radial attenuation apply on EACH pass, not in the final blend.
 fn shafts_blur(uv: vec2<f32>, reach: f32) -> vec4<f32> {
-    let to_sun = sun_screen().xy - uv;
-    // (an interleaved offset per pixel hides the stepping)
-    let jitter = fract(52.9829189 * fract(dot(uv * view.viewport.zw, vec2<f32>(0.06711056, 0.00583715))));
-    var sum = vec3<f32>(0.0);
-    for (var i = 0; i < 12; i++) {
-        let t = (f32(i) + jitter) / 12.0 * reach;
-        sum += textureSampleLevel(bloom_texture, bloom_sampler, uv + to_sun * t, 0.0).rgb;
+    let sun = sun_screen();
+    let to_sun = sun.xy - uv;
+    let aspect = 1.333 * view.viewport.w / view.viewport.z;
+    let sun_dist = saturate(sun.z) * saturate(1.0 - saturate(length(to_sun * vec2<f32>(1.0, aspect)) * post.shafts.z));
+    var sum = vec4<f32>(0.0);
+    for (var i = 0; i < 8; i++) {
+        let at = uv + to_sun * (reach * sun.z * f32(i));
+        sum += textureSampleLevel(bloom_texture, bloom_sampler, at, 0.0) * (1.0 - f32(i) / 8.0);
     }
-    return vec4<f32>(sum / 12.0, 1.0);
+    let blurred = sum * 0.25;
+    return vec4<f32>(blurred.rgb * sun_dist, blurred.a + 1.0 - saturate(sun.z * 0.1 + 0.9));
 }
 
 @fragment
 fn shafts_blur1_fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    return shafts_blur(in.uv, post.shafts.y / 12.0);
+    return shafts_blur(in.uv, 0.1);
 }
 
 @fragment
 fn shafts_blur2_fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    return shafts_blur(in.uv, post.shafts.y);
+    return shafts_blur(in.uv, 0.025);
+}
+
+@fragment
+fn shafts_blur3_fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    return shafts_blur(in.uv, 0.01);
 }
 
 // ---- eye adaptation (`post_adapt.rs`) ----

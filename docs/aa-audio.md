@@ -95,12 +95,216 @@ Unknown fields are kept raw (`Event.raw`, `Instance.raw`, `Parameter.raw_44`, `T
 |---|---|
 | Event volume, pitch, random pitch, random volume | volume linear; pitch ratio = 2^(raw x 4) with +-random; volume multiplier in [1 - random, 1] |
 | 2D / 3D | mode bit 0x10 = 3D (placed, panned), otherwise 2D (centre); a 3D event without a position plays 2D |
-| Min / max distance, rolloff | `Log` (inverse distance up to min, silent at max), `Linear`, `LinearSquare`, and `Custom` = the volume envelope on the `distance` parameter; gain is set by the engine (kira's own attenuation is off), so FMOD's curves are exact |
+| Min / max distance, rolloff | `Log` (inverse distance with an engine silence ramp near max), `Linear`, `LinearSquare`, and `Custom` = the volume envelope on the `distance` parameter; gain is set by the engine (kira's own attenuation is off). The native admission metric has separate rolloff rules, below |
 | Layers and parameters | an instance plays while its layer's parameter value lies in [start, start + length) (normalised over the parameter's range); layer volume envelopes (flag 0x8) apply; parameter `distance` / `camera_distance` / `(distance)` is the listener distance; `velocity` parameters advance by themselves (flag 0x8 wraps, `time_loop`); others start at their minimum and are set with `Sound::with_param` / `PlayOptions::params` |
+| Curve interpolation | the segment's **ending** point supplies shape bits: 1 smooth cubic, 2 linear, 4 directional exponential, 8 inverse cubic (checked against `fmod_eventl.dll!sub_10010AD0`, with helpers `sub_10014780` / `sub_10014810`). This fixes the old ordinal / starting-point interpretation, which changed distance and daylight gains. The 69 FEVs reference 8679 smooth, 54287 linear and 58 inverse-cubic points (including reused references); no exponential points |
+| 3D pan-level curves | the event pan level times the first layer envelope with flag 0x400, evaluated at its current parameter; a disabled first match (mask 0x1) uses the event level. Zero leaves the original stereo unspatialized. Applied at part start and updated during playback; no forced 0.2 floor |
+| Pitch and low-pass curves | layer envelope flag 0x10 (pitch): a curve value `y` is a factor `2^(8y - 4)` (0.5 leaves it alone) on the part's playback rate; flag 0x4 (a DSP low-pass, the project's cutoff 10 to 22000 Hz on a log scale, `10 * 2200^y`) and flag 0x2000 (FMOD's occlusion: `dsp_param` 0 the direct path, 1 the reverb) close a per-part low-pass whose cutoff follows the parameters (distance, `daylight` ...); cutoffs above 18 kHz need no filter. Values read from `fmod_eventl.dll` (`EventLayer::updateEnvelope`) except the occlusion map, which is a guess |
+| Doppler | a 3D event with a doppler scale plays at `(340 + level * listener radial speed) / (340 + level * source radial speed)`, clamped to 0.5..2, from the velocities of the source (`set_position` calls, smoothed) and of the listener |
+| Sound cones, oscillators | no event in the pak has an audible cone (the volume outside equals the one inside). There is one oscillator, the 440 Hz sine in `x2ambience:world2_merchant:test`, which remains unplayed (`tests/real_pak.rs`) |
+| Spawning sound definitions | a template with a spawn time (min / max ms, `max_spawned`) spawns another wave of the definition at random intervals while its layer is active (wind gusts, birds); a playlist template of a looping layer (`battle_normal`) plays the waves one after the other and again |
 | Sound definition | the template picks the wave: Sequential (next each trigger), Random, Shuffle (no repeat until all played), Programmer (not supported, silent); weights are the percent chances; template volume / pitch / randomization and fades apply |
 | One shot / loop | `Instance::loops()` is `loop_word & 1 == 0` (1 = one shot, 0 = loop, 2 = loop to the end); looped sounds play until stopped; bank loop points are used when the bank has them |
-| Max playbacks, behaviour | per event: 0 / 1 steal the oldest, 2 the newest, 3 the quietest, 4 refuse the new one, 5 refuse if it would be the quietest; overall limit `Settings::max_voices` (64), the highest priority number then the oldest is stopped first |
+| Max playbacks, behaviour | per event: 0 / 1 steal the oldest, 2 the newest, 3 steals the quietest, 4 refuses, 5 replaces the quietest only when the newcomer is strictly louder. Policy 3 uses oldest only when **all** metrics tie; other quietest ties keep native pool order. Overall `Settings::max_voices` (64) still uses priority then age independently |
 | Mixer category | the event's category path maps to a volume group (below) |
+
+### Native quietest admission (policies 3 / 5)
+
+`playback.rs` implements the fixed per-event pool selection recovered from the original 1.2
+`bin32/fmod_eventl.dll`: `sub_10011610` and `sub_10013F30` compare the theoretical gain from `sub_1001A150`.
+Policy 3 always replaces an existing instance at the limit, even for a quieter newcomer. Policy 5 refuses an equal or
+quieter newcomer, including when every gain is zero. A partial tie keeps the first minimum **pool slot**; policy 5 does
+this even when all existing instances tie. Only policy 3's all-equal case selects the oldest. Idle slots rotate after a
+cursor initially zero (a three-slot pool starts in order 1, 2, 0); replacements retain the stolen slot and leave that cursor.
+
+The metric is recovered separately from the sample mixer:
+
+* Simple events use their authored EventSound instance volume (`Instance.raw[5]`, native +28).
+* Complex events sum the first active instance's authored volume per layer, multiplied by that layer's volume envelopes
+  and `(1 - direct-path occlusion envelope)`. Reverb-path occlusion does not enter this metric (`sub_1001E360` /
+  `sub_10023C40`). The evaluator uses the current parameters, including refreshed source/listener distance.
+* Spatial gain follows `sub_10016B10`: inverse distance holds at max, linear and squared-linear reach zero, and custom
+  rolloff contributes through the layer curves. The native implementation also has cones, geometry and event occlusion;
+  the engine has no geometry/event-occlusion input or source orientation. Original FEV cones are neutral.
+* Category gain includes authored parent/child faders, the current mood gain, the mapped/overridden `Volumes` group and
+  master. The core DLL's `sub_100A5440` caches parent effective gain times child gain at ChannelGroup +0x44, the field
+  used by event admission. Voice and event volumes multiply the result.
+
+Priority, decoded-sample RMS, sound-definition template volume/randomization, wave selection, spawned-part counts and fade
+progress are absent from this metric. Admission therefore needs no decode, random pick or new audio API. Queued voice,
+position, parameter, listener and volume-group controls take effect before a subsequent play command's comparison.
+
+Both native selection paths dispatch `Event::stop(immediate=true)` on a stolen instance, bypassing authored fades.
+The engine retains its existing **20 ms anti-click ramp**, excludes a stopping voice from further admission, and completes
+it once the mixer stops; it does not apply the original event's 600/800 ms fade to a steal. Its oldest fallback uses
+request `Instant`/ID ordering rather than FMOD's native clock word at +84. Automatic parameters and moods advance at the
+existing 16 ms tick. The engine's broader category mapping, geometry/occlusion omissions, float rounding and existing
+instance-range tolerance remain approximations. The sample mixer's near-max log silence ramp differs from the recovered
+admission metric; this change leaves sample playback alone. These are bounded admission improvements, not full FMOD parity.
+
+Evidence: a fresh `tools/aa-pak.exe` extraction matches the previously decompiled original DLL. SHA-256:
+`fmod_eventl.dll` **2582e9c58408e8157eb0bdc28b4c787bd15ccde5b8794c0ec529ff102b94db77**;
+`fmodexl.dll` **e6bbc885fbcb384cb89f4e0d2d7a4e9e5fe7a86f70a7b90ed06fc35157fd21d6**.
+`crates/aa-audio/tools/native_playback_oracle.py` runs those DLL bytes in bounded x86 Unicorn fixtures, with successful
+load/state callbacks and no audio device or game process. It exercises both selection paths for 13 cases (quietest,
+all/partial ties, signed zero, strict admission and single-slot limits), six slot/cursor cases, simple/complex gain and
+the native category hierarchy. Selection goldens are retained as `tests/native_playback_cases.tsv`. It does not emulate
+the full FMOD mixer, decoder, geometry or playback setup. Reproduce after extracting the two DLLs with `aa-pak`:
+
+```powershell
+py -3.12 crates/aa-audio/tools/native_playback_oracle.py <fmod_eventl.dll> <fmodexl.dll>
+```
+
+The 69 original FEVs contain policies 0..5 in counts **[0, 1514, 0, 476, 7152, 320]** (language/root copies included).
+Device regressions use the unmodified looping `x2eventsounds:quest_elf:stone_mark_beam` (policy 3, max 3, 500/800 ms fades)
+and `x2eventsounds:prefab:mining_machinery_idle` (policy 5, max 2, 200/600 ms fades). They overlap actual FEV voices, change
+voice/group/master gain, reuse slots, move sources/listener and check strict admission, immediate steals and exactly-once
+completion. Their master is positive 0.0001, below the existing engine silence floor, so tests stay silent while gain
+comparisons remain nonzero. Synthetic deterministic metric tests and the DLL oracle complement these lifecycle checks;
+there is no listening or waveform-equivalence claim.
+
+### Authored 3D pan levels
+
+The original 69 FEV inventory has **666 pan envelopes in 655 file/event pairs across 18 projects** (language/root
+copies counted). Every reference is enabled, nonempty and on a 3D event, with at most one per layer. **665** use
+`distance`; `x2eventsounds:weather:origin_continent_effect_weather` uses a constant-zero `param01` curve. Examples
+include housing effects, combat voices, level-up, jukeboxes, ambience and skills. `original_pan_and_highpass_inventory`
+rechecks these facts directly through `aa-pak`. The full local audit is `crates/aa-audio/curves-inventory-before.json`.
+
+Recovered native behavior: `fmod_eventl.dll!sub_1001CB90` loads event +296 and calls `sub_10025F90(0x400)` to find the
+first matching envelope. It checks the envelope definition's disabled bit (numeric 1), evaluates the original curve
+with `sub_10010AD0`, and multiplies the event coefficient. A disabled first match does not continue to a second match.
+The bounded original-instruction slice `1001D295..1001D2F4` and its scanner/evaluator calls execute in
+`tools/native_pan_oracle.py`, using the SHA-256-checked original DLL listed above. Its **11 cases** cover the original
+housing curve, event multiplication, zero/low event levels, absent/empty curves, disabled and first-match behavior.
+Executed coefficients are checked in as `tests/native_pan_cases.tsv` and consumed by a Rust regression.
+
+```powershell
+python crates/aa-audio/tools/native_pan_oracle.py data/extract/aa-audio/ida/fmod_eventl.dll --write-cases crates/aa-audio/tests/native_pan_cases.tsv
+$env:AA_AUDIO_PAN_EVIDENCE='D:/AABevy1.2/crates/aa-audio/pan-captures-after'
+cargo test --locked -p aa-audio --lib housing_pan -- --ignored --nocapture --test-threads=1
+```
+
+The private evaluator feeds the existing Kira spatial track at part start and on current parameter updates, including
+source/listener distance changes. Updates use the existing 16 ms worker tick with a 30 ms strength tween. No public
+API, default settings, UserMusic route, PCM observer contract, quietest admission, dependency, manifest or lockfile changed.
+
+Before/after evidence uses the **original** `x2eventsounds:housing:housing_01` FEV and decoded
+`x2eventsounds_bank23:0` (`housing/housing_01_22k.wav`, authored 3833 ms). Each manually-clocked Kira capture is 0.6 s
+at 24 kHz stereo. Reverb sends are disabled in this fixture to isolate pan; the original layer gain and low-pass remain.
+The native-coefficient control is the same sample/mixer with the spatial strength explicitly set to the DLL result;
+the legacy control explicitly uses strength 1. These controls are not a recording of native FMOD output.
+
+| Distance | Native pan | Before mean absolute L / R | After mean absolute L / R | Before relative waveform error against coefficient control | After error |
+|---|---|---|---|---|---|
+| 3.5 m | 0 | 0.00198885 / 0.05026645 | 0.05472339 / 0.05481103 | 0.646840 | 0 |
+| 9.6488 m | 0.323077 | 0.00170467 / 0.04308408 | 0.03086929 / 0.04423808 | 0.402779 | 0 |
+| 17.5 m | 0.646154 | 0.00106206 / 0.02684243 | 0.01056018 / 0.02721825 | 0.260655 | 0 |
+
+The regression first failed all three controls with the unchanged production mixer (based on audio source commit
+`51965d5`), then matched all three controls sample-for-sample after the change. WAVs are retained locally in
+`crates/aa-audio/pan-captures-{before,after}/` (18 files, about 1 MiB total); output is in `pan-before.log` and
+`pan-unit.log`. A second captured regression drives actual move/listener/parameter commands through the existing
+player update, checks live pan changes and normal stop retirement. Its manual-parameter subcase disables the fixture's
+automatic distance binding while retaining the original parameter range, curve and wave.
+
+Validation, 2026-10-23: `cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`:
+**88 passed, 0 failed, 0 skipped** (57 unit, 30 integration, 1 doctest). This includes all prior 84 tests and the four
+new regressions. Real-device event/stream, quietest policies, UserMusic and tracked PCM tests opened successfully
+(`device_error: None`); the tracked PCM run finished with zero active voices/submissions. All six live pan-control
+stages matched their synchronized coefficient controls sample-for-sample. Native oracle output and crate command
+output are retained in ignored `pan-{native,runtime,tests,clippy}.log`.
+
+The task's sole `cargo clippy --locked -p aa-audio --all-targets --no-deps -- -D warnings` attempt reached aa-audio
+and failed on the same six pre-existing diagnostics: the capture helper's `chunks_exact` style, two `fev.rs` float
+literals, the `playback.rs` rolloff match, and two `reverb.rs` range loops. No new diagnostic was reported. Those baseline
+lines were left unchanged; Clippy was not rerun and no Clippy pass is claimed.
+
+Limits: the oracle establishes the **coefficient**, not native speaker-matrix equivalence. Kira still supplies the
+stereo spatialization, and the strength tween/update cadence differ from native scheduling. No listening comparison,
+native device recording, visual change or client FPS result is claimed. At this pan checkpoint high-pass remained deferred: the five original
+constant curves are `x2ambience:login_stage/countryside02`, `login_stage/mar03`, `world2_day/countryside02`,
+`world2_night/wind_night1`, and `x2weapons:x2weapons/shield_metal`; no high-pass, reverb, CELT or auto-pitch work is included.
+
+### Authored high-pass cutoffs
+
+The five original named `FMOD Highpass` roots are enabled (`flags=0x4`), have no parent, drive DSP parameter 0,
+and each contain one constant point. Their serialized mapping word is **1 (logarithmic)**. That word, previously
+discarded, is now retained privately by event/layer/envelope index without changing the public `Envelope` shape.
+Each root has one unnamed resonance child at value zero. The original `fmodexl.dll` descriptor at `10131388` gives
+cutoff min/max/default **10 / 22000 / 5000 Hz**, and resonance **1 / 10 / 1**; the zero child maps to **Q=1**.
+
+| Original event | Curve y | Native cutoff Hz |
+|---|---|---|
+| `x2ambience:login_stage:countryside02` | 0.618024 | 1163.31519 |
+| `x2ambience:login_stage:mar03` | 0.578620 | 858.99902 |
+| `x2ambience:world2_day:countryside02` | 0.529268 | 587.54004 |
+| `x2ambience:world2_night:wind_night1` | 0.315041 | 112.97964 |
+| `x2weapons:x2weapons:shield_metal` | 0.285171 | 89.77637 |
+
+`tools/native_highpass_oracle.py` checks the original DLL hashes above and executes the complete original activation
+function `sub_100263F0` and update function `sub_10025B10`, including `sub_10010AD0`. DSP API success/recording hooks
+are fixtures; their parameter bounds come directly from the original core descriptor. **24 cases** cover all five
+asset start/update pairs, the resonance child, disabled activation, first bypass update, dirty/clean writes, disable/
+enable latches, updates while bypassed, inactive/reactivated layers, and an explicitly unsupported linear map.
+The original `fmodexl.dll!sub_10059D90` also executes for five Q=1 coefficient initializations at 24 kHz. Results are
+retained in `tests/native_highpass_evidence.json` and `tests/native_highpass_cases.tsv`.
+
+The native frequency is `exp(ln(10) + y * (ln(22000) - ln(10)))`. Activation sets the parameter before activating the
+DSP. Active-layer updates write only dirty envelopes (runtime link mask 1), then clear that dirty bit. Definition
+mask 1 requests bypass; mask 2 latches its last applied state. A disabled envelope can still receive dirty parameter
+writes. The bounded oracle records these controls; it does not run the native device graph.
+
+```powershell
+python crates/aa-audio/tools/native_highpass_oracle.py data/extract/aa-audio/ida/fmod_eventl.dll data/extract/aa-audio/highpass-native/bin32/fmodexl.dll --json crates/aa-audio/tests/native_highpass_evidence.json --write-cases crates/aa-audio/tests/native_highpass_cases.tsv
+$env:AA_AUDIO_HIGHPASS_EVIDENCE='D:/AABevy1.2/crates/aa-audio/highpass-captures-after'
+cargo test --locked -p aa-audio --lib highpass -- --include-ignored --nocapture --test-threads=1
+```
+
+The private runtime uses the existing Kira `FilterBuilder` high-pass on the affected part's flat or spatial track,
+with the cutoff initialized before playing its first frame. Kira resonance `1 / 1.9` gives Q=1. Existing low-pass,
+pan, gain, rate, loop/stream and sample-clock paths remain in use. The worker sends changed cutoff/bypass controls;
+Kira supplies its block interpolation and dry/wet mix. No dependency, manifest, lockfile, public API, UserMusic,
+quietest or PCM observer change is included.
+
+The capture fixture isolates layer 0 of each of the **five actual original events**, using its decoded original wave,
+authored parameters, gain, rate, LPF and pan, with other layers and reverb sends excluded. Each capture is 0.6 s of
+24 kHz stereo. Its independent Kira control explicitly supplies the native cutoff; its legacy control has no high-pass.
+The unchanged DSP path first failed all five coefficient controls, with relative waveform errors
+**1.377130 / 5.062112 / 1.042395 / 1.295580 / 0.611523**. These are waveform differences against a Kira control,
+not native-device recordings or perceptual scores. Before/after WAVs are retained locally in
+`crates/aa-audio/highpass-captures-{before,after}/`; command/native output is in ignored `highpass-*.log`.
+
+After the change all five captured outputs match their independent native-cutoff Kira controls **sample-for-sample
+from the first frame** (relative errors all zero). The 30 WAVs (about 1.65 MiB total) and their hashes are retained in
+the capture directories and `highpass-capture-evidence.log`. A separate captured test checks the original core's
+Q=1 coefficient frequency response at **15 frequencies**, within 0.5% gain tolerance. The explicit dynamic fixture
+checks changing parameters, listener independence, bypass, parameter updates while bypassed, re-enable, a muted
+interval, unmuting on the continuous reference clock, and stop retirement. The resumed comparison uses the steady
+tail after the existing 30 ms voice-gain ramp; other live-control relative errors are at most 4.04e-7. Modified-copy
+tests reject linear mapping, nested/multiple roots and nondefault resonance.
+
+Validation, 2026-10-23: `cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`:
+**93 passed, 0 failed, 0 skipped** (61 unit, 31 integration, 1 doctest). All previous 88 tests remain passing, including
+pan, quietest, UserMusic and PCM observers. The five-original-event real-device regression opened successfully
+(`device_error: None`): 5 requested / 5 started, four long ambience streams stopped, the spatial shield one-shot
+finished naturally after source/listener/parameter controls, and each completed once. Final active voices, streams,
+decode failures and PCM submissions were all zero; cache was 1,247,160 bytes. Master was zero: this verifies actual
+backend lifecycle, not listening or native device output. Only the copied research helper executable was removed;
+evidence and original DLL inputs remain, and the previously policy-blocked Ghidra scratch was untouched.
+
+The task's single `cargo clippy --locked -p aa-audio --all-targets --no-deps -- -D warnings` attempt reached aa-audio
+and failed on the same six baseline diagnostics (old capture-helper chunk style, two FEV float literals, the quietest
+rolloff match and two reverb loops). No new diagnostic was reported; no baseline fix or second Clippy run was made.
+No Clippy pass is claimed.
+
+Limits: only the proven log-mapped, single-root, default-Q topology is implemented. Non-log mappings, multiple/nested
+roots, other resonance curves, incompatible root flags and out-of-range values are skipped. Native DSP chain order,
+frequency smoothing, bypass state/timing, per-layer shared filtering and the complete FMOD output are not reproduced.
+Kira continues processing its filter state while dry-mixed; this differs from a native graph bypass. All five authored
+cutoffs are constant: changing cutoff/bypass regression curves are explicit cloned test fixtures, not evidence that
+the original assets contain such dynamics. No reverb, CELT, auto-pitch, visual change, client FPS or full output-parity
+claim is included.
 
 ## Event paths
 
@@ -168,10 +372,11 @@ app.add_plugins(AaAudioPlugin::with(Settings { audible: true, ..default() }));
   despawning the entity stops the sound with the event's fade out. A one-shot event removes the component (or despawns the
   entity) when it ends; changing `params` or `volume` of a playing `Sound` updates it in place, changing `event` restarts it.
 * `SpatialListener` marker on the camera: its `GlobalTransform` is the listener (position and rotation, -Z forward).
-* `Volumes` resource (`master`, `music`, `sfx`, `ambience`, `voice`, `ui`, each 0..1; the final volume of a sound is its
+* `Volumes` resource (`master`, `music`, `user_music`, `sfx`, `ambience`, `voice`, `ui`, each 0..1; the final volume of a sound is its
   event volume x its group x `master`). Changes apply live. Mixer category to group (`Category::of_mixer`):
   `music*` -> Music, `ambience*` and `underwater_only` -> Ambience, `*_voice` and `cutscene` -> Voice, `ui_button` -> UI,
   everything else (skills, monsters, footsteps, items, physics, weapons) -> SFX. `PlayOptions::category` overrides it.
+  Player-score PCM explicitly selects `Category::UserMusic`; its independent `user_music` fader defaults to 1.
 * `Engine` resource (a cheap clone of a handle to the audio thread; every call only sends a message):
 
 ```rust
@@ -189,6 +394,15 @@ engine.stats();  engine.take_finished();  engine.wait_idle(timeout);        // t
 * Unknown events, absent projects and undecodable sounds are ignored quietly (`Stats::unknown_events`,
   `Stats::decode_failures`; `tracing` at debug level).
 * A 3D event further than its max distance is not started unless it loops (`Stats::culled`).
+* `is_playing(voice)`: asked for and not ended (a voice waiting for its decode counts; an unknown event, a refused voice, a
+  one shot that played out, a stopped voice and every voice of a muted engine do not). `music_playing()` is the path of the
+  track that sounds (`None` between tracks), `Stats::music_ended` counts tracks that played out (a stop is not an end),
+  `Stats::streaming` the parts that play from a stream.
+  Audible requests that fail (unknown, culled, refused, or device failure) also enter `take_finished` once, so the plugin
+  removes their `Sound` or despawns their entity as requested. Muted engines keep their existing no-playback behavior.
+  `wait_idle` includes the current music stream.
+* `play_music_event(path)`: `play_music` with the fades the events were authored with (the new track fades in by its own
+  event, the old one out by its own: 6 s in, 4 s out for the zone music).
 * `play_music`: the track streams from the bank (never decoded whole, never in the cache) and crossfades from the current one
   (fade out of the old, fade in of the new); asking for the playing track again does nothing. The track repeats when the
   event's instance loops (`login_2013_07` does: a 186 s track, loop word 0), between the bank's loop points or over the whole
@@ -196,6 +410,236 @@ engine.stats();  engine.take_finished();  engine.wait_idle(timeout);        // t
   (a few MB) plus a few decoded blocks.
 * `Library` (`Library::global()`), `Fev`, `Fsb5`, `decode(..)` are public for tools: `Library::global().event(path)`
   gives an `EventRef`; `plan(..)` shows what a trigger would play (used by `--wav`).
+
+### Player-score PCM submission
+
+`aa-audio` accepts the mono `Vec<f32>` rendered by `aa-midi` without an audio-file round trip or a fabricated event.
+There is no dependency on `aa-midi`; the caller supplies samples and their actual rate. Public crate-root exports:
+
+```rust
+PcmClip::mono(rate: u32, samples: &[f32]) -> Result<PcmClip, PcmError>
+Engine::play_pcm(&self, clip: &PcmClip, opts: PcmOptions) -> Result<Voice, PcmError>
+```
+
+```rust
+use aa_audio::{Category, PcmClip, PcmOptions, PcmSpatial};
+
+// On the synthesis worker, after a successful render (24_000 Hz for aa-midi):
+let clip = PcmClip::mono(24_000, &pcm)?;
+drop(pcm); // stereo frames now own their data; keep/cache the clip within a caller budget
+
+// Submit on the existing Engine. Repeated submissions and clip.clone() share the frame Arc.
+let preview = engine.play_pcm(&clip, PcmOptions::new(Category::UserMusic))?;
+let remote = engine.play_pcm(&clip, PcmOptions {
+    category: Category::UserMusic,
+    volume: 0.5,
+    spatial: Some(PcmSpatial { position: player_position, min_distance: 2.0, max_distance: 30.0 }),
+    priority: 128,
+})?;
+engine.set_position(remote, next_player_position);
+engine.set_voice_volume(remote, 0.25);
+engine.stop(preview, false);
+// Track the exact Voice in the caller's state; false means its playback request has finished.
+let still_playing = engine.is_playing(remote);
+```
+
+The distances and volume above are **application choices**, not recovered native player-music defaults. `PcmOptions::new`
+requires a category and supplies volume 1, centered 2D and priority 128. Spatial options require finite position and
+finite distances `0 <= min_distance < max_distance`; gain is one through min, falls linearly to zero at max, and stays
+zero beyond it. Kira supplies strength-one pan; its distance attenuation is disabled, as for event voices. A distant
+score keeps advancing silently and can move into range without restarting. `set_position` updates spatial PCM; 2D stays
+2D. PCM has no loop, pitch adjustment, doppler, authored FEV parameters or reverb send. `set_param` is ignored.
+Existing groups retain their mood low-pass; `UserMusic` has a separate main-child track with no broad mood filter.
+No exact FMOD synthesizer or native spatial-policy claim.
+
+### Native player-score mixer routing (2026-10-23)
+
+`Category::UserMusic` and `Volumes::user_music` are coordinated additions for the existing PCM mixer. Other category
+selection, PCM options, eight-slot bound, admission, stop ramps and completion behavior are unchanged. This category is
+explicit: no FEV mixer path is reclassified. Background `play_music` still uses `Music`.
+
+The original group 8 is **sound semantic 8 (MIDI)**, not the BGM category. Recovered native chain:
+
+| Original code/data | Evidence |
+|---|---|
+| x2game `390846d0` | Creates actor sound with flags `0x84`, sets self/other mode, distances 30/50, then sound vtable +8(8), then Play |
+| CrySound vtable `360a1638`, +8 = `36039680` | Stores that semantic at sound +0x20 |
+| CrySound `360310c0` | For flags `0x84`, semantic 8: voice argument × source argument × sound +0x78 × system +0x50a0 × system +0x50a4 × system +0x4324 |
+| CrySound `36059ed6..36059f40` | Registers `s_MIDIVolume` at system +0x180 and `s_GameMIDIVolume` at +0x184, both default 1 |
+| CrySound `36050a92..36050b10` | Clamps each MIDI control to 0..1 and caches it at +0x50a0 / +0x50a4 |
+| CrySound `360446a0` | SetMasterVolume writes `s_GameMIDIVolume = master × system +0x42fc` (master scale); no music/SFX factor in this write |
+| x2game `39206060` / `39206090`, table `39ac62c8` | Options 35/36/37/40 map to `s_GameMasterVolume` / `s_MusicVolume` / `s_SFXVolume` / `s_MIDIVolume`; integer option 41 maps to `user_music_disable_others` |
+| x2game `39084195..39084211` | Per-voice factor is 0 only for another actor when the disable option exists and returns exactly 1; otherwise 1, including own actor, missing option, and value 2 |
+
+`360310c0` takes the MIDI branch instead of SFX caches +0x4300 / +0x4304; it does not read BGM caches +0x430c / +0x4310.
+For unity native source, instance, master-scale and global-scale factors, the **pre-device native coefficient** is
+`sample × PcmOptions.volume × spatial_gain × Volumes.user_music × Volumes.master`, independently of BGM/SFX sliders.
+The bounded PCM mixer retains the engine's existing **once-master application policy** using that coefficient.
+This is not a claim about total native output gain: `360446a0` also sends the same master product to device property 10.
+The downstream native `36002d35..36002d86` obtains the FMOD master ChannelGroup from device +0x34 and sets its fader;
+buffer factory `36002240` supplies that same system field to direct buffer types 1/5. Those setter/factory paths execute
+in the oracle, with downstream FMOD calls and allocation/constructor calls replaced by fixtures. Actual channel
+parenting, play-call ABI and end-to-end effective FMOD gain have not been proved. A second master factor in total
+native playback is therefore unresolved; none is guessed or added to this slice or to other audio categories.
+The caller owns actor identity and option 41, applying its 0/1 factor with the existing `set_voice_volume`. A muted voice
+continues its sample clock; mute does not imply stop or a network End. Root owns option binding and preview/performance
+lifecycle integration in `aa-client`; no client paths were changed in this audio task.
+
+Limits: native source gain, instance gain (+0x78), master scale (+0x42fc), and the separate global scale (+0x4324,
+setter `360579d0`) are not exposed as new controls. The global scale initializes to 1; its game-side use/name is not
+claimed here. `s_GameMIDIVolume` is established as the native master-product field, not guessed to be a mood control.
+The existing bounded synth and PCM linear distance policy remain approximations; the native 30/50 endpoints alone do
+not establish native attenuation, panning, synth timbre or synchronous failure equivalence. No new synth/device/network
+behavior is introduced.
+
+`tools/native_user_music_oracle.py` executes **63 original-instruction cases**, including the native semantic setter,
+MIDI cache clamp, independent gain, additional native gain factors, master writes, option float/int lookup, and all 24
+own/other × identity-path × missing/present × option-0/1/2 mute cases, downstream FMOD master-fader arguments and direct
+buffer system selection. Device/CVar/option/FMOD interface calls are fixtures;
+this is not a game or FMOD listening test. Pinned inputs: CrySound SHA-256
+`4b851d049604b03cba2d016367aac602664b1ec5bf4ce834bf1aa5c490058bf6`, x2game SHA-256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`. Reproduce without modifying them:
+
+```powershell
+python crates/aa-audio/tools/native_user_music_oracle.py D:/aa-re/client12/audio/crysoundsystem.dll D:/aa-re/client12/x2game_unpacked.dll --json crates/aa-audio/tests/native_user_music_evidence.json --tsv crates/aa-audio/tests/native_user_music_cases.tsv
+```
+
+The JSON retains executed results; the 12 TSV **pre-device coefficient** cases also drive a captured Kira mixer regression
+under the retained once-master application policy, including BGM/SFX zero,
+master zero, user-music zero and combined voice/user/master gains. A second captured test changes gains on concurrent
+UserMusic/BGM/SFX voices, mutes/unmutes only the score, and checks all clocks finish under master zero. The dedicated
+device test runs own/other/category-muted scores and a moved/stopped spatial score at master zero, with exactly one
+completion per accepted request and no background-music completion or FSB cache use.
+
+Validation: `cargo check --locked -p aa-audio` passed, followed by
+`cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`: **76 passed, 0 failed, 0 skipped**
+(48 module, 4 engine, 5 PCM, 3 playback, 4 plugin, 11 real-pak, 1 doctest). All 73 previous regressions pass, including
+the original quietest policies and bounded PCM lifecycle. The new device test reports `device_error: None`, 3 requested /
+3 started, then zero active/submitted voices, zero cache/decodes and `music_ended: 0`. This is a mixer/lifecycle test at
+master zero, not a listening or total-native-gain comparison. No visual/FPS run applies to this audio-only slice.
+Check/test/Clippy command output is retained in ignored `crates/aa-audio/music-route-{check,tests,clippy}.log`.
+The task's single `cargo clippy --locked -p aa-audio --all-targets --no-deps -- -D warnings` attempt finished after the
+source/evidence commit. It reached aa-audio and failed on six pre-existing diagnostics: the old PCM capture helper's
+`chunks_exact` style (`engine.rs:2089`), two float-precision literals in `fev.rs:924/938`, the existing native rolloff
+match in `playback.rs:81`, and two range loops in `reverb.rs:370/384` (3 production / 3 test diagnostics). These unrelated
+lines remain unchanged; Clippy was not rerun and no Clippy pass is claimed.
+Generated Ghidra scratch under `data/extract/aa-audio/music-route` is disposable (18 files, about 18.75 MiB); automatic
+approval review rejected its removal with `blocked by policy`. It remains in place; no deletion workaround was used.
+Required source evidence is the committed oracle, JSON/TSV fixtures and this document, not that scratch directory.
+
+### PCM bounds and completion
+
+Input validation happens before conversion/allocation: rate 8,000..=192,000 Hz, nonempty, **both** at most 240 seconds
+and at most 5,760,000 mono samples, all finite and in -1..=1. Thus a 24 kHz clip can reach 240 seconds; a 48 kHz clip is
+limited to 120 seconds by the independent sample cap. No clipping/normalization hides invalid input. `PcmError` distinguishes
+`Rate`, `Empty`, `TooLong`, `NonFinite`, `Amplitude`, `Options`, `Busy`, and `EngineStopped`.
+Clip accessors are `rate()`, `samples()` (mono frame count), `seconds()`, and `bytes()` (shared stereo storage).
+
+`mono` synchronously creates `Arc<Sample>` stereo frames on **its caller**, so construct it on the synthesis worker.
+A maximum clip stores 46,080,000 bytes (43.95 MiB), versus 23,040,000 bytes for the source mono vector. Allow conversion
+scratch space up to another stereo buffer as well as the input. Submission only clones Arcs; neither the engine thread
+nor audio callback converts or copies a score. Clips bypass the FSB cache and are not counted in `Stats::cache_bytes`.
+Callers must bound simultaneous synthesis/conversion and retained clip/cache memory themselves; no aggregate clip cache
+budget is implied by `Settings::cache_bytes`. Kira can retain retired sounds until subsequent track activity or engine
+drop, so a released playback slot is not a promise of immediate allocator/RSS reclamation.
+
+Each Engine (including its clones) enforces eight accepted queued/playing/fading PCM submissions, independent of the
+event voice count; the ninth returns `Busy` with no voice or retained clip. Eight distinct maximum clips in current
+submissions account for 368,640,000 bytes (351.56 MiB) of shared frames, excluding caller-retained clips, conversion
+scratch and Kira's deferred reclamation. Reusing one clip for eight voices keeps one frame allocation. `pcm` module
+constants expose `MAX_PCM_SAMPLES`, `MAX_PCM_SECONDS`, and `MAX_PCM_VOICES`. The same global `Settings::max_voices` and
+priority rule also admit/refuse/steal PCM and event voices together: larger priority loses, oldest breaks ties. Fading
+voices are excluded from admission as before, but retain their PCM slot until the mixer stops. Background `play_music`
+keeps its existing separate slot. `Stats::active_voices`, `requested`, `started`, `refused`, and `stolen` include PCM;
+`Stats::pcm_submissions` is the last published queued/playing/fading PCM count.
+
+An `Err` submission has no completion to track. Every successful PCM request receives one completion, including muted,
+refused and device/mixer failure paths. Muted PCM is immediately non-playing, holds no clip/slot and opens no device;
+its completion is published by the player thread (the older muted-event behavior is unchanged). Audible PCM counts
+as playing from submission through natural mixer completion, or through the 20 ms anti-click ramp on `stop` / `stop_all`
+(the ramp applies for either `fade` value). Repeated stops do not restart that ramp or duplicate completion. Failure,
+stop, natural completion, player exit and channel/engine teardown release submission permits. Changing valid voice,
+category or master gains to zero leaves the sample clock running to its end. Nonfinite positions/listener transforms
+and invalid PCM voice-volume updates are ignored; initial invalid options return `Options` before taking a slot.
+
+`is_playing` includes pending requests, so it does not prove mixer admission. `take_finished` is a global
+drain also consumed by the Bevy `Sound` plugin. Completion means the request ended (it does not distinguish natural end,
+explicit stop or failure); the caller already knows its stop/request intent. Use the additive tracked API below when
+per-request admission and stable completion matter. PCM does **not** use `music_playing` or
+increment `Stats::music_ended`, which belong to background music. Audio sends no network events, infers no MIDI ending,
+and does not decide which preview/performance should emit the client's own `musicEnd`.
+
+### Tracked PCM admission and completion (2026-10-23)
+
+```rust,ignore
+Engine::play_pcm_tracked(&self, clip: &PcmClip, opts: PcmOptions)
+    -> Result<(Voice, PcmPlaybackObserver), PcmError>
+PcmPlaybackObserver::was_started(&self) -> bool
+PcmPlaybackObserver::is_finished(&self) -> bool
+```
+
+`PcmPlaybackObserver` is exported at the crate root and implements `Clone` and `Debug`. It is installed **before**
+submission, so even a one-frame sound can finish before the caller first polls without losing either fact.
+`was_started()` becomes sticky true only after `begin_pcm` returns a Kira `StaticSoundHandle`: Kira accepted the sound
+into its track's bounded sound storage. Global priority admission and successful device setup alone do not count.
+This is **Kira handle acceptance**, not the original FMOD sound-object creation boundary, the first mixer callback,
+audio reaching a device/speaker, or proof of audibility. The native manager's creation/admission scope and the Kira
+backend are not interchangeable; no new native-equivalence claim follows from this API.
+
+`is_finished()` becomes sticky true when the command/voice releases its tracking guard: cancellation, mute,
+global refusal, device-open failure, Kira refusal, natural completion, stealing, stop, player exit or channel teardown.
+Once finished is observed, started can never subsequently change. Poll **finished first, then started**:
+
+```rust,ignore
+let (voice, observer) = engine.play_pcm_tracked(&clip, PcmOptions::new(Category::UserMusic))?;
+// Later, on the caller's update:
+if observer.is_finished() {
+    let accepted_by_mixer = observer.was_started();
+    // Remove the caller's pending entry and apply its own completion policy once.
+}
+```
+
+Each observer/clone retains only an `Arc<AtomicU8>`; it owns no PCM, engine handle, command sender or submission permit.
+There is no completed-status map in the engine. Status remains readable after plugin/global drain and engine teardown.
+Dropping the caller's observer neither cancels nor stops the voice. For an explicit stop, replacement or context reset,
+the client discards its observer/entry **before** sending stop so its later update cannot mistake that request for a
+natural own-preview/performance disappearance. Audio reports facts and sends no wire event. The observer does not
+identify completion reasons; the caller owns actor identity, request replacement and network policy.
+
+Only the tracked API registers pending audible requests, bounded by the existing eight PCM permits. `stop(voice, ..)`
+or `stop_all()` cancels matching registrations while they are pending. The player removes/claims the registration
+under the same mutex before priority admission or device setup: cancellation before that claim finishes with
+`was_started() == false` and never opens a device. After the claim, a concurrent stop may follow Kira acceptance,
+even if the first callback has not run; in that case started remains true and completion follows the existing 20 ms
+ramp. Pending registration is removed on claim or terminal drop, before its slot can be reused. Muted requests hold
+no registration/clip/permit and finish without starting. `Err` returns no observer/voice to track.
+
+Zero per-voice, category or master gain and out-of-range spatial playback still admit into Kira and run to the mixer
+clock's natural end. The tracked API changes no `PcmOptions` fields/defaults, category routing, quietest selection,
+`Voice`, `play_pcm` signature or its existing FIFO stop/fade lifecycle. No device, PCM cache or dependency was added.
+
+Validation: `cargo check --locked -p aa-audio` passed. Six focused unit regressions passed, followed by
+`cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`: **84 passed, 0 failed, 0 skipped**
+(54 module, 4 engine, 6 PCM, 3 playback, 5 plugin, 11 real-pak, 1 doctest). All 76 prior regressions pass, including
+UserMusic gain goldens, default PCM lifecycle and original quietest policies. The eight additions cover bounded
+pending cancellation through engine clones and `stop_all`, no post-terminal admission, options/busy/stopped-engine
+errors, repeated mute/refusal/deterministic failed-device completion, weak-reference proof of no observer clip/engine
+retention, channel/last-engine/active-player teardown, real Kira sound-capacity refusal, one-frame completion before
+first polling, acceptance before the first callback, zero category/master gain on the sample clock, stop/steal ramps,
+and the actual Bevy plugin's global completion drain. Captured tests drive the production voice-construction and
+completion paths with a manually-clocked Kira renderer; failure-path tests explicitly inject an already-failed device
+flag without claiming an OS device failure. The real-device tracked test opened successfully (`device_error: None`):
+3 requested / 3 started, then zero active/submitted voices, cache bytes, decodes and background-music endings.
+These checks prove backend lifecycle facts, not native FMOD creation equivalence, a listening comparison or client wire
+behavior. No visual/FPS run applies to this audio-only change.
+
+This task's sole `cargo clippy --locked -p aa-audio --all-targets --no-deps -- -D warnings` attempt reached aa-audio
+and failed on the same six pre-existing diagnostics recorded above: the old capture helper's `chunks_exact` style,
+two `fev.rs` float literals, the `playback.rs` rolloff match, and two `reverb.rs` range loops. No new diagnostic was
+reported; those baseline lines were left unchanged, Clippy was not rerun, and no Clippy pass is claimed.
+Ignored local output: `crates/aa-audio/observer-{check,unit,tests,clippy}.log`. No copied executables, extracted data,
+new devices/caches/dependencies, manifest/lockfile edits or foreign-crate changes were made; the previously policy-blocked
+music-route scratch was not touched.
 
 ### Muting
 
@@ -270,23 +714,85 @@ Tests (`cargo test -p aa-audio`): unit tests in the modules (FSB5 header, sample
 rejection of garbage, MPEG frame header of a voice bank, Vorbis setup table / identification header / packet splitting,
 path forms, rolloff curves, RNG, sample cache LRU and mono / stereo conversion, `SoundPacks` on an in-memory database), `tests/plugin.rs` (three tests
 with a muted engine: `Sound` reaches the engine once, `Volumes` and the shared `Engine`, unattended default), and
-`tests/real_pak.rs` (six `#[ignore]` tests that need the pak: a real Vorbis bank header and subsound rebuild + decode, an
+`tests/real_pak.rs` (ten `#[ignore]` tests that need the pak: a real Vorbis bank header and subsound rebuild + decode, an
 MPEG voice subsound, a voice FEV parse to the last byte, **every FEV in the pak parses**, a skill event resolves and plans, a UI
-event is simple and 2D). Run them with `cargo test -p aa-audio -- --include-ignored`.
+event is simple and 2D, pitch / low-pass curves, spawning / playlists and the cone / oscillator survey).
+`tests/engine.rs` has three device-backed checks at master volume zero: voice lifecycle, long-loop streaming, and music
+query / explicit stop / natural completion (a short original non-looping UI event uses the music streaming path). They report
+a device skip explicitly if unavailable.
+It also tests failed requests against the original missing voice, refused UI click and out-of-range cat without opening a
+device; `tests/plugin.rs` checks removal / despawn of failed sounds. There are four tests in each integration target.
+Run them with `cargo test -p aa-audio -- --include-ignored`.
+
+Validation, 2026-10-23: `cargo test -p aa-audio --locked -- --include-ignored --nocapture --test-threads=1`:
+**52 passed, 0 failed, 0 skipped** (33 module, 4 engine, 4 plugin, 10 real-pak and 1 doctest). The device opened successfully
+(`device_error: None`); battle music used 1 stream and 0 cache bytes, natural completion reported `music_ended: 1`, and
+failed requests completed exactly once and were reaped by Bevy. All 69 original FEVs parsed. The feature survey found
+12 spawning templates in 18 events, 21 looping playlist instances, 2356 3D events with doppler, no audible cones, and the
+one 440 Hz test oscillator (`x2ambience:world2_merchant:test`).
+
+PCM integration validation, 2026-10-23: `cargo check --locked -p aa-audio` passed, followed by
+`cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`: **64 passed, 0 failed, 0 skipped**
+(41 module, 4 engine, 4 PCM, 4 plugin, 10 real-pak, 1 doctest). All original 52 regressions still pass.
+The 12 additions cover bounds without allocating oversized fixtures, invalid values/options, Arc reuse, an undrained
+eight-request channel, player/channel/last-engine teardown, deterministic failed-device/refusal/mute quota release,
+captured Kira mixer output for voice/category/master gains and spatial/listener movement, and stop before the first
+callback. Device-backed PCM tests opened successfully (`device_error: None`) at master zero: natural and silent/runtime
+completion, queued stop, both fade flags, repeated `stop_all`, all-eight-slot saturation/reuse, and priority stealing
+in both directions with an original UI event. PCM-only runs decoded nothing and held zero FSB-cache bytes; all completion
+drains were exactly once and idle `pcm_submissions` was zero. The mixed test recorded 3 steals and 1 refusal.
+These constant-sample mixer/lifecycle tests are not a listening comparison or a synthesis-parity claim; no visual/FPS run.
+
+The PCM task's single `cargo clippy --locked -p aa-audio --all-targets -- -D warnings` attempt was blocked before checking
+aa-audio by existing dependency lints: 1 in `aa-dev/src/headless.rs`, 49 in `aa-cry` (including large enum, type complexity,
+collapsible conditions and array-chunk style). Those crates were left untouched; clippy was not rerun and is not claimed
+to pass. Full test and clippy output are retained as ignored local `crates/aa-audio/pcm-tests.log` and `pcm-clippy.log`.
+No new dependencies, lockfile/client edits, extracted audio, WAV staging, copied binaries or other scratch artifacts.
+
+Quietest-policy validation, 2026-10-23:
+`cargo test --locked -p aa-audio -- --include-ignored --nocapture --test-threads=1`:
+**73 passed, 0 failed, 0 skipped** (46 module, 4 engine, 4 PCM, 3 playback, 4 plugin, 11 real-pak, 1 doctest).
+All 64 previous regressions pass. The new actual-FEV device tests report `device_error: None` and zero decode failures:
+policy 3 recorded 3 steals / 0 refusals, policy 5 gain/category/master recorded 3 steals / 4 refusals, and source/listener
+movement recorded 2 steals / 0 refusals. Each test returned to zero active voices with every request completed once.
+The original 69-FEV policy counts and the DLL oracle cases above pass as well. Native, survey, focused-unit and full-suite
+evidence remains in ignored local `crates/aa-audio/policy-{native,survey,unit,tests}.log`. No PCM/Engine public API,
+dependency, manifest, lockfile or client changes; temporary DLL extractions and the copied inspection executable were
+removed. This audio-only validation has no visual/FPS run.
+This task's sole `cargo clippy --locked -p aa-audio --all-targets -- -D warnings` attempt likewise failed before checking
+aa-audio on the existing 1 aa-dev / 49 aa-cry dependency lints. Those crates remain untouched, Clippy was not rerun,
+and no Clippy pass is claimed; its complete output is retained in `crates/aa-audio/policy-clippy.log`.
+
+The native curve regressions also use the original `arche_field_day` daylight / time_loop curves and `cat_cry_2` distance
+curve, with numerical samples from the recovered formulas. `sound --features` reports point shape counts;
+`AA_ENV=1 sound --list <project> --filter <event>` includes the original point triples.
+A fresh `--resolve` run confirmed 4725 / 4827 database
+paths and all 8124 referenced waves (no missing banks, bad subsound indices or name mismatches).
 
 ## What is missing
 
 * **CELT**: one subsound in the whole game (`x2weapons_sword_bank055.fsb:0`); a decoder would be a large port for one sound.
   It plays as silence (a decode failure is counted).
-* FEV features read but not played: envelopes other than volume (pitch and low-pass envelopes), reverb, doppler, sound cones,
-  speaker levels, spawn timers of templates (6 templates; one wave plays per trigger, repeats are not spawned), oscillator,
-  silence and programmer waves (silent). Initial parameter values are the minimum (FMOD's default).
+* FEV features read but not played: speaker levels and silence and programmer waves (silent). Initial parameter values are the
+  minimum (FMOD's default).
+* High-pass mapping/topology variants beyond the five proven log-mapped roots above, the one reverb-level curve, time-offset curves,
+  instance auto-pitch, parameter seek / sustain semantics, and category / mood pitch and EQ remain unsupported. Mood low-pass
+  uses a representative cutoff per broad volume group, not every FMOD category independently. Direct-path occlusion is an
+  approximation (`occlusion_cutoff`), and reverb-path occlusion is not applied; these are not native-equivalence claims.
+* Quietest-policy selection now follows the recovered native rules; remaining metric/mixer differences (geometry,
+  source orientation, request-clock ordering, category mapping, update cadence and the 20 ms steal ramp) are detailed above.
+* The 440 Hz authoring-test oscillator in `x2ambience:world2_merchant:test` remains silent. The real-pak test asserts its exact
+  identity and frequency instead of incorrectly claiming there are no oscillators.
 * Interactive music (cues, segments): none of the 69 files has music chunks (`Fev::music_bytes` is 0); the game's music is
   plain looping events.
 * Events the database names but the data does not have: 59 absent events and 41 absent project FEVs (listed above); they play
-  nothing. `x2voice_machinima` root FEV differs from the language ones (more banks), only the language one is used when
+  nothing, as in the original client (it reads the same pak): the 32 `x2voice_prologue` paths (the client-driven indun voices
+  `cdi_scene_*` -> `sounds/x2voice_prologue:system:61xx`), 7 `x2voice_quest`, 1 `x2voice_npc` and the `x2minster_y` typo have no
+  project in `game/sounds`, so nothing is played for them; there is nothing to substitute. `x2voice_machinima` root FEV differs from the language ones (more banks), only the language one is used when
   `Settings::language` is set.
-* Only music streams; every other sound, ambience loops included, is decoded whole into the cache (the longest are about a minute).
-* No volume ducking between categories. The Lua `PlayUISound` / `PlayMusic` names are mapped by `aa-client` (`SoundPacks::ui`).
-* What `aa-client` would still like (`docs/aa-client-sound.md`): a music-ended notification or query (it reads the event length from
-  the FEV instead), `Engine::is_playing(voice)`, reverb.
+* Looping Vorbis parts of 10 s or more (ambience beds, the battle music) play from a stream (`Stats::streaming`; each stream has
+  its own decode thread); shorter and one-shot sounds are decoded whole into the cache. A MPEG part is always decoded whole.
+* No volume ducking: the original has none either (x2game touches no FMOD event queue or category volume at run time besides the
+  mood table, `soundmoods.xml`, which the engine applies as mixes: that is the ducking of music and ambience under combat, death
+  and diving). Voice lines do not lower anything.
+* The Lua `PlayUISound` / `PlayMusic` names are mapped by `aa-client` (`SoundPacks::ui`).

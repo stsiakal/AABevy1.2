@@ -589,6 +589,12 @@ fn install_store(lua: &Lua, net: &Table, store: Arc<Mutex<Store>>) -> mlua::Resu
     inventory_order::install(lua, net, store)
 }
 
+/// Separate per-note files keep scores out of the bounded UI settings document.
+pub(crate) fn music_directory(lua: &Lua) -> PathBuf {
+    let store = lua.app_data_ref::<LuaStore>().map(|s| s.0.clone()).unwrap_or_else(shared);
+    store.lock().unwrap_or_else(|e| e.into_inner()).path.with_extension("music")
+}
+
 /// Chat's native local store uses independent tab/extra/option keys per world and character.
 /// Resolve the Lua state's store on each call so isolated original-script fixtures stay isolated.
 pub(crate) fn chat_read(lua: &Lua, owner: &str, suffix: &str) -> Option<Json> {
@@ -610,6 +616,28 @@ pub(crate) fn chat_save(lua: &Lua, owner: &str, suffix: &str, value: Json) -> bo
         Ok(()) => true,
         Err(e) => { bevy::log::warn!("settings: chat save: {e:#}"); false }
     }
+}
+
+/// A tab transfer changes three records together. Failure restores the in-memory store too,
+/// so an allocator can roll its plain state back before returning nil to the toolkit.
+pub(crate) fn chat_save_transfer(lua: &Lua, owner: &str, tabs: Json, extra: Json, locks: Json) -> bool {
+    let store = lua.app_data_ref::<LuaStore>().map(|s| s.0.clone()).unwrap_or_else(shared);
+    let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+    let previous = store.data.clone();
+    let was_dirty = store.dirty;
+    let chat = store.data.entry("chat").or_insert_with(|| json!({}));
+    if !chat.is_object() { *chat = json!({}); }
+    let record = chat.as_object_mut().unwrap().entry(owner).or_insert_with(|| json!({}));
+    if !record.is_object() { *record = json!({}); }
+    record["tabs"] = tabs; record["extra"] = extra; record["locks"] = locks;
+    store.dirty = true;
+    if let Err(error) = store.save() {
+        store.data = previous;
+        store.dirty = was_dirty;
+        bevy::log::warn!("settings: chat transfer save: {error:#}");
+        return false;
+    }
+    true
 }
 
 /// Reset only the native four records; retain other characters, settings and pending edits.

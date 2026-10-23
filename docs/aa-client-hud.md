@@ -2823,3 +2823,46 @@ loads the real world stage and drives the original search button, list selection
 button (`cargo test -p aa-client --bin aa-client original_auction_search_bid_and_putup_controls --
 --ignored`). Remaining: live transactions and mail settlement against the lane (the parity row keeps
 the live checks open).
+
+## Beauty salon
+
+`hud/salon.rs` + `hud/salon.lua`: the original beautyshop window over the character-create state, its stage, the paid change
+and the rebuilt player model. See `docs/aa-client-salon.md`.
+
+## Chat tab transfer (2026-10-23)
+
+The client wires the toolkit's native split/reparent notifications through
+`AAUI.ChatAllocateWindow`, `ChatTabDetached`, `ChatTabAttached` and `ChatReleaseWindow`.
+Allocation uses the lowest free ID 0–7 with selection 0, input method 0 and an unlocked window.
+It saves the tab/extra/lock records in one settings-file replacement. If saving fails,
+both the application model and settings snapshot roll back before the allocator returns nil.
+The toolkit then refuses the split safely; the original allocator's void-return/data-loss
+bug is not reproduced.
+
+Detach removes the raw ID from its current window order, retaining its complete tab record
+and pending recovery information. Empty source window/extra/lock records are removed.
+Attach updates the existing raw record's owner and insertion order; it never creates another
+tab or message frame. Input method and lock lookups use current membership, so a pending
+tab cannot update its former window. Viable rollback restores the source's method and lock.
+Reset and character/world identity changes clear pending operations. Release is idempotent
+and never deletes a populated window or any tab.
+
+Pending records retain their former window IDs and extras in saved settings for later
+reload recovery. Layout equivalence after both owners retire or IDs are reused is not
+claimed. The native toolkit retains its separate live message history. History stays with
+the same message frame during normal split/drop; this change does not add disk history.
+
+Five client checks pass, including physical dragging through the original World/chat
+bytecode, unchanged message/button identities and history, all 200 filters/colours,
+current-owner method changes, a fresh UI-runtime reload, batch ordering, allocation limits,
+rollback and actual disk-write failure. Together with the five music checks, the final
+focused selection passes 10/10. The broader client suite is checked separately.
+
+The original-script toolkit before/after images are
+`shots/aa-ui/native-chat-split-{before,after}-20261023.png` (1920×1080), inspected by root.
+Observed shared-load FPS ranges were 263.1–389.9 before and 196.8–244.5 after; no controlled
+performance comparison is inferred. Native selection/clone/drop ordering and 32 executed
+oracle groups are recorded in `docs/aa-ui.md`. The subsequent toolkit change `9a618ee` adds
+slide/caret previews and release-time reordering, with 271 toolkit checks and 32 native groups.
+Same-owner reordering uses `ChatTabAttached` alone; the client adapter already preserves its
+numeric selection and input method. Broader geometry/class/hover/link parity remains open.

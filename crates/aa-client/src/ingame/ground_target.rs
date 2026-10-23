@@ -50,6 +50,8 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 
+mod plant;
+
 use super::player::{LocalPlayer, Mover};
 use crate::Screen;
 use crate::hud::{HudPointerOverUi, InFlight};
@@ -205,6 +207,8 @@ struct Aim {
     skill: GroundSkill,
     /// The spot under the cursor (game coordinates) and whether the caster is within range of it.
     spot: Option<(Vec3, bool)>,
+    /// The item that places a doodad is aimed, not a skill ([`plant`]).
+    plant: Option<plant::Plant>,
 }
 
 #[derive(Resource, Default)]
@@ -296,6 +300,7 @@ struct ReticleAssets {
 pub fn plugin(app: &mut App) {
     app.add_message::<SkillPressed>()
         .add_message::<crate::hud::PortalBookUsed>()
+        .add_message::<crate::hud::MusicItemUsed>()
         .init_resource::<Aiming>()
         .init_resource::<ReticleAssets>()
         .init_resource::<InFlight>()
@@ -303,7 +308,7 @@ pub fn plugin(app: &mut App) {
         .insert_resource(GroundSkills(load_skills().unwrap_or_default()))
         .insert_resource(SummonItems(load_summon_items().unwrap_or_default()))
         .add_systems(PreUpdate, aim_input.after(bevy::input::InputSystems).run_if(in_state(Screen::InGame)))
-        .add_systems(Update, (dev_script, route, track_cursor, reticle, log_server).chain().run_if(in_state(Screen::InGame)))
+        .add_systems(Update, (dev_script, route, track_cursor, plant::validate, reticle, plant::ghost, log_server).chain().run_if(in_state(Screen::InGame)))
         .add_systems(OnExit(Screen::InGame), leave);
 }
 
@@ -515,7 +520,7 @@ fn smart_option(rt: Option<&aa_ui::UiRuntime>, script: &Script) -> bool {
 }
 
 /// The slot use of the HUD: plain skills go out as before, ground skills aim or cast at the cursor.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn route(
     mut pressed: MessageReader<SkillPressed>,
     skills: Res<GroundSkills>,
@@ -538,9 +543,14 @@ fn route(
     mut player: Query<&mut Mover, With<LocalPlayer>>,
     mut net: MessageWriter<NetCommand>,
     mut flight: ResMut<InFlight>,
-    (keys, mut book, emotes): (Res<ButtonInput<KeyCode>>, MessageWriter<crate::hud::PortalBookUsed>, Option<Res<super::emote::Emotes>>),
+    (keys, mut book, mut music, emotes, db): (Res<ButtonInput<KeyCode>>, MessageWriter<crate::hud::PortalBookUsed>, MessageWriter<crate::hud::MusicItemUsed>, Option<Res<super::emote::Emotes>>, Option<Res<super::data::Db>>),
 ) {
     for press in pressed.read() {
+        // Native394eaac0 opens paper locally or looks up a stored score; neither casts here.
+        if let Some((item_id, 27902 | 28051)) = press.item {
+            music.write(crate::hud::MusicItemUsed(item_id));
+            continue;
+        }
         // the emote skills of the skill book (`/sad`, `/clap` ...) are expressed emotions: the server announces them to everyone in range
         if press.item.is_none()
             && let Some(emotion_id) = emotes.as_ref().and_then(|e| e.skill(press.skill))
@@ -572,6 +582,16 @@ fn route(
                 info!("ground: land vehicle summon placed {:.1} m ahead at ({:.1}, {:.1}, {:.1})", VEHICLE_SUMMON_DISTANCE, spot.x, spot.y, spot.z);
                 continue;
             }
+        }
+        // a house design enters the builder (`housing::placement`), it is not cast
+        if press.item.is_some_and(|(_, template)| super::housing::claims_item(template)) {
+            continue;
+        }
+        // seeds, saplings and the other items that place a doodad are aimed at the ground (`plant.rs`); the same item again lets go
+        if let Some((skill, plant)) = press.item.and(db.as_deref()).and_then(|db| plant::begin(press, db)) {
+            let again = aiming.0.as_ref().is_some_and(|a| a.press.item == press.item);
+            aiming.0 = (!again).then_some(Aim { press: *press, skill, spot: None, plant: Some(plant) });
+            continue;
         }
         let Some(skill) = skills.0.get(&press.skill).copied() else {
             net.write(NetCommand(press.plain()));
@@ -626,7 +646,7 @@ fn route(
             continue;
         }
         info!("ground: aiming skill {} (radius {:.1} m, range {:.0}..{:.0} m)", press.skill, skill.radius, skill.min_range, skill.max_range);
-        aiming.0 = Some(Aim { press: *press, skill, spot: None });
+        aiming.0 = Some(Aim { press: *press, skill, spot: None, plant: None });
     }
 }
 
@@ -735,6 +755,15 @@ fn aim_input(
         return;
     }
     let Ok(mut mover) = player.single_mut() else { return };
+    if let Some(plant) = aim.plant.as_ref() {
+        // an item that places a doodad: the packet instead of a cast, the aiming goes on while the spot is not free
+        match aim.spot {
+            Some((spot, true)) if plant::place(plant, spot, &mover, &mut net) => aiming.0 = None,
+            Some(_) => info!("plant: that spot cannot be used"),
+            None => info!("plant: no ground under the cursor"),
+        }
+        return;
+    }
     match aim.spot {
         Some((spot, ok)) if ok || spot_ok(&aim.skill, mover.pos, spot, SEND_SLACK, water.as_deref()) => {
             let press = aim.press;
@@ -957,6 +986,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills::default())
             .init_resource::<Aiming>()
@@ -986,6 +1016,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills::default())
             .init_resource::<Aiming>()
@@ -1047,6 +1078,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SkillPressed>()
             .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
             .add_message::<NetCommand>()
             .insert_resource(GroundSkills(HashMap::from([(15802, GroundSkill { mode: Mode::Water, radius: 0.0, min_range: 0.0, max_range: 0.0 })])))
             .insert_resource(SummonItems(HashMap::from([(18660, (60, true)), (18000, (22, false))])))
@@ -1097,6 +1129,33 @@ mod tests {
         app.update();
         let sent = std::mem::take(&mut app.world_mut().resource_mut::<Sent>().0);
         assert!(matches!(sent.as_slice(), [Command::UseItem { template_id: 18000, .. }]), "{sent:?}");
+    }
+
+    #[test]
+    fn music_paper_and_sheet_use_local_controller_before_any_cast() {
+        let mut app = App::new();
+        app.add_message::<SkillPressed>()
+            .add_message::<crate::hud::PortalBookUsed>()
+            .add_message::<crate::hud::MusicItemUsed>()
+            .add_message::<NetCommand>()
+            .insert_resource(GroundSkills::default())
+            .init_resource::<Aiming>()
+            .init_resource::<HudPointerOverUi>()
+            .init_resource::<InFlight>()
+            .init_resource::<Script>()
+            .init_resource::<Target>()
+            .init_resource::<Units>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Sent>()
+            .add_systems(Update, (route, collect).chain());
+        for template in [27902, 28051] {
+            app.world_mut().write_message(SkillPressed { skill: 22215, item: Some((9_007_199_254_740_993, template)), target_obj_id: 0, gcd: true, water: false, caster: None });
+            app.update();
+            assert!(app.world().resource::<Sent>().0.is_empty());
+            let opened: Vec<_> = app.world_mut().resource_mut::<Messages<crate::hud::MusicItemUsed>>().drain().collect();
+            assert!(matches!(opened.as_slice(), [crate::hud::MusicItemUsed(9_007_199_254_740_993)]));
+        }
+        assert!(!app.world().resource::<InFlight>().pending(&default(), std::time::Instant::now()));
     }
 
     #[test]

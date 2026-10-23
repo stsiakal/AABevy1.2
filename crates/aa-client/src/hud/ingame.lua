@@ -408,7 +408,7 @@ local function slotContent(s)
   if s.kind == "item" then
     if s.stack then c.stack = s.count end
     c.canUse = s.count > 0 and s.blocked == nil
-    c.tooltip = HUD.item_tip(s.id, s.grade, s.count, s)
+    c.tooltip = function() return HUD.item_tip(s.id, s.grade, s.count, s) end
   elseif s.kind == "skill" then
     -- dark and a red hotkey while the skill cannot be used now: no mana, too far, no target, dead ... (usable.rs)
     c.canUse = s.blocked == nil
@@ -465,8 +465,8 @@ local function gradeFrame(grade)
   if name == nil then return nil end
   return string.format("ui/icon/item_grade_%d%s.dds", grade, name)
 end
-local function realInfo(s)
-  local tip = HUD.item_tip(s.id, s.grade, s.count, s)
+local function realInfo(s, flags)
+  local tip = HUD.item_tip(s.id, s.grade, s.count, s, flags == nil and -1 or flags)
   if tip ~= nil then return tip end
   return {
     itemType = s.id, lookType = s.id, itemGrade = s.grade, name = s.name, description = s.desc, stack = s.count,
@@ -524,11 +524,16 @@ X2Bag.SlotByIdx = function(self, v)
   end
   return tabCache.list[v]
 end
-X2Bag.GetBagItemInfo = function(self, bagId, slot, needInfo)
-  if not bagKnown() then return fake.GetBagItemInfo(self, bagId, slot, needInfo) end
+X2Bag.GetBagItemInfo = function(self, bagId, slot, ...)
+  if not bagKnown() then return fake.GetBagItemInfo(self, bagId, slot, ...) end
   local s = HUD.bag[slot]
   if s == nil then return nil end
-  return realInfo(s)
+  local flags = -1
+  if select('#', ...) ~= 0 then
+    local value = (...)
+    flags = type(value) == 'number' and value or 0
+  end
+  return realInfo(s, flags)
 end
 X2Bag.ItemIdentifier = function(self, slot)
   if not bagKnown() then return fake.ItemIdentifier(self, slot) end
@@ -563,6 +568,12 @@ X2Bag.GetBagCooldown = function(self, slot)
 end
 
 local fakeIconSet, fakeStackable, fakeLevel = X2Item.GetItemIconSet, X2Item.IsStackable, X2Item.GetLevelRequirement
+local fakeItemName = X2Item.Name
+X2Item.Name = function(self, itemType)
+  local name = HUD.item_info(itemType)
+  if name == nil then return fakeItemName(self, itemType) end
+  return name
+end
 X2Item.GetItemIconSet = function(self, itemType, grade)
   local name, icon, maxStack, fixedGrade = HUD.item_info(itemType)
   -- A real item always gets a table, even without an icon: SetInfo indexes the
@@ -688,7 +699,7 @@ end
 
 AAUI.ChatSend = function(channel, text, target)
   text = string.gsub(text or "", "^%s+", "")
-  if text ~= "" then HUD.request("chat", channel, text, target or "") end
+  if text ~= "" and not (HUD.slash and HUD.slash(text)) then HUD.request("chat", channel, text, target or "") end
 end
 
 -- A click on a bound slot (after the script's own OnClick): the action bar slot is used like its number

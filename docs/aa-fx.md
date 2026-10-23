@@ -19,9 +19,9 @@ commands.spawn((aa_fx::Effect::new("X2_EFFECTS.fire_smoke.torchlight_b"), Transf
   for this effect (collisions, see below).
 * `FxSettings` (resource): `max_particles` (20000, the hard global budget), `max_distance` (160 m activation radius cap),
   `gain` (colour multiplier; a world with pre-exposed HDR colours sets `radiance * exposure`, aa-world does), `light`
-  (0.8, how much of `DiffuseLighting` shows), `emissive`, `hdr_base` (2: `EmissiveHDRDynamic` and `LightHDRDynamic` are powers of it), `max_lights` (8) and `light_lux` (1700), `size_scale`, `sprite_half` (1: a sprite's `Size` is a radius), `alpha_scale`, `quality` (0..3, `ConfigMin/Max`),
+  (1.6, the constant part of `DiffuseLighting`), `sun_light` (0, the wrapped direct sun term on sprites), `emissive`, `hdr_base` (2: `EmissiveHDRDynamic` and `LightHDRDynamic` are powers of it), `max_lights` (8) and `light_lux` (1700), `size_scale`, `sprite_half` (1: a sprite's `Size` is a radius), `alpha_scale`, `quality` (0..3, `ConfigMin/Max`),
   `count_over_life`, `soft_distance` (0.6 m, needs `DepthPrepass` on the camera, otherwise particles are not softened),
-  `activations_per_frame`, `wind`, `sun` (world direction to the sun, shades opaque mesh particles), `refraction` (distort the
+  `activations_per_frame`, `wind`, `sun` (world direction to the sun, shades lit sprites and opaque mesh particles), `refraction` (distort the
   scene behind refraction materials, default on, `AA_FX_NO_REFRACTION=1` switches it off), `ground` (`Some(Ground(Arc<dyn Fn(Vec3)
   -> Option<f32>>))`: ground height below a world position, for collisions), `enabled`.
 * `FxStats` (resource): effects, active, emitters, particles, `load` (budget use: a mesh particle counts its vertices / 4), quads
@@ -32,7 +32,7 @@ commands.spawn((aa_fx::Effect::new("X2_EFFECTS.fire_smoke.torchlight_b"), Transf
   the world's placed effects out (aa-world); `AA_FX_COUNT_OLD=1` goes back to `Count` per particle life (see below); `AA_FX_SPRITE=0.5` reads a sprite's `Size` as its full width
   again (before round 4); `AA_FX_ONLY=a,b` / `AA_FX_SKIP=a,b` run only the effects whose name contains one of the words / all but those
   (debugging, case insensitive, matched against `lib.group.effect`);
-  `AA_CREATE_NO_FX=1` leaves the step 3 mist out, `AA_MIST=alpha,count,r,g,b` overrides its fit (aa-client).
+  `AA_FX_SUN_LIGHT` overrides the direct sun strength; `AA_CREATE_NO_FX=1` leaves the step 3 mist out, `AA_MIST=alpha,count,r,g,b` overrides its fit (aa-client).
 
 ## How it runs
 
@@ -83,7 +83,8 @@ and the round 3 features below: `Geometry` (mesh particles) with `NoOffset`/`NoM
 
 Not supported (ignored): sounds, `DecalMode` / `DecalSortPriority` (decals are draped on the ground, see round 7), collisions with objects and entities
 (`CollideStaticObjects`, `CollideDynamicObjects`; only the ground is hit), `MaxCollisionEvents` (a particle reports its first
-ground hit only), `GeometryInPieces`, `ForceGeneration`, `ERotateMode`/local rotation modes and `VirtualAge`,
+ground hit only), unsupported `GeometryInPieces` hierarchies (flat compound models are handled in round 20), `ForceGeneration` wind/gravity areas and indirect Target sources (direct Target ancestors
+and `IgnoreAttractor` are handled in round 19), `ERotateMode`/local rotation modes and `VirtualAge`,
 `BindEmitterToCamera`/`SpaceLoop`, `ViewDistRatio`, `CameraMinDistance` (the data has values like 270 that would hide the
 quest beams), `VisibleUnderwater`/`VisibleIndoors`, per frame texture blending, terrain-facing nuances, `FillRateCost`.
 
@@ -294,7 +295,7 @@ sprite writer `sub_3009CFD0`, `ResourceParticleParams`) and `particles.cfi`; the
   (`shots/aa-fx/r7/lights_*.png`).
 * **Decals** (`Facing = Decal` 661 emitters, `Terrain` 13). The engine projects them on what is below; the Free / Bottom / Water cards
   stay flat. aa-fx drapes them: when `FxSettings::ground` knows the height under the card, the card is cut into cells of about
-  1.5 m (at most 12 x 12) whose corners lie 4 cm above the ground (`sim.rs`, `decal.rs`); without it a flat card as before.
+  1.5 m (initially at most 12 x 12) whose corners lie 4 cm above the ground (`sim.rs`, `decal.rs`); round 18 adds bounded refinement where this cuts into curved ground. Without a height query it remains a flat card.
   `DecalAlphaMultiply` multiplies the opacity of the decal emitter (0 or absent: 1). `aa_fx::decal::drape_quad(centre, right, up,
   ground, lift, cells)` is the same cut for any card of your own and returns positions / uvs / indices: the ground target reticle
   (`materials/Decals/target/target_correct` is a decal in the client; `ingame/ground_target.rs` drapes its own mesh the same way) can
@@ -485,8 +486,8 @@ than ours, so its band minus control comes out negative, and in Nuian our `fog_0
 grass under the band gets +6..+9 of mist in Nuian, +1..+8 in Ferre, +18..+22 in Elf (round 4), and none in Hariharan.
 
 Known gaps: `elf_fog_01` (placed in the Elf and Ferre fields) does not exist in any library of the pak, so that mist is missing (the
-Elf capture shows more mist than the two flowing sources make, so it may have existed); the brightness of lit particles is not tied
-to the time of day (`FxSettings::light` is a constant).
+Elf capture shows more mist than the two flowing sources make, so it may have existed); the constant ambient part of lit particles remains fitted (`FxSettings::light`); the direct sun now follows
+time of day when the caller supplies `sun_light` (round 16).
 
 ## Round 10: stretched beam anchors, faint effects
 
@@ -551,8 +552,9 @@ order) show every beam spanning the whole 4 m. The launch effects are 0.05 to 0.
   (`exp`: axis times half angle), values absolute like v0x829. aa-anim could take that decoder over; then `skipped_controllers`
   stays 0 and the local one is not reached. The wiring is aa-client's (`skills.rs` only reads `FxParticle`, `FxSound`, `FxVoice`).
 * **Checks without code.** Decal rings of Stillness, Magic Circle, Banshee Wail and Vicious Implosion draw (see the audit, round 11).
-  The mesh beams with `ForceGeneration="Target"` (Telekinesis, Mana Force) draw when the entity is stretched; `ForceGeneration` is not read and
-  not needed. The effects example needs `--list` (the scene is only ready after about 1.5 s) or an effect that outlives the load for a
+  The mesh beams with `ForceGeneration="Target"` (Telekinesis, Mana Force) draw when the entity is stretched; `ForceGeneration` was not read
+  in this check. Those stretched meshes did not establish its semantics (the original meshes also author `IgnoreAttractor=true`; see round 19).
+  The effects example needs `--list` (the scene is only ready after about 1.5 s) or an effect that outlives the load for a
   one-off shot. Frigid Tracks' orange flames are Searing Rain's lingering `fire_rain_form`.
 * Known gap (unchanged): lit alpha-blended smoke is thinner in the `effects` example than in the real client; in the game
   `Effect::tint` and the world exposure (`aa-world` `update_gain`) are the compensation and were not changed here.
@@ -660,3 +662,313 @@ Player-opened portals spawn `portal_gate_dot3_indivisual` (the entrance, green m
   is green in the `effects` example and in the real client (`gate_real.png`).
 * Shots: `gate_before_1.png` (white blob), `gate_after_1.png` (tinted centre), `gate_real.png` (my real client, `Particle.SpawnEffect`), `gate_game2.png`
   (aa-client, `--portal-lua`, the camera is inside the exit gate).
+
+## Round 16: the sun lights the sprites (recovered and verified 2026-10-23)
+
+The original `game/shaders/hwscripts/cryfx/particles.cfi`, read through `tools/aa-pak.exe cat`, confirms the missing term:
+`ParticlePS` sums diffuse light with `fIllum = saturate(N.L - N.L * b + b)` (`b = DiffuseBacklighting`), multiplies that sum by
+`Ambient.w` (the diffuse factor), then adds `Ambient.xyz`. The vertex shader constructs a camera-facing normal and can perturb
+it using the material normal map. This is evidence for direct sunlight on smoke, rather than an effect-specific brightness override.
+
+* `FxSettings::sun_light` (default 0, environment `AA_FX_SUN_LIGHT`) supplies direct sun strength in the units of `light`.
+  `StepCtx::sun_facing` is the cosine between the sun and the direction from the effect origin to the camera.
+  `EmitterState::lit_now` adds `DiffuseLighting * sun_light * saturate(N.L * (1 - b) + b)` each frame. The caller's
+  `Effect::brightness` scales this term too. `DiffuseLighting=0` emissive particles keep their existing colour.
+* This is a per-effect CPU approximation of the shader: it does not reproduce per-pixel normals, local lights on sprites,
+  shadow occlusion or coloured direct sun separately from `Effect::tint`. Geometry particles keep their separate lighting path;
+  a camera-facing coefficient does not belong in `RenderGeometry` (`cry3dengine.dll` `sub_3009C0B0`).
+* `aa-client::ingame::combat::feed_fx` currently supplies `30 * sun.illuminance / 7600`, unless the environment overrides it.
+  30 is the inherited daylight calibration, not a native constant. The stage and the example default to zero direct sun.
+  The earlier agent's daylight fits and original-client comparisons remain in `shots/aa-fx/r16/` and
+  `shots/aa-fx/r14/cmp_wraith_bondbreaker_frenzy.png`; no new live-client calibration is claimed here.
+* New inspected captures in `shots/aa-fx/recovery-20261023/`: `sun0_0.png` versus `sun12_0.png`, the actual
+  `abillity_skill_table_m.death.ghost_summon_launch`, 0.8 s after emission, same camera (`--yaw 35 --dist 7 --height 2`),
+  1280 x 720, `--day --no-prime --no-body`. With `--sun-light 12` the red cloud is visibly brighter than the old constant-light
+  path, in the direction of the original-client capture. In crop x=350..949, y=300..579, median red of pixels with
+  R > 1.5 G and R > 1.5 B is 76 -> 161. Different backgrounds/cameras prevent a claim of an exact original-client match.
+  aa-dev FPS samples: no sun 451.4 / 322.7 / 417.4; sun 12: 462.9 / 300.8 / 434.5. These small harness runs do not measure town FPS.
+
+## Round 17: live HDR and pooled light lifecycle (2026-10-23)
+
+* Active effects refresh their constant lighting, emissive multiplier and `EmissiveHDRDynamic` power from the current settings
+  without restarting particles or changing random draws. Previously these were frozen at activation. The native geometry path
+  (`sub_3009C0B0`) uses `DiffuseLighting + EmissiveLighting * pow(HDR multiplier, EmissiveHDRDynamic)`; the native light path
+  (`sub_3009A9A0`, called by `CParticleContainer::RenderLights` at `sub_3009AD30`) evaluates particle intensity/radius/HDR curves.
+  `hdr_base=2` remains an approximation of the engine's HDR multiplier, not a recovered exact value.
+* A reused particle-light pool slot now copies the current effect's `RenderLayers`, including returning to the default layer.
+  Lights are hidden and their counters cleared when no active camera remains or `FxSettings::enabled` is false.
+* Native-pak checks: `x2_effects.fire_smoke.torchlight_a` has radius 1.5 m, HDR 1 and intensity 0.8 with an age curve;
+  `abillity_skill_table_m.fight.attack_speedup_cast` has emissive 2 / HDR 3 and emissive 0.5 / HDR 0.5 emitters.
+  `lights0.png` / `lights8.png` show the torch with/without its warm patch on the pedestal/floor; logs report 0/0 and 1/1 lights/candidates.
+  `hdr1_0.png` / `hdr2_0.png` show the original speed-up effect at HDR bases 1/2. All four PNGs were inspected.
+  aa-dev FPS: lights off 255.9..280.2, lights on 291.2..321.6, HDR 1 444.0..471.6, HDR 2 451.5..471.9. Shared-machine noise dominates
+  these comparisons; they verify rendering and exit, not an FPS improvement.
+* Validation: `cargo check -p aa-fx --all-targets`; `cargo test -p aa-fx` (55 passed, two ignored documentation examples);
+  `cargo build -p aa-fx --example effects`. Regression tests cover wrapped sunlight, live sprite output, unchanged emissive output,
+  geometry/HDR separation, existing particle lifetimes during lighting changes, and reused/retired ECS lights. Native-pak tests ran.
+  Clippy was attempted once (`cargo clippy -p aa-fx --all-targets -- -D warnings`), but stopped on existing dependency lints:
+  `aa-dev/src/headless.rs:68` (`unnecessary_to_owned`) and aa-cry lint debt (49 errors); it did not certify aa-fx lint cleanliness.
+
+## Round 18: bounded adaptive ground draping (2026-10-23)
+
+This is **ground-height tessellation, not native object/depth projection**, and does not close full decal parity. The native
+`game/libs/particles/abillity_skill_table_m.xml`, re-read through aa-pak, authors Freezing Earth's `magic.ice_piece_launch` with
+`Facing="Decal"`, material `decal_ice_pattern`, `Size="10"`, `DecalMode="FakeWrap"`, plus the animated ring decal of size 13.
+Those are the original two emitters used in the example, without replacement textures or added effects.
+
+* Large cards previously intersected curved ground between the coarse vertices, leaving polygon-shaped gaps. Small cards of
+  one cell did not query the ground at all. The simulation now shares the ground grid implementation with `decal::drape_quad`,
+  including one-cell cards and effect-local bounds under translated/rotated anchors.
+* `CELL=1.5`, `MAX_CELLS=12`, public function signatures and the `(cells+1)^2` returned layout stay unchanged. A planar coarse
+  grid keeps its old vertex budget. Curved row/column spans whose sampled edges/triangle diagonals would cut the floor are
+  split up to three ways, at most 36 x 36 cells. Splitting complete rows/columns keeps shared edges continuous; UVs use their
+  actual positions, so refinement does not stretch the texture. `Draped::cells` reports the returned grid size.
+* The emitter reuses grid buffers, samples shared vertices once and transforms them to effect-local space once. A flat 12 x 12
+  card uses 169 vertex queries plus five planar checks, rather than four repeated queries per cell. Refined cards incur extra
+  probes/geometry; the upper bound is 1,296 quads per decal (frame blending may draw two copies). This is a bound, not a proof
+  that a crowd of large overlapping decals is cheap.
+* Inspected 1280 x 720 captures: `shots/aa-fx/recovery-20261023/decal_0.png` before, `decal-adaptive_0.png` after, original effect
+  at +0.8 s over `effects --bumps 0.5 --day --no-prime --no-body --dist 18 --height 12`. The large interior polygon gaps are
+  removed; a small rim cutout remains. Bounded samples cannot reproduce arbitrary discontinuities or narrow unsampled ground
+  features. No exact native-client match is claimed for this synthetic rolling-ground test.
+
+Cost was measured with copied before/after executables, sequential 16 s runs at 1280 x 720, lights disabled. The table is the
+median of the six aa-dev/aa-fx samples after the first warm-up sample in the repeated pair. The same 16 copies, camera and
+particle settings were used (`--grid 16 --spacing 6 --loop --no-prime --no-body --day --dist 45 --height 28 --max-lights 0`).
+
+| Ground / 16 Freezing Earth effects | Before sim / upload ms | Adaptive sim / upload ms | Before / adaptive quads | Before / adaptive FPS |
+|---|---:|---:|---:|---:|
+| Rolling (`--bumps 0.5`) | 0.130 / 0.0165 | 0.258 / 0.0180 | 2,320 / 8,144 | 230.9 / 201.5 |
+| Flat (`--ground`) | 0.072 / 0.0150 | 0.068 / 0.0145 | 2,320 / 2,320 | 234.2 / 245.3 |
+
+The additional curved-ground geometry has a measurable cost. The first pair gave 345.5 / 243.0 FPS on rolling ground and
+313.8 / 259.7 on flat ground; an unchanged 100-torch control gave 58.0 / 80.9 FPS (sim 0.476 / 0.286 ms), so shared-machine
+load strongly affects raw FPS. The rejected uniform refinement used 11,680 quads and 0.392 ms simulation in the first rolling
+run; adaptive refinement reduces those costs, but is still dearer than the old clipped coarse mesh. These are harness numbers,
+not a remeasurement of Marianople or evidence that the town frame-rate goal is complete. Logs are retained beside the PNGs.
+
+Remaining CB1 limits: `DecalMode`/sort priority, `DefereedDecalAlphaMultiply` and native receiver/depth projection are not
+implemented; only the supplied ground query is available. `GeometryInPieces` remains whole geometry (the original library
+really authors it, e.g. `fight.ground_launch_standalone` stones and `wild.hold_steps_launch`'s `chain03.cgf`). At this checkpoint
+`ForceGeneration` was ignored; the bounded direct Target correction is recorded in round 19. Stretched beam geometry is not
+evidence for complete force behavior. Particle
+lights and emissive HDR exist, with the calibrated limits of rounds 7/17; Illum geometry retains its separately fitted sun/sky
+path. No guessed replacement effect, object, light, material flash or asset was introduced for these remaining gaps.
+
+Validation for round 18: `cargo test -p aa-fx` passes all 59 tests (two documentation examples ignored), including native-pak
+parsing/loading. Curvature coverage samples triangle interiors on 26 m cards at three world positions and two yaw angles;
+other tests cover a small one-cell card under a translated/rotated anchor, unchanged flat/slope budgets, nonuniform UVs and
+reused buffer/index storage returning to a coarse grid. The aa-dev example build and before/after captures above were checked.
+Single adaptive visual run FPS samples were 267.3 / 326.0 / 311.1, compared to the original single-card run's
+467.0 / 475.7 / 436.3 under earlier shared-machine load; use the paired stress table for cost comparison. Clippy was not rerun
+(the one allowed attempt and its dependency failures are recorded in round 17).
+
+## Round 19: original ForceGeneration Target ancestors (2026-10-23)
+
+This closes the missing consumption of **direct, constant-clock Target ancestors** through the existing effect tree and CPU
+simulation. It does not implement wind/gravity physics areas or every native ParticleTarget mode. No public API, `StepCtx`
+field, dependency, forced spawn count or replacement visual was added. Sun/HDR/light retirement from `d0b98da` and adaptive
+ground drapes from `cc9fc34` are preserved.
+
+The fresh original-pak scan (`python crates/aa-fx/evidence/scan_force_generation.py`) reads all 42 particle-library XMLs through
+the prebuilt `tools/aa-pak.exe`, retaining hashes and compact authored rows, without extracting the libraries. It finds 403
+authored force emitters: 289 Target (244 enabled, 45 disabled), 113 Wind and one Gravity. This counts authored emitters, including
+disabled and non-drawing ones; it is not a count of visible effects. The two authored indirect Target producers are
+`X2_EFFECTS.mon_effects.ghost_ship_dead/ghost_ship_dead1` and `mon_effects.ghost_ship_small_dead/ghost_ship_dead1`
+(`ParentStart`). No randomized Target producer timing attributes occur in this inventory.
+
+Concrete original assets and controls:
+
+* `abillity_skill_table_m.test.fire_flame_2`: invisible continuous root, `ParticleLifeTime=0.1`, `Speed=0`,
+  `PositionOffset=,,1.5`, `ForceGeneration=Target`. Its visible `fire_flame_test3` child authors Count 10, particle life
+  `2,0.3`, upward speed `0.1,0.5`, upward acceleration 0.3 and Stretch `1,0.5`. The missing ancestor used to be discarded.
+* `magic.vital_absorb_launch`: an enabled Target root at cry `PositionOffset=,-1`; its mesh explicitly says
+  `IgnoreAttractor=true`. `death.spell_move_launch` has a disabled Target root and its mesh also opts out. Drawing stretched
+  beams in rounds 10/11 therefore did not prove Target behavior. Their authored geometry and stretching path are unchanged.
+* Wind producers really author Count 0, e.g. `explosions.Grenade_terrain.explosion/wind`; the Gravity source is
+  `explosions.acmo_alien_gun.hitting_frozen_ground/explosion18`. These remain physics-area work, with no proxy particles.
+
+Native evidence is retained under `crates/aa-fx/evidence/force_generation_*`: original asset hashes/rows and selected effect
+trees, a bounded x86 runner, executed JSON/TSV goldens, disassembly and decompiled source excerpts. Reproduce execution with
+`python crates/aa-fx/evidence/force_generation.py --write` (pefile, capstone and Unicorn 2.1.4). It maps the retained original
+`data/extract/aa-fx/r6/ida/cry3dengine.dll` in a private emulator: SHA-256
+`34d6b73690d1a9d8d0ea0f5eb743fd0624107cfda28c1302826b19a3bc9546de`. The actual 32-bit system MSVCR100 `expf` is mapped for
+the drag branch, with its hash recorded. The engine bounds-invalidation callback is counted and skipped; the clock fixture's
+RNG import returns a fixed seed and has zero variation. Target selection, clock arithmetic, motion integration and arrival
+death execute original instructions. No live original client or server process was opened or changed.
+
+Recovered semantics:
+
+* The enum table at `0x3029030c` is None=0, Wind=1, Gravity=2, Target=3. The serialized byte is ParticleParams+697;
+  ResourceParticleParams adds its vtable prefix, so consumers read +701. `sub_30070D30` gives Wind/Gravity the 0x100 resource
+  flag; Target uses a different path. `sub_3008BB90` creates/removes native physics areas for the former modes. Neither path
+  means "force some particles into existence".
+* `sub_3008B410` initializes source start/end from SpawnDelay and, for Continuous sources, EmitterLifeTime. A non-continuous
+  source has a zero-length emitting interval. `sub_30089F80` returns emitting state 3 only from start **through end inclusive**,
+  limited by the source's stop time. A source whose particles are still alive after emission ends is insufficient.
+* `sub_3008A3B0` accepts only Target/state 3. Its position is the source frame applied to authored PositionOffset, and its
+  velocity is the source velocity. It sets Target and ExtendSpeed; it does not set ExtendLife or ExtendCount. The native
+  fixtures prove that Count 0 still supplies a target, exact zero-time acceptance, and rejection just after a zero/finite end.
+* `sub_3008A430` clears all target fields for IgnoreAttractor. Otherwise it begins with the supplied ParticleTarget, and walks
+  nearest ancestors first unless the existing priority flag forbids overriding it. A lapsed nearer producer permits an active
+  outer producer. Supplied flags survive except Target/ExtendSpeed which the ancestor sets. These precedence cases execute
+  in the oracle. aa-fx currently has no caller-supplied ParticleTarget API: this correction supplies authored ancestors to its
+  existing no-target path and leaves the caller's beam transform path intact.
+* In `sub_3005CD20`, closing time is distance squared / dot(relative velocity, distance), or the native 1e18 sentinel when
+  not closing. Life may shorten to arrival; it is not extended by an authored Target. The acceleration helper `sub_30060420`
+  solves the intercept with optional drag, blended from existing acceleration by normalized particle midpoint age.
+  `sub_300600B0` integrates that acceleration, using exponential drag. A step reaching the target retires the particle.
+  Four full native update goldens cover steering, drag, moving target and shortened life; a fifth executes arrival death.
+
+The library now retains nearest-first Target source definitions even when they draw nothing, without adding a producer's
+particle buffer, mesh, light or Count. Existing direct/indirect particle emission keeps its Count and budget rules. The
+simulation evaluates source intervals on its own resettable clock, follows source quality gates and IgnoreAttractor, and
+uses native steering/lifetime math for consumers. Position/velocity use existing frame/axis conversions. Potential endpoint
+offsets contribute to activation extent; the existing distance cap, sleeping/deactivation, pooling and loop retirement still
+apply. This remains aa-fx's bounded distance policy, not native receiver/frustum/bounds parity.
+
+Unattended captures use the existing aa-dev `effects` example at 1280 x 720. `shots/aa-fx/forcegen-20261023/before_0.png` /
+`after_0.png` (+0.5 s) and `before_1.png` / `after_1.png` (+1.3 s) were inspected. The original blue flame used to remain near
+the floor; now its particles rise and stretch toward the authored 1.5 m target. This is a before/after implementation check,
+not a new live-client visual comparison (no matching reference capture exists). Identical controls:
+
+```text
+effects --list data/extract/aa-fx/forcegen-20261023/effects.txt --cols 1 --times 0.5,1.3
+  --out shots/aa-fx/forcegen-20261023/after --no-prime --no-body --day --dist 6 --height 2
+  --orbit 0 --max-lights 0 --size 1280x720
+```
+
+The list contains only `abillity_skill_table_m.test.fire_flame_2`. Sheet mode preloads one copy behind the camera, then starts
+the visible copy at 4 s; both executables use that same existing harness behavior. The 16-torch control PNGs were also
+inspected (`control-before.png`, `control-after.png`): the torch/smoke appearance stays consistent. Controls are
+`--effect X2_EFFECTS.fire_smoke.torchlight_b --grid 16 --spacing 3 --no-prime --no-body --day --dist 15 --height 5 --orbit 0
+--max-lights 0 --size 1280x720 --shot <file> --shot-after 8`.
+
+| Captured run | Before aa-dev FPS samples | After samples | Before / after median |
+|---|---|---|---|
+| Original Target flame | 334.8, 374.2, 346.8 | 286.2, 364.8, 301.5 | 346.8 / 301.5 |
+| 16 torches (no Target) | 201.1, 182.9, 170.9, 144.4 | 169.6, 198.0, 211.2, 174.5 | 176.9 / 186.3 |
+
+All four processes exited 0 without render warnings/errors; logs are retained in `data/extract/aa-fx/forcegen-20261023/`.
+The final rebuilt-source smoke (`final-after_0.png`, +1.3 s) was also inspected and exited 0 without warnings/errors;
+aa-dev FPS samples were 486.6 / 457.7 / 414.7. Its higher FPS further illustrates shared-machine variation.
+These short shared-machine measurements are not a throughput improvement claim or Marianople benchmark. The Target path
+adds math and changes native motion/stretch; the control's particle poses vary with frame timing and random progression.
+
+Validation: `cargo test -p aa-fx` passes 65 tests (two documentation examples ignored), including the executed native goldens,
+inclusive/zero/lapsed interval boundaries, nearest-source fallback and quality, Count/budget independence, opt-out unchanged
+motion, source reset/loop retirement and native-pak controls. Existing light-pool, live HDR/sun and adaptive decal tests pass.
+`cargo check -p aa-fx` and the aa-dev example build pass. No clippy run was added.
+
+Still open: Wind/Gravity physics-area production and interaction; the two indirect Target sources and their individual
+parent-particle clocks/frames; randomized source clocks if encountered later; caller-supplied ParticleTarget modes
+(priority/ExtendLife/ExtendCount/Stretch), ExtendSpeed behavior outside the recovered motion branch, and native bound/view
+refresh. Unsupported source clocks are not replaced by a base
+value. `GeometryInPieces` is separate whole-mesh behavior and was not changed. This correction establishes the bounded
+authored Target path above; it does not close full CB1 or per-skill integrated visual parity.
+
+## Round 20: authored compound GeometryInPieces (2026-10-23)
+
+The original 1.2 runtime emits every eligible mesh subobject for an authored `GeometryInPieces=true` source emission.
+It does not split triangle islands or fracture one mesh. The new path retains each flat compound CGF node as its own
+particle while keeping one existing material and one batched drawing mesh per emitter. `Geom`, `GeomKey`, `StepCtx`,
+`FxSettings`, shader code and the public API are unchanged. The flag and node metadata are private.
+
+The complete read-only pak scan (`evidence/scan_geometry_pieces.py`, `geometry_pieces_assets.json`) covers 42 particle
+libraries and records their hashes: 213 explicit true flags, 195 with a Geometry value, 171 with Geometry and no authored
+Enabled=false. These reference 68 normalized paths: 60 present and eight absent. The node inventory
+(`scan_geometry_models.py`, `geometry_pieces_models.json`) finds exactly four present compound models with nonempty plain
+LOD0 meshes: `oeffect/candy_b.cgf` (3), `oeffect/hexagon_sphere_c.cgf` (49), `temp_tree_anbig03.cgf` (2) and
+`particle_effects/broken_wheel.cgf` (4). All four have root mesh nodes. The other 56 present paths have one mesh;
+`chain03.cgf` and `stone_solzreed_a_fl.cgf` stay whole, including their authored true flags. No triangle-island stand-in is made.
+
+Native evidence is retained in `crates/aa-fx/evidence/geometry_pieces.py`, `_native.json`, `_native.asm`, `_source.txt` and
+`_transforms.tsv` (the filenames share the `geometry_pieces` prefix). The original DLL SHA256 is
+`34d6b73690d1a9d8d0ea0f5eb743fd0624107cfda28c1302826b19a3bc9546de`. This oracle executes the original DLL in private
+32-bit Unicorn memory, including its quaternion sign-mask initializers and the system CRT power function. Fixture resource
+vtables, allocator admission, particle-constructor acceptance, density 1 and a recorded RNG value form the boundaries;
+no running client is opened or modified. It proves:
+
+* `sub_3008AB30` qualifies type 0 mesh subobjects with a nonnull geometry pointer, emits all of them in order when true,
+  stops in order when allocation fails, and excludes rejected constructors from its count. A geometry with no subobjects
+  uses the parent; an explicitly supplied geometry bypasses splitting. The false branch selects one child for the retained
+  RNG fixture; the existing false/omitted whole-model path is deliberately unchanged in this correction.
+* `sub_300619B0` multiplies capacity by the qualifying subobject count (at least 1): Count 2.25 rounds capacity up to 3,
+  then two pieces give capacity 6. The emission caller repeats source emissions by Count, not by the returned piece count.
+* The particle source is the subobject local matrix at +64, distinct from its world matrix at +16. Original CGF loader
+  construction is retained alongside the emission code. The source scale is the cube root of its determinant; its rotation
+  uses orthonormalized matrix rows. Translation, rotation and size compose with the emitter frame. The two executed
+  transform fixtures include a translated child and a rotated child with nonuniform axes under a rotated/scaled parent.
+* `sub_3005BFE0` centers geometry using its own local authored AABB, transformed by the particle orientation and size;
+  `NoOffset` bypasses it. The oracle includes centered, rotated and uncentered goldens. Its additional native RigidBody
+  bypass is recorded as evidence; this change does not implement native rigid-body simulation.
+
+Each admitted piece gets independent random lifetime/size/angles and existing motion, death and child-emitter processing.
+The material, opacity, UV animation, lighting and masks retain the existing emitter-wide policy. Variable template indices
+are rebuilt and uploaded even when the number of drawn pieces stays equal (different pieces can die). The loaded whole
+model remains available through the existing public geometry methods. Sleeping/deactivation discards the simulation as before;
+loop reset clears particles and index output while retaining the cached mesh templates.
+
+Safety budgets intentionally bound native emission. Pieces reserve their actual compacted vertex cost rounded up to quads,
+in original node order. The existing global budget, 2,048-particle emitter ceiling and 16,384-vertex ceiling remain hard;
+worst-piece admission can stop earlier than a sum-of-live-vertices limit. This can truncate a compound emission when resources
+are exhausted and is not native allocator/budget parity. A pre-existing partial-grant bug is also fixed: the subtract/restore
+path returned a partial grant without charging it, so another emitter could reuse that budget. Atomic compare/exchange now
+charges exactly the admitted amount. Tests cover ordered partial piece admission followed by two competing emitters.
+
+The bounded path supports the four authored flat compounds above. Nested mesh ownership, negative/singular source transforms,
+skinned pieces, native object collisions and per-piece material/shader differences are not closed. Unsupported compound
+metadata retains the existing whole-model path. Eight absent referenced models remain absent; no replacement is supplied.
+The existing single emitter material/submaterial and Illum approximations are preserved. No new live-client visual parity
+claim is made by this implementation check.
+
+Visual evidence uses the existing aa-dev `effects` example at 1280 x 720, with matched camera/timing/settings before and
+after. All 14 captured processes exited 0 with no render warnings/errors. Logs, exact command arguments and per-run exit
+records remain in `data/extract/aa-fx/pieces-20261023/`; `evidence/geometry_pieces_runs.json` retains command arguments,
+FPS/cost samples, executable hashes and PNG hashes. No matching live-client reference capture exists for these two effects;
+these are actual original-pak mesh implementation comparisons, not a new live-client calibration.
+
+* Inspected `shots/aa-fx/pieces-20261023/candy-mesh-before_0.png` / `candy-mesh-after_0.png` (+0.2 s) and `_1.png` (+0.55 s):
+  the original `x2_effect_o.pet_effect.candy_hit`, restricted by the existing `AA_FX_EMITTER=candy_obj` debug filter.
+  The old two whole-model copies overlap their three child meshes; the new six independently moving candy pieces are visible.
+  Controls: `--list <candy.txt> --cols 1 --times 0.2,0.55 --no-prime --no-body --day --dist 3 --height 1 --lift 1 --orbit 0
+  --max-lights 0 --size 1280x720 --out <prefix>`. The list has only the original effect name.
+  The unfiltered `candy-before_0.png` / `candy-after_0.png` were also inspected: the other authored sprites remain present.
+* Inspected `mesh-before_0.png` / `mesh-after_0.png` (+0.3 s) and the corresponding `_1.png` (+0.8 s): the original
+  `x2_effect_o.Mon_Effects.mon_iceshield_end`, `AA_FX_EMITTER=iceshield_end2`, the original 49-panel CGF.
+  Panels now have individual rotation/motion; the original low alpha remains. Controls as above, except `--times 0.3,0.8
+  --dist 6 --height 2`. The unfiltered `before_0.png` / `after_0.png` and `_1.png` were also inspected.
+* Single-mesh control `control-before_1.png` / `control-after_1.png` (+0.8 s) was inspected: the actual
+  `abillity_skill_table_m.fight.ground_launch_standalone` rocks remain whole and retain their material/light/decal appearance.
+  Same sheet controls as the shield, without an emitter filter. Mean absolute RGB difference across the full PNG is
+  0.058 / 0.057 / 0.047 on the 0..255 scale; frame timing still changes small particle poses. The `_0.png` frames are retained.
+* Stress/control PNGs `stress-before.png`, `stress-after.png`, `control-stress-before.png`, `control-stress-after.png`
+  were inspected. Sixteen visible effects use `--loop --stagger 0.1 --no-prime --no-body --day --orbit 0 --max-lights 0
+  --size 1280x720 --shot <file> --shot-after 8`. Shield: `--effect x2_effect_o.Mon_Effects.mon_iceshield_end --grid 16
+  --spacing 4 --dist 18 --height 6`; stone control: `--effect abillity_skill_table_m.fight.ground_launch_standalone
+  --grid 16 --spacing 5 --dist 20 --height 7`. The existing stagger preloader adds one off-camera copy, so the final two
+  logged samples have 17 active effects in both executables.
+
+| Run | Before aa-dev FPS samples | After samples | Before / after median FPS |
+|---|---|---|---|
+| Isolated original candy | 439.3, 458.9, 61.8 | 248.8, 359.6, 300.7 | 439.3 / 300.7 |
+| Original shield, unfiltered | 486.0, 465.8, 460.5 | 452.0, 454.1, 430.2 | 465.8 / 452.0 |
+| Single stone effect | 395.1, 457.2, 416.4 | 411.4, 374.6, 350.5 | 416.4 / 374.6 |
+| 16 shield effects | 366.9, 301.0, 321.6, 324.6 | 279.5, 310.0, 327.0, 340.4 | 323.1 / 318.5 |
+| 16 stone controls | 322.2, 248.9, 293.3, 269.5 | 263.4, 195.6, 285.7, 236.1 | 281.4 / 249.8 |
+
+For the final two 16-shield samples, simulation is 0.063 / 0.042 ms before and 0.158 / 0.140 ms after; upload is
+0.011 / 0.009 ms before and 0.015 / 0.012 ms after. Particle counts are 113 / 130 before and 978 / 706 after, consistent with
+independent pieces instead of whole shells. Final two stone control samples: simulation 0.117 / 0.137 -> 0.138 / 0.162 ms,
+upload 0.032 / 0.028 -> 0.025 / 0.036 ms. These costs are not a town benchmark or an FPS improvement claim; the unchanged
+control also slows under varying shared-machine load. Single-shot sheet FPS intervals often include preload or retired effects;
+the stress run supplies the active-particle cost check. No budget truncation was required for these selected default effects;
+forced truncation is covered by the ordered-admission tests.
+
+Validation: `cargo check -p aa-fx` passed; `cargo test -p aa-fx` passes all 72 tests (two documentation examples ignored), and
+`cargo build -p aa-fx --example effects` passed. Tests cover the native transform goldens, actual authored ice-shield/candy
+piece counts, all four original compound meshes, single-mesh/omitted/false controls, indices changing under equal live counts,
+reset, hard vertex/particle ceilings and charged partial-budget grants. Existing material, light-pool, live HDR/sun, decal and
+Target tests pass. No clippy run was added. The root worker received a production-source freeze notice before final integration;
+no other crate, manifest, lockfile, original client asset or foreign process was changed. Only this task's before/after executable
+copies are removed after captures; PNGs, logs and retained source/native evidence remain.
