@@ -934,4 +934,17 @@ mod tests {
         assert_eq!(Store::open(path).data["options"]["s:ui_scale"], json!(0.9));
         Ok(())
     }
+
+    /// `FUN_39492ce0`: the slider's endpoints are the `cr_sensitivityMin/Max` cvars, 10..30.
+    #[test]
+    fn mouse_sensitivity_slider_ranges_from_ten_to_thirty() -> Result<(), Box<dyn std::error::Error>> {
+        let mut rt = aa_ui::UiRuntime::new("en_us", 1280.0, 720.0)?;
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(crate::hud::api::HudData::default()));
+        crate::hud::api::install(&mut rt, &bridge)?;
+        install_options(&rt.lua)?;
+        let (min, max): (f64, f64) = rt.lua.load("return X2Option:GetMinxMaxOfMouseSensitivity()").eval()?;
+        assert_eq!((min, max), (10.0, 30.0));
+        assert_eq!(native_default(67), Some(20.0));
+        Ok(())
+    }
 }
