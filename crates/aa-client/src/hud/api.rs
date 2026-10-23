@@ -148,6 +148,9 @@ pub struct HudData {
     pub death_started: std::cell::Cell<Option<u64>>,
     /// The server offered an in-place resurrection (the caster may be the player below level 10).
     pub revive_caster: std::cell::Cell<Option<u32>>,
+    /// The offered caster's name, so `X2Unit:GetUnitNameById` (the death window's `PLAYER_RESURRECTION` handler)
+    /// can name a caster outside the player's target or party.
+    pub revive_caster_name: std::cell::RefCell<Option<String>>,
     /// The player's attack numbers and worn items, what the tooltips are worked out from (`tips.rs`).
     pub tips: super::tips::TipState,
     /// The `tips.sheet_gen` the character window was told about.
@@ -234,6 +237,7 @@ impl Default for HudData {
             death_ends: Default::default(),
             death_started: Default::default(),
             revive_caster: Default::default(),
+            revive_caster_name: Default::default(),
             tips: Default::default(),
             stats_pushed: 0,
             party: Default::default(),
@@ -564,6 +568,18 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
     })?)?;
     let b = bridge.clone();
     hud.raw_set("can_resurrect_here", lua.create_function(move |_, ()| Ok(b.borrow().revive_caster.get().is_some()))?)?;
+    // `X2Unit:GetUnitNameById` for the resurrection caster, which need not be the target (FUN_391d39f0 pushes its id)
+    let b = bridge.clone();
+    hud.raw_set(
+        "unit_name",
+        lua.create_function(move |_, id: String| {
+            let d = b.borrow();
+            if d.revive_caster.get().map(|caster| caster.to_string()).as_deref() != Some(id.as_str()) {
+                return Ok(None);
+            }
+            Ok(d.revive_caster_name.borrow().clone())
+        })?,
+    )?;
     // database lookups for the content hooks: name, icon (and the rest)
     let b = bridge.clone();
     hud.raw_set(
@@ -1547,6 +1563,31 @@ mod tests {
         assert_eq!(death_timeout(Some(1000), 11_000), 290);
         assert_eq!(death_timeout(Some(1000), 301_000), 0);
         assert_eq!(death_timeout(Some(1000), 401_000), 0);
+    }
+
+    #[test]
+    fn resurrection_countdown_exposes_the_flag_the_temple_deadline_and_the_server_wait() -> mlua::Result<()> {
+        let lua = Lua::new();
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        let hud = lua.create_table()?;
+        install_functions(&lua, &hud, &bridge)?;
+        lua.globals().set("HUD", hud)?;
+        bridge.borrow_mut().start = Instant::now().checked_sub(std::time::Duration::from_secs(10)).unwrap();
+        bridge.borrow_mut().death_started.set(Some(0));
+        bridge.borrow_mut().death_ends.set(Some(15_000));
+        lua.load(r#"
+            local flag, temple, wait = HUD.can_resurrect_here(), HUD.death_timeout(), HUD.death_wait()
+            assert(flag == false)
+            assert(temple == 290 and wait == 5)
+        "#).exec()?;
+        bridge.borrow_mut().revive_caster.set(Some(42));
+        bridge.borrow_mut().revive_caster_name.replace(Some("Priest".into()));
+        lua.load(r#"
+            assert(HUD.can_resurrect_here() == true)
+            assert(HUD.unit_name('42') == 'Priest')
+            assert(HUD.unit_name('43') == nil)
+        "#).exec()?;
+        Ok(())
     }
 
     /// An Archery character (ability 6) with 2000 ability exp: what the scripts read in `HUD.state`.

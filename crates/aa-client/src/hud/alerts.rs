@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use aa_audio::{Category, Engine, PlayOptions};
 use aa_net::model::{gender, race};
-use aa_net::state::Skills;
+use aa_net::state::{Player, Skills, Units};
 use aa_net::{Event, NetEvent};
 use aa_ui::UiRuntime;
 use bevy::prelude::*;
@@ -153,7 +153,13 @@ fn say(engine: &Engine, packs: &Packs, me: &Snapshot, item: &str) -> Option<Stri
 }
 
 /// Keep death state even while the loading screen is building the HUD. Offers may arrive before the death packet.
-pub fn track_death(mut events: MessageReader<NetEvent>, bridge: NonSend<HudBridge>, skills: Res<aa_net::state::Skills>) {
+pub fn track_death(
+    mut events: MessageReader<NetEvent>,
+    bridge: NonSend<HudBridge>,
+    skills: Res<aa_net::state::Skills>,
+    units: Option<Res<Units>>,
+    player: Option<Res<Player>>,
+) {
     let data = bridge.0.borrow();
     for NetEvent(event) in events.read() {
         match event {
@@ -161,8 +167,15 @@ pub fn track_death(mut events: MessageReader<NetEvent>, bridge: NonSend<HudBridg
                 data.death_ends.set(None);
                 data.death_started.set(None);
                 data.revive_caster.set(None);
+                data.revive_caster_name.borrow_mut().take();
             }
-            Event::ResurrectionOffered { caster } => data.revive_caster.set(Some(caster.obj_id)),
+            Event::ResurrectionOffered { caster } => {
+                data.revive_caster.set(Some(caster.obj_id));
+                if let (Some(units), Some(player)) = (&units, &player) {
+                    let name = super::combat::unit_name(units, data.game.get(), player, caster.obj_id);
+                    *data.revive_caster_name.borrow_mut() = Some(name);
+                }
+            }
             Event::DeathDetails { obj_id, resurrect_wait_ms, .. } if skills.obj_id != 0 && *obj_id == skills.obj_id => {
                 let now = super::panels::now_ms(data.start);
                 data.death_started.set(Some(now));
@@ -172,6 +185,7 @@ pub fn track_death(mut events: MessageReader<NetEvent>, bridge: NonSend<HudBridg
                 data.death_ends.set(None);
                 data.death_started.set(None);
                 data.revive_caster.set(None);
+                data.revive_caster_name.borrow_mut().take();
             }
             _ => {}
         }
@@ -187,6 +201,8 @@ pub fn show(
     built: Res<HudBuilt>,
     bridge: NonSend<HudBridge>,
     skills: Res<Skills>,
+    units: Res<Units>,
+    player: Res<Player>,
     engine: Option<Res<Engine>>,
     packs: Option<Res<Packs>>,
     time: Res<Time>,
@@ -219,6 +235,14 @@ pub fn show(
                 alerts.push(UseFailed { skill: s.skill_id, result: s.result, value: s.result_value, server: true });
             }
             Event::AbilitySwapped { obj_id, old_ability, ability } if own != 0 && *obj_id == own => ability_changed(&rt, *ability, *old_ability),
+            // FUN_391d39f0: the offer sets the in-place flag and raises PLAYER_RESURRECTION (id 92) with the
+            // caster's unit id; the death window resolves the name (`death_...alb:250-320`).
+            Event::ResurrectionOffered { caster } => {
+                let name = super::combat::unit_name(&units, game, &player, caster.obj_id);
+                *data.revive_caster_name.borrow_mut() = Some(name.clone());
+                info!("hud: resurrection offered by {name:?} ({})", caster.obj_id);
+                rt.fire_event("PLAYER_RESURRECTION", (caster.obj_id.to_string(),));
+            }
             // the death window (`UNIT_DEAD` shows it with the exp lost; the wait before standing up counts down on the HUD clock)
             Event::DeathDetails { obj_id, resurrect_wait_ms, lost_exp, .. } if own != 0 && *obj_id == own => {
                 info!("hud: the player died, may stand up in {} ms, lost {lost_exp} exp", resurrect_wait_ms);
@@ -264,5 +288,63 @@ pub fn show(
             heard.as_deref().unwrap_or("none")
         );
         rt.fire_event("SKILL_MSG", (name, arg, ""));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aa_net::buff::BuffCaster;
+
+    #[test]
+    fn death_keeps_the_server_wait_and_the_resurrection_offer_flag() {
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(super::super::api::HudData::default()));
+        let mut skills = Skills::default();
+        skills.obj_id = 7;
+        let mut app = App::new();
+        app.add_message::<NetEvent>()
+            .insert_non_send(HudBridge(bridge.clone()))
+            .insert_resource(skills)
+            .add_systems(Update, track_death);
+        app.world_mut().write_message(NetEvent(Event::DeathDetails {
+            obj_id: 7,
+            kill_reason: 0,
+            resurrect_wait_ms: 30_000,
+            lost_exp: 12,
+            killer: None,
+        }));
+        app.update();
+        let started = bridge.borrow().death_started.get().expect("a fresh death starts the 5 minute deadline");
+        assert_eq!(bridge.borrow().death_ends.get(), Some(started + 30_000));
+        assert_eq!(bridge.borrow().revive_caster.get(), None);
+        app.world_mut().write_message(NetEvent(Event::ResurrectionOffered { caster: BuffCaster { kind: 0, obj_id: 42 } }));
+        app.update();
+        assert_eq!(bridge.borrow().revive_caster.get(), Some(42));
+    }
+
+    #[test]
+    fn a_resurrection_offer_fires_player_resurrection_with_the_caster_id() -> Result<(), Box<dyn std::error::Error>> {
+        let rt = UiRuntime::new("en_us", 1280.0, 720.0)?;
+        rt.lua.load(r#"
+            caster = nil
+            UIParent:SetEventHandler('PLAYER_RESURRECTION', function(id) caster = id end)
+        "#).exec()?;
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(super::super::api::HudData::default()));
+        let mut app = App::new();
+        app.add_message::<NetEvent>()
+            .add_message::<UseFailed>()
+            .insert_resource(HudBuilt { up: true, fresh: false })
+            .insert_non_send(HudBridge(bridge))
+            .insert_non_send(rt)
+            .init_resource::<Skills>()
+            .init_resource::<ScriptedFails>()
+            .insert_resource(Units::default())
+            .insert_resource(Player::default())
+            .insert_resource(Time::<()>::default())
+            .add_systems(Update, show);
+        app.world_mut().write_message(NetEvent(Event::ResurrectionOffered { caster: BuffCaster { kind: 0, obj_id: 42 } }));
+        app.update();
+        app.world().non_send::<UiRuntime>().lua.load("assert(caster == '42')").exec()?;
+        Ok(())
     }
 }
