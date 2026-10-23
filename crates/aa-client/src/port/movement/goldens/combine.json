@@ -1,0 +1,1370 @@
+{
+  "function": "FUN_39402590",
+  "address": "0x39402590",
+  "module": "x2game.dll",
+  "cases": [
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": true,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": true,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": false,
+        "back": true,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": true,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 1,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 1,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": true,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": true,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 1,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": true,
+        "left": false,
+        "back": true,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": true,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": true,
+        "back": false,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": true,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 1,
+      "cancel_pref": 1,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x3f800000",
+          "f32": 1.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 0,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 1,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 1,
+      "cancel_pref": 0,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 1,
+      "mode_b": 1,
+      "turn_right": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "turn_left": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "can_turn": 1,
+      "state_30": 1,
+      "cancel_pref": 1,
+      "out": {
+        "forward": true,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        "turn_left": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 1,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "turn_left": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        },
+        "turn_left": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        }
+      }
+    },
+    {
+      "axes": [
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        },
+        {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      ],
+      "mode_a": 0,
+      "mode_b": 0,
+      "turn_right": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "turn_left": {
+        "bits": "0xbf000000",
+        "f32": -0.5
+      },
+      "can_turn": 1,
+      "state_30": 0,
+      "cancel_pref": 0,
+      "out": {
+        "forward": false,
+        "right": false,
+        "left": false,
+        "back": false,
+        "turn_right": {
+          "bits": "0x3f000000",
+          "f32": 0.5
+        },
+        "turn_left": {
+          "bits": "0xbf000000",
+          "f32": -0.5
+        }
+      }
+    }
+  ]
+}

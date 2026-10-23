@@ -14,14 +14,14 @@ function of the listed inputs/struct fields only (safe for synthetic differentia
 | `0x393f8d20` | 70 | action name -> action index (0x68-entry table at `0x39ac8e68`) | 393f8d70, 393f8db0, 393f8df0, 393ffc20 | `XlCompareString` | table `0x39ac8e68` (dump-verified) | **pure** |
 | `0x39406540` | 264 | `X2::GameClient::InputManager::Update`; calls UpdateMovement on `[this+4]` | 39171590 | 39404d50, 39402b30, 39360020, 390b3750 | `this` = {paused byte, inline InputState at +4}, `DAT_3a5bb1d8` (GameClient) | state |
 | `0x39404d50` | 5971 | UpdateMovement: whole input -> MovementRequest | 39406540 | 39 calls: 39360020, 390b3750, 392aa250, 39424580, 39403a90, 39402590, 39402f60, 39402690, 39402e00, 39402c50, 394037d0, 394039c0, 39402fe0, 390b66c0, 390b67e0 | `InputState` (§structs), request at `[ebp-0x130]`; flags 0x1000/0x800/0x2000; cvars via `DAT_39aefb98` | state |
-| `0x39402590` | 246 | action/axis combiner (mouse buttons cancel strafe/turn) | 39404d50 | 39424580 | inputs only | **pure** |
-| `0x39402690` | 371 | opposite-axis preference + press timers | 39404d50 | 39424580 | `this+0x9c..0xa8` (press times) | state (small) |
+| `0x39402590` | 246 | action/axis combiner; turn axes 4/5 passed by pointer, extra flags via ESI/EDI | 39404d50 | 39424580 | live axes 0..3, turn axes 4/5, mode/can-turn/prefer bytes | **pure given the live input map** |
+| `0x39402690` | 371 | opposite-axis preference + press timers (axis 0..3 -> `+0x9c..0xa8`) | 39404d50 | 39424580 | `this+0x9c..0xa8`, live game time via `game->vtable+0x2c` | state (small) |
 | `0x39402e00` | 349 | turn delta: keyboard or mouse (see MAP §3) | 39404d50 | 3915c700, 394fab30, 3922aed0 | `this+0x38` (mount ramp), `unit+0x1c1`, `unit+0x174`; cvar `0x308`; π `0x399d5ea0`; 1/3 `0x399a1c40`; dt cap `0x399a3040` | state (accumulator) |
 | `0x3915c700` | 193 | mouse yaw delta (`rotateyaw`) | 39402e00, 39169860 | 39424580 | axis 8; `0x3999cce8=10`, `0x399b050c=2π`, `0x399b0724=-0.002`, `0x3999c47c=0.5`, dt cap | **pure** (cvar/axis) |
 | `0x3915c7d0` | 193 | mouse pitch delta (`rotatepitch`) | 39169860 | 39424580 | axis 9; same constants | **pure** |
 | `0x39402b30` | 283 | InputState reset (clears the whole state, called when InputManager is paused) | 39406540 | - | clears +0x0c..+0xc0; +0x78=0xff, +0x50=1.0, +0x34=30.0 (`0x3999f7c0`) | **pure** reset |
 | `0x39402c50` | 427 | velocity smoothing/acceleration into `this+0x24` | 39404d50 | - | `this+0x24..0x2c` (velocity), `this+0x34` (accel, default 30.0), `0x3999cf90=0.01`, `0x399c4e20=0.55`, dt cap | state |
-| `0x39402f60` | 126 | ladder-axis filter by `unit+0x23c` | 39404d50 | - | kinds {4,8} zero the axis; {6,7,10} do not | **pure** |
+| `0x39402f60` | 126 | ladder-axis filter by `unit+0x23c`; unit in EAX, axes/flags in ESI/EDI | 39404d50 | - | kinds {4,8} set the flag and zero the axis; {6,7,10} set the flag only | **pure** |
 | `0x39402fe0` | 198 | external move-to velocity | 39404d50 | 390b3850, 390b3750 | `game->vtable[0x204]` (path), +0x14a.. | state |
 | `0x39403330` | 107 | "is this the local unit / can turn" | 39403a90, 39404d50 | 39360020, 390b3750 | `DAT_39b02294` (world), game vtable +4 | state |
 | `0x394037d0` | 119 | movement type: 1 default, 0/5/6 from state (meaning [?]) | 39404d50 | 390b3750, 39354600 | `this+0x3a78`, `+0x3b00` | state |

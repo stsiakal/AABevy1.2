@@ -48,10 +48,10 @@ pub struct InputState {
     pub axis_h: u8,              // +0x91
     pub pad_92: u16,             // +0x92
     pub axis_vals: [f32; 2],     // +0x94/+0x98 R (copies of local_64/local_68)
-    pub press_time_l: f32,       // +0x9c  R FUN_39402690
-    pub press_time_r: f32,       // +0xa0
-    pub press_time_f: f32,       // +0xa4
-    pub press_time_b: f32,       // +0xa8
+    pub press_forward: f32,      // +0x9c  R FUN_39402690 axis 0
+    pub press_back: f32,         // +0xa0  R axis 1
+    pub press_left: f32,         // +0xa4  R axis 2
+    pub press_right: f32,        // +0xa8  R axis 3
     pub turn_l_start: f32,       // +0xac  R game time when turnleft went non-zero
     pub turn_r_start: f32,       // +0xb0  R same for turnright (used to pick the newer axis)
     pub goto_unit_id: u32,       // +0xb4  R external target unit id (0 = none)

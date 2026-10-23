@@ -253,3 +253,23 @@ to a file under `data/extract/aa-movement/` (git-ignored) and keep the seed case
 * U5: log the send timer and the `DAT_3a59f850` value per frame.
 * U6: set `unit+0x174` to 6.283185 vs 360 and compare the turn rate.
 * U9: hold jump during a walk and breakpoint every physics action.
+
+
+## 7. Phase A goldens (captured)
+
+The Phase A leaves are captured and checked in
+`crates/aa-client/src/port/movement/goldens/*.json` (raw `f32` bits plus the decimal value).
+The capture tool is `rust/tools/capture_movement_goldens.py` in the AAEmu lane; it drives
+`aaemu-clientdriver call` against a hidden 1.2 client that is already in the world.
+
+* x2game bases are resolved with `mod x2game.dll`; the tool uses `module+<rva>`, never a
+  hardcoded base.
+* Frame time and `keyboard_rotate_speed` are patched inside tiny x86 wrappers: the wrappers
+  redirect `gEnv+0x14` to a scratch timer object and restore it before returning, and patch the
+  cvar field `+0x308` only for the call. The client never ticks with fake globals.
+* The wrappers also set live action axes through the client's own `FUN_393fd280` and restore
+  them to zero. They require scratch memory that is executable; the lane driver's `alloc`
+  therefore uses `PAGE_EXECUTE_READWRITE` (`aaemu-clientdriver/native/memcall.cpp`).
+* Goldens are bit-exact. The direction factor additionally uses `atan2`; the Rust port matched
+  all 54 captured inputs bit-for-bit, but its test keeps a documented 1e-6 tolerance because it
+  uses Rust's libm.

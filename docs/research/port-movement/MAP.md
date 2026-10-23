@@ -182,10 +182,11 @@ how the rotation is processed.
 * Per-frame: `FUN_39137470` (4319 B) validates the ladder entity and updates the transform/IK.
 * Input mapping: `FUN_39402f60` (126 B) is called from `UpdateMovement` with the controlled
   unit; it switches on `unit+0x23c`:
-  - kind 4 (`net`) or 8 (`guardrail`): a positive left/right axis is converted to a
-    forward/back flag and the axis is zeroed;
-  - kind 6 (`hrope`), 7 (`mast`) or 10 (`bigtree`): the same conversion without zeroing the axis.
-  The exact axis-to-flag pairing is [I] (see `functions.md`, 0x39402f60).
+  - kind 4 (`net`) or 8 (`guardrail`): a positive turn-right/turn-left axis (`FUN_39424580(5)` /
+    `(4)`) sets the right/left flag and the axis is zeroed;
+  - kind 6 (`hrope`), 7 (`mast`) or 10 (`bigtree`): the same right/left flags without zeroing
+    the axes; other kinds do nothing.
+  Verified from capstone and differential goldens (phase A; `port/movement/input.rs`).
 * Leave: `Player::LeaveLadder` `FUN_39135570` (1732 B), modes 2–7; rotation through
   `CPlayerRotation::ProcessLadderRotation` `FUN_3913e6a0`.
 * Kind names from `FUN_39132be0` (0x39132be0): 4 net, 5 hrope, 7 mast, 8 guardrail,
@@ -268,13 +269,18 @@ the request; the actor layer consumes it in the next physics phase.
 
 ### 2.3 Axis combiner (0x39402590)
 
-Signature `void FUN_39402590(char fwd, char back, float* axisL, float* axisR, char* left,
-char* right, char mouse0, char mouse1, char flag9)`. It reads axes 0..3 (`FUN_39424580(0..3)`),
-sets left/right from axes 2/3, sets the "alternative forward" from param_8 (a mouse button) and
-`FUN_39424580(0)`. If a mouse button is held (`param_7 != 0`) it clears the strafe axes, and if
-the cancel flag (`param_9`, the "prefer one of two axes" bit from `FUN_39404d50`) is set it
-zeroes the weaker opposite axis. This exactly reproduces the behaviour that A/D become strafe
-while a mouse button is down.
+The call site reuses the stack: `FUN_39403a90` is `ret 4` with three pushed arguments, so its
+two older pushes become the last two arguments of the combiner. The real signature is
+`void FUN_39402590(char mode1, char mode2, float* turnRight, float* turnLeft, byte* forward,
+byte* right, byte canTurn, byte state30, byte prefer, ESI=byte* back, EDI=byte* left)`.
+
+It reads axes 0..3 (`FUN_39424580(0..3)`): forward starts at `state30 != 0` or `axis0 != 0`,
+back is `axis1 > 0`, left is `axis2 > 0`, right is `axis3 > 0`. Only when `canTurn` is set and
+one of the two input-mode bytes is non-zero, a positive turn-left axis 4 is converted into the
+left flag and zeroed (or, when turn-right is also positive, dropped without its flag); a positive
+turn-right axis 5 sets the right flag and is zeroed. Without `canTurn` both strafe flags are
+cleared. If both mode bytes are set, the forward flag is also set. Exact branch order and the
+`prefer` behaviour are ported and covered by goldens (`port/movement/input.rs`).
 
 `FUN_39402690` (371 B) reads axes 0..3 and maintains per-direction "press time" at
 `this+0x9c..0xa8`; when two opposite directions are held it drops the one with the lower time.
@@ -404,13 +410,16 @@ button: the character turns to the camera while held, and A/D keyboard turn is c
 
 ### 3.4 Mouse delta
 
-`FUN_3915c700` (193 B) **[R]** reads axis 8 (`mousedx`) and builds a yaw term from
-`dt = min(game_dt, 0.033)`, `dt * 10.0 * 2π` (`0x3999cce8 = 10.0`, `0x399b050c = 2π`) and
-`axis * -0.002` (`0x399b0724`), followed by two `min/max`/`abs` folds with `0.5`. The exact
-fold (it can return 0 for most inputs if read literally) is **U12**; treat the constants as the
-port's input and match the original's outputs on a table of (dx, dt) instead of re-deriving the
-algebra from the decompile. `FUN_3915c7d0` is the same shape for pitch (`mousedy`). The camera
-also calls both directly in mode 1 (§4).
+`FUN_3915c700` (193 B) **[R]** reads axis 8 (`mousedx`). Let
+`c = (min(dt, 0.033) * 10.0) * 2π` and `a = axis * -0.002` (both `f32`, constants
+`0x3999cce8 = 10.0`, `0x399b050c = 2π`, `0x399b0724 = -0.002`). The first fold
+`t = ((a+c) - |a-c|) * 0.5` is SSE `f32`; the second fold
+`((t-c) + |t+c|) * 0.5` runs in x87 80-bit and is rounded once to `f32` on return. For finite
+values the result is `clamp(a, -c, c)`, i.e. the mouse delta is limited to
+`±dt*10*2π*0.002` rad before the final `0.5` gain. `FUN_3915c7d0` is the same code on axis 9
+(`mousedy`). The camera also calls both directly in mode 1 (§4). Phase A resolves **U12**;
+the exact port is `port/movement/mouse.rs` and all 14 captured (dt, axis) cases per function are
+bit-exact.
 
 ### 3.5 Summary table
 
@@ -776,8 +785,10 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
     `1 - |delta| * 0.55` (`DAT_399c4e20 = 0.55`) when `|delta| <= 1.0`; the decompile also has
     an artefactual `*(float*)&param_2` in the `accel*dt > 1` branch, so record the original's
     output table for `accel*dt >= 1` and match that.
-12. **U12 - mouse yaw fold.** The two `min/max` folds in `FUN_3915c700`/`3915c7d0` (sign, abs,
-    0.5) are not yet reduced to a formula; use a live lookup table.
+12. **U12 - mouse yaw fold. RESOLVED (phase A).** The two folds are the exact `f32`/x87
+    sequence `t = ((a+c)-|a-c|)*0.5`, `result = ((t-c)+|t+c|)*0.5` with
+    `a = axis*-0.002`, `c = (min(dt,0.033)*10)*2π`, equivalent to `clamp(a,-c,c)`; see §3.4.
+    Captured goldens in `crates/aa-client/src/port/movement/goldens/mouse_*.json`.
 13. **U13 - camera zoom cvar roles.** Which of `DAT_39afe204/208/24c/1cc` is speed, power, near
     and far is inferred from the code order; a live setter test (`uc_set_wheel_dist` etc.)
     settles it.

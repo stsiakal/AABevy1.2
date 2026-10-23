@@ -1,0 +1,1297 @@
+{
+  "function": "FUN_39402e00",
+  "address": "0x39402e00",
+  "module": "x2game.dll",
+  "cases": [
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "axis4": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3ccde32f",
+        "f32": 0.025132743641734123
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3ccde32f",
+        "f32": 0.025132743641734123
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "axis4": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0xbccde32f",
+        "f32": -0.025132743641734123
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "axis4": {
+        "bits": "0xbf800000",
+        "f32": -1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3a83126f",
+        "f32": 0.0010000000474974513
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3acde32f",
+        "f32": 0.0015707964776083827
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3d072b02",
+        "f32": 0.032999999821186066
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3d545247",
+        "f32": 0.0518362782895565
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3d086595",
+        "f32": 0.0333000011742115
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3d545247",
+        "f32": 0.0518362782895565
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3d4ccccd",
+        "f32": 0.05000000074505806
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3d545247",
+        "f32": 0.0518362782895565
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3dcccccd",
+        "f32": 0.10000000149011612
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3d545247",
+        "f32": 0.0518362782895565
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3e800000",
+        "f32": 0.25
+      },
+      "out": {
+        "bits": "0x3c4de32f",
+        "f32": 0.012566371820867062
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "out": {
+        "bits": "0x3d4de32f",
+        "f32": 0.050265487283468246
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3c7ba885",
+        "f32": 0.015360002405941486
+      },
+      "out_accum": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3f79b133",
+        "f32": 0.975360095500946
+      },
+      "out_accum": {
+        "bits": "0x3f820c4a",
+        "f32": 1.0160000324249268
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x4039999a",
+        "f32": 2.9000000953674316
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x403328b8",
+        "f32": 2.7993602752685547
+      },
+      "out_accum": {
+        "bits": "0x403a9fbf",
+        "f32": 2.9160001277923584
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x40400000",
+        "f32": 3.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x403851ec",
+        "f32": 2.880000114440918
+      },
+      "out_accum": {
+        "bits": "0x40400000",
+        "f32": 3.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x40a00000",
+        "f32": 5.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x403851ec",
+        "f32": 2.880000114440918
+      },
+      "out_accum": {
+        "bits": "0x40400000",
+        "f32": 3.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x00000000",
+          "f32": 0.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x40c90fdb",
+          "f32": 6.2831854820251465
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3d4ccccd",
+        "f32": 0.05000000074505806
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3ae279e7",
+        "f32": 0.0017278761370107532
+      },
+      "out_accum": {
+        "bits": "0x3d4ccccd",
+        "f32": 0.05000000074505806
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x40000000",
+        "f32": 2.0
+      },
+      "unit": {
+        "kind": 4,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": {
+        "kind": 3,
+        "turn_speed": {
+          "bits": "0x43b40000",
+          "f32": 360.0
+        }
+      },
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": false,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3ccde32f",
+        "f32": 0.025132743641734123
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": true,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0xbb031200",
+        "f32": -0.001999974250793457
+      },
+      "axis8": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "use_mouse": true,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0xbb031200",
+        "f32": -0.001999974250793457
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": true
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0xc0000000",
+        "f32": -2.0
+      },
+      "axis8": {
+        "bits": "0x447a0000",
+        "f32": 1000.0
+      },
+      "use_mouse": true,
+      "dt": {
+        "bits": "0x3d4ccccd",
+        "f32": 0.05000000074505806
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0xc0000000",
+        "f32": -2.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": true
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x3f80adfc",
+        "f32": 1.0053095817565918
+      },
+      "axis8": {
+        "bits": "0xc47a0000",
+        "f32": -1000.0
+      },
+      "use_mouse": true,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x3f80adfc",
+        "f32": 1.0053095817565918
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": true
+    },
+    {
+      "turn_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "unit": null,
+      "axis5": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis4": {
+        "bits": "0x3f800000",
+        "f32": 1.0
+      },
+      "mouse_yaw": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "axis8": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "use_mouse": true,
+      "dt": {
+        "bits": "0x3c83126f",
+        "f32": 0.01600000075995922
+      },
+      "keyboard_rotate_speed": {
+        "bits": "0x3f000000",
+        "f32": 0.5
+      },
+      "out": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "out_accum": {
+        "bits": "0x00000000",
+        "f32": 0.0
+      },
+      "notify": false
+    }
+  ]
+}
