@@ -90,7 +90,7 @@ pub enum ClientMsg {
     /// `CSRollDice`: `/dice` with a maximum in `2..=1000000`.
     RollDice { max: i32 },
     ChangeTarget { obj_id: u32 },
-    /// `CSUpdateActionSlot`: puts `action` into hotbar slot `slot` (0 based).
+    /// `CSUpdateActionSlot`: puts `action` into hotbar slot `slot` (1 based, 0 unused).
     UpdateActionSlot { slot: u8, action: ActionSlot },
     /// `CSSwapItems`: moves the item of one slot to another, swaps it with the item there, or merges two stacks of one
     /// kind; equipping and unequipping are swaps with the equipment container.
@@ -1746,6 +1746,11 @@ mod tests {
         // CSUpdateActionSlot: slot, kind, id (u32 for spells and item types, u64 for item ids).
         let spell = ClientMsg::UpdateActionSlot { slot: 4, action: ActionSlot { kind: ActionKind::Spell, id: 18132 } };
         assert_eq!(spell.encode_body(), [4, 2, 0xD4, 0x46, 0, 0]);
+        // The original client's page 1 / page 2 first-cell drops (slot 1, spell 12039; slot 49, spell 16064).
+        let page1 = ClientMsg::UpdateActionSlot { slot: 1, action: ActionSlot { kind: ActionKind::Spell, id: 12039 } };
+        assert_eq!(page1.encode_body(), [0x01, 0x02, 0x07, 0x2f, 0, 0]);
+        let page2 = ClientMsg::UpdateActionSlot { slot: 49, action: ActionSlot { kind: ActionKind::Spell, id: 16064 } };
+        assert_eq!(page2.encode_body(), [0x31, 0x02, 0xc0, 0x3e, 0, 0]);
         let item = ClientMsg::UpdateActionSlot { slot: 0, action: ActionSlot { kind: ActionKind::ItemId, id: 258 } };
         assert_eq!(item.encode_body(), [0, 4, 2, 1, 0, 0, 0, 0, 0, 0]);
         assert_eq!(ClientMsg::UpdateActionSlot { slot: 7, action: ActionSlot::default() }.encode_body(), [7, 0]);

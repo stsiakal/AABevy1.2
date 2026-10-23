@@ -239,7 +239,7 @@ pub enum Command {
     LeaveChatChannel { chat_id: i64 },
     /// `CSRollDice`: `/dice [max]`.
     RollDice { max: i32 },
-    /// Put `action` into hotbar slot `slot` (0 based). The server does not echo it: the session
+    /// Put `action` into hotbar slot `slot` (1 based, 0 unused). The server does not echo it: the session
     /// reports `ActionSlotChanged` itself.
     SetActionSlot { slot: u8, action: ActionSlot },
     /// Move the item in one slot to another, swap it with the item there or merge two stacks (also wearing and taking

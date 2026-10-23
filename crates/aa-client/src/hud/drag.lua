@@ -208,7 +208,7 @@ end
 
 -- The slot widgets (action bars, skill window) --------------------------------------------------------------
 -- The 1-based page API: the main 12 slots follow the page, the two 6-slot sub bars stay at 13..24
--- (`FUN_392c5a50`: pages 2..4 use global slots 48..83, the sub bars 12..23).
+-- (`FUN_392c5a50`: pages 2..4 use global slots 49..84, the sub bars 13..24; slot 0 is unused).
 local function actionSlotIndex(slotIdx)
   local mapped = HUD.action_slot(slotIdx)
   return mapped or slotIdx

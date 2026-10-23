@@ -478,7 +478,7 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
             let display = usize::try_from(slot).ok().and_then(|slot| slot.checked_sub(1));
             Ok(display
                 .and_then(|display| aa_net::state::ActionBar::display_slot_on(b.borrow().action_page, display))
-                .map(|slot| slot as i64 + 1))
+                .map(|slot| slot as i64))
         })?,
     )?;
     let b = bridge.clone();
@@ -1253,7 +1253,7 @@ fn push_panels(rt: &UiRuntime, bridge: &Shared) {
     }
     // which action bar slots are dark and why (`usable.rs`)
     let dark = |p: &Panels| -> Vec<(usize, &'static str)> {
-        p.actions.iter().enumerate().filter_map(|(i, s)| Some((i + 1, super::usable::result_name(s.as_ref()?.blocked?)))).collect()
+        p.actions.iter().enumerate().filter_map(|(i, s)| Some((i, super::usable::result_name(s.as_ref()?.blocked?)))).collect()
     };
     if dark(&old) != dark(&new) {
         let d = bridge.borrow();
@@ -1479,7 +1479,7 @@ mod tests {
         bridge.borrow_mut().requests.push(Request::SetActionBarPage { page: 1 });
         let mut bar = aa_net::state::ActionBar::default();
         bar.slots = vec![aa_net::items::ActionSlot::default(); aa_net::items::ACTION_SLOTS];
-        bar.slots[48] = aa_net::items::ActionSlot { kind: aa_net::items::ActionKind::Spell, id: 18132 };
+        bar.slots[49] = aa_net::items::ActionSlot { kind: aa_net::items::ActionKind::Spell, id: 18132 };
         let handle = bridge.clone();
         let mut app = App::new();
         app.insert_non_send(HudBridge(bridge))

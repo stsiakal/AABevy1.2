@@ -5,8 +5,8 @@ use crate::model::{Equipment, Item, slot};
 use crate::session::Event;
 
 resource! {
-    /// The hotbar: 85 slots, index = slot number (the UI's slot 1 is index 0), and the current
-    /// page (0 based; the scripts count pages from 1).
+    /// The hotbar: 85 slots, index = the `CSUpdateActionSlot` slot number (1 based, 0 unused), and
+    /// the current page (0 based; the scripts count pages from 1).
     pub struct ActionBar {
         pub slots: Vec<ActionSlot>,
         pub page: u8,
@@ -32,12 +32,12 @@ impl ActionBar {
         true
     }
 
-    /// The first global slot a page shows. Pages 2..4 are 48..83; page 1 is 0..11
-    /// (`FUN_392c5a50`, `(page + 3) * 12 + index`).
+    /// The first global slot a page shows. Page 1 is 1..12; pages 2..4 are 49..84
+    /// (`FUN_392c5a50` offsets 48 / 60 / 72, one based like the packet; slot 0 is unused).
     pub fn page_base(page: u8) -> Option<usize> {
         match page {
-            0 => Some(0),
-            1..=3 => Some(48 + usize::from(page - 1) * ACTION_PAGE_SLOTS),
+            0 => Some(1),
+            1..=3 => Some(49 + usize::from(page - 1) * ACTION_PAGE_SLOTS),
             _ => None,
         }
     }
@@ -52,7 +52,8 @@ impl ActionBar {
     }
 
     /// The global slot the 0-based `display` index of the action bar shows: its first 12 slots
-    /// follow the page, the two 6-slot sub bars stay at 12..23, later bars keep their own index.
+    /// follow the page, the two 6-slot sub bars stay at 13..24, later bars keep their own index
+    /// plus one (slot 0 is unused).
     pub fn display_slot(&self, display: usize) -> Option<usize> {
         Self::display_slot_on(self.page, display)
     }
@@ -61,7 +62,7 @@ impl ActionBar {
         if display < ACTION_PAGE_SLOTS {
             Self::page_slot(page, display)
         } else {
-            (display < ACTION_SLOTS).then_some(display)
+            (display + 1 < ACTION_SLOTS).then_some(display + 1)
         }
     }
 
@@ -781,16 +782,16 @@ mod tests {
     fn the_action_bar_follows_the_server_and_local_changes() {
         let mut bar = ActionBar::default();
         let mut slots = vec![ActionSlot::default(); ACTION_SLOTS];
-        slots[0] = ActionSlot { kind: ActionKind::Spell, id: 18132 };
-        slots[10] = ActionSlot { kind: ActionKind::ItemType, id: 8001 };
+        slots[1] = ActionSlot { kind: ActionKind::Spell, id: 18132 };
+        slots[11] = ActionSlot { kind: ActionKind::ItemType, id: 8001 };
         assert!(bar.apply(&Event::ActionSlots(slots)));
-        assert_eq!(bar.get(0).unwrap().skill_id(), Some(18132));
-        assert!(bar.get(1).is_none());
+        assert_eq!(bar.get(1).unwrap().skill_id(), Some(18132));
+        assert!(bar.get(2).is_none());
         assert!(bar.apply(&Event::ActionSlotChanged {
-            slot: 1,
+            slot: 2,
             action: ActionSlot { kind: ActionKind::ItemId, id: 77 }
         }));
-        assert_eq!(bar.get(1).unwrap().item_id(), Some(77));
+        assert_eq!(bar.get(2).unwrap().item_id(), Some(77));
         assert!(!bar.apply(&Event::ActionSlotChanged { slot: 200, action: ActionSlot::default() }));
         // The item slots show counts from the bag.
         let mut inv = Inventory::default();
@@ -799,9 +800,9 @@ mod tests {
             ItemTask::Add { raw_detail_block: None, action: action::CREATE, container: 2, slot: 3, item: item(8001, 77, 12) },
             ItemTask::Add { raw_detail_block: None, action: action::CREATE, container: 2, slot: 5, item: item(8001, 78, 8) },
         ]));
-        assert_eq!(bar.item_count(10, &inv), Some(20));
-        assert_eq!(bar.item_count(1, &inv), Some(12));
-        assert_eq!(bar.item_count(0, &inv), None);
+        assert_eq!(bar.item_count(11, &inv), Some(20));
+        assert_eq!(bar.item_count(2, &inv), Some(12));
+        assert_eq!(bar.item_count(1, &inv), None);
         assert!(bar.apply(&Event::LeftWorld { target: 1 }));
         assert!(bar.slots.is_empty());
     }
@@ -814,24 +815,26 @@ mod tests {
         assert_eq!(bar.page(), 3);
         assert!(!bar.set_page(4));
         assert_eq!(bar.page(), 3);
-        // The main 12 slots are page managed; the two 6-slot sub bars are always 12..23.
-        assert_eq!(ActionBar::page_slot(0, 0), Some(0));
-        assert_eq!(ActionBar::page_slot(0, 11), Some(11));
-        assert_eq!(ActionBar::page_slot(1, 0), Some(48));
-        assert_eq!(ActionBar::page_slot(1, 11), Some(59));
-        assert_eq!(ActionBar::page_slot(2, 0), Some(60));
-        assert_eq!(ActionBar::page_slot(3, 11), Some(83));
+        // Slots 1.. are the client's / packet's numbering; slot 0 is unused. The main 12 slots are
+        // page managed; the two 6-slot sub bars are always 13..24.
+        assert_eq!(ActionBar::page_slot(0, 0), Some(1));
+        assert_eq!(ActionBar::page_slot(0, 11), Some(12));
+        assert_eq!(ActionBar::page_slot(1, 0), Some(49));
+        assert_eq!(ActionBar::page_slot(1, 11), Some(60));
+        assert_eq!(ActionBar::page_slot(2, 0), Some(61));
+        assert_eq!(ActionBar::page_slot(3, 11), Some(84));
         assert_eq!(ActionBar::page_slot(3, 12), None);
         assert_eq!(ActionBar::page_slot(4, 0), None);
         bar.set_page(1);
-        assert_eq!(bar.display_slot(0), Some(48));
-        assert_eq!(bar.display_slot(11), Some(59));
-        assert_eq!(bar.display_slot(12), Some(12));
-        assert_eq!(bar.display_slot(23), Some(23));
-        assert_eq!(bar.display_slot(24), Some(24));
-        assert_eq!(bar.display_slot(ACTION_SLOTS), None);
+        assert_eq!(bar.display_slot(0), Some(49));
+        assert_eq!(bar.display_slot(11), Some(60));
+        assert_eq!(bar.display_slot(12), Some(13));
+        assert_eq!(bar.display_slot(23), Some(24));
+        assert_eq!(bar.display_slot(24), Some(25));
+        assert_eq!(bar.display_slot(ACTION_SLOTS - 2), Some(ACTION_SLOTS - 1));
+        assert_eq!(bar.display_slot(ACTION_SLOTS - 1), None);
         let mut slots = vec![ActionSlot::default(); ACTION_SLOTS];
-        slots[48] = ActionSlot { kind: ActionKind::Spell, id: 18132 };
+        slots[49] = ActionSlot { kind: ActionKind::Spell, id: 18132 };
         assert!(bar.apply(&Event::ActionSlots(slots)));
         assert_eq!(bar.get(bar.display_slot(0).unwrap()).unwrap().skill_id(), Some(18132));
         assert!(bar.apply(&Event::LeftWorld { target: 1 }));
