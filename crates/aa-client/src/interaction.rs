@@ -19,8 +19,7 @@ pub(crate) fn sphere_gap(from: Vec3, from_radius: f32, to: Vec3, to_radius: f32)
 /// Gap between a sphere and an axis-aligned box, clamped at 0: the nearest point of the box to the
 /// sphere's centre minus its radius (the box half of `FUN_398b1ab0`).
 pub(crate) fn box_gap(from: Vec3, from_radius: f32, min: Vec3, max: Vec3) -> f32 {
-    let min = min.min(max);
-    let max = min.max(max);
+    let (min, max) = (min.min(max), min.max(max));
     let nearest = from.clamp(min, max);
     (from.distance(nearest) - from_radius.max(0.0)).max(0.0)
 }
