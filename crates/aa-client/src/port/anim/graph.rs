@@ -5,18 +5,34 @@
 //!
 //! * inputs (`+0x10`): one `CIntegerInputValue`/`CFloatInputValue`/`CKeyedInputValue` per
 //!   `<Inputs>` child, in document order; float inputs use the fixed 1/1024 precision, integer
-//!   and float inputs get an ordered range list built from every guard interval, keyed inputs
-//!   get the document-order key list;
+//!   and float inputs get an ordered range list built by `LoadInputs FUN_30611d30`;
 //! * states (`+0x58`): `0xa0` bytes each, name/parent/cost/flags/guards/factory range;
 //! * transitions (`+0x68`): sorted `0xc`-byte `{from,to,forceFollowChance,cost,transitionTime}`;
 //! * hubs: the `Main Hub`/`Main_Hub` state id (`+0x204`);
 //! * parameterisation: `[stance]`, `[dir]`, `[num]`, `[version]` copies appended after the
 //!   originals in parameter/value order, with the template original removed.
 //!
+//! State ordering (`FUN_3060aed0`): the originals are sorted (root states first, then by the id
+//! bytes) and emitted in dependency passes. A state is only emitted once its `extend` parent is
+//! present; states whose parent sorts after them (the vehicle states in `player_full_body`)
+//! therefore land after the parameterised copies. The copies of every pass follow that pass's
+//! originals, which is exactly the live `player_full_body` permutation.
+//!
+//! Transitions with placeholders are instantiated **per shared parameter combination**, not by
+//! zipping the endpoint lists: `[dir]_start -> [dir]_b_end` yields only the `b/bl/br` links
+//! because `_b_end` has no `f/fl/fr/l/r` copies. This produces the 59 links that a zip misses.
+//!
+//! Input ranges (`LoadInputs` #5): every state criterion in `SelectWhen` (with the matching
+//! `<Override>`), every literal template `SelectWhen`, every template `Guard` (parameter
+//! substituted) and the template's `MoveSpeedLH`/`TurnSpeedLH` parameter pairs are inserted
+//! into the original's interval map (`FUN_30655d50`/`FUN_30655be0`/`FUN_30655e40`), clipped
+//! (`FUN_306560c0`) and gap-filled at the midpoint of each hole (`FUN_30655c40`). The live
+//! range vectors are the resulting nodes.
+//!
 //! The live tables are captured as JSON goldens by `rust/tools/capture_anim_goldens.py` in the
 //! `test/anim-golden` lane.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use roxmltree::{Document, Node};
 
@@ -55,7 +71,7 @@ pub struct GraphInput {
     /// `+0x30`/`+0x34` (float objects only).
     pub scale: f32,
     pub offset: f32,
-    /// `+0x18..+0x1c` ordered, merged inclusive ranges.
+    /// `+0x18..+0x1c`, the `LoadInputs` interval map after clipping and gap filling.
     pub ranges: Vec<(i32, i32)>,
     /// Keyed inputs: document-order name -> index.
     pub keys: Vec<(String, u16)>,
@@ -115,6 +131,9 @@ pub struct StateInfo {
     pub can_mix: bool,
     /// Child factories (template/additive/signal/... in document order).
     pub templates: Vec<TemplateInfo>,
+    /// Inputs mentioned by the state's own `SelectWhen` (bare criteria included); inherited
+    /// guards for these inputs are suppressed.
+    pub mentioned_inputs: Vec<u16>,
 }
 
 /// One transition (`0xc` bytes).
@@ -158,16 +177,42 @@ struct RawState<'a> {
 #[derive(Clone, Debug)]
 struct ExpandedState<'a> {
     node: Node<'a, 'a>,
+    /// The raw `<State id>` this copy came from (`[stance]` placeholders intact).
+    source_id: String,
     id: String,
     parent_name: Option<String>,
     allow_select: bool,
     include_in_game: bool,
     can_mix: bool,
     cost: u16,
-    overrides: Vec<(String, Node<'a, 'a>)>,
-    /// Placeholder values in parameter order, used to expand links on this state.
-    combo: Vec<String>,
+    /// `<Override id>` key in parameter document order, comma separated.
+    override_key: String,
+    /// Placeholder values in the order they appear in the id.
+    mark_values: Vec<String>,
     is_copy: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct TemplateLib {
+    defs: HashMap<String, TemplateDef>,
+}
+
+#[derive(Clone, Debug)]
+struct TemplateDef {
+    params: Vec<String>,
+    /// Literal `SelectWhen` criteria (a criterion with a `$parameter` is not parsed by the
+    /// original's `LoadInputs` pass and contributes nothing).
+    select_when: Vec<Criterion>,
+    /// `Guard` criteria, `$parameter` placeholders intact.
+    guard: Vec<Criterion>,
+}
+
+#[derive(Clone, Debug)]
+struct Criterion {
+    tag: String,
+    value: Option<String>,
+    min: Option<String>,
+    max: Option<String>,
 }
 
 fn attr<'a>(node: Node<'a, 'a>, name: &str) -> Option<&'a str> {
@@ -187,6 +232,12 @@ fn attr_u32(node: Node, name: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+fn attr_i32(node: Node, name: &str, default: i32) -> i32 {
+    attr(node, name)
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(default)
+}
+
 fn child<'a>(node: Node<'a, 'a>, name: &str) -> Option<Node<'a, 'a>> {
     node.children()
         .find(|c| c.is_element() && c.tag_name().name().eq_ignore_ascii_case(name))
@@ -198,6 +249,14 @@ fn element_children<'a>(node: Node<'a, 'a>) -> impl Iterator<Item = Node<'a, 'a>
 
 /// Parse an animation-graph XML document (`horse_full_body.xml`, `player_full_body.xml`, ...).
 pub fn load_graph(name: &str, xml: &str) -> Result<AnimationGraph, String> {
+    load_graph_with_templates(name, xml, &TemplateLib::default())
+}
+
+fn load_graph_with_templates(
+    name: &str,
+    xml: &str,
+    templates: &TemplateLib,
+) -> Result<AnimationGraph, String> {
     let doc = Document::parse(xml).map_err(|e| format!("{name}: XML parse error: {e}"))?;
     let root = doc.root_element();
 
@@ -214,14 +273,25 @@ pub fn load_graph(name: &str, xml: &str) -> Result<AnimationGraph, String> {
 
     let raw_states = parse_states(states_node);
     let expanded = expand_states(&raw_states);
+    let canonical = canonical_names(transitions_node, &raw_states, &expanded);
 
-    collect_ranges(&mut inputs, &input_by_name, &expanded);
+    collect_ranges(
+        &mut inputs,
+        &input_by_name,
+        &expanded,
+        &canonical,
+        templates,
+    );
 
     for input in &mut inputs {
         input.default_encoded = default_encoding(input);
     }
 
-    let (ordered_names, ordered) = order_states(&expanded);
+    let ordered = order_states(&expanded);
+    let ordered_names: Vec<String> = ordered
+        .iter()
+        .map(|s| canonical_name(&canonical, &s.id))
+        .collect();
     let name_to_id: HashMap<String, u16> = ordered_names
         .iter()
         .enumerate()
@@ -233,20 +303,19 @@ pub fn load_graph(name: &str, xml: &str) -> Result<AnimationGraph, String> {
         states.push(build_state(
             i as u16,
             raw,
+            &canonical,
             &input_by_name,
             &inputs,
             &name_to_id,
         ));
     }
 
-    // `LoadStates` inherits the parent's guard list after the state's own criteria
-    // (`extend`), so a state with no SelectWhen still carries the root's guards.
+    // `LoadStates` inherits the parent's guard list (`extend`) per input: a criterion the state
+    // mentions itself (even a bare `<Vehicle/>`) suppresses the parent's guard for that input.
     let own: Vec<Vec<u16>> = states.iter().map(|s| s.guards.clone()).collect();
     for i in 0..states.len() {
-        if states[i].bare_select {
-            continue;
-        }
         let mut guards = own[i].clone();
+        let mut covered: Vec<u16> = states[i].mentioned_inputs.clone();
         let mut parent = states[i].parent;
         let mut seen = vec![false; states.len()];
         while let Some(pid) = parent {
@@ -254,7 +323,14 @@ pub fn load_graph(name: &str, xml: &str) -> Result<AnimationGraph, String> {
                 break;
             }
             seen[pid as usize] = true;
-            guards.extend_from_slice(&own[pid as usize]);
+            let parent_guards = &own[pid as usize];
+            for pair in parent_guards.chunks(2) {
+                let input = pair[0] & 0x1f;
+                if !covered.contains(&input) {
+                    covered.push(input);
+                    guards.extend_from_slice(pair);
+                }
+            }
             parent = states[pid as usize].parent;
         }
         // Only the first guard pair keeps the 0x8000 sentinel bits; every later pair is stored
@@ -271,8 +347,8 @@ pub fn load_graph(name: &str, xml: &str) -> Result<AnimationGraph, String> {
     let transitions = build_transitions(
         transitions_node,
         &raw_states,
+        &canonical,
         &name_to_id,
-        &ordered_names,
         &states,
     );
 
@@ -297,7 +373,72 @@ pub fn load_graph_from_pak(name: &str) -> Result<AnimationGraph, String> {
         .read(&path)
         .map_err(|e| format!("{path}: {e}"))?;
     let xml = String::from_utf8_lossy(&data);
-    load_graph(name, &xml)
+    let templates = load_template_lib();
+    load_graph_with_templates(name, &xml, &templates)
+}
+
+/// `PreprocessTemplates FUN_3060f730`: the `Libs/AnimationGraphTemplates` library, keyed by
+/// `AGTemplate name`. The loader only needs the declaration order of `<Param>`, the literal
+/// `SelectWhen` criteria and the `Guard` criteria (the factory children are step 4 work).
+fn load_template_lib() -> TemplateLib {
+    let mut lib = TemplateLib::default();
+    let pak = aa_pak::Pak::global();
+    for path in pak.list("game/libs/animationgraphtemplates/") {
+        if !path.to_ascii_lowercase().ends_with(".xml") {
+            continue;
+        }
+        let Ok(data) = pak.read(path) else {
+            continue;
+        };
+        let xml = String::from_utf8_lossy(&data);
+        let Ok(doc) = Document::parse(&xml) else {
+            continue;
+        };
+        let root = doc.root_element();
+        if !root.tag_name().name().eq_ignore_ascii_case("AGTemplate") {
+            continue;
+        }
+        let Some(name) = root.attribute("name") else {
+            continue;
+        };
+        let mut def = TemplateDef {
+            params: Vec::new(),
+            select_when: Vec::new(),
+            guard: Vec::new(),
+        };
+        for node in element_children(root) {
+            if node.tag_name().name().eq_ignore_ascii_case("Param") {
+                if let Some(param) = node.attribute("name") {
+                    def.params.push(param.to_string());
+                }
+            } else if node.tag_name().name().eq_ignore_ascii_case("SelectWhen") {
+                for c in element_children(node) {
+                    if c.attributes()
+                        .any(|a| a.value().contains('$'))
+                    {
+                        continue;
+                    }
+                    def.select_when.push(Criterion {
+                        tag: c.tag_name().name().to_string(),
+                        value: c.attribute("value").map(str::to_string),
+                        min: c.attribute("min").map(str::to_string),
+                        max: c.attribute("max").map(str::to_string),
+                    });
+                }
+            } else if node.tag_name().name().eq_ignore_ascii_case("Guard") {
+                for c in element_children(node) {
+                    def.guard.push(Criterion {
+                        tag: c.tag_name().name().to_string(),
+                        value: c.attribute("value").map(str::to_string),
+                        min: c.attribute("min").map(str::to_string),
+                        max: c.attribute("max").map(str::to_string),
+                    });
+                }
+            }
+        }
+        lib.defs.insert(name.to_ascii_lowercase(), def);
+    }
+    lib
 }
 
 fn parse_inputs(node: Node) -> Vec<GraphInput> {
@@ -337,8 +478,8 @@ fn parse_inputs(node: Node) -> Vec<GraphInput> {
             (0, ((max - min) * 1024.0) as i32, scale, offset)
         } else {
             (
-                attr_u32(input, "min", 0) as i32,
-                attr_u32(input, "max", 0) as i32,
+                attr_i32(input, "min", 0),
+                attr_i32(input, "max", 0),
                 0.0,
                 0.0,
             )
@@ -456,72 +597,108 @@ fn substitute_all(text: &str, combo: &[String]) -> String {
     out
 }
 
-fn params_for<'a>(state: &'a RawState<'a>, marks: &[String]) -> Vec<Vec<String>> {
-    let mut values: Vec<Vec<String>> = Vec::new();
-    for mark in marks {
-        if let Some((_, vals)) = state
-            .params
-            .iter()
-            .find(|(id, _)| id.eq_ignore_ascii_case(mark))
-        {
-            values.push(vals.clone());
-        } else {
-            values.push(default_param_values(mark));
+fn substitute_named(text: &str, marks: &[String], values: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' {
+            if let Some(close) = text[i..].find(']') {
+                let name = &text[i + 1..i + close];
+                if let Some(pos) = marks
+                    .iter()
+                    .position(|m| m.eq_ignore_ascii_case(name))
+                {
+                    out.push_str(&values[pos]);
+                }
+                i += close + 1;
+                continue;
+            }
         }
+        out.push(bytes[i] as char);
+        i += 1;
     }
-    values
+    out
 }
 
-fn combos(values: &[Vec<String>]) -> Vec<Vec<String>> {
-    let mut out: Vec<Vec<String>> = vec![Vec::new()];
-    for vals in values {
+fn substitute_params(text: &str, params: &HashMap<String, String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' {
+            let start = i + 1;
+            let mut end = start;
+            while end < bytes.len()
+                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
+            {
+                end += 1;
+            }
+            if end > start {
+                let name = &text[start..end];
+                if let Some(value) = params.get(name) {
+                    out.push_str(value);
+                }
+                i = end;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Combinations in **placeholder order** while the nested loop follows the
+/// `<Parameterization>` document order. Returns `(override_key, mark_values)`:
+/// `override_key` joins the values in parameter document order (the `<Override id>` spelling),
+/// `mark_values` are the values in id-placeholder order for `substitute_once`.
+fn param_combos(
+    params: &[(String, Vec<String>)],
+    marks: &[String],
+) -> Vec<(String, Vec<String>)> {
+    let mut order: Vec<(String, Vec<String>)> = Vec::new();
+    for (id, vals) in params {
+        if marks.iter().any(|m| m.eq_ignore_ascii_case(id)) {
+            order.push((id.clone(), vals.clone()));
+        }
+    }
+    for mark in marks {
+        if !order.iter().any(|(id, _)| id.eq_ignore_ascii_case(mark)) {
+            order.push((mark.clone(), default_param_values(mark)));
+        }
+    }
+    let mut combos: Vec<Vec<String>> = vec![Vec::new()];
+    for (_, vals) in &order {
         let mut next = Vec::new();
-        for combo in &out {
+        for combo in &combos {
             for v in vals {
                 let mut c = combo.clone();
                 c.push(v.clone());
                 next.push(c);
             }
         }
-        out = next;
+        combos = next;
     }
-    out
-}
-
-/// Combinations in **placeholder order** (the order the placeholders appear in the id), while
-/// the nested loop follows the `<Parameterization>` document order (e.g. `Num` before `Stance`).
-fn combos_for_marks(params: &[(String, Vec<String>)], marks: &[String]) -> Vec<Vec<String>> {
-    // Nested loop order is the `<Parameterization>` document order (e.g. `Num` before `Stance`);
-    // the returned combo is in placeholder order so `substitute_once` can consume it directly.
-    let mut param_order: Vec<(String, Vec<String>)> = Vec::new();
-    for (id, vals) in params {
-        if marks.iter().any(|m| m.eq_ignore_ascii_case(id)) {
-            param_order.push((id.clone(), vals.clone()));
-        }
-    }
-    for mark in marks {
-        if !param_order
-            .iter()
-            .any(|(id, _)| id.eq_ignore_ascii_case(mark))
-        {
-            param_order.push((mark.clone(), default_param_values(mark)));
-        }
-    }
-    let values: Vec<Vec<String>> = param_order.iter().map(|(_, v)| v.clone()).collect();
-    let in_param_order = combos(&values);
-    let mut out = Vec::new();
-    for combo in in_param_order {
-        let mut mark_order = Vec::with_capacity(marks.len());
-        for mark in marks {
-            let idx = param_order
+    combos
+        .into_iter()
+        .map(|combo| {
+            let mut marks_out = Vec::with_capacity(marks.len());
+            for mark in marks {
+                let idx = order
+                    .iter()
+                    .position(|(id, _)| id.eq_ignore_ascii_case(mark))
+                    .unwrap_or(0);
+                marks_out.push(combo[idx].to_ascii_lowercase());
+            }
+            let key = combo
                 .iter()
-                .position(|(id, _)| id.eq_ignore_ascii_case(mark))
-                .unwrap_or(0);
-            mark_order.push(combo[idx].clone());
-        }
-        out.push(mark_order);
-    }
-    out
+                .map(|v| v.to_ascii_lowercase())
+                .collect::<Vec<_>>()
+                .join(",");
+            (key, marks_out)
+        })
+        .collect()
 }
 
 fn expand_states<'a>(raw: &[RawState<'a>]) -> Vec<ExpandedState<'a>> {
@@ -534,33 +711,45 @@ fn expand_states<'a>(raw: &[RawState<'a>]) -> Vec<ExpandedState<'a>> {
         if marks.is_empty() {
             out.push(ExpandedState {
                 node: state.node,
+                source_id: state.id.clone(),
                 id: state.id.clone(),
                 parent_name: state.parent_name.clone(),
                 allow_select: state.allow_select,
                 include_in_game: state.include_in_game,
                 can_mix: state.can_mix,
                 cost: state.cost,
-                overrides: state.overrides.clone(),
-                combo: Vec::new(),
+                override_key: String::new(),
+                mark_values: Vec::new(),
                 is_copy: false,
             });
             continue;
         }
-        for combo in combos_for_marks(&state.params, &marks) {
+        for (override_key, mark_values) in param_combos(&state.params, &marks) {
+            // `<Override><ExcludeFromGraph/></Override>` removes that parameter combination.
+            if state.overrides.iter().any(|(key, node)| {
+                key.eq_ignore_ascii_case(&override_key) && child(*node, "ExcludeFromGraph").is_some()
+            }) {
+                continue;
+            }
             let mut id = state.id.clone();
-            for value in &combo {
+            for value in &mark_values {
                 id = substitute_once(&id, value);
+            }
+            let mut parent_name = state.parent_name.clone();
+            if let Some(parent) = parent_name.as_mut() {
+                *parent = substitute_named(parent, &marks, &mark_values);
             }
             out.push(ExpandedState {
                 node: state.node,
+                source_id: state.id.clone(),
                 id,
-                parent_name: state.parent_name.clone(),
+                parent_name,
                 allow_select: state.allow_select,
                 include_in_game: state.include_in_game,
                 can_mix: state.can_mix,
                 cost: state.cost,
-                overrides: state.overrides.clone(),
-                combo,
+                override_key,
+                mark_values,
                 is_copy: true,
             });
         }
@@ -568,249 +757,164 @@ fn expand_states<'a>(raw: &[RawState<'a>]) -> Vec<ExpandedState<'a>> {
     out
 }
 
-fn raw_int(input: &GraphInput, text: &str) -> Option<i32> {
-    let value = super::inputs::parse_int(text)?;
-    let mut value = value;
-    if value < input.min {
-        value = input.min;
-    } else if input.max <= value {
-        value = input.max;
+/// Canonical state spelling: `PreprocessLinksAndStates FUN_30655570` creates a case-insensitive
+/// name map and the first spelling seen (links before states) is what the state record points to.
+fn canonical_names(
+    transitions: Option<Node>,
+    raw: &[RawState<'_>],
+    expanded: &[ExpandedState<'_>],
+) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    // The state records are created first; link endpoints only add names that have no state
+    // (the horse `.ag` side copy carries a few older lower-case spellings, which the XML loader
+    // does not reproduce).
+    for state in raw {
+        map.entry(state.id.to_ascii_lowercase())
+            .or_insert_with(|| state.id.clone());
     }
-    Some(value)
-}
-
-fn raw_float(input: &GraphInput, text: &str) -> Option<i32> {
-    let value = super::inputs::parse_float(text)?;
-    let mut f = (input.offset + value) / input.scale;
-    let min_f = input.min as f32;
-    if f < min_f {
-        f = min_f;
-    } else {
-        let max_f = input.max as f32;
-        if max_f <= f {
-            f = max_f;
-        }
-    }
-    Some(super::inputs::f32_to_i32_trunc(f))
-}
-
-fn range_text(criterion: Node, name: &str, input: &GraphInput) -> String {
-    if let Some(value) = criterion.attribute(name) {
-        return value.to_string();
-    }
-    if let Some(value) = criterion.attribute("value") {
-        return value.to_string();
-    }
-    if input.kind == InputKind::Float {
-        return format!("{}", input.min as f32 * input.scale - input.offset);
-    }
-    "0".to_string()
-}
-
-fn collect_ranges(
-    inputs: &mut [GraphInput],
-    by_name: &HashMap<String, usize>,
-    states: &[ExpandedState<'_>],
-) {
-    // `LoadInputs` builds the range vector from the boundaries of every guard interval on an
-    // input: sorted unique `min` and `max+1` values, consecutive boundaries forming one range.
-    let mut boundaries: Vec<Vec<i32>> = vec![Vec::new(); inputs.len()];
-    for state in states {
-        let Some(select) = child(state.node, "SelectWhen") else {
+    for state in expanded {
+        if !state.is_copy {
             continue;
-        };
-        for criterion in element_children(select) {
-            let name = criterion.tag_name().name().to_ascii_lowercase();
-            let Some(&idx) = by_name.get(&name) else {
-                continue;
-            };
-            let input = &inputs[idx];
-            if input.kind == InputKind::Keyed {
-                continue;
-            }
-            let has_min = criterion.attribute("min").is_some();
-            let has_max = criterion.attribute("max").is_some();
-            let has_value = criterion.attribute("value").is_some();
-            let (min_text, max_text) = if !has_min && !has_max && !has_value {
-                if input.kind == InputKind::Float {
-                    (
-                        format!("{}", input.min as f32 * input.scale - input.offset),
-                        format!("{}", input.max as f32 * input.scale - input.offset),
-                    )
-                } else {
-                    (format!("{}", input.min), format!("{}", input.max))
-                }
-            } else {
-                (
-                    range_text(criterion, "min", input),
-                    range_text(criterion, "max", input),
-                )
-            };
-            let min_text = substitute_all(&min_text, &state.combo);
-            let max_text = substitute_all(&max_text, &state.combo);
-            let (Some(mut min), Some(mut max)) = (
-                match input.kind {
-                    InputKind::Int => raw_int(input, &min_text),
-                    InputKind::Float => raw_float(input, &min_text),
-                    InputKind::Keyed => None,
-                },
-                match input.kind {
-                    InputKind::Int => raw_int(input, &max_text),
-                    InputKind::Float => raw_float(input, &max_text),
-                    InputKind::Keyed => None,
-                },
-            ) else {
-                continue;
-            };
-            if max < min {
-                std::mem::swap(&mut min, &mut max);
-            }
-            boundaries[idx].push(min);
-            boundaries[idx].push(max.saturating_add(1));
         }
+        map.entry(state.id.to_ascii_lowercase())
+            .or_insert_with(|| state.id.clone());
     }
-    // Template range attributes (`MoveSpeedLHMin/Max`, ...) add intervals just like a
-    // `SelectWhen` criterion; an empty value is the input's zero point.
-    for state in states {
-        for (_kind, node) in template_nodes(state) {
-            for (min_attr, max_attr, input_name, divisor) in [
-                (
-                    "MoveSpeedLHMin",
-                    "MoveSpeedLHMax",
-                    "RequestedMoveSpeedLH",
-                    1.0f32,
-                ),
-                (
-                    "MoveSpeedLXMin",
-                    "MoveSpeedLXMax",
-                    "RequestedMoveSpeedLX",
-                    1.0f32,
-                ),
-                (
-                    "MoveSpeedLYMin",
-                    "MoveSpeedLYMax",
-                    "RequestedMoveSpeedLY",
-                    1.0f32,
-                ),
-                (
-                    "TurnSpeedLHMin",
-                    "TurnSpeedLHMax",
-                    "RequestedTurnSpeedLZ",
-                    2.0f32,
-                ),
-            ] {
-                if node.attribute(min_attr).is_none() && node.attribute(max_attr).is_none() {
-                    continue;
-                }
-                if divisor != 1.0
-                    && node.attribute(min_attr).unwrap_or("").is_empty()
-                    && node.attribute(max_attr).unwrap_or("").is_empty()
+    if let Some(node) = transitions {
+        for link in element_children(node) {
+            if !link.tag_name().name().eq_ignore_ascii_case("Link") {
+                continue;
+            }
+            for name in [link.attribute("from"), link.attribute("to")] {
+                if let Some(name) = name
+                    && !name.is_empty()
                 {
-                    continue;
+                    map.entry(name.to_ascii_lowercase())
+                        .or_insert_with(|| name.to_string());
                 }
-                let Some(&idx) = by_name.get(&input_name.to_ascii_lowercase()) else {
-                    continue;
-                };
-                let input = &inputs[idx];
-                if input.kind == InputKind::Keyed {
-                    continue;
-                }
-                let min_text = node.attribute(min_attr).unwrap_or("");
-                let max_text = node.attribute(max_attr).unwrap_or("");
-                let both_empty = min_text.is_empty() && max_text.is_empty();
-                let min_text = if min_text.is_empty() {
-                    "0".to_string()
-                } else {
-                    format!("{}", min_text.parse::<f32>().unwrap_or(0.0) / divisor)
-                };
-                let max_text = if max_text.is_empty() {
-                    "0".to_string()
-                } else {
-                    format!("{}", max_text.parse::<f32>().unwrap_or(0.0) / divisor)
-                };
-                let min_text = substitute_all(&min_text, &state.combo);
-                let max_text = substitute_all(&max_text, &state.combo);
-                let (Some(mut min), Some(mut max)) = (
-                    match input.kind {
-                        InputKind::Int => raw_int(input, &min_text),
-                        InputKind::Float => raw_float(input, &min_text),
-                        InputKind::Keyed => None,
-                    },
-                    match input.kind {
-                        InputKind::Int => raw_int(input, &max_text),
-                        InputKind::Float => raw_float(input, &max_text),
-                        InputKind::Keyed => None,
-                    },
-                ) else {
-                    continue;
-                };
-                if max < min {
-                    std::mem::swap(&mut min, &mut max);
-                }
-                // A range attribute pair is a half-open (min, max] interval; an entirely empty
-                // pair is the exact zero point (the live `MoveSpeedLH` [0,0] entry).
-                let _ = both_empty;
-                boundaries[idx].push(min);
-                boundaries[idx].push(max.saturating_add(1));
             }
         }
     }
-    for (input, mut points) in inputs.iter_mut().zip(boundaries) {
-        if input.kind == InputKind::Keyed {
-            continue;
-        }
-        points.sort_unstable();
-        points.dedup();
-        input.ranges = points
-            .windows(2)
-            .filter_map(|w| {
-                let lo = w[0];
-                let hi = w[1] - 1;
-                (lo <= hi).then_some((lo, hi))
-            })
-            .collect();
-    }
+    map
 }
 
-fn order_states<'a>(states: &[ExpandedState<'a>]) -> (Vec<String>, Vec<ExpandedState<'a>>) {
+fn canonical_name(map: &HashMap<String, String>, name: &str) -> String {
+    map.get(&name.to_ascii_lowercase())
+        .cloned()
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn order_states<'a>(states: &[ExpandedState<'a>]) -> Vec<ExpandedState<'a>> {
     let mut originals = Vec::new();
     let mut copies = Vec::new();
-    for s in states {
+    for (i, s) in states.iter().enumerate() {
         if s.is_copy {
-            copies.push(s.clone());
+            copies.push(i);
         } else {
-            originals.push(s.clone());
+            originals.push(i);
         }
     }
     // The live order is: root states (no `extend`) first, then every remaining original,
     // both groups sorted by the state id as a byte string (case-sensitive), with the
-    // parameterised copies appended in generation order. This matches both graphs exactly.
-    originals.sort_by(|a, b| {
-        let a_root = a.parent_name.is_none();
-        let b_root = b.parent_name.is_none();
+    // parameterised copies appended in generation order. States whose parent sorts after them
+    // are deferred to the next dependency pass (`player_full_body`'s vehicle states).
+    originals.sort_by(|&a, &b| {
+        let a_root = states[a].parent_name.is_none();
+        let b_root = states[b].parent_name.is_none();
         b_root
             .cmp(&a_root)
-            .then_with(|| a.id.as_bytes().cmp(b.id.as_bytes()))
+            .then_with(|| states[a].id.as_bytes().cmp(states[b].id.as_bytes()))
     });
-    originals.extend(copies);
-    let names = originals.iter().map(|s| s.id.clone()).collect();
-    (names, originals)
+
+    let mut ordered = Vec::with_capacity(states.len());
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut remaining: Vec<usize> = originals;
+    let mut copies_left: Vec<usize> = copies;
+    loop {
+        let mut next = Vec::new();
+        for idx in remaining {
+            let parent_ok = states[idx]
+                .parent_name
+                .as_ref()
+                .is_none_or(|p| placed.contains(&p.to_ascii_lowercase()));
+            if parent_ok {
+                placed.insert(states[idx].id.to_ascii_lowercase());
+                ordered.push(idx);
+            } else {
+                next.push(idx);
+            }
+        }
+        // Copies are emitted after the originals of the dependency pass in which their
+        // template state is resolvable; generation order is preserved.
+        let mut copies_next = Vec::new();
+        for idx in copies_left {
+            let parent_ok = states[idx]
+                .parent_name
+                .as_ref()
+                .is_none_or(|p| placed.contains(&p.to_ascii_lowercase()));
+            if parent_ok {
+                placed.insert(states[idx].id.to_ascii_lowercase());
+                ordered.push(idx);
+            } else {
+                copies_next.push(idx);
+            }
+        }
+        copies_left = copies_next;
+        if next.is_empty() && copies_left.is_empty() {
+            break;
+        }
+        if next.is_empty() && !copies_left.is_empty() {
+            // Unresolvable parents (cycles): keep the remaining copies in generation order.
+            ordered.extend(copies_left.drain(..));
+            break;
+        }
+        remaining = next;
+    }
+    ordered.into_iter().map(|i| states[i].clone()).collect()
 }
 
-fn template_nodes<'a>(state: &ExpandedState<'a>) -> Vec<(String, Node<'a, 'a>)> {
-    let mut out = Vec::new();
-    for child in element_children(state.node) {
-        let tag = child.tag_name().name().to_string();
-        if tag.eq_ignore_ascii_case("SelectWhen") || tag.eq_ignore_ascii_case("Parameterization") {
-            continue;
-        }
-        out.push((tag, child));
+fn effective_override<'a>(state: &ExpandedState<'a>) -> Option<Node<'a, 'a>> {
+    if state.override_key.is_empty() {
+        return None;
     }
-    for (value, node) in &state.overrides {
-        if state.combo.iter().any(|v| v.eq_ignore_ascii_case(value)) {
-            for child in element_children(*node) {
-                out.push((child.tag_name().name().to_string(), child));
+    child(state.node, "Parameterization")?
+        .children()
+        .filter(|c| c.is_element() && c.tag_name().name().eq_ignore_ascii_case("Override"))
+        .find(|c| {
+            c.attribute("id")
+                .is_some_and(|id| id.eq_ignore_ascii_case(&state.override_key))
+        })
+}
+
+/// The effective `SelectWhen`/`Guard` children: an `<Override>` of the state's parameter
+/// combination replaces the base node when it provides that child.
+fn effective_criteria<'a>(state: &ExpandedState<'a>, tag: &str) -> Vec<Node<'a, 'a>> {
+    if let Some(over) = effective_override(state)
+        && let Some(node) = child(over, tag)
+    {
+        return element_children(node).collect();
+    }
+    child(state.node, tag)
+        .map(|node| element_children(node).collect())
+        .unwrap_or_default()
+}
+
+/// Effective `<Template>` instances (`<Override>` templates replace the base template with the
+/// same name).
+fn effective_templates<'a>(state: &ExpandedState<'a>) -> Vec<Node<'a, 'a>> {
+    let mut out: Vec<Node<'a, 'a>> = element_children(state.node)
+        .filter(|c| c.tag_name().name().eq_ignore_ascii_case("Template"))
+        .collect();
+    if let Some(over) = effective_override(state) {
+        for t in element_children(over)
+            .filter(|c| c.tag_name().name().eq_ignore_ascii_case("Template"))
+        {
+            if let Some(name) = t.attribute("name") {
+                out.retain(|b| {
+                    b.attribute("name")
+                        .is_none_or(|n| !n.eq_ignore_ascii_case(name))
+                });
             }
+            out.push(t);
         }
     }
     out
@@ -819,6 +923,7 @@ fn template_nodes<'a>(state: &ExpandedState<'a>) -> Vec<(String, Node<'a, 'a>)> 
 fn build_state(
     id: u16,
     state: &ExpandedState<'_>,
+    canonical: &HashMap<String, String>,
     by_name: &HashMap<String, usize>,
     inputs: &[GraphInput],
     name_to_id: &HashMap<String, u16>,
@@ -829,76 +934,77 @@ fn build_state(
         .and_then(|p| name_to_id.get(&p.to_ascii_lowercase()).copied());
 
     let mut guards = Vec::new();
+    let mut mentioned_inputs: Vec<u16> = Vec::new();
     let mut select_guard_count = 0u8;
     let mut bare_select = false;
-    if let Some(select) = child(state.node, "SelectWhen") {
-        bare_select = element_children(select).all(|c| {
+    let select: Vec<Node> = effective_criteria(state, "SelectWhen");
+    if !select.is_empty() {
+        bare_select = select.iter().all(|c| {
             c.attribute("min").is_none()
                 && c.attribute("max").is_none()
                 && c.attribute("value").is_none()
         });
-        for criterion in element_children(select) {
-            let name = criterion.tag_name().name().to_ascii_lowercase();
-            let Some(&idx) = by_name.get(&name) else {
-                continue;
-            };
-            let input = &inputs[idx];
-            let use_guard = match input.kind {
-                InputKind::Keyed => {
-                    criterion.attribute("value").is_some()
-                        && (input.force_guard || input.mixin_filter)
-                }
-                InputKind::Int | InputKind::Float => input.force_guard,
-            };
-            if !use_guard {
-                continue;
-            }
-            // Parameterised key values (`[stance]`, `[dir]`, `[num]`, `[version]`) are
-            // enforced by the copy itself and do not become stored guards.
-            if let Some(value) = criterion.attribute("value")
-                && value.contains('[')
-            {
-                continue;
-            }
-            if criterion.attribute("min").is_none()
-                && criterion.attribute("max").is_none()
-                && criterion.attribute("value").is_none()
-            {
-                // Bare criteria only contribute through the parent's inherited guards.
-                continue;
-            }
-            let min_text = criterion
-                .attribute("min")
-                .map(str::to_string)
-                .or_else(|| criterion.attribute("value").map(str::to_string))
-                .unwrap_or_else(|| "0".to_string());
-            let max_text = criterion
-                .attribute("max")
-                .map(str::to_string)
-                .or_else(|| criterion.attribute("value").map(str::to_string))
-                .unwrap_or_else(|| "0".to_string());
-            let min_text = substitute_all(&min_text, &state.combo);
-            let max_text = substitute_all(&max_text, &state.combo);
-            let min = input.encode(&min_text);
-            let max = input.encode(&max_text);
-            if min == 0xffff || max == 0xffff || max < min {
-                continue;
-            }
-            // A keyed guard equal to the input's default is redundant; int/float guards
-            // keep it (the live Alive state stores its Aiming 0..1 criterion as 0..0).
-            if input.kind == InputKind::Keyed && min == max && min == input.default_encoded {
-                continue;
-            }
-            push_guard_pair(&mut guards, idx as u16, min, max);
-            select_guard_count += 2;
+    }
+    for criterion in select {
+        let name = criterion.tag_name().name().to_ascii_lowercase();
+        let Some(&idx) = by_name.get(&name) else {
+            continue;
+        };
+        let input = &inputs[idx];
+        if !mentioned_inputs.contains(&(idx as u16)) {
+            mentioned_inputs.push(idx as u16);
         }
+        let use_guard = match input.kind {
+            InputKind::Keyed => {
+                let literal = criterion
+                    .attribute("value")
+                    .is_some_and(|v| !v.contains('['));
+                criterion.attribute("value").is_some()
+                    && (input.force_guard || (input.mixin_filter && literal))
+            }
+            InputKind::Int | InputKind::Float => input.force_guard,
+        };
+        if !use_guard {
+            continue;
+        }
+        if criterion.attribute("min").is_none()
+            && criterion.attribute("max").is_none()
+            && criterion.attribute("value").is_none()
+        {
+            // Bare criteria only contribute through the parent's inherited guards.
+            continue;
+        }
+        let min_text = criterion
+            .attribute("min")
+            .map(str::to_string)
+            .or_else(|| criterion.attribute("value").map(str::to_string))
+            .unwrap_or_else(|| "0".to_string());
+        let max_text = criterion
+            .attribute("max")
+            .map(str::to_string)
+            .or_else(|| criterion.attribute("value").map(str::to_string))
+            .unwrap_or_else(|| "0".to_string());
+        let min_text = substitute_all(&min_text, &state.mark_values);
+        let max_text = substitute_all(&max_text, &state.mark_values);
+        let min = input.encode(&min_text);
+        let max = input.encode(&max_text);
+        if min == 0xffff || max == 0xffff || max < min {
+            continue;
+        }
+        // A keyed guard equal to the input's default is redundant; int/float guards
+        // keep it (the live Alive state stores its Aiming 0..1 criterion as 0..0).
+        if input.kind == InputKind::Keyed && min == max && min == input.default_encoded {
+            continue;
+        }
+        push_guard_pair(&mut guards, idx as u16, min, max);
+        select_guard_count += 2;
     }
 
     let mut templates = Vec::new();
-    for (kind, node) in template_nodes(state) {
+    for node in effective_templates(state) {
         let action = node
             .attribute("action")
-            .map(|a| substitute_all(a, &state.combo))
+            .map(|a| substitute_all(a, &state.mark_values))
             .unwrap_or_default();
         let template_name = node
             .attribute("name")
@@ -916,7 +1022,7 @@ fn build_state(
             }
         }
         templates.push(TemplateInfo {
-            kind,
+            kind: node.tag_name().name().to_string(),
             name: template_name,
             action,
         });
@@ -926,7 +1032,7 @@ fn build_state(
     let factory_count = templates.len() as u16;
     StateInfo {
         id,
-        name: state.id.clone(),
+        name: canonical_name(canonical, &state.id),
         parent,
         factory_count,
         cost_minus1: state.cost.saturating_sub(1),
@@ -941,6 +1047,7 @@ fn build_state(
         include_in_game: state.include_in_game,
         can_mix: state.can_mix,
         templates,
+        mentioned_inputs,
     }
 }
 
@@ -957,7 +1064,7 @@ fn endpoint_combos(name: &str, params: &[(String, Vec<String>)]) -> Vec<String> 
         return vec![name.to_string()];
     }
     let mut out = Vec::new();
-    for combo in combos_for_marks(params, &marks) {
+    for (_, combo) in param_combos(params, &marks) {
         let mut id = name.to_string();
         for value in &combo {
             id = substitute_once(&id, value);
@@ -970,34 +1077,70 @@ fn endpoint_combos(name: &str, params: &[(String, Vec<String>)]) -> Vec<String> 
 fn build_transitions(
     node: Option<Node<'_, '_>>,
     raw_states: &[RawState<'_>],
+    canonical: &HashMap<String, String>,
     name_to_id: &HashMap<String, u16>,
-    ordered_names: &[String],
     states: &[StateInfo],
 ) -> Vec<TransitionInfo> {
     let Some(node) = node else {
         return Vec::new();
     };
-    let mut template_params: HashMap<String, Vec<(String, Vec<String>)>> = HashMap::new();
+    let mut params_by_name: HashMap<String, Vec<(String, Vec<String>)>> = HashMap::new();
     for s in raw_states {
-        template_params.insert(s.id.to_ascii_lowercase(), s.params.clone());
+        params_by_name
+            .entry(s.id.to_ascii_lowercase())
+            .or_insert_with(|| s.params.clone());
+        let cname = canonical_name(canonical, &s.id).to_ascii_lowercase();
+        params_by_name
+            .entry(cname)
+            .or_insert_with(|| s.params.clone());
     }
-    let final_by_name: HashMap<String, usize> = ordered_names
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.to_ascii_lowercase(), i))
-        .collect();
 
-    let expand = |name: &str| -> Vec<String> {
+    let copies_of = |name: &str| -> Vec<(String, HashMap<String, String>)> {
         let lower = name.to_ascii_lowercase();
-        if final_by_name.contains_key(&lower) {
-            return vec![lower];
+        if name_to_id.contains_key(&lower) {
+            return vec![(lower, HashMap::new())];
         }
-        let params = template_params.get(&lower).cloned().unwrap_or_default();
-        endpoint_combos(name, &params)
-            .into_iter()
-            .filter(|id| final_by_name.contains_key(&id.to_ascii_lowercase()))
-            .map(|id| id.to_ascii_lowercase())
-            .collect()
+        let params = params_by_name.get(&lower).cloned().unwrap_or_default();
+        let marks = placeholders(name);
+        if marks.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for (_, values) in param_combos(&params, &marks) {
+            let mut id = name.to_string();
+            for value in &values {
+                id = substitute_once(&id, value);
+            }
+            let il = id.to_ascii_lowercase();
+            if !name_to_id.contains_key(&il) {
+                continue;
+            }
+            let map: HashMap<String, String> = marks
+                .iter()
+                .cloned()
+                .zip(values.iter().cloned())
+                .collect();
+            out.push((il, map));
+        }
+        out
+    };
+
+    let expand_pair = |from: &str, to: &str| -> Vec<(String, String)> {
+        let froms = copies_of(from);
+        let tos = copies_of(to);
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        for (f, fmap) in &froms {
+            for (t, tmap) in &tos {
+                let compatible = fmap.iter().all(|(name, value)| {
+                    tmap.get(name).is_none_or(|other| other == value)
+                });
+                if compatible && seen.insert((f.clone(), t.clone())) {
+                    out.push((f.clone(), t.clone()));
+                }
+            }
+        }
+        out
     };
 
     let mut transitions = Vec::new();
@@ -1014,24 +1157,11 @@ fn build_transitions(
             .attribute("transitionTime")
             .and_then(parse_float)
             .unwrap_or(0.0);
-        let froms = expand(from);
-        let tos = expand(to);
-        let pairs: Vec<(String, String)> = if froms.len() == tos.len() {
-            froms.into_iter().zip(tos).collect()
-        } else if froms.len() == 1 {
-            let f = froms[0].clone();
-            tos.into_iter().map(|t| (f.clone(), t)).collect()
-        } else if tos.len() == 1 {
-            let t = tos[0].clone();
-            froms.into_iter().map(|f| (f, t.clone())).collect()
-        } else {
-            Vec::new()
-        };
-        for (f, t) in pairs {
-            let (Some(&fr), Some(&to_id)) = (final_by_name.get(&f), final_by_name.get(&t)) else {
+        for (f, t) in expand_pair(from, to) {
+            let (Some(&fr), Some(&to_id)) = (name_to_id.get(&f), name_to_id.get(&t)) else {
                 continue;
             };
-            let _ = &states[to_id];
+            let _ = &states[to_id as usize];
             transitions.push(TransitionInfo {
                 from: fr as u16,
                 to: to_id as u16,
@@ -1042,7 +1172,307 @@ fn build_transitions(
             });
         }
     }
-    transitions.sort_by_key(|t| t.from);
-    let _ = (name_to_id, states);
+    transitions.sort_by_key(|t| (t.from, t.to));
     transitions
 }
+
+// ---------------------------------------------------------------------------------------------
+// `LoadInputs FUN_30611d30`: the interval map (`FUN_30655d50` insert, `FUN_30655e40`
+// successor normalisation, `FUN_30655770` predecessor normalisation, `FUN_306560c0` clip,
+// `FUN_30655c40` midpoint gap fill).
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default)]
+struct RangeMap {
+    nodes: Vec<(i32, i32)>,
+}
+
+impl RangeMap {
+    fn insert(&mut self, mut start: i32, mut end: i32, merge: bool) {
+        if end < start {
+            std::mem::swap(&mut start, &mut end);
+        }
+        let mut lo = 0usize;
+        let mut hi = self.nodes.len();
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if self.nodes[mid].0 < start {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let i = lo;
+        if i < self.nodes.len() && self.nodes[i].0 == start {
+            if self.nodes[i].1 != end {
+                let old = self.nodes[i].1;
+                self.nodes[i].1 = old.min(end);
+                self.insert(old.min(end) + 1, old.max(end), merge);
+            }
+            return;
+        }
+        self.nodes.insert(i, (start, end));
+        self.normalize(i);
+        if merge && i > 0 {
+            self.normalize(i - 1);
+        }
+    }
+
+    /// `FUN_30655e40`: normalise a node against its successor.
+    fn normalize(&mut self, i: usize) {
+        if i + 1 >= self.nodes.len() {
+            return;
+        }
+        let (_start, end) = self.nodes[i];
+        let (next_start, next_end) = self.nodes[i + 1];
+        if next_start > end {
+            return;
+        }
+        if next_end < end {
+            let old_end = end;
+            self.nodes[i].1 = next_start - 1;
+            self.insert(next_end + 1, old_end, false);
+        } else if next_end == end {
+            self.nodes[i].1 = next_start - 1;
+        } else if next_start > 0 {
+            let old_next_end = next_end;
+            self.nodes[i].1 = next_start - 1;
+            self.nodes[i + 1].1 = end;
+            self.insert(end + 1, old_next_end, false);
+        }
+    }
+
+    /// `FUN_306560c0`: keep only the part inside the input's `[min,max]`.
+    fn clip(&mut self, lo: i32, hi: i32) {
+        self.nodes.retain_mut(|(s, e)| {
+            *s = (*s).max(lo);
+            *e = (*e).min(hi);
+            *s <= *e
+        });
+    }
+
+    /// `FUN_30655c40`: close holes at the midpoint of each pair of adjacent intervals.
+    fn gapfill(&mut self) {
+        let mut i = 0;
+        while i + 1 < self.nodes.len() {
+            let (start, end) = self.nodes[i];
+            let (next_start, next_end) = self.nodes[i + 1];
+            if next_start != end + 1 {
+                let mid = (end + next_start) / 2;
+                self.nodes[i] = (start, mid);
+                self.nodes.remove(i + 1);
+                if mid + 1 <= next_end {
+                    self.insert(mid + 1, next_end, false);
+                }
+            }
+            i += 1;
+        }
+    }
+}
+
+fn raw_float(input: &GraphInput, value: f32) -> i32 {
+    let mut f = (input.offset + value) / input.scale;
+    let min_f = input.min as f32;
+    if f < min_f {
+        f = min_f;
+    } else {
+        let max_f = input.max as f32;
+        if max_f <= f {
+            f = max_f;
+        }
+    }
+    super::inputs::f32_to_i32_trunc(f)
+}
+
+fn raw_int(input: &GraphInput, value: i32) -> i32 {
+    let mut value = value;
+    if value < input.min {
+        value = input.min;
+    } else if input.max <= value {
+        value = input.max;
+    }
+    value
+}
+
+fn parse_attr_float(text: &str) -> Option<f32> {
+    if text.is_empty() {
+        Some(0.0)
+    } else {
+        parse_float(text)
+    }
+}
+
+fn parse_attr_int(text: &str) -> Option<i32> {
+    if text.is_empty() {
+        Some(0)
+    } else {
+        super::inputs::parse_int(text)
+    }
+}
+
+fn add_criterion(input: &GraphInput, map: &mut RangeMap, value: &str, min: &str, max: &str) {
+    if input.kind == InputKind::Keyed {
+        return;
+    }
+    let (lo, hi) = if input.kind == InputKind::Float {
+        let (mut mn, mut mx) = if !value.is_empty() {
+            let Some(v) = parse_float(value) else {
+                return;
+            };
+            let mn = v - input.scale * 0.5;
+            (mn, mn + input.scale)
+        } else {
+            // An attribute that is present but empty is the zero point (`atof("") == 0`).
+            let (Some(mn), Some(mx)) = (parse_attr_float(min), parse_attr_float(max)) else {
+                return;
+            };
+            (mn, mx)
+        };
+        if mx < mn {
+            std::mem::swap(&mut mn, &mut mx);
+        }
+        (raw_float(input, mn), raw_float(input, mx))
+    } else {
+        let (mut mn, mut mx) = if !value.is_empty() {
+            let Some(v) = super::inputs::parse_int(value) else {
+                return;
+            };
+            (v, v)
+        } else {
+            let (Some(mn), Some(mx)) = (parse_attr_int(min), parse_attr_int(max)) else {
+                return;
+            };
+            (mn, mx)
+        };
+        if mx < mn {
+            std::mem::swap(&mut mn, &mut mx);
+        }
+        (raw_int(input, mn), raw_int(input, mx))
+    };
+    if lo <= hi {
+        map.insert(lo, hi, true);
+    }
+}
+
+fn collect_ranges(
+    inputs: &mut [GraphInput],
+    by_name: &HashMap<String, usize>,
+    states: &[ExpandedState<'_>],
+    canonical: &HashMap<String, String>,
+    templates: &TemplateLib,
+) {
+    let mut maps: Vec<RangeMap> = vec![RangeMap::default(); inputs.len()];
+
+    for state in states {
+        for tag in ["SelectWhen", "Guard"] {
+            for criterion in effective_criteria(state, tag) {
+                let name = criterion.tag_name().name().to_ascii_lowercase();
+                let Some(&idx) = by_name.get(&name) else {
+                    continue;
+                };
+                let input = &inputs[idx];
+                if input.kind == InputKind::Keyed {
+                    continue;
+                }
+                let mark_names = placeholders(&state.source_id);
+                let value = criterion
+                    .attribute("value")
+                    .map(|v| substitute_named(v, &mark_names, &state.mark_values))
+                    .unwrap_or_default();
+                let min = criterion
+                    .attribute("min")
+                    .map(|v| substitute_named(v, &mark_names, &state.mark_values))
+                    .unwrap_or_default();
+                let max = criterion
+                    .attribute("max")
+                    .map(|v| substitute_named(v, &mark_names, &state.mark_values))
+                    .unwrap_or_default();
+                if criterion.attribute("value").is_none()
+                    && criterion.attribute("min").is_none()
+                    && criterion.attribute("max").is_none()
+                {
+                    continue;
+                }
+                add_criterion(input, &mut maps[idx], &value, &min, &max);
+            }
+        }
+
+        for template in effective_templates(state) {
+            let Some(name) = template.attribute("name") else {
+                continue;
+            };
+            let Some(def) = templates.defs.get(&name.to_ascii_lowercase()) else {
+                continue;
+            };
+            let params: HashMap<String, String> = template
+                .attributes()
+                .map(|a| {
+                    (
+                        a.name().to_string(),
+                        substitute_named(a.value(), &placeholders(&state.source_id), &state.mark_values),
+                    )
+                })
+                .collect();
+            for c in &def.select_when {
+                let Some(&idx) = by_name.get(&c.tag.to_ascii_lowercase()) else {
+                    continue;
+                };
+                if inputs[idx].kind == InputKind::Keyed {
+                    continue;
+                }
+                add_criterion(
+                    &inputs[idx],
+                    &mut maps[idx],
+                    c.value.as_deref().unwrap_or(""),
+                    c.min.as_deref().unwrap_or(""),
+                    c.max.as_deref().unwrap_or(""),
+                );
+            }
+            for c in &def.guard {
+                let Some(&idx) = by_name.get(&c.tag.to_ascii_lowercase()) else {
+                    continue;
+                };
+                if inputs[idx].kind == InputKind::Keyed {
+                    continue;
+                }
+                let value = c.value.as_deref().map(|v| substitute_params(v, &params));
+                let min = c.min.as_deref().map(|v| substitute_params(v, &params));
+                let max = c.max.as_deref().map(|v| substitute_params(v, &params));
+                add_criterion(
+                    &inputs[idx],
+                    &mut maps[idx],
+                    value.as_deref().unwrap_or(""),
+                    min.as_deref().unwrap_or(""),
+                    max.as_deref().unwrap_or(""),
+                );
+            }
+            let has = |p: &str| def.params.iter().any(|n| n.eq_ignore_ascii_case(p));
+            for (stem, input_name) in [
+                ("MoveSpeedLH", "RequestedMoveSpeedLH"),
+                ("TurnSpeedLH", "RequestedTurnSpeedLZ"),
+            ] {
+                let (min_key, max_key) = (format!("{stem}Min"), format!("{stem}Max"));
+                if !has(&min_key) || !has(&max_key) {
+                    continue;
+                }
+                let Some(&idx) = by_name.get(&input_name.to_ascii_lowercase()) else {
+                    continue;
+                };
+                let min = params.get(&min_key).map(String::as_str).unwrap_or("");
+                let max = params.get(&max_key).map(String::as_str).unwrap_or("");
+                add_criterion(&inputs[idx], &mut maps[idx], "", min, max);
+            }
+        }
+    }
+
+    for (input, map) in inputs.iter_mut().zip(maps.iter_mut()) {
+        if input.kind == InputKind::Keyed {
+            continue;
+        }
+        map.clip(input.min, input.max);
+        map.gapfill();
+        input.ranges = map.nodes.clone();
+    }
+    let _ = canonical;
+}
+

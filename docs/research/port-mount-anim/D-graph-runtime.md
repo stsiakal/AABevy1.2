@@ -461,8 +461,8 @@ for `XL14`, `S8_1`, `M2I8`, `TSTP`, `ISTP`, `S8SW`, `XL15`, `XLV5`, `MI01`, `MI0
 
 ## 7. Unknowns specific to D
 
-Port status (steps 1-2, `port/anim-a`): the pure leaves and the static loader are in
-`crates/aa-client/src/port/anim/` and tested against live goldens.
+Port status (steps 1-3, `port/anim-b`): the pure leaves, the static loader and the graph state
+machine are in `crates/aa-client/src/port/anim/` and tested against live goldens.
 
 1. **Per-blend-space weight formulas** (all cases in `GetLMGCapabilities`, especially XL14,
    S8_1, M2I8, TSTP, ISTP, S8SW). The dispatcher/caps/command writer are mapped; the case bodies
@@ -484,13 +484,43 @@ Port status (steps 1-2, `port/anim-a`): the pure leaves and the static loader ar
 5. **`Update_SteadyState` / `Update_EphemeralState` branch details** (the high-level flow is
    mapped; the exact leave/enter order for equal-cost links and `forceFollowChance` is [?]).
 6. **Upper-body bone masking** (cryanimation consumer, not the graph state).
-7. **Template-generated transitions.** The XML `<Transitions>` table yields 396 of the horse
-   graph's 455 live `{from,to,force,cost}` entries; the other 59 come from the state templates
-   (idle-rand and jump sequences). The step-2 test accepts the XML subset and reports the gap.
-8. **Input range bucketisation.** Contiguous-guard inputs (PseudoSpeed, waterLevel, Health,
-   Aiming, ...) match the live range vectors; inputs with gap-based template ranges
-   (`SwimControl*`, `RequestedTurnSpeedLZ`) still use a different boundary rule. The live vectors
-   are kept in the graph goldens for the follow-up.
+7. ~~**Template-generated transitions.**~~ **resolved.** There is no separate template link
+   table: a `<Link>` is instantiated once per **shared parameter combination** of its two
+   endpoints. `fist_mo_jump_[dir]_start -> fist_mo_jump_[dir]_b_end` yields only the `b/bl/br`
+   links because `_b_end` has no `f/l/r` copies, and the idle-rand links expand per
+   stance/num. This produces all 455 horse entries, including the 59 a zip missed. The loader
+   now sorts by `(from,to)` and compares every entry (plus the transition-time f32 bits).
+8. ~~**Input range bucketisation.**~~ **resolved.** `LoadInputs FUN_30611d30` inserts every
+   criterion interval into the original's interval map (`FUN_30655d50` insert,
+   `FUN_30655e40` successor normalisation, predecessor normalisation on merge), clips it to the
+   input's raw `[min,max]` (`FUN_306560c0`) and closes each hole at `(left.end + right.start)/2`
+   (`FUN_30655c40`). The sources are the state's `SelectWhen` (with the matching `<Override>`),
+   literal template `SelectWhen` entries, template `Guard` entries (with `$Param` substitution)
+   and the template's `MoveSpeedLH`/`TurnSpeedLH` parameter pairs (`TurnSpeedLH` maps to
+   `RequestedTurnSpeedLZ`). Attribute-present-but-empty is the zero point. The horse vectors and
+   the true XML-only `playerupperbody` vectors match exactly; `SwimControl*`, `TurnSpeed`,
+   `VehicleSeat` and the interval singletons are reproduced.
+   The remaining `player`/`monster`/`npc` differences are `.ag`-vs-XML data: the client resolves
+   any graph name to the compiled `.ag` side copy when present, and those `.ag` files were built
+   from a slightly older XML (e.g. monster `swim_run` is `0.2..10` in the shipped XML but the
+   live range ends at 3.0). `playerupperbody.xml` has no `.ag` and is the exact XML oracle.
+11. **`.ag` side copies.** The live manager loads the compiled `game/animations/graphs/*.ag`
+    instead of the shipped XML whenever both exist (proved by loading `horse_full_body.XML` and
+    receiving the same graph object/name). The `.ag` binary format is `{counts, string table,
+    parsed tables}` and is not part of the XML-loader port; the XML loader is validated against
+    `playerupperbody.xml` (no `.ag`) and against the `.ag` tables except the documented older
+    data values. Horse transitions/guards/costs/order are identical; only three state spellings
+    differ in case (`Cancel action to move`, `Jump to idle`, `Jump to move`).
+12. **Graph state machine oracle.** `machine.rs` ports `SetInput`, `BasicQuery`, `PerformQuery`,
+    the four update functions and the pending ring. The synthetic graph sequence
+    idle -> walk -> run -> stop and forced-state/queue behaviour are tested; a live state
+    sequence from the original could not be captured because `CAnimationGraphState::Update`
+    needs a live `ICharacterInstance` and the lane's in-world actor chain did not expose the
+    graph-state wrapper at the documented offsets. The original `CStateIndex` also uses the full
+    criterion set (not only the stored guards), which is why an unguarded `Dead` state is not
+    selected; the Rust `BasicQuery` currently uses the stored guards and must be extended with
+    the index pairs before it can be used as a live sequence oracle.
+
 9. **CAnimationGraphManager registry layout** — the manager is `[gEnv+0x4cc]`; its map at
    `+0x28` has the sentinel at `[manager+0x2c]`, node key pointer at `+0xc`, graph pointer at
    `+0x10`. Resolved for the capture script, recorded here because it differs from the map's

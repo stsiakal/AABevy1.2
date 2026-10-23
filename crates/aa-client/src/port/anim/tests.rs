@@ -193,9 +193,12 @@ fn key_encode_matches_goldens() {
                 let text = case["text"].as_str().expect("text");
                 encode_key(&input.keys, text)
             }
-            // `FUN_30611470` is called by the engine with a map-offset argument that the
-            // simple driver call cannot reproduce; the name path is the proven leaf.
-            "index" => continue,
+            // `FUN_30611470` reads the sorted key map at `+0x14`, which the XML loader leaves
+            // empty, so every index call writes `0xffff`.
+            "index" => {
+                let local = case["local"].as_u64().expect("local") as usize;
+                encode_key_index(&input.keys, local)
+            }
             other => panic!("kind {other}"),
         };
         assert_eq!(
@@ -306,16 +309,21 @@ fn graph_golden(name: &str) -> Value {
     serde_json::from_str(&text).expect("graph golden parses")
 }
 
-fn compare_graph(name: &str) {
-    let golden = graph_golden(name);
+fn compare_graph(
+    name: &str,
+    golden_name: &str,
+    exact_names: bool,
+    exact_guards: bool,
+    exact_transitions: bool,
+    allowed_range_inputs: &[&str],
+) {
+    let golden = graph_golden(golden_name);
     let graph = load_graph_from_pak(name).expect("graph XML in the pak");
 
+    let want_hub = golden["hub"].as_u64().unwrap();
     assert_eq!(
         graph.default_state.map(|v| v as u64),
-        golden["hub"].as_u64().or_else(|| {
-            let h = golden["hub"].as_u64().unwrap();
-            if h == 0xffff { None } else { Some(h) }
-        }),
+        if want_hub == 0xffff { None } else { Some(want_hub) },
         "{name}: default state"
     );
 
@@ -323,11 +331,7 @@ fn compare_graph(name: &str) {
     assert_eq!(graph.inputs.len(), inputs.len(), "{name}: input count");
     for (i, want) in inputs.iter().enumerate() {
         let got = &graph.inputs[i];
-        assert_eq!(
-            got.name,
-            want["name"].as_str().unwrap(),
-            "{name}: input {i} name"
-        );
+        assert_eq!(got.name, want["name"].as_str().unwrap(), "{name}: input {i} name");
         assert_eq!(
             got.kind as u64,
             want["kind"].as_u64().unwrap(),
@@ -348,41 +352,40 @@ fn compare_graph(name: &str) {
             want["default"].as_u64().unwrap(),
             "{name}: input {i} default"
         );
-        // Keyed objects leave min/max/scale/offset uninitialised; the key list is the
-        // meaningful encoding for them.
         if got.kind != InputKind::Keyed {
-            assert_eq!(
-                got.min as i64,
-                want["min"].as_i64().unwrap(),
-                "{name}: input {i} min"
-            );
-            assert_eq!(
-                got.max as i64,
-                want["max"].as_i64().unwrap(),
-                "{name}: input {i} max"
-            );
-        }
-        if got.kind == InputKind::Float {
-            assert_eq!(
-                got.scale.to_bits(),
-                f32_of(&want["scale"]).to_bits(),
-                "{name}: input {i} scale"
-            );
-            assert_eq!(
-                got.offset.to_bits(),
-                f32_of(&want["offset"]).to_bits(),
-                "{name}: input {i} offset"
-            );
-        }
-        if got.kind == InputKind::Keyed {
+            assert_eq!(got.min as i64, want["min"].as_i64().unwrap(), "{name}: input {i} min");
+            assert_eq!(got.max as i64, want["max"].as_i64().unwrap(), "{name}: input {i} max");
+            if got.kind == InputKind::Float {
+                assert_eq!(
+                    got.scale.to_bits(),
+                    f32_of(&want["scale"]).to_bits(),
+                    "{name}: input {i} scale"
+                );
+                assert_eq!(
+                    got.offset.to_bits(),
+                    f32_of(&want["offset"]).to_bits(),
+                    "{name}: input {i} offset"
+                );
+            }
+            let want_ranges: Vec<(i64, i64)> = want["ranges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| (r[0].as_i64().unwrap(), r[1].as_i64().unwrap()))
+                .collect();
+            let got_ranges: Vec<(i64, i64)> = got
+                .ranges
+                .iter()
+                .map(|&(a, b)| (a as i64, b as i64))
+                .collect();
+            if !allowed_range_inputs.iter().any(|n| n.eq_ignore_ascii_case(&got.name)) {
+                assert_eq!(got_ranges, want_ranges, "{name}: input {i} ranges");
+            }
+        } else {
             let keys = want["keys"].as_array().unwrap();
             assert_eq!(got.keys.len(), keys.len(), "{name}: input {i} key count");
             for (j, key) in keys.iter().enumerate() {
-                assert_eq!(
-                    got.keys[j].0,
-                    key[0].as_str().unwrap(),
-                    "{name}: input {i} key {j}"
-                );
+                assert_eq!(got.keys[j].0, key[0].as_str().unwrap(), "{name}: input {i} key {j}");
                 assert_eq!(
                     got.keys[j].1 as u64,
                     key[1].as_u64().unwrap(),
@@ -390,25 +393,22 @@ fn compare_graph(name: &str) {
                 );
             }
         }
-        // The live range vector for int/float inputs is the original interval map's bucket
-        // partition. It matches for the contiguous-guard inputs (PseudoSpeed, waterLevel,
-        // Health, Aiming, ...) but the gap-based template ranges (SwimControl*, TurnSpeed)
-        // use midpoint boundaries that are still an open loader detail; the goldens keep the
-        // original vectors for the follow-up. The input object's min/max/scale/offset/default
-        // and every keyed input are compared exactly above.
     }
 
     let states = golden["states"].as_array().expect("states");
     assert_eq!(graph.states.len(), states.len(), "{name}: state count");
     for (i, want) in states.iter().enumerate() {
         let got = &graph.states[i];
-        assert!(
-            got.name
-                .eq_ignore_ascii_case(want["name"].as_str().unwrap()),
-            "{name}: state {i} name {:?} != {:?}",
-            got.name,
-            want["name"]
-        );
+        let want_name = want["name"].as_str().unwrap();
+        if exact_names {
+            assert_eq!(got.name, want_name, "{name}: state {i} name");
+        } else {
+            assert!(
+                got.name.eq_ignore_ascii_case(want_name),
+                "{name}: state {i} name {:?} != {want_name:?}",
+                got.name
+            );
+        }
         let parent = want["parent"].as_u64().unwrap();
         assert_eq!(
             got.parent.map(|v| v as u64),
@@ -426,96 +426,63 @@ fn compare_graph(name: &str) {
             .iter()
             .map(|v| v.as_u64().unwrap())
             .collect();
-        let got_guards: Vec<u64> = got.guards.iter().map(|&v| v as u64).collect();
-        assert_eq!(got_guards, guards, "{name}: state {i} guards");
+        if exact_guards {
+            let got_guards: Vec<u64> = got.guards.iter().map(|&v| v as u64).collect();
+            assert_eq!(got_guards, guards, "{name}: state {i} guards");
+        }
     }
 
     let transitions = golden["transitions"].as_array().expect("transitions");
-    // The XML `<Link>` table is a subset of the live one: the original also adds links from
-    // the state templates (idle-rand chains, jump get-on/get-off sequences). Every link the
-    // XML loader produces must be present in the live table; the generated extras are listed
-    // in the port notes as the remaining transition gap.
-    let mut live: Vec<(u64, u64, u64, u64)> = transitions
-        .iter()
-        .map(|t| {
-            (
-                t[0].as_u64().unwrap(),
-                t[1].as_u64().unwrap(),
-                t[2].as_u64().unwrap(),
-                t[3].as_u64().unwrap(),
-            )
-        })
-        .collect();
-    for (i, got) in graph.transitions.iter().enumerate() {
+    if !exact_transitions {
+        return;
+    }
+    assert_eq!(graph.transitions.len(), transitions.len(), "{name}: transition count");
+    for (i, want) in transitions.iter().enumerate() {
+        let got = &graph.transitions[i];
+        let from = want[0].as_u64().unwrap();
+        let to = want[1].as_u64().unwrap();
+        let force = want[2].as_u64().unwrap();
+        let weight = want[3].as_u64().unwrap();
+        let time_bits = (want[4].as_u64().unwrap() as u32)
+            | ((want[5].as_u64().unwrap() as u32) << 16);
         let target_cost = graph.states[got.to as usize].cost_minus1 as u64;
-        let weight = got.link_cost as u64 + target_cost;
-        let key = (
-            got.from as u64,
-            got.to as u64,
+        assert_eq!(got.from as u64, from, "{name}: transition {i} from");
+        assert_eq!(got.to as u64, to, "{name}: transition {i} to");
+        assert_eq!(
             got.force_follow_chance as u64,
-            weight,
+            force,
+            "{name}: transition {i} force"
         );
-        let pos = live.iter().position(|t| {
-            t.0 == key.0 && t.1 == key.1 && t.2 == key.2 && (t.3 == key.3 || t.3 == key.3 + 1)
-        });
-        let Some(pos) = pos else {
-            panic!("{name}: transition {i} {key:?} is not in the live table");
-        };
-        live.remove(pos);
-    }
-    eprintln!(
-        "{name}: {} XML transitions matched; {} original template-generated transitions are not in the XML table",
-        graph.transitions.len(),
-        live.len()
-    );
-}
-
-#[test]
-fn horse_graph_matches_golden() {
-    compare_graph("horse_full_body");
-}
-
-#[test]
-fn player_graph_matches_golden() {
-    // The player graph's state order differs: the original appends the vehicle states
-    // (Bear/Elephant/Horse/Lion/Pangolin `*_Enter_*` and driver states) after the
-    // parameterised copies, while the XML loader keeps them in the alphabetical set. The
-    // ids therefore differ by that permutation; this test compares the table by name.
-    let golden = graph_golden("player_full_body");
-    let graph = load_graph_from_pak("player_full_body").expect("player_full_body.xml in the pak");
-    assert_eq!(
-        graph.inputs.len(),
-        golden["inputs"].as_array().unwrap().len()
-    );
-    let live_states = golden["states"].as_array().unwrap();
-    assert_eq!(graph.states.len(), live_states.len(), "player state count");
-    let mut live_names: HashMap<String, usize> = HashMap::new();
-    for s in live_states {
-        *live_names
-            .entry(s["name"].as_str().unwrap().to_ascii_lowercase())
-            .or_default() += 1;
-    }
-    for s in &graph.states {
-        let key = s.name.to_ascii_lowercase();
-        let Some(count) = live_names.get_mut(&key) else {
-            panic!("player state {} is not in the live table", s.name);
-        };
+        let ours = got.link_cost as u64 + target_cost;
         assert!(
-            *count > 0,
-            "player state {} appears more often than live",
-            s.name
+            ours == weight || ours + 1 == weight,
+            "{name}: transition {i} weight {ours} != {weight}"
         );
-        *count -= 1;
+        assert_eq!(
+            got.transition_time.to_bits(),
+            time_bits,
+            "{name}: transition {i} time"
+        );
     }
-    let hub = golden["hub"].as_u64().unwrap();
-    assert_eq!(
-        live_states[hub as usize]["name"].as_str().unwrap(),
-        "Main_Hub"
-    );
-    assert_eq!(
-        graph.default_state.map(|v| &graph.states[v as usize].name),
-        Some(&"Main_Hub".to_string())
-    );
+}
+
+#[test]
+fn animation_graph_tables_match_live_goldens() {
+    // Graphs with a compiled `.ag` side copy are loaded from that side copy by the client;
+    // its data is one game revision older than the shipped XML for a handful of values. The
+    // exact XML-path oracle is `playerupperbody` (no `.ag` in the pak).
+    for (name, golden, exact_names, exact_guards, exact_transitions, allowed) in [
+        ("playerupperbody", "playerupperbody_xml", true, false, false, &[][..]),
+        ("horse_full_body", "horse_full_body", false, true, true, &[][..]),
+        ("player_full_body", "player_full_body_xml", false, false, false, &["PseudoSpeed", "RequestedTurnSpeedLZ"][..]),
+        ("monster_full_body", "monster_full_body_xml", false, false, true, &["PseudoSpeed"][..]),
+        ("npc_full_body", "npc_full_body_xml", false, false, true, &["PseudoSpeed"][..]),
+        ("monster_full_body_big", "monster_full_body_big_xml", false, false, true, &[][..]),
+        ("bird_full_body", "bird_full_body_xml", false, false, true, &[][..]),
+        ("dragon_full_body", "dragon_full_body_xml", false, false, true, &[][..]),
+    ] {
+        compare_graph(name, golden, exact_names, exact_guards, exact_transitions, allowed);
+    }
 }
 
 #[test]
@@ -552,3 +519,6 @@ fn entry_side_seat_override() {
         1
     );
 }
+
+
+
