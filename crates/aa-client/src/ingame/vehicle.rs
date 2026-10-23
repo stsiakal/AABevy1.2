@@ -71,7 +71,7 @@ fn towards(current: f32, target: f32, max_delta: f32) -> f32 {
 /// How close the gunner must stand to a ship's cannon to man it (metres). Standing aboard is not
 /// reported to the client, so being this near a cannon is the "aboard" test; the server decides who
 /// may man it (`may_man_cannon`: the summoner, the ship's owner or anybody aboard).
-pub(super) const CANNON_REACH: f32 = 4.5;
+pub(super) const CANNON_REACH: f32 = 3.0;
 
 /// The timeline id of the cannon `player` can man: the nearest of `cannons` (timeline, position) within
 /// [`CANNON_REACH`].
@@ -179,7 +179,7 @@ pub fn vehicle_seat(
             .filter(|s| matches!(s.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(s.model_id))
             .map(|s| (s, false))
             .or_else(|| {
-                let id = pick_land_vehicle(me, facing, units.by_id.values().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(u.model_id)).map(|u| (u.obj_id, visual_pos(u))))?;
+                let id = pick_land_vehicle(me, facing, attached.is_some(), units.by_id.values().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && db.is_land_vehicle(u.model_id)).map(|u| (u.obj_id, visual_pos(u))))?;
                 units.get(id).map(|s| (s, true))
             })
         && let UnitKind::Slave { tl_id, summoner_id, .. } = slave.kind
@@ -224,7 +224,7 @@ pub fn vehicle_seat(
         .and_then(|v| v.unit_entity(own.obj_id))
         .and_then(|e| visuals.get(e).ok())
         .map_or(unit.pos, |v| aa_net::Pos::new(v.pos.x, v.pos.y, v.pos.z));
-    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= 60.0;
+    let near = Vec3::new(here.x, here.y, here.z).distance(Vec3::new(spawn.unit.pos.x, spawn.unit.pos.y, spawn.unit.pos.z)) <= PICK_RANGE;
     if !near {
         return;
     }
@@ -243,16 +243,18 @@ pub fn vehicle_seat(
     }
 }
 
-/// How far the interaction key reaches for a land vehicle when nothing is targeted (metres), measured live: the original
-/// boards a Farm Wagon with F from about 4 m, facing it.
-pub(crate) const PICK_RANGE: f32 = 4.0;
+/// How far the interaction key reaches for a land vehicle when nothing is targeted (metres). `FUN_393bf270` picks the
+/// squared range `DAT_39ac79fc = 9.0` (3 m); `DAT_39ac7a00 = 12.25` (3.5 m) while its `+0x3c26` attached flag is set.
+pub(crate) const PICK_RANGE: f32 = 3.0;
+pub(crate) const PICK_RANGE_MOUNTED: f32 = 3.5;
 /// The forward cone of that pick: the cosine of its half angle (60 degrees; a stand-in, the live measurement only says "facing").
 pub(crate) const PICK_COS: f32 = 0.5;
 
 /// The land vehicle the interaction key picks without a target: the nearest of `candidates` (`obj_id`, position) within
-/// [`PICK_RANGE`] of `me` and in front of `facing` (radians, 0 = north).
-pub(crate) fn pick_land_vehicle(me: Vec3, facing: f32, candidates: impl IntoIterator<Item = (u32, Vec3)>) -> Option<u32> {
+/// [`PICK_RANGE`] (or [`PICK_RANGE_MOUNTED`] while `mounted`) of `me` and in front of `facing` (radians, 0 = north).
+pub(crate) fn pick_land_vehicle(me: Vec3, facing: f32, mounted: bool, candidates: impl IntoIterator<Item = (u32, Vec3)>) -> Option<u32> {
     let forward = forward(facing);
+    let range = if mounted { PICK_RANGE_MOUNTED } else { PICK_RANGE };
     candidates
         .into_iter()
         .filter_map(|(id, at)| {
@@ -260,7 +262,7 @@ pub(crate) fn pick_land_vehicle(me: Vec3, facing: f32, candidates: impl IntoIter
             let toward = (at - me).truncate();
             // standing on top of it counts as facing it
             let ahead = toward.length() < 1.0 || forward.dot(toward.normalize_or_zero()) >= PICK_COS;
-            (distance <= PICK_RANGE && ahead).then_some((id, distance))
+            (distance <= range && ahead).then_some((id, distance))
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(id, _)| id)
@@ -277,10 +279,9 @@ pub(super) fn unbind_refused(speed: f32) -> bool {
     speed * speed > UNBIND_MAX_SPEED * UNBIND_MAX_SPEED
 }
 
-/// How far the player may stand from a slave and still board it (metres). The original's squared
-/// range `DAT_39ac79fc` is not in the dump (open question in `re-wagons.md`); the interaction range
-/// of the other units is used until it is captured.
-pub(super) const BOARD_RANGE: f32 = 10.0;
+/// How far the player may stand from a slave and still board it (metres). The bind precheck
+/// `FUN_39346290` uses the squared range `DAT_39ac7408 = 16.0`, i.e. 4 m.
+pub(super) const BOARD_RANGE: f32 = 4.0;
 
 /// What the boarding precheck looks at (`FUN_39346290`).
 #[derive(Clone, Copy, Debug)]
@@ -604,9 +605,9 @@ pub(crate) mod flow_tests {
         let mut app = wagon_app(false);
         app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, -3.0, 0.0);
         assert!(press(&mut app).is_empty());
-        // beyond 4 m: not picked
+        // beyond the 3 m interaction reach: not picked
         let mut app = wagon_app(false);
-        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 4.5, 0.0);
+        app.world_mut().resource_mut::<Units>().by_id.get_mut(&500).unwrap().pos = Pos::new(0.0, 3.5, 0.0);
         assert!(press(&mut app).is_empty());
         // already targeted: no CSChangeTarget, only the bind
         let mut app = wagon_app(true);
@@ -617,16 +618,19 @@ pub(crate) mod flow_tests {
     #[test]
     fn the_pick_takes_the_nearest_vehicle_in_the_forward_cone() {
         let me = Vec3::ZERO;
-        let near_left = (1, Vec3::new(-3.9, 0.5, 0.0)); // 83 degrees off: outside the cone
-        let ahead = (2, Vec3::new(0.0, 3.5, 0.0));
+        let near_left = (1, Vec3::new(-2.9, 0.5, 0.0)); // 80 degrees off: outside the cone
+        let ahead = (2, Vec3::new(0.0, 2.8, 0.0));
         let nearer_ahead = (3, Vec3::new(0.5, 2.0, 0.0));
-        assert_eq!(pick_land_vehicle(me, 0.0, [near_left, ahead, nearer_ahead]), Some(3));
-        assert_eq!(pick_land_vehicle(me, 0.0, [near_left]), None);
+        assert_eq!(pick_land_vehicle(me, 0.0, false, [near_left, ahead, nearer_ahead]), Some(3));
+        assert_eq!(pick_land_vehicle(me, 0.0, false, [near_left]), None);
         // facing east (-pi/2 turns left of north is west; +pi/2 is east in this convention: forward = (-sin, cos))
-        assert_eq!(pick_land_vehicle(me, -std::f32::consts::FRAC_PI_2, [(4, Vec3::new(3.0, 0.0, 0.0))]), Some(4));
-        assert_eq!(pick_land_vehicle(me, 0.0, [(5, Vec3::new(3.0, 0.0, 0.0))]), None);
+        assert_eq!(pick_land_vehicle(me, -std::f32::consts::FRAC_PI_2, false, [(4, Vec3::new(3.0, 0.0, 0.0))]), Some(4));
+        assert_eq!(pick_land_vehicle(me, 0.0, false, [(5, Vec3::new(3.0, 0.0, 0.0))]), None);
+        // mounted reach is 3.5 m (`DAT_39ac7a00 = 12.25`)
+        assert_eq!(pick_land_vehicle(me, 0.0, true, [(7, Vec3::new(0.0, 3.4, 0.0))]), Some(7));
+        assert_eq!(pick_land_vehicle(me, 0.0, true, [(8, Vec3::new(0.0, 3.6, 0.0))]), None);
         // standing on it counts as facing it
-        assert_eq!(pick_land_vehicle(me, 0.0, [(6, Vec3::new(0.0, -0.5, 0.0))]), Some(6));
+        assert_eq!(pick_land_vehicle(me, 0.0, false, [(6, Vec3::new(0.0, -0.5, 0.0))]), Some(6));
     }
 
     #[test]

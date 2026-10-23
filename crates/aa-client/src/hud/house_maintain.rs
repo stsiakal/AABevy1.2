@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use mlua::{Lua, ObjectLike, Table, Value};
 
 use super::api::{HudBridge, HudData, Request, Shared};
-use super::houses::{HouseState, TAX_ITEM, amount, bag_count};
+use super::houses::{HOUSE_RANGE, HouseState, TAX_ITEM, amount, bag_count};
 
 /// `WI_DEMOLISH` (94) owner skill: `skills.category_id = 3`, range 20 m, a 20 s cast; the server's
 /// `InteractionEffect` runs `housing::demolish_by_player` on the target house.
@@ -28,8 +28,8 @@ pub const DEMOLISH_SKILL: u32 = 11404;
 pub const APPRAISAL_ITEM: u32 = 28085;
 /// Copper per appraisal certificate (the server's `COPPER_PER_CERTIFICATE`: one per 100 gold).
 const COPPER_PER_APPRAISAL: i64 = 1_000_000;
-/// The window closes when the player walks this far from the house, metres.
-const REACH: f32 = 30.0;
+/// The window closes when the player walks out of the 3 m house interaction range (`FUN_393befd0`).
+const REACH: f32 = HOUSE_RANGE;
 
 /// The wire permission a script index (1-based) stands for.
 pub(super) fn wire_permission(index: i64) -> Option<u8> {

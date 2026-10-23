@@ -40,7 +40,7 @@ use mlua::{Lua, Table, Value};
 use rusqlite::Connection;
 
 use super::api::{HudBridge, HudData, Shared};
-use super::houses::{HouseState, INFO_SKILL, step_skill};
+use super::houses::{HOUSE_RANGE, HouseState, INFO_SKILL, step_skill};
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
 /// Skills the dynamic action bar leaves out (`dynamic_action_bar.lua`, `ShoulPassShow`).
@@ -392,7 +392,6 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         let state = HouseState::of(&houses.by_tl_id.get(&tl_id)?.snapshot);
         let finished = !state.under_construction();
         let skill = if finished { INFO_SKILL } else { step_skill(game, state.template_id, state.current_actions)? };
-        let range = game.skills.get(&skill).map_or(0.0, |s| s.max_range as f32);
         let dist = data.pos.distance(to_vec(u.pos));
         // A finished house with a permitted workbench keeps its bar up to the action-bar distance.
         let bench = finished
@@ -406,13 +405,9 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         let craft = bench
             .filter(|o| bench_permitted(data, game, o, &state, houses))
             .map(|o| (o.obj_id, o.template_id));
-        let limit = if craft.is_some() {
-            CRAFT_BAR_DISTANCE
-        } else if range > 0.0 {
-            range + REACH_SLACK
-        } else {
-            BASE_REACH
-        };
+        // the housing interaction itself is 3 m (`FUN_393befd0`); only a workbench on the plot keeps the bar up
+        // to the action-bar distance
+        let limit = if craft.is_some() { CRAFT_BAR_DISTANCE } else { HOUSE_RANGE };
         if dist > limit {
             return None;
         }
@@ -708,6 +703,7 @@ fn vehicle_owns_key(player: &aa_net::model::Unit, units: &Units, pos: Vec3, yaw:
         || crate::ingame::vehicle::pick_land_vehicle(
             pos,
             yaw,
+            player.attached_to.is_some(),
             units.iter().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && land(u.model_id)).map(|u| (u.obj_id, to_vec(u.pos))),
         )
         .is_some()
@@ -974,13 +970,10 @@ fn execute(
             if !state.under_construction() {
                 // a finished house or farm: F is the info (maintain) window, G the workbench's craft window
                 if i == 1 {
-                    // the bar may still show F from the action-bar distance; the info skill keeps its own reach
-                    let range = d.game.get().and_then(|g| g.skills.get(&INFO_SKILL)).map_or(0.0, |s| s.max_range as f32);
-                    let limit = if range > 0.0 { range + REACH_SLACK } else { BASE_REACH };
-                    if f.dist <= limit {
+                    if f.dist <= HOUSE_RANGE {
                         maintain = Some(f.obj_id);
                     } else {
-                        info!("housing: {} ({}) info is out of reach ({:.1} m, {limit:.1} m)", state.name, f.obj_id, f.dist);
+                        info!("housing: {} ({}) info is out of reach ({:.1} m, {HOUSE_RANGE:.1} m)", state.name, f.obj_id, f.dist);
                     }
                 } else if i == 2
                     && let Some((object, template)) = f.craft

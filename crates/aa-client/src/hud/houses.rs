@@ -34,6 +34,8 @@ pub const COPPER_PER_CERTIFICATE: i64 = 10_000;
 /// The house-specific "Check Construction Info" skill (`skills.category_id = 3`, the housing category, range 6 m).
 /// `11001` is the generic construction info skill (category 1, range 4 m); 1.2's housing interaction uses 15212.
 pub const INFO_SKILL: u32 = 15212;
+/// How near a house must be for its interaction (`FUN_393befd0`): the squared range `DAT_39ac79fc = 9.0`, i.e. 3 m.
+pub(super) const HOUSE_RANGE: f32 = 3.0;
 /// How near the view ray has to pass a house's middle for a right click, metres (as `targeting::PICK_RADIUS`).
 const PICK_RADIUS: f32 = 1.1;
 const CLICK_SLOP: f32 = 6.0;
@@ -610,6 +612,11 @@ pub fn right_click_build(
     };
     let Some(unit) = units.by_id.get(&obj_id) else { return };
     let UnitKind::Housing { tl_id, .. } = unit.kind else { return };
+    let distance = bridge.0.borrow().pos.distance(Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z));
+    if distance > HOUSE_RANGE {
+        info!("housing: right click on unit {obj_id} (tl {tl_id}) refused: {distance:.1} m is out of the {HOUSE_RANGE:.1} m interaction range");
+        return;
+    }
     let Some(house) = houses.as_deref().and_then(|h| h.by_tl_id.get(&tl_id)) else {
         info!("housing: right click on unit {obj_id} (tl {tl_id}) refused: no received house state");
         return;
@@ -617,6 +624,7 @@ pub fn right_click_build(
     let mut commands = Vec::new();
     if !(house.snapshot.current_actions < house.snapshot.all_actions) {
         // a finished house: the original `HOUSE_INTERACTION_START("housing")` opens the maintain window
+        // (`FUN_393befd0` checks the 3 m interaction range before either window)
         super::house_maintain::open(unit, house, &bridge.0, rt.as_deref(), &mut commands);
         info!("housing: right click on unit {obj_id} (tl {tl_id}) opened the maintain window");
         for command in commands {

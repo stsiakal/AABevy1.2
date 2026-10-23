@@ -48,8 +48,9 @@ use super::data::GameData;
 use super::quests::{PlayerFacts, Texts, kind};
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
-/// How far the player reaches to talk to an NPC (F, a right click), metres.
-pub(super) const TALK_RANGE: f32 = 6.0;
+/// How far the player reaches to talk to an NPC (F, a right click), metres: the generic interaction gate
+/// `DAT_39ac79fc = 9.0` squared, i.e. 3 m (`FUN_39093860`).
+pub(super) const TALK_RANGE: f32 = 3.0;
 /// How near the view ray has to pass a unit's middle for a right click to pick it, metres.
 const PICK_RADIUS: f32 = 1.1;
 /// A press that moves more than this many pixels before it is released was a camera drag.
