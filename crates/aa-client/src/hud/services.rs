@@ -54,51 +54,71 @@ impl Tables {
     }
 }
 
-/// A function the server advertised (the supported subset of the 1.2 skills).
+/// The original's 16 NPC interaction kinds (`npc_interaction.alb:3-18`), in kind order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Service {
-    Store,
-    Bank,
-    Repair,
+    SkillTrainer,
     Ability,
-    Priest,
-    Stabler,
-    LookConverter,
+    Store,
     Auction,
+    Priest,
+    Teleporter,
+    Repair,
+    Stabler,
+    Recruiter,
+    Bank,
     Trader,
+    PriestRecoverExp,
     Specialty,
+    Dominion,
+    Expedition,
+    LookConverter,
 }
 
 impl Service {
     fn from_skill(skill: u32) -> Option<Self> {
         Some(match skill {
-            12087 => Self::Store,
-            13238 => Self::Bank,
-            12086 => Self::Repair,
+            12081 => Self::SkillTrainer,
             12082 => Self::Ability,
-            12084 => Self::Priest,
-            12195 => Self::Stabler,
-            23478 => Self::LookConverter,
+            12087 => Self::Store,
             12083 => Self::Auction,
+            12084 => Self::Priest,
+            12085 => Self::Teleporter,
+            12086 => Self::Repair,
+            12195 => Self::Stabler,
+            12660 => Self::Recruiter,
+            13238 => Self::Bank,
             // Native interaction actions on `npcs.trader` / `npcs.specialty`.
             14866 => Self::Trader,
             16376 => Self::Specialty,
+            // `npc_interactions` skill 23992 (the client's `영지 평화` set).
+            23992 => Self::Dominion,
+            13736 => Self::Expedition,
+            23478 => Self::LookConverter,
             _ => return None,
         })
     }
 
     fn skill(self) -> u32 {
         match self {
-            Self::Store => 12087,
-            Self::Bank => 13238,
-            Self::Repair => 12086,
+            Self::SkillTrainer => 12081,
             Self::Ability => 12082,
-            Self::Priest => 12084,
-            Self::Stabler => 12195,
-            Self::LookConverter => 23478,
+            Self::Store => 12087,
             Self::Auction => 12083,
+            Self::Priest => 12084,
+            Self::Teleporter => 12085,
+            Self::Repair => 12086,
+            Self::Stabler => 12195,
+            Self::Recruiter => 12660,
+            Self::Bank => 13238,
             Self::Trader => 14866,
+            // The 1.2 data has no advertised recover-exp skill; its window is selected with the
+            // priest flag. Dominion uses the `npc_interactions` skill above.
+            Self::PriestRecoverExp => 0,
+            Self::Dominion => 23992,
             Self::Specialty => 16376,
+            Self::Expedition => 13736,
+            Self::LookConverter => 23478,
         }
     }
 
@@ -106,35 +126,56 @@ impl Service {
     /// (F9, lines 269-304: `"store"`, `"bank"`, `"blacksmith"`, `"ability_change"`, ...).
     fn key(self) -> &'static str {
         match self {
+            Self::SkillTrainer => "skill_trainer",
+            Self::Ability => "ability_change",
             Self::Store => "store",
-            Self::Bank => "bank",
+            Self::Auction => "auction",
+            Self::Priest => "priest",
+            Self::Teleporter => "teleporter",
             // The original maps both repairman and blacksmith to the blacksmith repair window;
             // `repairman` is an undefined dead branch in the 1.2 script.
             Self::Repair => "blacksmith",
-            Self::Ability => "ability_change",
-            Self::Priest => "priest",
             Self::Stabler => "stabler",
-            Self::LookConverter => "look_converter",
-            Self::Auction => "auction",
+            Self::Recruiter => "recruiter",
+            Self::Bank => "bank",
             // `npc_interaction.alb` F9 (lines 290-294): `trader` opens `store_backpack.alb`,
             // `specialty` the specialty sale message box.
             Self::Trader => "trader",
+            Self::PriestRecoverExp => "priest_recover_exp",
             Self::Specialty => "specialty",
+            Self::Dominion => "dominion_npc",
+            Self::Expedition => "expedition",
+            Self::LookConverter => "look_converter",
         }
     }
 }
 
-/// The interaction action an NPC template's flags add (`npcs.trader`) or its specialty flag
-/// (`npcs.specialty`), independent of the service skill the server advertises.
-fn flagged_service(game: &GameData, template: u32) -> Option<Service> {
-    let npc = game.npcs.get(&template)?;
-    if npc.trader {
-        Some(Service::Trader)
-    } else if npc.specialty {
-        Some(Service::Specialty)
-    } else {
-        None
-    }
+/// The interaction actions an NPC template's flags add, independent of the service skills the
+/// server advertises (`npcs.*`, the original's own `npc_interaction.alb` sources).
+fn flagged_services(game: &GameData, template: u32) -> Vec<Service> {
+    let Some(npc) = game.npcs.get(&template) else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut add = |on: bool, service| {
+        if on && !out.contains(&service) {
+            out.push(service);
+        }
+    };
+    add(npc.skill_trainer, Service::SkillTrainer);
+    add(npc.ability_changer, Service::Ability);
+    add(npc.auctioneer, Service::Auction);
+    add(npc.priest, Service::Priest);
+    add(npc.priest, Service::PriestRecoverExp);
+    add(npc.teleporter, Service::Teleporter);
+    add(npc.blacksmith || npc.repairman, Service::Repair);
+    add(npc.merchant, Service::Store);
+    add(npc.stabler, Service::Stabler);
+    add(npc.recruiting_battle_field_id != 0, Service::Recruiter);
+    add(npc.banker, Service::Bank);
+    add(npc.trader, Service::Trader);
+    add(npc.specialty, Service::Specialty);
+    add(npc.expedition, Service::Expedition);
+    add(npc.look_converter, Service::LookConverter);
+    out
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,10 +253,21 @@ fn open(data: &mut HudData, service: Service, rt: &UiRuntime) -> Option<&'static
                 super::auction::open_service(rt, npc);
             }
         }
-        Service::Repair | Service::Ability | Service::Priest | Service::LookConverter => {}
-        // The script windows (`store_backpack.alb`, the specialty message box) open from
+        // The original script windows (skill trainer, teleporter, recruiter, territory, expedition,
+        // recover exp, item look, trade backpack, specialty, blessing, repair) open from
         // `NPC_INTERACTION_START`; there is no app-side state to prepare.
-        Service::Trader | Service::Specialty => {}
+        Service::Repair
+        | Service::Ability
+        | Service::Priest
+        | Service::LookConverter
+        | Service::SkillTrainer
+        | Service::Teleporter
+        | Service::Recruiter
+        | Service::PriestRecoverExp
+        | Service::Dominion
+        | Service::Expedition
+        | Service::Trader
+        | Service::Specialty => {}
     }
     Some(service.key())
 }
@@ -369,13 +421,15 @@ pub(super) fn update(
                     services.push(service);
                 }
             }
-            // The original client adds the trade actions from the NPC's own flags, not from the
-            // reply: `trader` opens `store_backpack.alb`, `specialty` the specialty sale box.
+            // The original client adds its interaction kinds from the NPC's own flags, not only
+            // from the reply (`npc_interaction.alb`).
             let template = units.get(npc_obj).map_or(0, |unit| unit.kind.template_id());
-            if let Some(service) = d.game.get().and_then(|game| flagged_service(game, template))
-                && !services.contains(&service)
-            {
-                services.push(service);
+            if let Some(game) = d.game.get() {
+                for service in flagged_services(game, template) {
+                    if !services.contains(&service) {
+                        services.push(service);
+                    }
+                }
             }
             let quest = quest_choice(&d);
             if services.is_empty() {
@@ -386,9 +440,11 @@ pub(super) fn update(
                     end = true;
                 }
             } else if services.len() == 1 && quest.is_none() {
-                // The original opens a lone service window without a menu.
-                if let Some(service) = services.first()
-                    && let Some(key) = open(&mut d, *service, &rt)
+                // The original opens a lone service window without a menu. A lone recruiter stays
+                // with `battlefield.rs`, which checks the battlefield's minimum level first.
+                let service = services[0];
+                if service != Service::Recruiter
+                    && let Some(key) = open(&mut d, service, &rt)
                 {
                     fire = Some((key, ""));
                 }
@@ -556,7 +612,7 @@ mod tests {
     fn setup_with_flags(
         skills: &[u32],
         quests: usize,
-        flags: Option<(u32, bool, bool)>,
+        flags: Option<(u32, super::super::data::NpcInfo)>,
     ) -> Result<(App, Shared), Box<dyn std::error::Error>> {
         let mut rt = UiRuntime::new("en_us", 1920., 1080.)?;
         let bridge = std::rc::Rc::new(std::cell::RefCell::new(HudData::default()));
@@ -565,8 +621,8 @@ mod tests {
         bridge.borrow_mut().dialog.start = (1..=quests as u32).collect();
         let mut game = GameData::default();
         game.services.priest.push(PriestBuff { id: 1, buff_id: 239, cost: 100 });
-        if let Some((template, trader, specialty)) = flags {
-            game.npcs.insert(template, super::super::data::NpcInfo { trader, specialty, ..Default::default() });
+        if let Some((template, npc)) = &flags {
+            game.npcs.insert(*template, npc.clone());
         }
         assert!(bridge.borrow_mut().game.0.set(game).is_ok());
         super::super::api::install(&mut rt, &bridge)?;
@@ -575,8 +631,8 @@ mod tests {
             .exec()?;
         let mut unit = super::super::expansion::fixture::spawn().unit;
         unit.obj_id = 200;
-        if let Some((template, _, _)) = flags {
-            unit.kind = aa_net::model::UnitKind::Npc { template_id: template, owner_id: 0 };
+        if let Some((template, _)) = &flags {
+            unit.kind = aa_net::model::UnitKind::Npc { template_id: *template, owner_id: 0 };
         }
         let mut units = Units::default();
         units.by_id.insert(200, unit);
@@ -607,21 +663,27 @@ mod tests {
     #[test]
     fn server_skills_map_to_the_original_npc_interaction_windows() {
         for (skill, key) in [
-            (12087, "store"),
-            (13238, "bank"),
-            (12086, "blacksmith"),
+            (12081, "skill_trainer"),
             (12082, "ability_change"),
-            (12084, "priest"),
-            (12195, "stabler"),
-            (23478, "look_converter"),
             (12083, "auction"),
+            (12084, "priest"),
+            (12085, "teleporter"),
+            (12086, "blacksmith"),
+            (12087, "store"),
+            (12195, "stabler"),
+            (12660, "recruiter"),
+            (13238, "bank"),
+            (13736, "expedition"),
             (14866, "trader"),
             (16376, "specialty"),
+            (23478, "look_converter"),
+            (23992, "dominion_npc"),
         ] {
             let service = Service::from_skill(skill).unwrap();
             assert_eq!(service.key(), key);
             assert_eq!(service.skill(), skill);
         }
+        assert_eq!(Service::PriestRecoverExp.key(), "priest_recover_exp");
         assert_eq!(Service::from_skill(0), None, "unknown skills are not services");
     }
 
@@ -639,7 +701,7 @@ mod tests {
     fn trader_flag_opens_the_shadow_merchant_without_a_server_service() -> Result<(), Box<dyn std::error::Error>> {
         // The 1.2 server's interaction-option chain has no trader branch; the original client
         // adds `npcs.trader` itself. Its empty reply must still reach `store_backpack.alb`.
-        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000099, true, false)))?;
+        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000099, super::super::data::NpcInfo { trader: true, ..Default::default() })))?;
         assert!(bridge.borrow().services.choices.is_empty(), "a lone trade action opens at once");
         let events = app
             .world()
@@ -653,7 +715,7 @@ mod tests {
 
     #[test]
     fn specialty_flag_opens_the_specialty_sale_box() -> Result<(), Box<dyn std::error::Error>> {
-        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000098, false, true)))?;
+        let (app, bridge) = setup_with_flags(&[0], 0, Some((8000098, super::super::data::NpcInfo { specialty: true, ..Default::default() })))?;
         assert!(bridge.borrow().services.choices.is_empty());
         let events = app
             .world()
@@ -662,6 +724,54 @@ mod tests {
             .load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='specialty' and NPC_EVENTS[1].id=='200'")
             .eval::<bool>()?;
         assert!(events);
+        Ok(())
+    }
+
+    #[test]
+    fn npc_flags_open_the_skill_teleporter_and_expedition_windows() -> Result<(), Box<dyn std::error::Error>> {
+        for (npc, key) in [
+            (super::super::data::NpcInfo { skill_trainer: true, ..Default::default() }, "skill_trainer"),
+            (super::super::data::NpcInfo { teleporter: true, ..Default::default() }, "teleporter"),
+            (super::super::data::NpcInfo { expedition: true, ..Default::default() }, "expedition"),
+        ] {
+            let (app, bridge) = setup_with_flags(&[0], 0, Some((8000100, npc)))?;
+            assert!(bridge.borrow().services.choices.is_empty(), "a lone action opens at once");
+            let events = app
+                .world()
+                .non_send::<UiRuntime>()
+                .lua
+                .load(format!("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='{key}' and NPC_EVENTS[1].id=='200'"))
+                .eval::<bool>()?;
+            assert!(events, "{key}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_priest_offers_blessing_and_recover_exp_and_a_lone_recruiter_stays_with_the_battlefield(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (mut app, bridge) = setup_with_flags(&[0], 0, Some((8000101, super::super::data::NpcInfo { priest: true, ..Default::default() })))?;
+        let chosen: Vec<What> = bridge.borrow().services.choices.iter().map(|c| c.what.clone()).collect();
+        assert_eq!(chosen, vec![What::Service(Service::Priest), What::Service(Service::PriestRecoverExp)]);
+        bridge.borrow_mut().services.chosen = Some(1);
+        app.update();
+        let events = app
+            .world()
+            .non_send::<UiRuntime>()
+            .lua
+            .load("return #NPC_EVENTS==1 and NPC_EVENTS[1].kind=='priest_recover_exp'")
+            .eval::<bool>()?;
+        assert!(events);
+
+        // A lone recruiter is opened by `battlefield.rs` after its own level check.
+        let (app, bridge) = setup_with_flags(
+            &[0],
+            0,
+            Some((8000102, super::super::data::NpcInfo { recruiting_battle_field_id: 1, ..Default::default() })),
+        )?;
+        assert!(bridge.borrow().services.choices.is_empty());
+        let events = app.world().non_send::<UiRuntime>().lua.load("return #NPC_EVENTS").eval::<i32>()?;
+        assert_eq!(events, 0);
         Ok(())
     }
 

@@ -119,6 +119,21 @@ pub struct NpcInfo {
     pub trader: bool,
     /// `npcs.specialty`: the specialty trader whose window quotes the pack at the live ratio.
     pub specialty: bool,
+    /// The NPC interaction flags the original turns into `npc_interaction.alb` kinds.
+    pub skill_trainer: bool,
+    pub merchant: bool,
+    pub auctioneer: bool,
+    pub banker: bool,
+    pub blacksmith: bool,
+    pub priest: bool,
+    pub stabler: bool,
+    pub teleporter: bool,
+    pub ability_changer: bool,
+    pub expedition: bool,
+    pub repairman: bool,
+    pub look_converter: bool,
+    /// `npcs.recruiting_battle_field_id`: a battlefield recruiter.
+    pub recruiting_battle_field_id: u32,
 }
 
 /// A quest objective area (`worlds/*/level_design/zone/*/client/quest_sign_sphere.g`): a circle
@@ -665,10 +680,15 @@ impl GameData {
             }
         }
         {
-            let mut q = conn.prepare("SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id, aggression, trader, specialty FROM npcs")?;
+            let mut q = conn.prepare(
+                "SELECT id, name, level, npc_grade_id, npc_kind_id, faction_id, show_name_tag, npc_template_id, aggression, trader, specialty, \
+                 skill_trainer, merchant, auctioneer, banker, blacksmith, priest, stabler, teleporter, ability_changer, expedition, repairman, \
+                 look_converter, recruiting_battle_field_id FROM npcs",
+            )?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id: u32 = r.get(0)?;
+                let flag = |i| r.get::<_, Option<String>>(i).map(|v| v.as_deref() == Some("t"));
                 data.npcs.insert(
                     id,
                     NpcInfo {
@@ -682,6 +702,19 @@ impl GameData {
                         aggression: r.get::<_, Option<String>>(8)?.as_deref() != Some("f"),
                         trader: r.get::<_, Option<String>>(9)?.as_deref() == Some("t"),
                         specialty: r.get::<_, Option<String>>(10)?.as_deref() == Some("t"),
+                        skill_trainer: flag(11)?,
+                        merchant: flag(12)?,
+                        auctioneer: flag(13)?,
+                        banker: flag(14)?,
+                        blacksmith: flag(15)?,
+                        priest: flag(16)?,
+                        stabler: flag(17)?,
+                        teleporter: flag(18)?,
+                        ability_changer: flag(19)?,
+                        expedition: flag(20)?,
+                        repairman: flag(21)?,
+                        look_converter: flag(22)?,
+                        recruiting_battle_field_id: r.get::<_, Option<i64>>(23)?.unwrap_or(0).max(0) as u32,
                     },
                 );
             }
@@ -1080,6 +1113,27 @@ mod tests {
         assert_eq!(areas.len(), 2);
         assert_eq!(areas[0], QuestArea { quest: 2577, component: 11179, x: 12.0 * 1024.0 + 1441.05, y: 13.0 * 1024.0 + 1458.22, radius: 120.0 });
         assert_eq!((areas[1].quest, areas[1].component, areas[1].radius), (2608, 21272, 50.0));
+    }
+
+    #[test]
+    fn npc_flags_are_loaded_for_the_service_windows() {
+        let path = std::env::var("AA_DB").unwrap_or_else(|_| aa_anim::db::DEFAULT_DB.to_string());
+        if !std::path::Path::new(&path).exists() {
+            return;
+        }
+        let data = GameData::load(&path).expect("game data");
+        assert!(data.npcs[&1808].skill_trainer, "Bagti");
+        assert!(data.npcs[&1024].expedition, "Joel");
+        assert!(data.npcs[&10857].auctioneer, "auctioneer");
+        assert!(data.npcs[&1019].banker, "Charara");
+        assert!(data.npcs[&1664].priest, "Nuian temple priest");
+        assert!(data.npcs[&10014].stabler, "rue");
+        assert!(data.npcs[&2483].repairman, "Nujod");
+        assert!(data.npcs[&10276].blacksmith && data.npcs[&10276].look_converter, "Gou");
+        assert_ne!(data.npcs[&12151].recruiting_battle_field_id, 0, "recruiter");
+        assert!(data.npcs[&1000].merchant, "Gaveri");
+        assert!(data.npcs[&8627].trader, "Ebonbro");
+        assert!(data.npcs[&10529].specialty, "Seungchoi");
     }
 
     #[test]
