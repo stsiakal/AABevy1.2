@@ -299,8 +299,7 @@ mod tests {
     #[test]
     fn death_keeps_the_server_wait_and_the_resurrection_offer_flag() {
         let bridge = std::rc::Rc::new(std::cell::RefCell::new(super::super::api::HudData::default()));
-        let mut skills = Skills::default();
-        skills.obj_id = 7;
+        let skills = Skills { obj_id: 7, ..Skills::default() };
         let mut app = App::new();
         app.add_message::<NetEvent>()
             .insert_non_send(HudBridge(bridge.clone()))
