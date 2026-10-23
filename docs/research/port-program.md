@@ -48,7 +48,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 |---|---|---|---|
 | F1 | Movement controller: input, turn, move request, per-frame update, physics move, CSMoveUnit; on foot, mounted, swimming, ladder | [`port-movement/`](port-movement/MAP.md), 101 fn / 91 KB | phase A **ported, bit-exact** (8 fn, 195 goldens, `b270f79`); phase B **ported** (InputState + 7 fn + `FUN_39404d50` UpdateMovement; 25 live input sequences, request bytes exact except the 4 turn-delta bytes, which depend on the live frame time the capture did not pin, and uninitialised stack bytes; `104fe68`) |
 | F2 | Third-person camera: follow, keyboard-turn yaw, pitch, zoom, collision, modes | in [`port-movement/`](port-movement/MAP.md) section 4 | mapped |
-| F3 | Animation graph runtime: inputs, state selection, transitions, blends, layers | [`port-mount-anim/`](port-mount-anim/MAP.md) D, 51 fn / 76 KB | step 1 **ported, bit-exact** (guards, input encoding, FOURCC map, get-on side geometry; ~400 goldens, `d334b9d`); step 2 loader **partial**: horse inputs/states/guards exact, 59 template-generated transitions missing; player state set matches but ids permuted (vehicle states appended) |
+| F3 | Animation graph runtime: inputs, state selection, transitions, blends, layers | [`port-mount-anim/`](port-mount-anim/MAP.md) D, 51 fn / 76 KB | step 1 **ported, bit-exact** (~400 goldens, `d334b9d`); step 2 loader: horse (223 states, 455 transitions incl. 59 template links), monster, npc, monster_big, bird, dragon **exact** against live dumps; player_full_body states exact but transitions 7459 vs 7999 because the client loads the compiled `.ag`, one data revision older than the XML (the `.ag` binary loader is next); playerupperbody partial; step 3 state machine **ported, synthetic tests only** (live sequence capture blocked on `CStateIndex` criteria) (`393902c`) |
 | F4 | Summon / mount / dismount flow, interaction prompt, rider/mount reactions | [`port-mount-anim/`](port-mount-anim/MAP.md) A-C, 72 fn / 41 KB | mapped |
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
@@ -81,6 +81,7 @@ client confirms it.
 | Global cooldown | 1,000,000 / (1000 + attribute 0x4a), floor -999, unsigned/wrapping; custom GCD x1000/(1000+attr); the stack argument is the unit | `FUN_39899f30`, `FUN_39899df0`; 160 goldens bit-exact |
 | Cooldown manager | inline at `unit+0x2c48`, 150 entries, size 0xE28; `SCCooldowns` rows `(id,total,remaining)` | combat step 1, 115 goldens |
 | Animation graph input quantisation | floats quantised to 1/1024; guard packing and op semantics, `forceGuard`/`mixinFilter`, inheritance masking | animation step 1, cryaction `EvaluateGuards`/`EncodeInput` goldens |
+| Animation graph source | the client loads the compiled `.ag`, which is one data revision older than the `.xml` next to it; parity needs the `.ag` | animation step 2, live dumps |
 | Get-on seat | back -> seat 2, front/sides -> seat 1 | `FUN_3909ae90` goldens + decompile |
 | Big-hit threshold | `0.0f` | `FUN_39391950`, 111 goldens |
 | Interaction ranges | 3 m units/houses (3.5 m mounted), 4 m bind, surface gap not origin distance | `FUN_39093860` -> `FUN_3989bf90` -> `FUN_398b1ab0`; client `75d7ca7` |
