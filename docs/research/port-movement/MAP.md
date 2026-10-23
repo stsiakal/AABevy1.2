@@ -807,6 +807,52 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 13. **U13 - camera zoom cvar roles.** Which of `DAT_39afe204/208/24c/1cc` is speed, power, near
     and far is inferred from the code order; a live setter test (`uc_set_wheel_dist` etc.)
     settles it.
+14. **U14 - `ProcessNormal` yaw/pitch composition.** The quaternion-from-two-vectors block
+    (`0x3913ff90` `0x3914017c..0x3914047f`) is ported and matches the goldens to the branch
+    level, but the following yaw block (`0x39140493..0x39140579`) and the q20 pitch block
+    are only close: the captured `q40`/`q20` differ from the port by up to ~5% in the second
+    synthetic case. The decompiled zero terms hide the axis construction; the effective
+    capture rotation is around the desired heading with angle `this+0x1c`. The Rust port
+    uses that equivalent form and the test keeps a documented `5e-2` tolerance until the
+    exact expression is recovered from the disassembly.
+15. **U15 - `ClampAngles` not ported.** `0x3913e8d0` mixes `asinf`/`atan2`, a 3x3 matrix
+    inverse (`FUN_39093ef0`, `0x39093ef0`) and the pitch/yaw clamps. The live goldens are
+    captured (`rot_clamp_0..2` in `goldens/phase_c.json`) but the Rust function is not
+    written yet.
+16. **U16 - `UpdateMovementRequest` not ported.** `0x39118650` is mostly an orchestration of
+    direct `thunk_FUN_3a979a34`/`3a982448`/`3a66f782` calls and virtual actor methods; the
+    only self-contained math is the ground-normal cache at `0x39118c58` (quaternion from
+    `GetStatus` + yaw quat at `actor+0xb4..0xb7`). It needs a live actor snapshot and the
+    physics `GetStatus` slot; no golden is captured yet.
+17. **U17 - Quadruped movement/swim.** The scope ctors `0x3912c640`/`0x3912e0c0` are ported
+    and golden-tested. `0x3912dd40` (dispatch), `0x3912ac50` (apply), `0x3912f600` (scope C),
+    `0x39120300` (swim stats) and `0x3912ce00` (swim control) are not ported; they call the
+    physics ray/ground queries and the animation graph. The dispatcher's stance branches are
+    documented in `../port-movement-extra/MAP.md` §1.3.
+
+---
+
+## 9.1 Phase C port status (this branch)
+
+| function | address | ported | goldens |
+|---|---|---|---|
+| `CPlayerMovement::Process` (ctor + entity pos) | `0x3a6ab5f3` | yes | `mover_0/1` |
+| `CPlayerRotation` ctor | `0x3913ded0` | yes | `rot_ctor_0/1` |
+| `CPlayerRotation` bind | `0x3913dfd0` | yes (value fields) | - |
+| dispatch (ladder/normal selection) | `0x391407b0` | ladder branch; normal delegates | `rot_dispatch_ladder` |
+| `ProcessNormal` | `0x3913ff90` | quat-from-vectors + approximate yaw/pitch (U14) | `rot_normal_0..2` |
+| `ProcessLadderRotation` | `0x3913e6a0` | yes | `rot_ladder` |
+| `ClampAngles` | `0x3913e8d0` | no (U15) | captured `rot_clamp_0..2` |
+| quadruped scope A/B ctors | `0x3912c640`/`0x3912e0c0` | yes | `quad_c640_*`/`quad_e0c0_*` |
+| `CActor::UpdateMovementRequest` | `0x39118650` | no (U16) | - |
+| quadruped dispatch/apply, swim | see U17 | no | - |
+| frame wrappers | `0x39135fe0`/`0x39135ed0` | no | - |
+
+The capture tool is `rust/tools/capture_movement_phase_c.py` in the move-golden lane; it
+builds scratch actors/anims/params/requests and records the object bytes before and after
+each original call. Phase B now pins the frame timer (`+0x2c`/`+0x30`), the input-mode table
+and the walk gates, so the only remaining skip is the uninitialised request byte `+0x7f`
+(and a 1e-6 tolerance on the smoothed velocity, 64 ULP).
 
 ---
 

@@ -13,6 +13,8 @@ mod direction;
 mod input;
 mod input_state;
 mod mouse;
+mod mover;
+mod rotation;
 mod request;
 mod turn;
 mod update;
@@ -30,7 +32,9 @@ pub use input_state::{
     StartGateInput, can_turn,
     external_target, is_local_unit, movement_type, reset, smooth_velocity, start_gate,
 };
+pub use mover::*;
 pub use request::{DEFAULT_REQUEST_PTR, MovementRequest, REQUEST_SIZE};
+pub use rotation::*;
 pub use update::{ControlledUnit, GateOutputs, MovementContext, pushed_flags, update_movement};
 pub use mouse::{mouse_pitch, mouse_yaw};
 pub use turn::{TurnInput, TurnResult, TurnState, TurnUnit, turn_delta};
