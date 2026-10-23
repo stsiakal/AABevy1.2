@@ -116,6 +116,8 @@ pub enum ClientMsg {
     ExecuteCraft { craft_id: u32, doodad_obj_id: u32, count: i32 },
     /// `CSSellBackpackGoods`: sell the worn trade pack at the specialty/trader NPC `npc_obj_id`.
     SellBackpackGoods { npc_obj_id: u32 },
+    /// `CSRequestSpecialtyCurrent`: ask for the current trade rates from `from` to `to` zone group.
+    RequestSpecialtyCurrent { from: u16, to: u16 },
     /// `CSLootOpenBag`: open the loot of the corpse `obj_id` (`loot_all`: take everything at once; the server sends
     /// what is left as a `LootBag`).
     LootOpenBag { obj_id: u32, loot_all: bool },
@@ -231,6 +233,7 @@ impl ClientMsg {
             Self::RemoveBuff { .. } => cs::CSRemoveBuffPacket,
             Self::ExecuteCraft { .. } => cs::CSExecuteCraft,
             Self::SellBackpackGoods { .. } => cs::CSSellBackpackGoodsPacket,
+            Self::RequestSpecialtyCurrent { .. } => cs::CSRequestSpecialtyCurrentPacket,
             Self::LootOpenBag { .. } => cs::CSLootOpenBagPacket,
             Self::LootItem { .. } => cs::CSLootItemPacket,
             Self::LootCloseBag { .. } => cs::CSLootCloseBagPacket,
@@ -349,6 +352,9 @@ impl ClientMsg {
             }
             Self::SellBackpackGoods { npc_obj_id } => {
                 w.bc(*npc_obj_id);
+            }
+            Self::RequestSpecialtyCurrent { from, to } => {
+                w.u16(*from).u16(*to);
             }
             Self::LootOpenBag { obj_id, loot_all } => {
                 // the object, the second object (none) and whether to take everything
@@ -607,6 +613,9 @@ pub enum ServerMsg {
     EquipmentIdsChanged { obj_id: u32, ids: [u64; 28] },
     /// Raw native specialty sale ratio receipt; zero is an error/reset path.
     SpecialtyRatio(i32),
+    /// `SCSpecialtyCurrent`: the trade rates of every `item` from the `from` zone group to the
+    /// `to` zone group (`rate` is the server's live percentage).
+    SpecialtyCurrent { from: u16, to: u16, rates: Vec<(u32, u32)> },
     /// A container grew to `slots`.
     InvenExpanded { container: u8, slots: u8 },
     // -- quests
@@ -769,6 +778,7 @@ impl ServerMsg {
             Self::EquipmentChanged { .. } => "SCUnitEquipmentsChanged",
             Self::EquipmentIdsChanged { .. } => "SCUnitEquipmentIds",
             Self::SpecialtyRatio(_) => "SCSpecialtyRatio",
+            Self::SpecialtyCurrent { .. } => "SCSpecialtyCurrent",
             Self::InvenExpanded { .. } => "SCInvenExpanded",
             Self::Quests(_) => "SCQuests",
             Self::CompletedQuests(_) => "SCCompletedQuests",
@@ -1187,6 +1197,19 @@ impl ServerMsg {
                 Self::EquipmentChanged { obj_id, items }
             }
             sc::SCSpecialtyRatioPacket => Self::SpecialtyRatio(r.i32()?),
+            sc::SCSpecialtyCurrentPacket => {
+                let count = r.i32()?;
+                let from = r.u16()?;
+                let to = r.u16()?;
+                if count < 0 {
+                    return Err(crate::wire::WireError::Invalid("negative specialty rate count".into()));
+                }
+                let mut rates = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    rates.push((r.u32()?, r.u32()?));
+                }
+                Self::SpecialtyCurrent { from, to, rates }
+            }
             sc::SCUnitEquipmentIdsPacket => {
                 let obj_id=r.bc()?;
                 let mut ids=[0;28];
@@ -2454,6 +2477,36 @@ mod tests {
         inner.u16(0).u16(0x99).raw(&[255;4]);inner.u16(0).u16(0xa3).u16(7);
         let mut frame=Writer::new();frame.u8(0xdd).u8(LEVEL_COMPRESSED).u16(3).raw(&stored(&inner.finish(),true));
         assert_eq!(ServerMsg::decode(&frame.finish()).unwrap(),ServerMsg::Batch(vec![ServerMsg::SpecialtyRatio(117),ServerMsg::SpecialtyRatio(-1),ServerMsg::SkillEnded{tl:7}]));
+    }
+
+    #[test]
+    fn specialty_current_request_and_receipt_match_the_server_codec() {
+        // CSRequestSpecialtyCurrentPacket::read_body: from u16, to u16.
+        assert_eq!(
+            ClientMsg::RequestSpecialtyCurrent { from: 0x0102, to: 0x0304 }.encode_body(),
+            [0x02, 0x01, 0x04, 0x03]
+        );
+        // SCSpecialtyCurrentPacket::write: count i32, from u16, to u16, (item u32, rate u32)*.
+        let mut body = vec![2, 0, 0, 0, 0x02, 0x01, 0x04, 0x03];
+        body.extend(40u32.to_le_bytes());
+        body.extend(117u32.to_le_bytes());
+        body.extend(41u32.to_le_bytes());
+        body.extend(130u32.to_le_bytes());
+        let expected = ServerMsg::SpecialtyCurrent {
+            from: 0x0102,
+            to: 0x0304,
+            rates: vec![(40, 117), (41, 130)],
+        };
+        assert_eq!(decode(0x1f4, &body), expected);
+        for n in 0..body.len() {
+            assert!(ServerMsg::decode(&game_frame(0x1f4, &body[..n])).is_err());
+        }
+        // A negative count is malformed, not an empty answer.
+        assert!(ServerMsg::decode(&game_frame(0x1f4, &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])).is_err());
+        assert_eq!(
+            decode(0x1f4, &[0, 0, 0, 0, 0x02, 0x01, 0x04, 0x03]),
+            ServerMsg::SpecialtyCurrent { from: 0x0102, to: 0x0304, rates: vec![] }
+        );
     }
 
 }
