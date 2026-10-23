@@ -141,6 +141,14 @@ the model default snapped to `step` (pi in `DAT_3a16828c`?)). **[?]** The owner'
 9. **Error texts by code.** Retail prints `ui_texts[code+1]` for the 0x70-0x78 family ("You can't construct a building here.", "...overlap another structure.", "...obstacles block the way.", "...steep slope.", "You can't connect to this building.", "No building to connect to.", 0x9a "Too far away."), and the server codes through the same table; Bevy prints "Can't be installed here." / "Too close to other objects." (`error_message`). Use per-check codes (and the 5 s `CANNOT_LOCATE_DOODAD_NOW` countdown).
 10. **Create rate limit.** 5000 ms between `CSCreateHouse` sends, with the countdown message; absent in Bevy.
 11. **CSCreateHouse `auto_use_aa_point`.** Original sends the client option (`FUN_397ccd50`), Bevy always `false`; `money_amount` equals the builder total (Bevy sends the quote total, plausible).
+12. **A refused `CSCreateHouse` must keep the builder.** The builder ends only on the server's `SCMyHouse`
+    (`BUILDER_END`); a refusal (`SCErrorMsg`, e.g. 481 "Insufficient tax payment" when a 450000 quote
+    needs 45 tax certificates and the bag has 20) keeps the ghost and the Start Construction window for
+    a retry (the 5 s limit still runs). Bevy used to mark the session done and fire `BUILDER_END` on
+    send, so `finish` dropped the ghost and there was nothing left to retry. Done in `8cb994a`:
+    `finish` ends only when `created`, `ingame::houses::create_refused` clears the pending create;
+    tests `the_builder_ends_only_after_the_server_creates_the_house` and
+    `a_refused_create_keeps_the_build_window_and_the_placement`.
 
 ## Open questions
 
@@ -168,9 +176,13 @@ Measured **[M]** in the running original client:
   camera zoom while locked (`camera::orbit_input` now reads the raw wheel for it, because the normal mode has no CTRL-wheel binding). Test:
   `the_real_camera_zooms_before_the_lock_click_and_the_wheel_turns_the_model_after_it` (real `update_input`, `orbit_input`, `input`).
 * Build button: disabled with 5 Tax Certificates in the bag, enabled with 35: the popup's own Lua decides it from `CountTaxItemInBag`;
-  test `the_original_popup_disables_build_without_enough_tax_certificates`.
+  test `the_original_popup_disables_build_without_enough_tax_certificates`. The oracle's 450000 quote needs 45:
+  20 certificates (10 normal + 10 bound) disable Build; the server's TaxItem feature charges certificates, not the
+  money in the bag, and answers a scripted send with `SCErrorMsg` 481 (no `SCMyHouse`) - the refused builder stays in Bevy (`8cb994a`).
 
 ## Status in Bevy (fix/placement-re)
 
-Gaps 1, 2, 3, 4 (Shift/Alt exact; plain step still a named placeholder `ROT_STEP_PLAIN`, 10 degrees), 6, 7, 9, 10 and 11 are implemented
-(see `docs/aa-client-hud.md`, "Builder state machine"). Gap 5 (rebinding through `builder_rotate_mode`) is not done. Gap 8: the dots are white, small, on straight terrain-following edges (measured); rotation with the model is still open until a rotated retail screenshot.
+Gaps 1, 2, 3, 4 (Shift/Alt exact; plain step still a named placeholder `ROT_STEP_PLAIN`, 10 degrees), 6, 7, 9, 10, 11 and 12
+(`8cb994a`) are implemented (see `docs/aa-client-hud.md`, "Builder state machine"). Gap 5 (rebinding through
+`builder_rotate_mode`) is not done. Gap 8: the dots are white, small, on straight terrain-following edges (measured);
+rotation with the model is still open until a rotated retail screenshot.
