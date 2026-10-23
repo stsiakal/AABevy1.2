@@ -217,9 +217,9 @@ i32 amount`; `CSPutupTradeMoney 0x0f1` i32; `CSTakedownTradeItem 0x0f2` `(slotTy
 `CSTradeLock 0x0f3` bool; `CSTradeOk 0x0f4` empty (only after lock). UI drags use the cursor-picked
 amount (`trade.alb` proto 21.1 lines 328-338 -> `PutupTradeItem(index,amount)`), i.e. partial stacks
 are supported. Lock click locks both item and money panes; OK only unlocks after both sides lock
-(`trade.alb:437-446`). The client starts trades only through a range global (`DAT_39ac9b84`) whose
-value is unavailable in this export; "25 m" is unverified [I]. The server has no range check
-(`economy/trade.rs`).
+(`trade.alb:437-446`). The client starts trades only within the **5 m surface gap** (`sqrt(DAT_39ac9b84 = 25.0)`
+via `FUN_3989bf90`; `FUN_394fd9a0` / `FUN_394fddf0`; the doc's earlier "25 m" was the squared value) [R].
+The server has no range check (`economy/trade.rs`).
 
 ## 3. Numeric parameters
 
@@ -241,7 +241,7 @@ value is unavailable in this export; "25 m" is unverified [I]. The server has no
 | Family roster | 8 x 0xF0 B; page 10 | addedIndex 0x794; family_tab_view.alb |
 | Friends/block row | 0xD0 / 0x88 B; page 10 | FUN_39304550/393035d0 |
 | Mail | 10 attachments; page 14; 128/400/1600 B; fee 50/100+30/80; delay 30 min | mail/common.alb; mail.rs:148-155 |
-| Trade | 30 tasks; range global unread | packets/economy/trade.rs; DAT_39ac9b84 |
+| Trade | 30 tasks; 5 m start surface gap | packets/economy/trade.rs; DAT_39ac9b84 = 25.0 |
 
 ## 4. What is inferred
 
@@ -251,7 +251,7 @@ value is unavailable in this export; "25 m" is unverified [I]. The server has no
 * `[I]` Friend-entry labels beyond id/name/race/level/zone/inParty/online/lastWorldLeave (hp,
   abilities, type) are inferred from struct offsets; blocked-entry is `u32 id + name[0x81]`.
 * `[?]` Max friend/block list size; max chat tabs; exact spam thresholds (the table is a graph);
-  default tab/filter colours; `DAT_39ac7ef8`, trade range and bubble-range constants (`.data` absent);
+  default tab/filter colours; `DAT_39ac7ef8` and bubble-range constants (`.data` absent);
   `CSReturnMail` opcode; `PlayChatBubbling` xref; mail postage display.
 * `[?]` Exact Lua parameter mapping of `OnChatMessage` (the handler passes 11 values; the shipped
   `chat_msg_event.alb` handler has 7 parameters and uses a numeric obj id).
@@ -260,7 +260,8 @@ value is unavailable in this export; "25 m" is unverified [I]. The server has no
 
 None for this area. No packet log, capture or screenshot was taken during this pass; all findings are
 code/data reads. A live session should measure chat rate limiting, the invite field order accepted by
-the original client, trade range, mail compose slots and family/guild window geometry.
+the original client, mail compose slots and family/guild window geometry. The trade range is now read
+(`DAT_39ac9b84 = 25.0` squared, 5 m).
 
 ## 6. Open questions
 
@@ -339,7 +340,8 @@ the original client, trade range, mail compose slots and family/guild window geo
    charges 50/100+30/80, and disables return (`hud/mail.rs:395-405`). Trade refuses partial stacks
    ("Split the stack before trading fewer items", `hud/trade.rs:257-263`), while the original sends
    the cursor amount (`trade.alb` proto 21.1). Fix: send ListContinue, carry `withReceiver`, call the
-   postage helper, and pass the picked amount in `CSPutupTradeItem`.
+   postage helper, and pass the picked amount in `CSPutupTradeItem`. The 5 m start range is done in
+   `b7f1abe` (`DAT_39ac9b84 = 25.0` squared).
 9. **Friends/family polish.** Bevy's friend rows omit the offline elapsed duration
    (`hud/friends.rs:196-197`) and expose no block effect outside chat; family is capped at 8 in the
    UI only (`hud/family/state.rs:69`) and has no invitation timer. These are lower risk: the original

@@ -40,8 +40,10 @@ use mlua::{Lua, Table, Value};
 use rusqlite::Connection;
 
 use super::api::{HudBridge, HudData, Shared};
-use super::houses::{HouseState, INFO_SKILL, step_skill};
+use super::houses::{HOUSE_RANGE, HouseState, INFO_SKILL, step_skill};
 use super::{HudKeyboardFocus, HudPointerOverUi};
+use crate::ingame::units::Views;
+use crate::interaction::UnitBounds;
 
 /// Skills the dynamic action bar leaves out (`dynamic_action_bar.lua`, `ShoulPassShow`).
 const HIDDEN_SKILLS: [u32; 2] = [0, 10994];
@@ -354,6 +356,11 @@ fn bench_permitted(data: &HudData, game: &super::data::GameData, bench: &aa_net:
 /// nearest, a doodad behind the player counting up to [`BEHIND`] metres further away than one in front (an inn's
 /// chairs around the Memory Tome).
 fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses) -> Option<Focus> {
+    find_focus_with(data, doodads, units, houses, None, None)
+}
+
+/// [`find_focus`] with the rendered bounds of the candidates (houses use their model box, not the origin).
+fn find_focus_with(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses, views: Option<&Views>, bounds: Option<&UnitBounds<'_, '_>>) -> Option<Focus> {
     let game = data.game.get()?;
     let forward = Vec2::new(-data.yaw.sin(), data.yaw.cos());
     let doodad_candidates = doodads.by_id.values().filter_map(|o| {
@@ -392,8 +399,11 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         let state = HouseState::of(&houses.by_tl_id.get(&tl_id)?.snapshot);
         let finished = !state.under_construction();
         let skill = if finished { INFO_SKILL } else { step_skill(game, state.template_id, state.current_actions)? };
-        let range = game.skills.get(&skill).map_or(0.0, |s| s.max_range as f32);
-        let dist = data.pos.distance(to_vec(u.pos));
+        let dist = views
+            .zip(bounds)
+            .and_then(|(views, bounds)| views.unit_entity(u.obj_id).and_then(|root| bounds.shape(root)))
+            .map(|shape| shape.gap(data.pos, data.player_radius))
+            .unwrap_or_else(|| data.pos.distance(to_vec(u.pos)));
         // A finished house with a permitted workbench keeps its bar up to the action-bar distance.
         let bench = finished
             .then(|| {
@@ -406,13 +416,9 @@ fn find_focus(data: &HudData, doodads: &Doodads, units: &Units, houses: &Houses)
         let craft = bench
             .filter(|o| bench_permitted(data, game, o, &state, houses))
             .map(|o| (o.obj_id, o.template_id));
-        let limit = if craft.is_some() {
-            CRAFT_BAR_DISTANCE
-        } else if range > 0.0 {
-            range + REACH_SLACK
-        } else {
-            BASE_REACH
-        };
+        // the housing interaction itself is 3 m (`FUN_393befd0`); only a workbench on the plot keeps the bar up
+        // to the action-bar distance
+        let limit = if craft.is_some() { CRAFT_BAR_DISTANCE } else { HOUSE_RANGE };
         if dist > limit {
             return None;
         }
@@ -702,13 +708,28 @@ fn house_tooltip_stale(shown: Option<&HouseInfo>, now: Option<&HouseInfo>) -> bo
 
 /// Whether F belongs to a vehicle: the player sits on a slave (F leaves it) or a land vehicle is within the pick's reach in
 /// front (F boards it). Such a vehicle's cargo crates (skill 15307) do not claim the key.
-fn vehicle_owns_key(player: &aa_net::model::Unit, units: &Units, pos: Vec3, yaw: f32, land: impl Fn(u32) -> bool) -> bool {
+#[allow(clippy::too_many_arguments)]
+fn vehicle_owns_key(
+    player: &aa_net::model::Unit,
+    units: &Units,
+    pos: Vec3,
+    player_radius: f32,
+    yaw: f32,
+    views: Option<&Views>,
+    bounds: Option<&UnitBounds<'_, '_>>,
+    land: impl Fn(u32) -> bool,
+) -> bool {
     use aa_net::model::UnitKind;
     player.attached_to.is_some_and(|a| units.get(a.obj_id).is_some_and(|u| matches!(u.kind, UnitKind::Slave { .. })))
         || crate::ingame::vehicle::pick_land_vehicle(
             pos,
+            player_radius,
             yaw,
-            units.iter().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && land(u.model_id)).map(|u| (u.obj_id, to_vec(u.pos))),
+            player.attached_to.is_some(),
+            units.iter().filter(|u| matches!(u.kind, UnitKind::Slave { .. }) && land(u.model_id)).map(|u| {
+                let shape = views.zip(bounds).and_then(|(views, bounds)| views.unit_entity(u.obj_id).and_then(|root| bounds.shape(root)));
+                (u.obj_id, to_vec(u.pos), shape)
+            }),
         )
         .is_some()
 }
@@ -721,6 +742,8 @@ fn track(
     doodads: Res<Doodads>,
     units: Res<Units>,
     houses: Res<Houses>,
+    views: Option<Res<Views>>,
+    bounds: UnitBounds,
     player: Res<aa_net::state::Player>,
     db: Option<Res<crate::ingame::data::Db>>,
     actions: Res<crate::settings::Actions>,
@@ -735,7 +758,10 @@ fn track(
     let own = player.spawn.as_ref().map_or(0, |s| s.obj_id);
     script.since += time.delta_secs();
     let mut d = bridge.0.borrow_mut();
-    let focus = find_focus(&d, &doodads, &units, &houses);
+    let focus = match views.as_deref() {
+        Some(views) => find_focus_with(&d, &doodads, &units, &houses, Some(views), Some(&bounds)),
+        None => find_focus(&d, &doodads, &units, &houses),
+    };
     let focused_house = focus.as_ref().and_then(|f| f.house.as_ref().map(|_| f.obj_id));
     let end_interaction = d.house.material_open && d.house.material_house != focused_house;
     if end_interaction {
@@ -748,7 +774,7 @@ fn track(
     // F belongs to the vehicle: seated on a slave it leaves, a land vehicle in front boards (`ingame::vehicle::vehicle_seat`);
     // the wagon's cargo crates (skill 15307) must not take it (the original sends no storage cast there, live)
     let vehicle_key = player.spawn.as_ref().is_some_and(|s| {
-        vehicle_owns_key(&s.unit, &units, d.pos, d.yaw, |model| db.as_deref().is_some_and(|db| db.is_land_vehicle(model)))
+        vehicle_owns_key(&s.unit, &units, d.pos, d.player_radius, d.yaw, views.as_deref(), Some(&bounds), |model| db.as_deref().is_some_and(|db| db.is_land_vehicle(model)))
     });
     d.doodad.claims_key = !vehicle_key && focus.as_ref().is_some_and(|f| {
         !units.iter().any(|u| u.obj_id != own && !u.dead && matches!(u.kind, aa_net::model::UnitKind::Npc { .. }) && d.pos.distance(to_vec(u.pos)) < f.dist)
@@ -974,13 +1000,10 @@ fn execute(
             if !state.under_construction() {
                 // a finished house or farm: F is the info (maintain) window, G the workbench's craft window
                 if i == 1 {
-                    // the bar may still show F from the action-bar distance; the info skill keeps its own reach
-                    let range = d.game.get().and_then(|g| g.skills.get(&INFO_SKILL)).map_or(0.0, |s| s.max_range as f32);
-                    let limit = if range > 0.0 { range + REACH_SLACK } else { BASE_REACH };
-                    if f.dist <= limit {
+                    if f.dist <= HOUSE_RANGE {
                         maintain = Some(f.obj_id);
                     } else {
-                        info!("housing: {} ({}) info is out of reach ({:.1} m, {limit:.1} m)", state.name, f.obj_id, f.dist);
+                        info!("housing: {} ({}) info is out of reach ({:.1} m, {HOUSE_RANGE:.1} m)", state.name, f.obj_id, f.dist);
                     }
                 } else if i == 2
                     && let Some((object, template)) = f.craft
@@ -1754,13 +1777,13 @@ mod tests {
         let player = crate::ingame::vehicle::flow_tests::unit(100, UnitKind::Character { char_id: 47 });
         let mut units = Units::default();
         units.by_id.insert(500, wagon(aa_net::Pos::new(0.0, 3.0, 0.0)));
-        assert!(vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, |m| m == 1008), "boarding takes F");
-        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, std::f32::consts::PI, |m| m == 1008), "behind the player");
-        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, |_| false), "not a land vehicle (a ship's chest keeps its rule)");
+        assert!(vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, 0.0, None, None, |m| m == 1008), "boarding takes F");
+        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, std::f32::consts::PI, None, None, |m| m == 1008), "behind the player");
+        assert!(!vehicle_owns_key(&player, &units, Vec3::ZERO, 0.0, 0.0, None, None, |_| false), "not a land vehicle (a ship's chest keeps its rule)");
         let mut seated = player.clone();
         seated.attached_to = Some(Attachment { obj_id: 500, point: 1 });
         units.by_id.insert(500, wagon(aa_net::Pos::new(50.0, 0.0, 0.0)));
-        assert!(vehicle_owns_key(&seated, &units, Vec3::ZERO, 0.0, |_| false), "leaving takes F");
+        assert!(vehicle_owns_key(&seated, &units, Vec3::ZERO, 0.0, 0.0, None, None, |_| false), "leaving takes F");
     }
 
     #[test]

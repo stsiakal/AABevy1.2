@@ -112,7 +112,8 @@ end
 -- no multisampling: the world camera's anti-aliasing is the post pass (SMAA), the entries "PostAA 1x" and "PostAA 2x" of the page
 X2Option.EnumAAFormats = function(self) return {} end
 X2Option.GetModifiedRestartOption = function(self) return false end
-X2Option.GetMinxMaxOfMouseSensitivity = function(self) return 0.1, 3 end
+-- the `cr_sensitivityMin`/`cr_sensitivityMax` cvars: 10..30 (`FUN_39492ce0`, defaults at 0x39ac4d4c/0x39ac4d60)
+X2Option.GetMinxMaxOfMouseSensitivity = function(self) return 10, 30 end
 -- `ui_scale` is the screen page's `funcDefaultValue`: the saved cvar when one exists, else the resolution default the runtime
 -- already applied (`GetDefaultUIScaleByResolution`). The page's Save calls `SetUIScale(value, true)`, which stores the cvar.
 do

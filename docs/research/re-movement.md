@@ -132,10 +132,10 @@ direction (:251). Crossing the surface upward plays `jump_splash` (:198-200). St
 `swim`; the graph uses `fist_ba_idle_swim`, `fist_mo_swim_*` and `_deep` below the authored water
 level (`player_full_body.xml:2248-2286, 2717-2785`).
 
-**Speeds [R/I].** The swim stance row is 3.0 m/s for model 1; the prior extraction gives
-`swim_up_speed_mul 0.7`, `swim_down_speed_mul 0.5`, `swim_back_speed_mul 0.8`,
-`swim_buoy_speed 2.0`, `swim_jump_permission_range 0.2`, `swim_jump_end_depth 0.2`,
-`swim_jump_speed 12` (`FUN_390f7b40:274-296`; values [I] from the encrypted `.data`). Unit
+**Speeds [R].** The swim stance row is 3.0 m/s for model 1; the runtime dump resolves the registration
+defaults: `swim_up_speed_mul 0.7`, `swim_down_speed_mul 0.5`, `swim_back_speed_mul 0.8`,
+`swim_side_speed_mul 0.6` (`0x399a24cc`), `swim_buoy_speed 2.0`, `swim_jump_permission_range 0.2`,
+`swim_jump_end_depth 0.2`, `swim_jump_speed 12` (`FUN_390f7b40:274-296`; static `.data`). Unit
 attributes modify this: `swim_speed_mul` 0x42 and `underwater_swim_speed_mul` 0x8b
 (`FUN_3956dbd0`). `FUN_39120300:221-223` calls the swim control; `FUN_3912ce00` sets the graph's
 `SwimControlX`/`Y`.
@@ -313,8 +313,8 @@ Bevy uses a fixed 0.004 rad/count mouse sensitivity (`camera.rs:55`); the origin
   slots (`FUN_3911a5a0`, `FUN_3911b950`); the call order was not traced.
 * `[I]` Run 5.4 vs the Lua fallback 4.8: the DB row and graph bands agree on 5.4.
 * `[I]` Jump 8.06 m/s from 1.3 m and g=25; the impulse call was not found.
-* `[I]` Swim cvars 0.7/0.5/0.8/2.0/0.2/0.2/12 are registration defaults taken from the prior
-  extraction (`swim.rs:9-11`); the values live in encrypted `.data`.
+* `[R]` Swim cvars 0.7/0.5/0.8/0.6/2.0/0.2/0.2/12 are registration defaults read from the runtime
+  dump (`0x399a24cc` etc.); the side multiplier 0.6 is applied in `2e17e57`.
 * `[I]` Ladder packet encoding follows the server reader; the client writer was not found.
 * `[I]` Click-to-move cancels on keyboard input; the cancel check is not in `FUN_390a6af0`.
 * `[?]` Zoom notch, first-person threshold, camera modes 3-6 and player follow.
@@ -380,7 +380,9 @@ Bevy uses a fixed 0.004 rad/count mouse sensitivity (`camera.rs:55`); the origin
 8. **Swim multipliers and graph controls are not applied.** Bevy swims at a constant 3.0 m/s
    (`swim.rs:37`, `player.rs:494-496`), ignoring `move_speed_mul`, `swim_speed_mul` (0x42) and
    `underwater_swim_speed_mul` (0x8b), and does not drive `SwimControlX/Y/Z` or `waterLevel`
-   (`FUN_3912ce00`). Fix: multiply the swim vector and feed the active swim controls.
+   (`FUN_3912ce00`). **The `swim_side_speed_mul` 0.6 strafe is done in `2e17e57`** (`0x399a24cc`);
+   the actor/underwater multipliers and graph controls remain open. Fix: multiply the swim vector
+   and feed the active swim controls.
 
 9. **Camera collision/fade fidelity.** Original `ProcessUnitCamActualDist` uses several ray and
    primitive probes (`FUN_39165420:189-240`) and fades the character when the camera is near

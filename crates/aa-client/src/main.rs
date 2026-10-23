@@ -14,6 +14,7 @@
 mod character_ui;
 mod graphics;
 mod hud;
+mod interaction;
 #[allow(unused_imports)]
 pub(crate) use hud::addons;
 mod ingame;

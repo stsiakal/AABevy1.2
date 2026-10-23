@@ -297,7 +297,8 @@ NPC service reach is **3 m** for shops ("3m should be enough for NPC shops", C# 
 preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
 (`.../store.rs:205-209`). `CSStartInteractionPacket` itself has only a
 `TODO (C#): Distance-check` (`.../npc/packets.rs:296`), so the client is expected to gate it.
-`[I]` The exact client-side talk range was not found. `[?]`
+The generic interaction gate is the **3 m surface gap** (`sqrt(DAT_39ac79fc = 9.0)` via `FUN_3989bf90`, `FUN_39093860`;
+the quest-talk call site itself was not isolated, but it uses that gate). `[R range / I call site]`
 
 ## 3. Numeric parameters
 
@@ -318,6 +319,7 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
 |Cart|1×10|`store/common.alb:7-8`|
 |Sell grid|2×8|`store/common.alb:5`|
 |Buy-back grid|2×7 = 14 cells, 12 items|`store/rebuy.alb:9`; server truncates 12|
+|NPC talk/interaction surface gap|3 m|`DAT_39ac79fc = 9.0`; `FUN_39093860` / `FUN_3989bf90`|
 |Shop range|3 m|`store.rs:201-203`|
 |Bank/auction range|5 m|`store.rs:205-209`|
 |Selected reward slots|3|`questcontext_common.alb:1077,1086`|
@@ -330,7 +332,8 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
   the mapping "green/yellow/repeat/half/more" to quest states is inferred from names.
 * `[I]` `hide_quest_marker` suppresses only the world marker, not the offer in the NPC window.
   The flag is loaded (`quest_components.hide_quest_marker`) but its use site was not isolated.
-* `[I]` Client talk range; the only hard number in the sources is the 3 m shop range.
+* `[R]` Client talk range is the 3 m generic interaction gate (`DAT_39ac79fc = 9.0`); the exact
+  quest-talk call site was not isolated. Applied in `a7cdef3`.
 * `[I]` Currency byte 3 = AA point (the client Lua has a `CURRENCY_AA_POINT` branch; the
   server only implements 0/1/2).
 * `[I]` The exact `SCShowQuestArea` field order; the handler offsets are read but the server
@@ -360,7 +363,8 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
    original kinds and windows (`npc_interaction.alb:3-105, 268-306`), including skill trainer,
    teleporter, recruiter, priest recover-exp, territory/dominion, expedition and the item-look
    converter, from the server's skill ids and the client's `npcs` flags; a lone recruiter still
-   passes the battlefield module's level check.
+   passes the battlefield module's level check. **The 3 m NPC talk gate is done in `a7cdef3`**
+   (`DAT_39ac79fc = 9.0`, `TALK_RANGE`).
 5. **Requirement kinds mostly default to true.** Original runs all `unit_reqs` kinds and
    reports `UNIT_REQS_OR_FAIL` / `TOO_FAR_RANGE` (`FUN_39897990`). Bevy's `PlayerFacts::holds`
    implements only level/race/gender/equip/item/skill/buff/quest/faction/honor/vocation/max
@@ -401,8 +405,8 @@ preserved at `.../store.rs:201-203`); bank/auction requests use 5 m
 
 ## 6. Open questions
 
-1. Exact client talk/interaction range (the server's shop check is 3 m, `CSStartInteraction`
-   has no check).
+1. Exact quest-talk call site behind the 3 m generic interaction gate (`DAT_39ac79fc = 9.0`);
+   the range itself is resolved and applied (`a7cdef3`).
 2. The predicate names behind stypes: which quest states map to green vs yellow "!" and to
    `question_mark_half`/`more`/`ing`.
 3. Whether `hide_quest_marker` removes only the 3D mark or also the NPC dialog entry.

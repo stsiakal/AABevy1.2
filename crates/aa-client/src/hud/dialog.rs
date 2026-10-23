@@ -46,10 +46,12 @@ use mlua::{Lua, Table};
 use super::api::{HudBridge, HudData, Shared};
 use super::data::GameData;
 use super::quests::{PlayerFacts, Texts, kind};
+use crate::interaction;
 use super::{HudKeyboardFocus, HudPointerOverUi};
 
-/// How far the player reaches to talk to an NPC (F, a right click), metres.
-pub(super) const TALK_RANGE: f32 = 6.0;
+/// How far the player reaches to talk to an NPC (F, a right click), metres of surface gap: `FUN_39093860`
+/// compares `FUN_3989bf90` with `sqrt(DAT_39ac79fc = 9.0)`, i.e. 3 m.
+pub(super) const TALK_RANGE: f32 = 3.0;
 /// How near the view ray has to pass a unit's middle for a right click to pick it, metres.
 const PICK_RADIUS: f32 = 1.1;
 /// A press that moves more than this many pixels before it is released was a camera drag.
@@ -609,6 +611,18 @@ impl ScriptedTalk {
     }
 }
 
+/// The surface gap from the player to `u`: its actor-model collision radius when the database
+/// has one (`FUN_398b1af0` sphere-sphere), otherwise the centre distance.
+fn npc_gap(d: &HudData, u: &aa_net::Unit) -> f32 {
+    let at = Vec3::new(u.pos.x, u.pos.y, u.pos.z);
+    let radius = d.game.get().map_or(0.0, |g| g.model_size(u.model_id, u.scale));
+    if radius > 0.0 {
+        interaction::Shape::sphere(at, radius).gap(d.pos, d.player_radius)
+    } else {
+        d.pos.distance(at)
+    }
+}
+
 /// The NPC nearest to the player in reach that can be talked to (alive, not hostile); with `wanted`,
 /// only one that has something for the player.
 fn nearest_npc(d: &HudData, units: &Units, own: u32, own_faction: u32, facts: &PlayerFacts, range: f32, wanted: bool) -> Option<(u32, u32)> {
@@ -618,7 +632,7 @@ fn nearest_npc(d: &HudData, units: &Units, own: u32, own_faction: u32, facts: &P
         .filter(|u| u.obj_id != own && !u.dead)
         .filter_map(|u| {
             let UnitKind::Npc { template_id, .. } = u.kind else { return None };
-            let dist = d.pos.distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z));
+            let dist = npc_gap(d, u);
             if dist > range || super::plates::relation_of(game, own_faction, u) == "hostile" {
                 return None;
             }
@@ -757,7 +771,7 @@ pub fn talk_input(
         let game = d.game.get();
         units.get(obj_id).filter(|u| !u.dead && super::plates::relation_of(game, own_faction, u) != "hostile").and_then(|u| {
             let UnitKind::Npc { template_id, .. } = u.kind else { return None };
-            let dist = d.pos.distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z));
+            let dist = npc_gap(&d, u);
             if dist > TALK_RANGE {
                 info!("hud: {} is too far away to talk to ({dist:.1} m)", u.name);
                 return None;

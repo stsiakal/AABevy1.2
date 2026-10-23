@@ -49,9 +49,9 @@ there; SummonPos/server enforce water. [R/I] Too-small space: `SLAVE_SPAWN_SHIP_
 
 **Boarding.** The unit target interaction ends in `CSBindSlave` 0x31 (`FUN_393464a0`, log
 "requesting bind slave(slaveId:%u)") after `FUN_39346290`: on foot (state 2), not busy (+0x3a70..0x3a7b),
-not dead, not already bound; range is squared `DAT_39ac7408 = 16.0` → **4 m** (`FUN_39093860`).
+not dead, not already bound; the surface gap is compared with `sqrt(DAT_39ac7408 = 16.0)` -> **4 m** (`FUN_39093860` / `FUN_3989bf90`).
 Refusals: 0x144 dead, 0x13 busy/bound, 0x9a range, 0x66 already has a master. Target interaction itself
-reaches 3 m (`DAT_39ac79fc = 9.0`; `FUN_393bf270`). [R] `CSBindSlave` sends only the **tl id**; the server
+reaches a 3 m surface gap (`DAT_39ac79fc = 9.0`; `FUN_393bf270` / `FUN_3989bf90`). [R] `CSBindSlave` sends only the **tl id**; the server
 picks the seat and answers `SCUnitAttached` (child, point, reason, parent) plus `SCSlaveBound` for point 1.
 `OnUnitAttached` (`FUN_391d49d0`) parents; `OnSlaveBound` (`FUN_391d4760`) calls `FUN_39345d00`, which
 fires `SIEGEWEAPON_BOUND` (0x61). [R] Ship UI events 0x67/0x68 exist but no fire site or 1.2 UI listener
@@ -335,10 +335,10 @@ writers and the client readers. [R]
    follow-up: `Model::lod_nodes(0)` drops meshes whose parent node is a `Helper`, so the dead hull
    body itself is not drawn until that loader accepts Helper parents; the state, particle and
    equipment swap are in place.
-5. **Boarding ranges are wrong.** Original bind precheck squared 16.0 → **4 m** (`DAT_39ac7408`,
-   `FUN_39346290`), target interaction 3 m (`DAT_39ac79fc=9.0`). Bevy: `BOARD_RANGE 10.0`
-   (`ingame/vehicle.rs:283`), **60 m** own-hull test (`vehicle.rs:227`), `CANNON_REACH 4.5`
-   (`vehicle.rs:74`). Fix: 4 m bind / 3 m interaction; treat ships as normal targets.
+5. **Boarding ranges are wrong - done in `a7cdef3`.** Original bind precheck squared 16.0 → **4 m** (`DAT_39ac7408`,
+   `FUN_39346290`), target interaction 3 m surface gap (`DAT_39ac79fc = 9.0`; 3.5 m with `DAT_39ac7a00 = 12.25`
+   when mounted). Bevy had `BOARD_RANGE 10.0`, a **60 m** own-hull test and `CANNON_REACH 4.5`;
+   they are now 4 m / 3 m / 3 m, and ships use the same interaction reach as the other slaves.
 6. **Glider mode skills absent.** Original `buff_skills`: fold 17657, boost 13435/23040, descend 21297,
    barrage 13440, flame 14236, smoke 15266, bomb 13430, shadow/invincible/self-destruct, aerobatics
    19331/19167. Bevy's `ingame/glide.rs` has flight only. Fix: load `buff_skills` for the active buff.

@@ -1056,7 +1056,11 @@ pub fn handle_requests(
             Request::Target { obj_id } => { net.write(NetCommand(Command::Target { obj_id })); }
             Request::SellBackpackGoods { npc_obj_id } => { net.write(NetCommand(Command::SellBackpackGoods { npc_obj_id })); }
             Request::SpecialtyRatioBetween { from, to } => { net.write(NetCommand(Command::RequestSpecialtyCurrent { from, to })); }
-            Request::FarmList => { net.write(NetCommand(Command::RequestCommonFarmList)); }
+            Request::FarmList => {
+                if super::farm::may_request(&mut bridge.0.borrow_mut().farm, std::time::Instant::now()) {
+                    net.write(NetCommand(Command::RequestCommonFarmList));
+                }
+            }
             Request::SecureItem { request, lock } => { net.write(NetCommand(Command::ItemSecurity { request, lock })); }
             Request::SecureEquipments { lock } => { net.write(NetCommand(Command::EquipmentsSecurity { lock })); }
             Request::House(command) => { net.write(NetCommand(Command::House(command))); }

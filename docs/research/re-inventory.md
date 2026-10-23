@@ -300,8 +300,9 @@ the server reads `u8, slotType u8, u8, slot u8, itemId u64` (the two skipped byt
 `X2Item:GetSecurityUnlockDelayTime()` divided by 60, in red, then OK starts the unlock
 (`sort_bag.alb:314-330`). The lock state is `[I]` item flag 0x04 and is shown as the padlock overlay
 and the SKYBLUE "locked/unlocking" tooltip line (`item_lock.alb`, `tooltip.alb:1460-1484`).
-The delay value itself is `[I]` 600 s, from the same 600.0 constant and the identical
-minute display; its exact client constant was not read directly.
+The delay value itself is `[R]` **600 s**: the runtime dump has `0x399daf58` (f64) = 600.0 and
+the same value as 600000 ms (the sapling timer of `FUN_3944d9e0`); the minute display matches it.
+Bevy uses `aa_net::secure::UNLOCK_DELAY_SECONDS = 600` and the category-8 sapling timer.
 
 The lock button is feature-gated: `sort_inventory.alb:876` calls `CreateLockButton` only when
 `X2Player:GetFeatureSet().itemSecure` is true. `FUN_39496b20` builds that table from the received
@@ -367,7 +368,8 @@ found), `SCUnitEquipmentsChangedPacket 0x094` (`objId BC, count u8, (slot u8, it
 * `[I]` comparison data is attached by `GetBagItemInfo` for the corresponding worn slot; the UI
   diff code is clear (`tooltip.alb:626-804`) but the fill point in `FUN_39423560` was not
   isolated.
-* `[I]` security unlock delay is 600 s; only the dialog's `/60` and the 600.0 constant were read.
+* `[R]` security unlock and sapling delay is 600 s (`0x399daf58` = 600.0, 600000 ms in the dump); both
+  were already applied before this pass (`8fbdf06`, `644e473`).
 * `[?]` filtered-tab ordering source: the native `SlotByIdx` delegates to the cursor map
   (`FUN_3944ef90`), which is data-driven and absent from the export.
 * `[?]` `SCItemTaskNotifyPacket`, `SCItemDetailUpdatedPacket`, `SCUnitEquipmentIdsPacket`
