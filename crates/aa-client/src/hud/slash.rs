@@ -305,12 +305,6 @@ fn truncate_bytes(name: &str, size: usize) -> String {
     name[..end].to_string()
 }
 
-fn channel_identity(channel: &ChatChannel) -> i64 {
-    ((u64::from(channel.faction_id) << 32)
-        | (u64::from(channel.sub_type as u16) << 16)
-        | u64::from(channel.chat_type as u16)) as i64
-}
-
 /// Carry out `line` when it is a slash function. `None` means the line is ordinary chat.
 pub(super) fn run(
     data: &mut HudData,
@@ -579,9 +573,7 @@ fn leave_channel(args: &str, channels: &[ChatChannel]) -> Outcome {
     };
     Outcome {
         notice: None,
-        commands: vec![Command::LeaveChatChannel {
-            chat_id: channel_identity(channel),
-        }],
+        commands: vec![Command::LeaveChatChannel { chat_id: channel.id }],
     }
 }
 
@@ -821,12 +813,7 @@ mod tests {
             &password.commands[..],
             [Command::JoinUserChatChannel { password, .. }] if password == "123456"
         ));
-        let channels = [ChatChannel {
-            chat_type: chat_type::USER,
-            sub_type: 0,
-            faction_id: 9,
-            name: "Trade".into(),
-        }];
+        let channels = [ChatChannel::new(chat_type::USER, 0, 9, "Trade".into())];
         assert_eq!(
             run(&mut d, "/enter_channel Trade", None, &channels).unwrap().notice,
             Some(Notice::ErrorArg(CHAT_ALREADY_JOINED, "Trade".into()))

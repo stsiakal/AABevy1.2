@@ -756,6 +756,10 @@ pub enum Event {
     /// The server moved the local player (answered automatically).
     Teleported { pos: Pos, yaw: f32, reason: u8 },
     Chat(ChatMessage),
+    ChatNotice(crate::model::ChatNotice),
+    ChatLocalized(crate::model::ChatLocalizedMessage),
+    ChatFailed { code: i32, text: String },
+    ChatSpamConfig(crate::model::ChatSpam),
     ServerError { code: i16 },
     Kicked { reason: u8, message: String },
     /// The logout countdown started.
@@ -2112,6 +2116,10 @@ impl Session {
                 self.emit(Event::DoodadPhaseChanged { obj_id, func_group_id, time_left, puzzle_group, item_template_id });
             }
             M::Chat(m) => self.emit(Event::Chat(m)),
+            M::ChatNotice(n) => self.emit(Event::ChatNotice(n)),
+            M::ChatLocalized(m) => self.emit(Event::ChatLocalized(m)),
+            M::ChatFailed(f) => self.emit(Event::ChatFailed { code: f.code, text: f.text }),
+            M::ChatSpam(s) => self.emit(Event::ChatSpamConfig(s)),
             M::ErrorMsg { code, .. } => self.emit(Event::ServerError { code }),
             M::Kicked { reason, message } => self.emit(Event::Kicked { reason, message }),
             M::PrepareLeaveWorld { time_ms, target, .. } => {

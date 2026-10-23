@@ -2,7 +2,7 @@
 //! log, and the selected target.
 
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::model::{chat_type, ChatMessage, Unit};
 use crate::session::Event;
@@ -107,6 +107,23 @@ pub struct ChatChannel {
     pub faction_id: u32,
     /// The name (user channels), empty for the server's channels.
     pub name: String,
+    /// The native `(faction << 32) | (sub_type << 16) | chat_type` identity used by
+    /// `CSLeaveChatChannel`.
+    pub id: i64,
+}
+
+impl ChatChannel {
+    pub fn new(chat_type: i16, sub_type: i16, faction_id: u32, name: String) -> Self {
+        Self {
+            chat_type,
+            sub_type,
+            faction_id,
+            name,
+            id: ((u64::from(faction_id) << 32)
+                | (u64::from(sub_type as u16) << 16)
+                | u64::from(chat_type as u16)) as i64,
+        }
+    }
 }
 
 /// How many chat lines [`Chat::log`] keeps.
@@ -118,19 +135,40 @@ resource! {
     pub struct Chat {
         pub channels: Vec<ChatChannel>,
         pub log: VecDeque<ChatMessage>,
+        /// `SCChatSpamDelay` (all zero until the server sends one).
+        pub spam: crate::model::ChatSpam,
+        /// Per spam group: when the next send is allowed.
+        pub next_send: [Option<Instant>; 15],
     }
 }
 
 impl Chat {
+    /// `FUN_393c2540`: the type's group delay has not elapsed. A type without a group (or an
+    /// out-of-range type) is never delayed.
+    pub fn allow_send(&mut self, chat_type: i16) -> bool {
+        self.allow_send_at(chat_type, Instant::now())
+    }
+
+    pub fn allow_send_at(&mut self, chat_type: i16, now: Instant) -> bool {
+        if !(0..15).contains(&chat_type) {
+            return true;
+        }
+        let group = usize::from(self.spam.groups[chat_type as usize]);
+        if group >= self.spam.delays.len() {
+            return true;
+        }
+        if self.next_send[group].is_some_and(|next| now < next) {
+            return false;
+        }
+        let delay = f64::from(self.spam.delays[group].max(0.0));
+        self.next_send[group] = Some(now + Duration::from_secs_f64(delay));
+        true
+    }
+
     pub fn apply(&mut self, e: &Event) -> bool {
         match e {
             Event::ChatChannelJoined { chat_type, sub_type, faction_id, name } => {
-                let ch = ChatChannel {
-                    chat_type: *chat_type,
-                    sub_type: *sub_type,
-                    faction_id: *faction_id,
-                    name: name.clone(),
-                };
+                let ch = ChatChannel::new(*chat_type, *sub_type, *faction_id, name.clone());
                 if self.channels.contains(&ch) {
                     return false;
                 }
@@ -146,6 +184,12 @@ impl Chat {
                     self.log.pop_front();
                 }
                 self.log.push_back(m.clone());
+            }
+            Event::ChatSpamConfig(spam) => {
+                if self.spam == *spam {
+                    return false;
+                }
+                self.spam = spam.clone();
             }
             Event::LeftWorld { .. } => {
                 if self.channels.is_empty() {
@@ -272,6 +316,7 @@ mod tests {
             sender: String::new(),
             message: text.into(),
             ability: 0,
+            language: 0,
         };
         for i in 0..CHAT_LOG_LIMIT + 3 {
             c.apply(&Event::Chat(msg(&i.to_string())));
@@ -280,6 +325,31 @@ mod tests {
         assert_eq!(c.log.front().unwrap().message, "3");
         assert!(c.apply(&Event::Disconnected { message: String::new() }));
         assert!(c.log.is_empty() && c.channels.is_empty());
+    }
+
+    #[test]
+    fn channels_carry_the_native_i64_identity() {
+        let mut c = Chat::default();
+        c.apply(&Event::ChatChannelJoined { chat_type: 15, sub_type: 0, faction_id: 9, name: "Guild".into() });
+        assert_eq!(c.channels[0].id, 0x0000_0009_0000_000f);
+        c.apply(&Event::ChatChannelJoined { chat_type: 1, sub_type: 5, faction_id: 0, name: String::new() });
+        assert_eq!(c.channels[1].id, 0x0000_0000_0005_0001);
+    }
+
+    #[test]
+    fn the_spam_config_delays_the_type_group() {
+        let mut c = Chat::default();
+        let mut spam = crate::model::ChatSpam::default();
+        spam.groups[0] = 3;
+        spam.delays[3] = 2.0;
+        c.apply(&Event::ChatSpamConfig(spam));
+        let now = Instant::now();
+        assert!(c.allow_send_at(0, now));
+        assert!(!c.allow_send_at(0, now + Duration::from_millis(1999)));
+        assert!(c.allow_send_at(0, now + Duration::from_secs(2)));
+        // A type without a delay is never held back.
+        assert!(c.allow_send_at(4, now));
+        assert!(c.allow_send_at(99, now));
     }
 
     #[test]
