@@ -309,6 +309,7 @@ fn actual_type5_push_hydrates_tracing_and_original_leave_saves_before_leave_pack
         .add_message::<crate::ingame::placement::HousePressed>()
         .add_message::<crate::ingame::placement::DecorationPressed>()
         .insert_non_send(HudBridge(bridge.clone()))
+        .init_resource::<aa_net::state::Units>()
         .add_systems(Update, super::super::api::handle_requests);
     bridge.borrow_mut().requests.push(super::super::api::Request::Leave { how: 1 });
     app.update();

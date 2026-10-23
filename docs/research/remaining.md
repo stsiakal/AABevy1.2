@@ -1,7 +1,8 @@
 # What is left: ordered work queue for AABevy1.2
 
 Date: 2026-10-23. Restructured from the 2026-10-18 stocktaking into the order the parity loop needs; no code changed.
-Sources: every `docs/*.md` gap section, `docs/research/*`, `docs/aa-client-parity.md` (the completion ledger), `git log`,
+Selected rows were corrected on 2026-10-23 after source and runtime checks; other rows remain historical and need a
+current-code audit before assigning work. Sources: every `docs/*.md` gap section, `docs/research/*`, `docs/aa-client-parity.md` (the completion ledger), `git log`,
 `git status`, `data/extract/game/scriptsbin/x2ui`, `crates/aa-client/src/hud`, `crates/aa-ui/examples/fake`, the AAEmu lane
 source (`D:\aaemu-wt\bevy`, its `rust/tools/opcode_coverage/sc_sent.json`), `reference/`.
 
@@ -159,7 +160,7 @@ waits on 2.4 and mounted/flying casting on 3.1.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| CB1 | combat | Effect decals (31 skills), `GeometryInPieces` (2), per-effect lights, `EmissiveHDRDynamic`, `ForceGeneration`, `FxMaterial` flashes (24) | `aa-client-combat.md` "What is left" | med | M | aa-fx |
+| CB1 | combat | Sun lighting/live HDR/pool cleanup and bounded adaptive ground drapes are committed and checked; client FxMaterial hit flashes are integrated. Native receiver/depth projection, GeometryInPieces, ForceGeneration and integrated per-skill comparisons remain open. Stretched beams do not establish ForceGeneration parity | 2026-10-23 d0b98da/cc9fc34; `aa-fx.md` rounds17/18, 59 tests plus all-target check and inspected captures; curved geometry has measured cost | med | M | native particle gaps and integrated comparisons |
 | CB2 | combat | Mounted / swimming / flying casters, doodad and ship cannon projectiles; cast cancel on mount-jump; poses for 3 channeling skills; two-hand grip, instruments' placement and sounds; remote camera shakes | `aa-client-combat.md` Not done | med | M | G2 |
 | CB3 | combat | Cooldown / GCD: native Fired producers, custom GCD, full timeline lifetimes, re-combat gap 8 (attribute multiplier and per-slot four-value query), lane cooldown emitter re-entry check | parity row "Skill progression", `re-combat.md` gap 8 | med | M | N1 for live check |
 | CB4 | combat | Force-mode (protected / team) eligibility; tab targeting and target-of-target (re-combat gaps 6-7); first-hit/preemptive state (gap 9); skill-by-skill reference verification (only 6 combat captures exist) | parity "Combat and HUD", `re-combat.md` gaps 6-7/9, `reference/ingame/combat_*` | med | L | more captures |
@@ -389,8 +390,8 @@ common farm/racing/second password/web/tutorial.
 
 | ID | Area | Item | Evidence | Vis | Size | Depends on |
 |---|---|---|---|---|---|---|
-| A1 | audio | Voice-over gaps: `x2voice_prologue` has no FEV (client-driven indun voices), 59 absent events and 41 absent FEVs play nothing; one CELT subsound | `research/audio.md` §5.4, `aa-audio.md` | low | S (CELT L) | none |
-| A2 | audio | FEV features read but not played (pitch / low-pass envelopes, doppler, cones, spawn templates, oscillator), no ducking, no `is_playing` / music-ended query, ambience loops decoded whole; moods beyond 5 and live zone / combat crossfade not walked | `aa-audio.md`, `aa-client-sound.md` | low to med | M | none |
+| A1 | audio | Voice-over gaps: `x2voice_prologue` has no FEV (client-driven indun voices), 59 absent events and 41 absent FEVs play nothing, as in the original client (same pak; nothing to substitute); one CELT subsound (left silent) | `research/audio.md` §5.4, `aa-audio.md` | low | S (CELT L) | none |
+| A2 | audio | Modulation, doppler, spawning/playlists, voice/music queries and long-loop streaming are recovered; native destination-point envelope flags and failed-voice cleanup are fixed. Open: quietest policies3/5, remaining pan/high-pass/reverb/time curves, auto-pitch, seek/sustain, mood pitch/EQ/occlusion, client-owned triggers and live zone crossfades. One authoring-test oscillator exists; the earlier absence claim was wrong | 2026-10-23 commitsfe13c6c/88afe6c/9ec84a2; `aa-audio.md`, 52 checks including device playback and all69 FEVs; `aa-client-sound.md` | low to med | M | aa-audio/client follow-up |
 | H4 | HUD | In-game shop, premium service, cash points: `X2InGameShop` stub, `X2PremiumService` fixed getters; server has `cash_shop.rs` (AA-point wallet is a server gap) | HUD sweep; opcodes 0x1cf to 0x1d8 | med | M | server wallet |
 | H15 | HUD | Music: `X2UserMusic` stub (composition, percussion windows), bard instruments; `SCSendUserMusic`, `SCUserNoteLoaded` undecoded | HUD sweep; opcodes 0x1df to 0x1e1 | low | L | G* |
 | H16 | HUD | UCC / crest / books (`X2Ucc`, `X2Book`), common / public farm, racing, second password, web browser, tutorial (one canned page) | HUD sweep | low | M | server (racing, second password have no server types) |

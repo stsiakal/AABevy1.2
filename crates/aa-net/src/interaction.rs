@@ -50,6 +50,10 @@ pub enum Interact {
     BuyCoinItem { doodad_obj_id: u32, func_id: u32 },
     /// `CSConvertItemLook`: after confirmation, apply `look_id`'s appearance to `base_id` (both item UIDs).
     ConvertItemLook { base_id: u64, look_id: u64 },
+    /// `CSStartedCinema` 0x0cf / `CSCompletedCinema` 0x0ce (empty): the quest cinema of the current
+    /// step began / ended. The server marks the step's `ObjCinema` act playing on the first and
+    /// counts it done on the second; it never starts a cinema itself.
+    Cinema { completed: bool },
 }
 
 impl Interact {
@@ -66,6 +70,8 @@ impl Interact {
             Self::NaviOpenPortal { .. } => cs::CSNaviOpenPortalPacket,
             Self::BuyCoinItem { .. } => cs::CSBuyCoinItemPacket,
             Self::ConvertItemLook { .. } => cs::CSConvertItemLookPacket,
+            Self::Cinema { completed: false } => 0x0cf,
+            Self::Cinema { completed: true } => 0x0ce,
         }
     }
 
@@ -101,6 +107,7 @@ impl Interact {
             Self::ConvertItemLook { base_id, look_id } => {
                 w.u64(base_id).u64(look_id);
             }
+            Self::Cinema { .. } => {}
         }
     }
 }
@@ -250,6 +257,10 @@ mod tests {
             [8, 7, 6, 5, 4, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0]
         );
         assert_eq!(Interact::ConvertItemLook { base_id: 1, look_id: 2 }.opcode(), 0x049);
+        // CSStartedCinema / CSCompletedCinema: empty
+        assert!(body(&Interact::Cinema { completed: false }).is_empty());
+        assert_eq!(Interact::Cinema { completed: false }.opcode(), 0x0cf);
+        assert_eq!(Interact::Cinema { completed: true }.opcode(), 0x0ce);
     }
 
     #[test]

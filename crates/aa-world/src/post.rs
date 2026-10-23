@@ -46,7 +46,7 @@ use bevy::shader::Shader;
 
 use crate::post_adapt::{self, ADAPT_FORMAT, AdaptTextures};
 use crate::post_bloom::{self, BLOOM_FORMAT, BloomTextures};
-use crate::post_shafts::{self, ShaftTextures};
+use crate::post_shafts::{self, ShaftTextures, SHAFT_FORMAT};
 
 /// Sample radius of the ambient occlusion in metres: deeper shade under bushes needs more than Bevy's 0.73.
 const SSAO_RADIUS: f32 = 1.2;
@@ -99,14 +99,21 @@ pub struct PostUniform {
     /// Radial motion blur (the application's, e.g. a sprint): x how far the samples reach towards the centre (a share of the
     /// way; 0 = off, the pass then takes no extra samples), yz the centre in uv (kept sharp), w unused. Nothing here writes it.
     pub motion: Vec4,
-    /// Sun shafts: x strength added to the exposed scene (0 = off), y length of the rays (fraction of the way to the sun), z attenuation.
+    /// HDR sun shafts: x RaysAmount times the tuning gain (0 = off), y finite-projection
+    /// bridge scale far/(far-near), z RaysAttenuation clamped to 0..10, w world view limit for the depth bridge (metres).
     pub shafts: Vec4,
-    /// Sun shafts: rgb colour of the rays.
+    /// Sun shafts: L2-normalized native sun RGB (default RaysSunColInfluence = 1).
     pub shafts_color: Vec4,
     /// Eye adaptation: x blend per frame towards a brighter scene, y strength (0 = off), z darkest and w brightest exposure in stops.
     pub adapt: Vec4,
     /// Eye adaptation: x log2 luminance of the calibrated look, y luminance cap of the measurement, z blend per frame towards a darker scene.
     pub adapt2: Vec4,
+    /// Colour grading, `AdjustLevels`: x 1 / gamma, y max input (0..1); the min input is `grade.z`.
+    pub levels: Vec4,
+    /// Colour grading, `ApplyPhotoFilter`: rgb filter colour (display values), w density.
+    pub photo: Vec4,
+    /// Colour grading, `AdjustColor`: x saturation, y contrast, z brightness, w 1 = the colour grading is on.
+    pub color: Vec4,
 }
 
 impl Default for PostUniform {
@@ -130,6 +137,9 @@ impl Default for PostUniform {
             shafts_color: Vec4::ONE,
             adapt: Vec4::new(1.0, 0.0, -1.0, 1.0),
             adapt2: Vec4::new(-2.0, 4.0, 1.0, 0.0),
+            levels: Vec4::new(1.0, 1.0, 0.0, 0.0),
+            photo: Vec4::ZERO,
+            color: Vec4::new(1.0, 1.0, 1.0, 0.0),
         }
     }
 }
@@ -143,6 +153,21 @@ impl PostUniform {
         let balance = sample.color_balance;
         // `Levels: min input` is in 0..255 like the engine's AdjustLevels ((c * 255 - min) / (max - min)).
         (film, Vec4::new(saturation, contrast, (sample.levels_min / 255.0).clamp(0.0, 0.5), exposure), balance.extend(0.0))
+    }
+}
+
+impl PostUniform {
+    /// The colour grading of a time of day sample (`levels`, `photo`, `color`): the engine's `ColorGrading` effect on the
+    /// tone mapped image (`posteffectsgame.cfx`). `Levels: min/max output` are not used (the zones author 255 there at
+    /// times, which would paint the screen white; the effect's own default is 0 / 255).
+    pub fn grading_from(sample: &crate::env::EnvSample) -> (Vec4, Vec4, Vec4) {
+        let max_in = if sample.levels_max > 1.0 { sample.levels_max } else { 255.0 };
+        let gamma = if sample.levels_gamma > 0.05 { sample.levels_gamma } else { 1.0 };
+        let levels = Vec4::new(1.0 / gamma, (max_in / 255.0).clamp(0.1, 1.0), 0.0, 0.0);
+        let [r, g, b] = sample.photofilter.truncate().to_array();
+        let photo = Vec4::new(r, g, b, sample.photofilter.w.clamp(0.0, 1.0));
+        let c = sample.color_grade;
+        (levels, photo, Vec4::new(c.x.max(0.0), c.y.max(0.0), c.z.max(0.0), 1.0))
     }
 }
 
@@ -317,10 +342,11 @@ enum PassKind {
     Up,
     /// Fog, bloom, grade and film curve into the view (`post.wesl`, `fragment`).
     Final,
-    /// Sun shafts: the mask and the two blurs (`post.wesl`).
+    /// Sun shafts: the depth mask and three native blurs (`post.wesl`).
     ShaftMask,
     ShaftBlur1,
     ShaftBlur2,
+    ShaftBlur3,
     /// Eye adaptation: the luminance cells and the state update (`post.wesl`).
     Lum,
     Adapt,
@@ -354,9 +380,10 @@ impl SpecializedRenderPipeline for PostPipeline {
         let (label, layout, shader, entry, format, blend) = match key.kind {
             PassKind::Bright => ("aa bright pipeline", self.layouts[0][ms].clone(), &self.shader, "bright_fragment", BLOOM_FORMAT, None),
             PassKind::Final => ("aa post pipeline", self.layouts[1][ms].clone(), &self.shader, "fragment", key.target_format, None),
-            PassKind::ShaftMask => ("aa shafts mask pipeline", self.layouts[0][ms].clone(), &self.shader, "shafts_mask_fragment", BLOOM_FORMAT, None),
-            PassKind::ShaftBlur1 => ("aa shafts blur 1 pipeline", self.layouts[1][ms].clone(), &self.shader, "shafts_blur1_fragment", BLOOM_FORMAT, None),
-            PassKind::ShaftBlur2 => ("aa shafts blur 2 pipeline", self.layouts[1][ms].clone(), &self.shader, "shafts_blur2_fragment", BLOOM_FORMAT, None),
+            PassKind::ShaftMask => ("aa shafts mask pipeline", self.layouts[0][ms].clone(), &self.shader, "shafts_mask_fragment", SHAFT_FORMAT, None),
+            PassKind::ShaftBlur1 => ("aa shafts blur 1 pipeline", self.layouts[1][ms].clone(), &self.shader, "shafts_blur1_fragment", SHAFT_FORMAT, None),
+            PassKind::ShaftBlur2 => ("aa shafts blur 2 pipeline", self.layouts[1][ms].clone(), &self.shader, "shafts_blur2_fragment", SHAFT_FORMAT, None),
+            PassKind::ShaftBlur3 => ("aa shafts blur 3 pipeline", self.layouts[1][ms].clone(), &self.shader, "shafts_blur3_fragment", SHAFT_FORMAT, None),
             PassKind::Lum => ("aa lum pipeline", self.layouts[0][ms].clone(), &self.shader, "lum_fragment", ADAPT_FORMAT, None),
             PassKind::Adapt => ("aa adapt pipeline", self.layouts[1][ms].clone(), &self.shader, "adapt_fragment", ADAPT_FORMAT, None),
             PassKind::Down => ("aa bloom down pipeline", self.chain.clone(), &self.bloom_shader, "downsample", BLOOM_FORMAT, None),
@@ -396,7 +423,7 @@ pub(crate) struct PostPipelineId {
     pub(crate) down: CachedRenderPipelineId,
     pub(crate) up: CachedRenderPipelineId,
     pub(crate) shaft_mask: CachedRenderPipelineId,
-    pub(crate) shaft_blur: [CachedRenderPipelineId; 2],
+    pub(crate) shaft_blur: [CachedRenderPipelineId; 3],
     pub(crate) lum: CachedRenderPipelineId,
     pub(crate) adapt: CachedRenderPipelineId,
     pub(crate) multisample: bool,
@@ -429,7 +456,7 @@ fn prepare_post_pipelines(
             down: specialize(PassKind::Down),
             up: specialize(PassKind::Up),
             shaft_mask: specialize(PassKind::ShaftMask),
-            shaft_blur: [specialize(PassKind::ShaftBlur1), specialize(PassKind::ShaftBlur2)],
+            shaft_blur: [specialize(PassKind::ShaftBlur1), specialize(PassKind::ShaftBlur2), specialize(PassKind::ShaftBlur3)],
             lum: specialize(PassKind::Lum),
             adapt: specialize(PassKind::Adapt),
             multisample,
@@ -526,4 +553,39 @@ pub(crate) fn last_group(
 /// Helper for tests / examples: a neutral uniform with the sun direction in Bevy space.
 pub fn neutral(sun: Vec3) -> PostUniform {
     PostUniform { sun_dir: sun.normalize_or(Vec3::Y).extend(8.0), ..default() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::{Lighting, TimeOfDay};
+
+    fn sample(vars: &str) -> crate::env::EnvSample {
+        let xml = format!("<TimeOfDayList><TimeOfDay Time=\"12\">{vars}</TimeOfDay></TimeOfDayList>");
+        TimeOfDay::parse(&xml).unwrap().sample(12.0, Lighting::default())
+    }
+
+    #[test]
+    fn grading_is_neutral_without_data() {
+        let (levels, photo, color) = PostUniform::grading_from(&sample(""));
+        assert_eq!(levels, Vec4::new(1.0, 1.0, 0.0, 0.0));
+        assert_eq!(photo.w, 0.0);
+        assert_eq!(color, Vec4::new(1.0, 1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn grading_reads_levels_photo_filter_and_colour_matrix() {
+        // zone 144 / 195 style levels, a zone with a photo filter, a desaturated one
+        let s = sample(
+            r#"<Variable Name="Levels: gamma" Value="1"><Spline Keys="0:1.05:0,1:1.05:0,"/></Variable>
+               <Variable Name="Levels: max input" Value="255"><Spline Keys="0:225:0,1:225:0,"/></Variable>
+               <Variable Name="Filters: photofilter density" Value="0"><Spline Keys="0:0.4:0,1:0.4:0,"/></Variable>
+               <Variable Name="Filters: photofilter color" Color="1,1,1"><Spline Keys="0:(0.5:0.25:1):0,1:(0.5:0.25:1):0,"/></Variable>
+               <Variable Name="Color: saturation" Value="1"><Spline Keys="0:0.6:0,1:0.6:0,"/></Variable>"#,
+        );
+        let (levels, photo, color) = PostUniform::grading_from(&s);
+        assert!((levels.x - 1.0 / 1.05).abs() < 1e-5 && (levels.y - 225.0 / 255.0).abs() < 1e-5);
+        assert!((photo - Vec4::new(0.5, 0.25, 1.0, 0.4)).abs().max_element() < 1e-5);
+        assert_eq!((color.x, color.y, color.z, color.w), (0.6, 1.0, 1.0, 1.0));
+    }
 }

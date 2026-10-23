@@ -15,7 +15,7 @@ use rusqlite::{Connection, OpenFlags};
 use super::quests::QuestTables;
 use super::stats::StatTables;
 
-pub(crate) mod housing;
+pub(super) mod housing;
 mod recharge;
 pub(crate) use recharge::item_recharge_catalog;
 

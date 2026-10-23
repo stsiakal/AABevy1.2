@@ -2823,3 +2823,8 @@ loads the real world stage and drives the original search button, list selection
 button (`cargo test -p aa-client --bin aa-client original_auction_search_bid_and_putup_controls --
 --ignored`). Remaining: live transactions and mail settlement against the lane (the parity row keeps
 the live checks open).
+
+## Beauty salon
+
+`hud/salon.rs` + `hud/salon.lua`: the original beautyshop window over the character-create state, its stage, the paid change
+and the rebuilt player model. See `docs/aa-client-salon.md`.

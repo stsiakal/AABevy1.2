@@ -25,6 +25,33 @@ create, the loading screen, and in game. The aim is a client that looks and beha
 | ![Distant objects](docs/screenshots/world_distant.jpg) Two Crowns from 2 km away | ![Sun shafts](docs/screenshots/world_sun_shafts.jpg) Sun shafts through the canopy |
 | ![Beach](docs/screenshots/world_beach.jpg) Sea foam and the beach gradient | ![Shallows](docs/screenshots/world_shallows.jpg) Clear shallows with caustics |
 
+Material diagnostic scenes, before and after the native Illum recovery:
+
+| Before | After |
+|---|---|
+| ![Palace before](docs/screenshots/illum_palace_before.png) Palace model | ![Palace after](docs/screenshots/illum_palace_after.png) Authored vertex lighting |
+| ![Armour before](docs/screenshots/illum_armour_before.png) Armour model | ![Armour after](docs/screenshots/illum_armour_after.png) Native gloss and reflection composition |
+
+These compare renderer implementations on the same models; original-client lighting parity remains open.
+
+Ground-effect diagnostic, before and after adaptive terrain draping (synthetic rolling ground):
+
+| Before | After |
+|---|---|
+| ![Ground decal before](docs/screenshots/fx_decal_before.png) Coarse-grid intersections | ![Ground decal after](docs/screenshots/fx_decal_after.png) Interior gaps removed |
+
+Curved decals use more geometry; flat decals keep their previous budget. A small rim cutout and native receiver
+projection remain open. Matched costs and limits are in [`docs/aa-fx.md`](docs/aa-fx.md#round-18-bounded-adaptive-ground-draping-2026-10-23).
+
+Native sun-shaft controls and blend order, at the same camera and hour:
+
+| Before | After |
+|---|---|
+| ![Sun shafts before](docs/screenshots/sunshaft_native_before.png) Broad glow around the sky gap | ![Sun shafts after](docs/screenshots/sunshaft_native_after.png) Recovered depth mask and post-film blend |
+
+The original equations are checked with executable probes and GPU controls. A matched original-client forest
+capture is still missing; camera-far conversion and shared-load performance limits are in [`docs/aa-world.md`](docs/aa-world.md).
+
 ## What works
 
 **Screens**
@@ -51,6 +78,8 @@ create, the loading screen, and in game. The aim is a client that looks and beha
 - Hair and skin shaders ported from the original CryEngine shaders.
 - Equipment: armour pieces trim each other the way the client does, costumes replace the body, and weapons sit on the
   back and hip. Backpacks, tails and beards are drawn.
+- Armour and weapon Illum materials use the original Phong highlights, gloss masks and environment reflections;
+  authored vertex colours also shade palace and castle brushes.
 - Cloth and hair physics: robes, skirts, cloaks and long hair follow the body.
 - Animation blending, locomotion, mounts drawn as units, other players and NPCs.
 
@@ -72,29 +101,37 @@ create, the loading screen, and in game. The aim is a client that looks and beha
 - Quests, the world map and minimap, chat, skills, crafting, achievements, rankings, battlefields, pets.
 - ArcheAge-Classic-compatible local Lua addons, sandboxed with `ADDON_API` and `/addons` commands ([docs](docs/aa-client-addons.md)).
 
-**Audio:** FMOD sound banks are decoded and played, including ambience, music, skill sounds and reverb.
+**Audio:** FMOD sound banks are decoded and played, including ambience (long beds streamed), zone and combat music with the original's mood mixes, skill sounds, pitch / low-pass curves, doppler and reverb.
 
 **Performance:** about 70–95 fps at 1920x1080 in the open world on an RX 9070 XT, and lower in big towns.
 
 This list is what works, not a parity claim: see [`docs/aa-client-parity.md`](docs/aa-client-parity.md) for the unfinished systems and their evidence.
 
+Recovery checkpoint, 2026-10-23: the integrated client suite passes **595 tests with no failures** (40 optional
+ignores). Housing preview/quote/cancel has a fresh live check; salon physical payment and re-entry pass on an
+isolated server with PR42, and appearance data roundtrips all eight race/gender models. Chat commands, coffers,
+raid markers, item-instance tooltips and additional protocol handlers are integrated. Construction settlement,
+rollout to the existing bevy server and broader original-client parity remain open; mounts are deferred.
+Exact evidence and limits are in the parity ledger.
+
 ## What's missing
 
 - **Transport:** owning and riding mounts, ships (drawn from their prefab brushes, summoned onto the water plane) and vehicles. Gliders fly for the local player and are drawn on other players (`docs/aa-client-movement.md`, "Gliders").
-- **Housing:** building, placing and decorating, and farms.
+- **Housing:** placement previews, the original build and management windows and the decoration builder are connected; completed construction settlement and farms still need end-to-end verification.
 - **In-game shop, territory, siege and nation:** no client side yet.
-- **Doodads:** using them works, but there's no gathering or farming UI yet, phase models (a doodad changing look)
-  aren't drawn, and doodads placed by other players are missing.
+- **Doodads:** gathering interactions, phase-model changes, planting previews and coffers are connected. Farming
+  settlement and wider live lifecycle checks remain open.
 - **Teleports:** the player-placed Navi signs are only unit-tested, and world gate 304 (the White Dress Portrait in
   Haranya) is missing from the server's data.
 - **World rendering:**
   - Distant objects follow the engine's view distances (buildings to 2 km), but pop instead of dissolving, and
     there are no vegetation sprites.
-  - Vegetation wind has no wind areas or skeletal bending.
-  - Post: no glow buffer, photofilter / blueshift or screen-space bounce. Eye adaptation and sun shaft strength are
-    tuned by eye.
-  - Water: no tessellated crest foam, ocean waves or waterfalls, and no caustics in lakes and rivers.
-- **Characters:** faces are flatter than the real client in character create, and heeled shoes sit a little low.
+  - Vegetation wind has no wind areas (the data has four, in the world select scene).
+  - Post: no glow buffer or screen-space bounce; sun shaft strength is tuned by eye. The time of day's levels, photo
+    filter and colour matrix and the eye adaptation follow the engine.
+  - Water: the sea has a sine swell instead of the engine's FFT waves, and no waterfalls.
+- **Characters:** faces are flatter than the real client in character create. Heeled shoes and costumes now lift
+  the model by their authored heel height; full character-lighting parity remains open.
 - **Skills:** a handful of effects are dimmer than the real client (Summon Wraith's cloud). Missile Rain's arrow
   rain is missing from the game data itself.
 - **Options:** the graphics page applies resolution, screen mode, vsync, gamma, draw distance, shadows, clouds, effect quality, HDR and anti-aliasing; texture, terrain detail, character and water quality, depth of field and the native key-binding sync are not applied yet. A new draw distance reaches the cells that stream in afterwards.

@@ -50,10 +50,11 @@ pub enum ShopCommand {
     ListSold {
         npc_obj_id: u32,
     },
-    /// `CSBuyPriestBuff`: buy blessing `priest_buff_id` (`priest_buffs.id`) from the priest NPC.
-    PriestBuff {
-        npc_obj_id: u32,
+    /// `CSBuyPriestBuff`: the blessing `priest_buff_id` (`priest_buffs.id`) from the priest `npc_obj_id`. The payment and
+    /// the buff come as item tasks and buff packets.
+    BuyPriestBuff {
         priest_buff_id: u32,
+        npc_obj_id: u32,
     },
 }
 
@@ -92,7 +93,7 @@ impl ShopCommand {
                 }
             }
             Self::ListSold { npc_obj_id } if *npc_obj_id == 0 => return Err("sold list has no NPC"),
-            Self::PriestBuff { npc_obj_id, priest_buff_id } if *npc_obj_id == 0 || *priest_buff_id == 0 => {
+            Self::BuyPriestBuff { npc_obj_id, priest_buff_id } if *npc_obj_id == 0 || *priest_buff_id == 0 => {
                 return Err("priest blessing has no NPC or buff")
             }
             _ => {}
@@ -105,7 +106,7 @@ impl ShopCommand {
             Self::Buy { .. } => cs::CSBuyItemsPacket,
             Self::Sell { .. } => cs::CSSellItemsPacket,
             Self::ListSold { .. } => cs::CSListSoldItemPacket,
-            Self::PriestBuff { .. } => cs::CSBuyPriestBuffPacket,
+            Self::BuyPriestBuff { .. } => cs::CSBuyPriestBuffPacket,
         }
     }
 
@@ -133,7 +134,7 @@ impl ShopCommand {
             Self::ListSold { npc_obj_id } => {
                 w.bc(*npc_obj_id);
             }
-            Self::PriestBuff { npc_obj_id, priest_buff_id } => {
+            Self::BuyPriestBuff { priest_buff_id, npc_obj_id } => {
                 w.u32(*priest_buff_id).bc(*npc_obj_id);
             }
         }
@@ -257,12 +258,12 @@ mod tests {
         assert_eq!(packet.opcode(), 0x0b1);
         assert_eq!(packet.encode_body(), [3, 2, 1]);
         // CSBuyPriestBuff: u32 priest_buff_id then bc NPC (the server's `read_body`).
-        let packet = ClientMsg::Shop(ShopCommand::PriestBuff { npc_obj_id: 0x010203, priest_buff_id: 9 });
+        let packet = ClientMsg::Shop(ShopCommand::BuyPriestBuff { priest_buff_id: 9, npc_obj_id: 0x010203 });
         assert_eq!(packet.opcode(), 0x0b2);
         assert_eq!(packet.encode_body(), [9, 0, 0, 0, 3, 2, 1]);
-        assert!(ShopCommand::PriestBuff { npc_obj_id: 0, priest_buff_id: 9 }.validate().is_err());
-        assert!(ShopCommand::PriestBuff { npc_obj_id: 1, priest_buff_id: 0 }.validate().is_err());
-        assert!(ShopCommand::PriestBuff { npc_obj_id: 1, priest_buff_id: 9 }.validate().is_ok());
+        assert!(ShopCommand::BuyPriestBuff { priest_buff_id: 9, npc_obj_id: 0 }.validate().is_err());
+        assert!(ShopCommand::BuyPriestBuff { priest_buff_id: 0, npc_obj_id: 1 }.validate().is_err());
+        assert!(ShopCommand::BuyPriestBuff { priest_buff_id: 9, npc_obj_id: 1 }.validate().is_ok());
     }
 
     #[test]
@@ -330,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_lists_and_unknown_tasks_end_batch_without_applying_partial_transactions() {
+    fn invalid_lists_and_unknown_tasks_are_skipped_without_applying_partial_transactions() {
         for count in [-1i32, 13, i32::MAX] {
             let data = count.to_le_bytes();
             assert!(ShopEvent::read(&mut Reader::new(&data)).is_err());
@@ -340,7 +341,7 @@ mod tests {
         assert!(ShopEvent::read(&mut Reader::new(&sold.finish())).is_err());
         let mut tasks = Writer::new();
         tasks.u8(52).u8(2).u8(1).i32(-500).u8(99);
-        assert!(matches!(batch(&[(sc::SCItemTaskSuccessPacket, tasks.finish()), (sc::SCOnOffSnowPacket, vec![1])]).as_slice(),[ServerMsg::DecodeFailed{..}]));
+        assert!(matches!(batch(&[(sc::SCItemTaskSuccessPacket, tasks.finish()), (sc::SCOnOffSnowPacket, vec![1])]).as_slice(),[ServerMsg::DecodeFailed{..}, ServerMsg::Snow(true)]));
     }
 
     #[test]

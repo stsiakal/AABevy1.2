@@ -19,9 +19,9 @@ commands.spawn((aa_fx::Effect::new("X2_EFFECTS.fire_smoke.torchlight_b"), Transf
   for this effect (collisions, see below).
 * `FxSettings` (resource): `max_particles` (20000, the hard global budget), `max_distance` (160 m activation radius cap),
   `gain` (colour multiplier; a world with pre-exposed HDR colours sets `radiance * exposure`, aa-world does), `light`
-  (0.8, how much of `DiffuseLighting` shows), `emissive`, `hdr_base` (2: `EmissiveHDRDynamic` and `LightHDRDynamic` are powers of it), `max_lights` (8) and `light_lux` (1700), `size_scale`, `sprite_half` (1: a sprite's `Size` is a radius), `alpha_scale`, `quality` (0..3, `ConfigMin/Max`),
+  (1.6, the constant part of `DiffuseLighting`), `sun_light` (0, the wrapped direct sun term on sprites), `emissive`, `hdr_base` (2: `EmissiveHDRDynamic` and `LightHDRDynamic` are powers of it), `max_lights` (8) and `light_lux` (1700), `size_scale`, `sprite_half` (1: a sprite's `Size` is a radius), `alpha_scale`, `quality` (0..3, `ConfigMin/Max`),
   `count_over_life`, `soft_distance` (0.6 m, needs `DepthPrepass` on the camera, otherwise particles are not softened),
-  `activations_per_frame`, `wind`, `sun` (world direction to the sun, shades opaque mesh particles), `refraction` (distort the
+  `activations_per_frame`, `wind`, `sun` (world direction to the sun, shades lit sprites and opaque mesh particles), `refraction` (distort the
   scene behind refraction materials, default on, `AA_FX_NO_REFRACTION=1` switches it off), `ground` (`Some(Ground(Arc<dyn Fn(Vec3)
   -> Option<f32>>))`: ground height below a world position, for collisions), `enabled`.
 * `FxStats` (resource): effects, active, emitters, particles, `load` (budget use: a mesh particle counts its vertices / 4), quads
@@ -32,7 +32,7 @@ commands.spawn((aa_fx::Effect::new("X2_EFFECTS.fire_smoke.torchlight_b"), Transf
   the world's placed effects out (aa-world); `AA_FX_COUNT_OLD=1` goes back to `Count` per particle life (see below); `AA_FX_SPRITE=0.5` reads a sprite's `Size` as its full width
   again (before round 4); `AA_FX_ONLY=a,b` / `AA_FX_SKIP=a,b` run only the effects whose name contains one of the words / all but those
   (debugging, case insensitive, matched against `lib.group.effect`);
-  `AA_CREATE_NO_FX=1` leaves the step 3 mist out, `AA_MIST=alpha,count,r,g,b` overrides its fit (aa-client).
+  `AA_FX_SUN_LIGHT` overrides the direct sun strength; `AA_CREATE_NO_FX=1` leaves the step 3 mist out, `AA_MIST=alpha,count,r,g,b` overrides its fit (aa-client).
 
 ## How it runs
 
@@ -294,7 +294,7 @@ sprite writer `sub_3009CFD0`, `ResourceParticleParams`) and `particles.cfi`; the
   (`shots/aa-fx/r7/lights_*.png`).
 * **Decals** (`Facing = Decal` 661 emitters, `Terrain` 13). The engine projects them on what is below; the Free / Bottom / Water cards
   stay flat. aa-fx drapes them: when `FxSettings::ground` knows the height under the card, the card is cut into cells of about
-  1.5 m (at most 12 x 12) whose corners lie 4 cm above the ground (`sim.rs`, `decal.rs`); without it a flat card as before.
+  1.5 m (initially at most 12 x 12) whose corners lie 4 cm above the ground (`sim.rs`, `decal.rs`); round 18 adds bounded refinement where this cuts into curved ground. Without a height query it remains a flat card.
   `DecalAlphaMultiply` multiplies the opacity of the decal emitter (0 or absent: 1). `aa_fx::decal::drape_quad(centre, right, up,
   ground, lift, cells)` is the same cut for any card of your own and returns positions / uvs / indices: the ground target reticle
   (`materials/Decals/target/target_correct` is a decal in the client; `ingame/ground_target.rs` drapes its own mesh the same way) can
@@ -485,8 +485,8 @@ than ours, so its band minus control comes out negative, and in Nuian our `fog_0
 grass under the band gets +6..+9 of mist in Nuian, +1..+8 in Ferre, +18..+22 in Elf (round 4), and none in Hariharan.
 
 Known gaps: `elf_fog_01` (placed in the Elf and Ferre fields) does not exist in any library of the pak, so that mist is missing (the
-Elf capture shows more mist than the two flowing sources make, so it may have existed); the brightness of lit particles is not tied
-to the time of day (`FxSettings::light` is a constant).
+Elf capture shows more mist than the two flowing sources make, so it may have existed); the constant ambient part of lit particles remains fitted (`FxSettings::light`); the direct sun now follows
+time of day when the caller supplies `sun_light` (round 16).
 
 ## Round 10: stretched beam anchors, faint effects
 
@@ -660,3 +660,102 @@ Player-opened portals spawn `portal_gate_dot3_indivisual` (the entrance, green m
   is green in the `effects` example and in the real client (`gate_real.png`).
 * Shots: `gate_before_1.png` (white blob), `gate_after_1.png` (tinted centre), `gate_real.png` (my real client, `Particle.SpawnEffect`), `gate_game2.png`
   (aa-client, `--portal-lua`, the camera is inside the exit gate).
+
+## Round 16: the sun lights the sprites (recovered and verified 2026-10-23)
+
+The original `game/shaders/hwscripts/cryfx/particles.cfi`, read through `tools/aa-pak.exe cat`, confirms the missing term:
+`ParticlePS` sums diffuse light with `fIllum = saturate(N.L - N.L * b + b)` (`b = DiffuseBacklighting`), multiplies that sum by
+`Ambient.w` (the diffuse factor), then adds `Ambient.xyz`. The vertex shader constructs a camera-facing normal and can perturb
+it using the material normal map. This is evidence for direct sunlight on smoke, rather than an effect-specific brightness override.
+
+* `FxSettings::sun_light` (default 0, environment `AA_FX_SUN_LIGHT`) supplies direct sun strength in the units of `light`.
+  `StepCtx::sun_facing` is the cosine between the sun and the direction from the effect origin to the camera.
+  `EmitterState::lit_now` adds `DiffuseLighting * sun_light * saturate(N.L * (1 - b) + b)` each frame. The caller's
+  `Effect::brightness` scales this term too. `DiffuseLighting=0` emissive particles keep their existing colour.
+* This is a per-effect CPU approximation of the shader: it does not reproduce per-pixel normals, local lights on sprites,
+  shadow occlusion or coloured direct sun separately from `Effect::tint`. Geometry particles keep their separate lighting path;
+  a camera-facing coefficient does not belong in `RenderGeometry` (`cry3dengine.dll` `sub_3009C0B0`).
+* `aa-client::ingame::combat::feed_fx` currently supplies `30 * sun.illuminance / 7600`, unless the environment overrides it.
+  30 is the inherited daylight calibration, not a native constant. The stage and the example default to zero direct sun.
+  The earlier agent's daylight fits and original-client comparisons remain in `shots/aa-fx/r16/` and
+  `shots/aa-fx/r14/cmp_wraith_bondbreaker_frenzy.png`; no new live-client calibration is claimed here.
+* New inspected captures in `shots/aa-fx/recovery-20261023/`: `sun0_0.png` versus `sun12_0.png`, the actual
+  `abillity_skill_table_m.death.ghost_summon_launch`, 0.8 s after emission, same camera (`--yaw 35 --dist 7 --height 2`),
+  1280 x 720, `--day --no-prime --no-body`. With `--sun-light 12` the red cloud is visibly brighter than the old constant-light
+  path, in the direction of the original-client capture. In crop x=350..949, y=300..579, median red of pixels with
+  R > 1.5 G and R > 1.5 B is 76 -> 161. Different backgrounds/cameras prevent a claim of an exact original-client match.
+  aa-dev FPS samples: no sun 451.4 / 322.7 / 417.4; sun 12: 462.9 / 300.8 / 434.5. These small harness runs do not measure town FPS.
+
+## Round 17: live HDR and pooled light lifecycle (2026-10-23)
+
+* Active effects refresh their constant lighting, emissive multiplier and `EmissiveHDRDynamic` power from the current settings
+  without restarting particles or changing random draws. Previously these were frozen at activation. The native geometry path
+  (`sub_3009C0B0`) uses `DiffuseLighting + EmissiveLighting * pow(HDR multiplier, EmissiveHDRDynamic)`; the native light path
+  (`sub_3009A9A0`, called by `CParticleContainer::RenderLights` at `sub_3009AD30`) evaluates particle intensity/radius/HDR curves.
+  `hdr_base=2` remains an approximation of the engine's HDR multiplier, not a recovered exact value.
+* A reused particle-light pool slot now copies the current effect's `RenderLayers`, including returning to the default layer.
+  Lights are hidden and their counters cleared when no active camera remains or `FxSettings::enabled` is false.
+* Native-pak checks: `x2_effects.fire_smoke.torchlight_a` has radius 1.5 m, HDR 1 and intensity 0.8 with an age curve;
+  `abillity_skill_table_m.fight.attack_speedup_cast` has emissive 2 / HDR 3 and emissive 0.5 / HDR 0.5 emitters.
+  `lights0.png` / `lights8.png` show the torch with/without its warm patch on the pedestal/floor; logs report 0/0 and 1/1 lights/candidates.
+  `hdr1_0.png` / `hdr2_0.png` show the original speed-up effect at HDR bases 1/2. All four PNGs were inspected.
+  aa-dev FPS: lights off 255.9..280.2, lights on 291.2..321.6, HDR 1 444.0..471.6, HDR 2 451.5..471.9. Shared-machine noise dominates
+  these comparisons; they verify rendering and exit, not an FPS improvement.
+* Validation: `cargo check -p aa-fx --all-targets`; `cargo test -p aa-fx` (55 passed, two ignored documentation examples);
+  `cargo build -p aa-fx --example effects`. Regression tests cover wrapped sunlight, live sprite output, unchanged emissive output,
+  geometry/HDR separation, existing particle lifetimes during lighting changes, and reused/retired ECS lights. Native-pak tests ran.
+  Clippy was attempted once (`cargo clippy -p aa-fx --all-targets -- -D warnings`), but stopped on existing dependency lints:
+  `aa-dev/src/headless.rs:68` (`unnecessary_to_owned`) and aa-cry lint debt (49 errors); it did not certify aa-fx lint cleanliness.
+
+## Round 18: bounded adaptive ground draping (2026-10-23)
+
+This is **ground-height tessellation, not native object/depth projection**, and does not close full decal parity. The native
+`game/libs/particles/abillity_skill_table_m.xml`, re-read through aa-pak, authors Freezing Earth's `magic.ice_piece_launch` with
+`Facing="Decal"`, material `decal_ice_pattern`, `Size="10"`, `DecalMode="FakeWrap"`, plus the animated ring decal of size 13.
+Those are the original two emitters used in the example, without replacement textures or added effects.
+
+* Large cards previously intersected curved ground between the coarse vertices, leaving polygon-shaped gaps. Small cards of
+  one cell did not query the ground at all. The simulation now shares the ground grid implementation with `decal::drape_quad`,
+  including one-cell cards and effect-local bounds under translated/rotated anchors.
+* `CELL=1.5`, `MAX_CELLS=12`, public function signatures and the `(cells+1)^2` returned layout stay unchanged. A planar coarse
+  grid keeps its old vertex budget. Curved row/column spans whose sampled edges/triangle diagonals would cut the floor are
+  split up to three ways, at most 36 x 36 cells. Splitting complete rows/columns keeps shared edges continuous; UVs use their
+  actual positions, so refinement does not stretch the texture. `Draped::cells` reports the returned grid size.
+* The emitter reuses grid buffers, samples shared vertices once and transforms them to effect-local space once. A flat 12 x 12
+  card uses 169 vertex queries plus five planar checks, rather than four repeated queries per cell. Refined cards incur extra
+  probes/geometry; the upper bound is 1,296 quads per decal (frame blending may draw two copies). This is a bound, not a proof
+  that a crowd of large overlapping decals is cheap.
+* Inspected 1280 x 720 captures: `shots/aa-fx/recovery-20261023/decal_0.png` before, `decal-adaptive_0.png` after, original effect
+  at +0.8 s over `effects --bumps 0.5 --day --no-prime --no-body --dist 18 --height 12`. The large interior polygon gaps are
+  removed; a small rim cutout remains. Bounded samples cannot reproduce arbitrary discontinuities or narrow unsampled ground
+  features. No exact native-client match is claimed for this synthetic rolling-ground test.
+
+Cost was measured with copied before/after executables, sequential 16 s runs at 1280 x 720, lights disabled. The table is the
+median of the six aa-dev/aa-fx samples after the first warm-up sample in the repeated pair. The same 16 copies, camera and
+particle settings were used (`--grid 16 --spacing 6 --loop --no-prime --no-body --day --dist 45 --height 28 --max-lights 0`).
+
+| Ground / 16 Freezing Earth effects | Before sim / upload ms | Adaptive sim / upload ms | Before / adaptive quads | Before / adaptive FPS |
+|---|---:|---:|---:|---:|
+| Rolling (`--bumps 0.5`) | 0.130 / 0.0165 | 0.258 / 0.0180 | 2,320 / 8,144 | 230.9 / 201.5 |
+| Flat (`--ground`) | 0.072 / 0.0150 | 0.068 / 0.0145 | 2,320 / 2,320 | 234.2 / 245.3 |
+
+The additional curved-ground geometry has a measurable cost. The first pair gave 345.5 / 243.0 FPS on rolling ground and
+313.8 / 259.7 on flat ground; an unchanged 100-torch control gave 58.0 / 80.9 FPS (sim 0.476 / 0.286 ms), so shared-machine
+load strongly affects raw FPS. The rejected uniform refinement used 11,680 quads and 0.392 ms simulation in the first rolling
+run; adaptive refinement reduces those costs, but is still dearer than the old clipped coarse mesh. These are harness numbers,
+not a remeasurement of Marianople or evidence that the town frame-rate goal is complete. Logs are retained beside the PNGs.
+
+Remaining CB1 limits: `DecalMode`/sort priority, `DefereedDecalAlphaMultiply` and native receiver/depth projection are not
+implemented; only the supplied ground query is available. `GeometryInPieces` remains whole geometry (the original library
+really authors it, e.g. `fight.ground_launch_standalone` stones and `wild.hold_steps_launch`'s `chain03.cgf`). `ForceGeneration`
+(e.g. the native `Target` values) is still ignored; stretched beam geometry is not evidence for its complete behavior. Particle
+lights and emissive HDR exist, with the calibrated limits of rounds 7/17; Illum geometry retains its separately fitted sun/sky
+path. No guessed replacement effect, object, light, material flash or asset was introduced for these remaining gaps.
+
+Validation for round 18: `cargo test -p aa-fx` passes all 59 tests (two documentation examples ignored), including native-pak
+parsing/loading. Curvature coverage samples triangle interiors on 26 m cards at three world positions and two yaw angles;
+other tests cover a small one-cell card under a translated/rotated anchor, unchanged flat/slope budgets, nonuniform UVs and
+reused buffer/index storage returning to a coarse grid. The aa-dev example build and before/after captures above were checked.
+Single adaptive visual run FPS samples were 267.3 / 326.0 / 311.1, compared to the original single-card run's
+467.0 / 475.7 / 436.3 under earlier shared-machine load; use the paired stress table for cost comparison. Clippy was not rerun
+(the one allowed attempt and its dependency failures are recorded in round 17).

@@ -1013,7 +1013,7 @@ Nonzero `nMaterialLayers` variants are conservatively left on the existing
 material path (native Render skips packing for material-layer bit 1;
 `300F7190` reads the group's byte+92). Frozen/wet layer rendering, editor-selected
 material overrides, native terrain brightness and terrain-colour runtime blending,
-wind bending, sprites and the unresolved tilt producer are separate gaps.
+wind bending and the unresolved tilt producer are separate gaps. Supported far sprites are described below.
 Scale remains the exact native 0.1..5 clamp and no rotations are changed.
 
 Original source proof is retained in ignored
@@ -1103,7 +1103,7 @@ compaction, mirrored order, unreferenced alpha 0, NoDraw/Cut/Illum/glow filterin
 subset-map rejection, invalid/oversized streams and
 shared mirror identity. Native terrain brightness, wind bending,
 terrain-colour runtime blending, special material layers, native leaf/back/rim
-lighting and sprites remain separate limitations. This implements the proved AO
+lighting and native sprite-bake lighting remain separate limitations. This implements the proved AO
 factor within the existing StandardMaterial lighting approximation.
 
 `vegetation_ao` is an aa-dev example: default and `--fog` each pass 16 independent
@@ -2410,8 +2410,106 @@ which `reference/ingame/royal_palace/camera.json` confirms: `e_view_dist_ratio 6
 * Far away the native requested-LOD formula below (`q = distance / maxViewDist` > 1 clamps to level 6) picks the authored lowest
   `_lodN` / `$lodN` mesh that exists, so distant brushes cost their lowest LOD triangles (the request still divides by the compiled
   `maxViewDist`, as validated against the native oracle). Vegetation sprites
-  (`e_vegetation_sprites_distance_ratio 0.8`) only replace the mesh inside the same view distance in the original; trees here use the
-  tree LOD bands (lowest LOD beyond 350 m) instead, out to their own scaled distance (at most about 700 m in the data).
+  (`e_vegetation_sprites_distance_ratio 0.8`) replace supported vegetation inside the same view distance; see the recovered
+  sprite path below. Remaining mesh-only cases retain the tree LOD bands (lowest LOD beyond 350 m).
+
+#### Recovered far-plane dissolve and vegetation sprites (2026-10-23)
+
+`objects/dissolve.rs` replaces abrupt visibility ends for streamed brush, static entity,
+CGA and vegetation mesh parts. Native `CVegetation::Render` `300F36E0`, render-node
+`30111AE0` and far-plane helper `30112410` use
+`band = clamp(0.025 * maxViewDist, 2, 8)` and noise reference
+`saturate((distance - maxViewDist) / band + 1) * 255`. The registrations are in
+`3000C800` (`e_DissolveDistFactor`, `e_DissolveDistMin/Max`), and the default shader
+quality group enables `e_dissolve`. We use Bevy's 16-step ordered screen dither,
+including the vegetation custom forward shader, rather than the original noise texture.
+Distances are rounded to whole metres so Bevy's persistent 16-bit GPU range table
+shares slots. This is far-plane dissolve and the mesh/sprite handoff; ordinary
+mesh-to-mesh LOD replacements still swap completed sectors without the native 0.3 s
+transition (`e_dissolve_transition_time`). No temporal LOD-parity claim applies.
+
+`objects/sprites.rs/.wesl` now provides a worker-baked, alpha-tested 24-view atlas for
+supported `bUseSprites` groups. Source proof is retained under ignored
+`data/extract/aa-world/distance/ida/`: `spr1.txt` (`30109F70`), `spr3.txt`
+(`300F0C10`), `spr5.txt` (`300F36E0`), `spr6.txt` (`300F2C60`, `3010E7F0`) and
+`rad.txt` (`3001BA80`). The steady-state group switch is
+`max(18 * max(radiusHors,radiusVert) * fSize * max(fSpriteDistRatio,0.01) * 0.8 *
+max(viewportWidth/1024,1), 8)`, then multiplied by instance scale. Horizontal radius
+is the XY length of the largest absolute bound extents; vertical radius is half the
+height. Native `30109F70` additionally multiplies by a dynamic engine factor at
+`C3DEngine+748`; `301090F0` varies it in 1..10 in response to renderer query 42.
+That pressure/initial-loading policy is not reproduced: the steady-state factor is 1.
+The `e_vegetation_sprite_max_pixel`/128px atlas guard keeps large projected plants as
+meshes. Our guard uses the enclosing radius conservatively and the actual world camera's
+physical resolution and perspective FOV. Resizes/FOV changes and the config toggle
+rebuild sectors; a partially built sector keeps one frozen camera profile.
+
+Each model shares one quad mesh/material across sectors, so Bevy can instance sprites
+instead of submitting a unique mesh for each sector. The per-instance MeshTag carries
+six-bit colour variation and the rounded switch distance; the far visibility range
+shares the same whole-metre slots as meshes. Brightness variants share both textures
+and geometry. Shader expansion faces the camera around up and picks the closest side
+view; the same alpha test/dither is used in forward and depth/normal prepasses. Meshes
+are omitted only for sectors wholly beyond a conservative handoff reach and rebuilt
+before they can become visible on approach. The native switch/far bands use complementary
+dither masks. The cache is owned by the world, including worker references, and released
+on `ObjectState::unload_all`; no process-global atlas pixels remain across world switches.
+
+The CPU bake is an approximation of native `Vegetation` `%_RT_SPRITE` and
+`FarTreeSprites`: it retains diffuse/alpha and vertex-alpha AO, adds a bounded screen-space
+self-occlusion estimate and stores view normals for current Bevy diffuse/ambient lighting.
+Native `vegetation.cfx` around lines 882-907 writes albedo/AO in RGB and directional
+contribution in alpha; `fartreesprites.cfx` combines it with the deferred diffuse light
+buffer. That sun-dependent bake, native leaf backlighting, terrain-colour blending,
+material layers, tilted instances, sprite shadows and sprite wind are not reproduced.
+The sprite pass has no added specular sheen, matching the native final composition.
+Unsupported tilted/terrain-coloured/material-layer instances keep their meshes; missing
+materials or empty bakes also fall back. Default group-4 resolution is 128px per view,
+24 views in a padded 6x4 atlas with five mips; CPU rasterization uses 2x supersampling.
+
+`WorldConfig::vegetation_sprites` defaults on; `fly --no-sprites` is the comparison
+control. `SpritePlugin` is installed by `AaWorldPlugin`; `Baked::upload` and the
+`vegetation_sprites` example provide an isolated original mesh/sprite control using the
+same upload and shader. `ObjectStats::{sprites,sprite_models}` count prepared sprite
+instances (including ones hidden inside the switch) and shared sprite meshes.
+
+Validation: `cargo test -p aa-world --lib`: 261 passed, 0 failed, 9 ignored;
+`cargo check -p aa-world --lib --example vegetation_sprites --example fly` and the
+release build of both examples passed. Original bush, river-tree and cliff-bush bakes,
+view-width/min-distance/pixel guard and tag packing controls pass. Runtime shader QA
+used both depth and normal prepasses, with no shader/GPU warnings in the final runs.
+
+Inspected captures are under `shots/aa-world/distance/recovered/`: `elf_before.png`
+(retained pre-change `target/dist-world/fly-before.exe`), `elf_meshes.png` (same newer
+binary with `--no-sprites`), `elf_final.png`, `forest_after.png`, `nuian_final.png`
+(the exact `reference/ingame/spawn/camera.json` camera/origin shift/time), `bush_control.png`
+(interrupted implementation control), `bush_final.png`, `bush_dissolve.png` and `bush_handover.png`.
+The bush control is deliberately magnified and confirms identical footprint/centre;
+sprites retain less fine detail and different self-lighting than meshes. The final
+Nuian reference comparison still differs in foliage lighting and water, and the Elf
+small-plant sprites remain visibly coarser. These captures do not establish full world
+or native sprite-lighting parity.
+
+GPU dissolve control: at camera distance 42.822555, `--view 43` produces level 15 over
+the native 2 m band. Pixel comparison against the full draw retains exactly threshold 0
+of the 4x4 Bayer matrix: mesh 2,859/45,642 foreground pixels, sprite 3,105/49,763;
+zero mask mismatches in either ROI. `vegetation_sprites --prepass --appear 43`
+retains the complementary thresholds 1..15 on the sprite (46,658/49,763 pixels),
+while its paired mesh retains threshold 0 (2,859/45,642), again zero mismatches.
+The checked script is `data/extract/aa-world/distance/validate_dissolve.py`.
+
+Final release static Elf benchmark (`fly --spawn elf --hour 10 --bench 20 --bench-speed 0`,
+8 s warmup): sprites 98 average / 74 1%-low FPS, meshes-only 102 / 77; neither run
+had a frame over 20 ms. Sprite scene: 6,510 prepared sprites using **28 shared meshes**,
+17,235 total object entities versus 16,506 meshes-only, zero failed models. The discarded
+sector-batch version submitted 1,276 separate sprite meshes and measured 71 FPS in an
+earlier busier run; those numbers are not a controlled improvement claim. Final shot
+logs report roughly 95-110 FPS at Elf, 317-358 FPS in the isolated full control,
+369-406 FPS in the sparse dissolve control. The Nuian run logged 90-119 FPS before
+shared-machine contention dropped its last readings to 75/36; no new FPS claim is
+made from that tail. Logs and the pixel-check script are retained under ignored
+`data/extract/aa-world/distance/`.
+
 
 `ViewLimits` (`objects.rs`) turns the config into per-instance distances when a cell is binned on the placement worker. Brushes whose
 distance exceeds `NEAR_BRUSH_DISTANCE` (1000 m) go to their own bins (`Kind::FarBrush`, about a fifth of the brushes of the Palace cell: the
@@ -4111,18 +4209,13 @@ usage; `bloom` is the gain of the bloom below, 1 = the engine's) and adds `PostU
   and adds. That needs a pass in the material shaders (aa-cry's, aa-fx's); the cheap substitute is for those materials to emit HDR (colour x
   `GlowAmount`) so that the bright pass above finds them. The real Return orb (a white-hot disc with a violet halo about 55 px across) and the blade of
   Triple Slash rely on it; with the current aa-fx particles (GAIN 1.0, no fill) the orb does not reach the threshold. (Sun shafts are the next bullet.)
-* **sun shafts** (`post_shafts.rs`, `shafts_*_fragment` of `post.wesl`; engine: `sunshafts.cfx`, a radial blur of the sky mask towards the sun): a
-  quarter resolution mask of the sky (depth at / beyond the dome) around the sun, weighted by `dot(view ray, sun)^24` in exposed colour (everything in
-  front of the sky is black), two radial blurs towards the sun's screen position (12 taps each, the first over a twelfth of the length, the second over
-  all of it, interleaved jitter), added to the exposed scene before the grading with the sun's colour. Drivers per hour from the zone's
-  `time_of_day.xml`: **`Sun shafts visibility`** (0 to 1, about 0.25 over the day, peaks 0.7 to 1 at the low sun of 8 to 9 h and 17 to 18 h, 0 at night)
-  is the strength (x 1.4, `SHAFT_GAIN`, x `AtmosphereTuning::shafts`, x a fade for the sun's elevation (0 at -2 degrees .. 1 at +7)); **`Sun rays visibility`**
-  (0 to 2) sets the length of the rays, `0.35 + 0.3 x` of the way to the sun (0.2 .. 0.95); **`Sun rays attenuation`** (0 to 5) the fall off with the
-  distance from the sun on the screen (`exp(-0.4 x attenuation x distance)`, distance in screen heights). It fades out as the sun leaves the view and
-  is skipped completely (no pass) while the strength is 0 (night, `shafts=0`). The mapping of the two `rays` parameters is an interpretation (the engine
-  sets them from C++); the strength is judged by eye (a visible but subtle beam under a low sun through foliage, see the pictures below). Cost: three
-  passes over a quarter size `Rg11b10Ufloat` texture pair (480 x 270 at 1080p).
-* **eye adaptation** (`post_adapt.rs`, `lum_fragment` / `adapt_fragment` / `exposure()` of `post.wesl`): the log2 mean luminance of the exposed, fogged
+* **sun shafts** (`post_shafts.rs`, `post.wesl`): the native merged HDR path now uses a quarter-resolution normalized
+  linear-depth mask, three eight-tap radial blurs (fixed reaches 0.1 / 0.025 / 0.01), and a screen blend after film mapping,
+  before color grading. `Sun rays visibility` multiplies L2-normalized sun RGB; `Sun rays attenuation` is the per-pass radial
+  falloff, clamped to 0..10. `Sun shafts visibility` feeds standalone Amount/Active and is not consumed by the HDR merge.
+  `AtmosphereTuning::shafts` remains a gain/off override (1 = native controls). The earlier gain 1.4, elevation fade, exposed
+  sky-color mask and variable ray lengths are removed. See the WR3 native sun-shaft closure below for evidence and limits.
+* **eye adaptation** (superseded in part by the engine's own formula, see the 2026-10-23 section at the end: gain `1 / (0.6 + 0.4 x 2^state)` in 0.36 .. 2.8, 1.334 / s both ways; the paragraph below describes the earlier by-eye curve) (`post_adapt.rs`, `lum_fragment` / `adapt_fragment` / `exposure()` of `post.wesl`): the log2 mean luminance of the exposed, fogged
   scene is measured in 32 x 18 cells (6 x 6 pixels each, the sun and its glow capped at luminance 4), averaged centre weighted into one state value
   `s = log2(measured) - adapt_ref`, and eased towards it each frame (a 1 x 1 `R16Float` texture the passes copy over; the scene getting brighter moves it with
   `1 - exp(-dt x adapt_speed)`, 1.2 / s, getting darker 2.5 times slower). `exposure()` multiplies the time of day's exposure by
@@ -5486,12 +5579,12 @@ last packet, in `Screen::Loading` and `Screen::InGame`; nothing until the server
   owner's (the cover colour is a flat teal where the real bed is darker and greener), sloped surfaces/physical currents remain open, the sun glint of the real frames
   is not visible (the sun is low and to the left there), the sea's foam, beach gradient and caustics follow the original data (see "Native ocean foam and caustics") but are not compared with a
   real capture (none of the coast exists); the deep sea's look changed with the clear zone density (seabed visible through haze), the crest
-  foam of the DX11 tessellated ocean, ocean wave displacement and caustics on lakes / rivers are missing; no waterfalls, light shafts under water, refraction of the surface window seen from
+  foam of the DX11 tessellated ocean never runs in the D3D10 client and lake / river caustics are not in the engine; the sea has a sine swell instead of the FFT displacement (see the 2026-10-23 section at the end); waterfalls are aa-cry / aa-fx work; no light shafts under water, refraction of the surface window seen from
   below or the transition at the surface line. The underwater colours are plausible, not fitted (no reference capture).
 * Not rendered: native MRT normal/specular decal effects, voxel projected specular detail/atlases and type 14, unsupported CGA curves / named clips and skinned `entities.xml` render slots, indirect/cubemap local lights and the unsupported projector variants listed above.
   Interior supported placements render/collide through the existing paths, including the supported voxel base and projected diffuse/normal/detail-normal; voxel specular detail/atlases, distant clouds, portal occlusion, area sky/fog/light flags and light confinement remain unsupported.
   Hidden cinematic actors/targets remain aa-client's screen-flow responsibility. Also missing: original cloud reference brightness calibration,
-  volumetric cloud animation, the glow buffer (see Post), the photofilter / blueshift of the zone's time of day, SSAO by default (hair material
+  volumetric cloud animation, the glow buffer (see Post), SSAO by default (hair material
   conflict, see Post), procedural grass blades, vegetation sprites (far trees use their lowest LOD mesh).
 * Ambient light: the shade now matches the capture within about 15 % (see Environment); the dirt paths are brighter and warmer than the capture's, and
   the water shows some reflection speckle where the screen space march hits foliage. One `ambient_gain` serves both calibration zones (the
@@ -5516,8 +5609,8 @@ last packet, in `Screen::Loading` and `Screen::InGame`; nothing until the server
   (olive, then dark red) are the zone's fog colour lit by the sun colour (`water_lit`), not checked against a capture.
 * login2: cinema cameras and visible static entity slots are supported by the generic world renderer. The race tutorial targets are
   authored hidden; aa-client's separate create scenery activates them and owns its isolated stage rendering.
-* Vegetation wind: steady main bending, time-varying gust term and CryEngine detail bending (leaf-edge flutter and branch bob from vertex colours and material PublicParams) are done; physical wind areas, per-instance wind, complex/skeletal bending, LOD>0 parts and a native motion reference are not (see Detail bending).
-* Distant objects follow the engine's view distances (see Objects, Distant objects): brushes to 2 km, trees to their scaled distance (about 700 m at most), so far forested slopes are terrain only, as their tree records allow; visibility ends abruptly at the distance (the native dissolve is not done; the zone fog hides most of it). Small vegetation keeps its compiled distance (the 60/40 scale is not applied to it). The quality options other than the default group 4 are not modelled.
+* Vegetation wind: steady main bending, time-varying gust term and CryEngine detail bending (leaf-edge flutter and branch bob from vertex colours and material PublicParams) are done; physical wind areas (one inactive in main_world, four in login2), per-instance wind and LOD>0 parts are not; complex/skeletal bending is never authored; no native motion reference (see Detail bending and the 2026-10-23 section).
+* Distant objects follow the engine's view distances (see Objects, Distant objects): brushes to 2 km, trees to their scaled distance (about 700 m at most), so far forested slopes are terrain only, as their tree records allow; the final 2-8 metres now use far-plane dissolve (see below). Small vegetation keeps its compiled distance (the 60/40 scale is not applied to it). The quality options other than the default group 4 are not modelled.
 
 ## 7. Requests to other crates
 
@@ -5553,3 +5646,186 @@ last packet, in `Screen::Loading` and `Screen::InGame`; nothing until the server
 up from the centre (kept sharp) to the edges; 0, the default, takes no extra sample. Nothing in this crate writes it: aa-client's
 `ingame::sprint::apply_blur` sets it while Dash runs when the player turned it on (off by default, `docs/aa-client-movement.md`). The fog of the pixel stays its own; only the
 scene's difference is blurred.
+
+## Post grading, eye adaptation, sea swell, wind and water audit (2026-10-23)
+
+Reverse-engineered from `cryrenderd3d10.dll` (the 1.2 client ships only the D3D10 and D3D9 renderers) and the shader sources in
+the pak (`postprocess.cfx`, `posteffectsgame.cfx`, `sunshafts.cfx`, `water.cfx`, `commoncausticspass.cfi`). The scripts are under
+the ignored `data/extract/aa-world/wr/` (`cvars.py`, `refs.py`: pefile + capstone over the DLL).
+
+**Colour grading of the time of day** (`post.wesl::color_grade`, `PostUniform::{levels, photo, color}`, `grading_from`). The
+engine runs the `ColorGrading` effect on the tone mapped, gamma encoded image (`r_ColorGrading`, `r_ColorGradingFilters`,
+`r_ColorGradingLevels` all default to 1): `AdjustLevels` (`(c 255 - min) / (max - min)`, then `^ 1/gamma`), `ApplyPhotoFilter`,
+`AdjustColor` (a colour matrix from `Color: saturation / contrast / brightness`), then `SelectiveColor`. Before, only
+`Levels: min input` was used. Now `Levels: gamma`, `Levels: max input`, the photo filter (`lum = dot(c, (.33, .59, .11))`, a colour
+curve black -> filter colour at lum .5 -> white, `lerp(c, curve, saturate(lum x density))`, copied from the shader) and the colour
+matrix (brightness, contrast around .5, saturation by luminance) are applied. The spawn zone 179 authors all of them neutral
+(density 0), so the calibration view does not change (mean abs difference 0.7 of 255, `shots/aa-world/wr/calib_*`); 112 of the 121
+zones author a photo filter density of up to 1.0 and `Color: saturation` goes down to 0.6 (zone 150). `AA_TUNE grading=0` returns
+to the black point only. Not applied: `Levels: min / max output` (several zones key `min output` at 255, a white screen; the
+effect's defaults are 0 / 255), `Selective Color` (the CPU mapping of the four CMYK values to `ColorGradingParams4` was not
+recovered) and grain / sharpening. The matrix weights (.299 / .587 / .114) are assumed: the CPU code that builds
+`mColorGradingMatrix` was not recovered; only the saturation leaves 1 by more than 0.05.
+
+**Blueshift is not used by the 1.2 renderer.** `ApplyBlueShift` is called only from `ExpMapping`; the client runs
+`r_HDRRendering 3` = `FilmicMapping`, which has no blue shift (`r_HDRBlueShift` default 0). `Blueshift` and
+`HDR blueshift threshold` of the time of day are dead data. Closed as not applicable.
+
+**Eye adaptation from the engine's constants** (`post.wesl::exposure`, `AtmosphereTuning::adapt*`). `FilmicMapping` computes
+`exposure = clamp(0.18 / lerp(r_EyeAdaptationBase 0.18, adapted luminance, r_EyeAdaptationFactor 0.4), 0.36, 2.8)` (defaults read
+from the registrations in `cryrenderd3d10.dll`); `HDRCalculateAdaptedLumPS` eases the luminance with
+`1 - 0.98^(r_EyeAdaptationSpeed 2 x 33 x dt)`, i.e. 1.334 / s and **the same speed up and down**. With `adapt_ref` as the calibrated
+luminance (exposure 1) the gain is `1 / (0.6 + 0.4 x 2^state)`, clamped to 0.36 .. 2.8 (-1.47 .. +1.49 stops). Its asymptote for a
+black scene is 1.667 = +0.74 stops, which is exactly the +0.75 the earlier by-eye clamp had. Against the old
+`2^(-state / 2)` in -0.6 .. +0.75 stops, dark scenes brighten a little less (night forest mean 27.8 -> 25.7), bright ones dim more
+(sky looking up 108.8 -> 97.7, which also contains that zone's grading), the calibrated views are unchanged. The time of day has no
+adaptation parameters (`HDR dynamic power factor` is the HDR multiplier). The tuning keys keep their names (`adapt` scales the
+state, `adapt_min/max` are the stops of the clamp, `adapt_speed` the rate).
+
+**Sun shafts:** the earlier interpretation here combined the standalone display path with the merged HDR path.
+The WR3 investigation below supersedes it: the TOD binding and the HDR strength producer are now established by executable
+original-code probes. Amount is not ray reach, RaysAmount is not the attenuation radius, and HDR has a RaysAmount gain.
+
+**Sea swell** (`water.wesl::swell`, `water/ocean.rs::{ocean_mesh, SWELL_PEAK}`). The 1.2 ocean (high quality) is a projected grid
+displaced by an FFT texture: `vPos += saturate(dist x 0.5)^2 x fft.xyz x 0.06 x OceanParams1.x x (1.5, 1.5, 1)`, texture coordinate
+`pos x 0.0125 x OceanParams0.w x 1.25` (a repeat length of `64 / WavesSize` m, 85 m in `env.xml`); the FFT is generated at run time
+and the vertex normal is derived from it. The data has no FFT texture, so the swell is four sine waves around the wind direction
+with wavelengths 85 / 42 / 21 / 11 m, a falling spectrum and deep water dispersion, peak 0.35 m x `WavesAmount / 1.6`
+(`env.xml` `<OceanAnimation WavesAmount WavesSize WavesSpeed>` are read now); each wave fades out where the grid no longer samples it
+and all of them within 2 m of the camera (the engine's `fDisplaceAtten`); the slope tilts the normal. The sea plane is a polar grid
+(256 segments, rings 2.45 % apart from 1.5 m to the horizon, 94 k vertices, no T-junctions) that follows the camera exactly.
+Amplitude and wave set are a plausible reading, not the FFT's. `AA_TUNE sea_waves=0` is a flat sea, 6 exaggerates it
+(`shots/aa-world/wr/sea_low_sbs.png`: 0 / 1 / 6). Before / after captures of everything above: `shots/aa-world/wr/*_{before,after}.png`
+and `*_sbs.png` (same cameras: `calib`, `spawn150` / `spawn180` with `--zone`, `forest`, `forest_night`, `sky_up`, `coast`, `beach`,
+`sealow`). Frame rate, `fly --spawn nuian --hour 9 --bench 15` on the shared machine (release): 91 / 94 fps average before,
+89 / 90 after (the sea swell adds 94 k vertices, the grading a handful of ALU in the final pass; the noise is larger than the cost).
+**No crest foam**: the branch with `FoamCrestAmount` sits in the `WATER_TESSELLATION_DX11` (hull / domain) path, which the D3D10
+client never runs, so the 1.2 whitecaps are the non-tessellated flecks already done ("Native ocean foam and caustics").
+
+**Caustics on lakes and rivers do not exist in the engine.** Both caustics passes (`CommonCausticsPass`'s `g_fWaterLevel`,
+`deferredcaustics.cfx`) use the ocean level and the `<Ocean CausticDepth ...>` of `env.xml`; no water volume shader mentions them.
+The sea's caustics stay as they were. **Waterfalls** are not a water flag either (`watersurface.cfx` / `watervolume.cfx` have no such
+branch): they are `Illum` meshes with oscillating `TexMod` scrolls (`materials/effects/keffect/waterfall_sm01.mtl`) plus `aa-fx`
+particle effects (`X2_EFFECTS_K.waterfall.*`), i.e. aa-cry's material animation and aa-fx's work, not this crate's water.
+
+**Vegetation wind audit.** None of the 2,771 vegetation groups has `bComplexBending`, so the skeletal / complex bending branch is
+never authored in the 1.2 data. Wind areas are level entities of class `WindArea` (`entities.xml`, properties `bActive`, `Speed`, `Dir`,
+`Size`, `bEllipsoidal`, `AirDensity`): the whole of `main_world` has **one** and it is inactive (cell 23,8), `login2` has four active
+ones (30 x 30 x 20 m ellipsoids, speed 15, direction +-Y, along x = 580..604, y = 406..962). The vegetation path here reads the global
+`WindVector` only; wind areas need a per-instance wind that the shared materials do not have, for four small ellipsoids on the world
+select scene: not done.
+
+**Terrain `_sp` specular** was looked at and not done: 484 of the 601 `aa_terrain` layer materials carry a `Specular` map (6,196
+`_sp.dds` in the pak) and a `Specular` colour (0.02 .. 0.27), and the shader multiplies Phong x gloss map x `MatSpecColor` x shadow, but
+the layer library packs diffuse and normal arrays only (255 layers per array); a specular array is a real library change.
+
+
+## Bounded native sun-shaft/specular follow-up (2026-10-23)
+
+Historical standalone-path findings (the normal HDR3 path differs; see WR3 below):
+`3815E54F..3815E6C0` uploads `SunShafts_SunCol` as an L2-normalized sun colour lerped
+from `RaysCustomColor` by `RaysSunColInfluence`, with alpha 1 and **no additional
+intensity multiplier in this standalone path**. `3815E49B..3815E50D` uploads display x as saturated view-gated
+`Amount` and y as `RaysAmount` only in (0,10), otherwise 0. `3815DADB..3815DB1A`
+uploads generation y from `RaysAttenuation`; it is the radial falloff, not a recovered
+sun-colour gain. The retained disassembly is
+`data/extract/aa-world/wr/shafts-native.asm.txt`. `sunshafts.cfx` screen-blends the blurred
+linear-depth mask on the display image and applies a soft-light term. Consequently a
+standalone change to `SHAFT_GAIN` would not restore native strength: current sky-only
+mask, blur, parameter mapping and pre-film addition also need replacing together.
+No shaft rendering change was made in that slice. WR3 below closes the TOD binding and implements the distinct HDR merge.
+The standalone soft-light composition is not used for the normal HDR3 renderer.
+
+Terrain specular remains deferred: the layer library currently binds five diffuse/normal
+arrays and four Vec4 entries per projection. Original `TerrainLayerPS` requires a separate
+gloss/specular sample, authored `MatSpecColor`/shininess and native shadowed composition;
+substituting an untextured Bevy reflectance would lose the authored maps. This needs a
+bounded array-admission/uniform/shader change plus terrain controls, not a guessed scalar.
+
+
+## WR3: native HDR sun-shaft controls (2026-10-23)
+
+This closes the native **TOD-to-HDR strength mapping**, not full world parity. No terrain, water, Illum or client changes
+are part of this work. The public Rust structs retain their fields/layout and all tuning keys retain their names.
+`PostUniform.shafts` now means `(RaysAmount * shafts gain, far/(far-near), clamped RaysAttenuation, world view limit)`;
+`shafts_color.rgb` is L2-normalized sun RGB. Root integration requires rebuilding aa-client; no caller edits are needed.
+
+Original 1.2 evidence (image bases Cry3DEngine 0x30000000, CryRenderD3D10 0x38000000):
+
+| Producer / consumer | Established behavior |
+|---|---|
+| `CTimeOfDay::Update` 300A78D1..300A79C4 | TOD85 `Sun shafts visibility` -> Amount clamped 0..0.3; TOD86 -> RaysAmount unchanged; TOD87 -> RaysAttenuation unchanged. Active is `(double(amount)>0.05 || double(rays)>0.05)`. The double threshold means f32(0.05) activates. All four setters pass force=false. |
+| SunShafts ctor 38262390, float setter 3825D9D0 | Amount/RaysAmount/RaysAttenuation +18/+1C/+20. Their float parameters have interpolation flag 0, so TOD writes are immediate. Sun-color influence defaults to 1, custom color to white. |
+| HDR wrapper 3806DBB0; merge 3806CD70 | With HDR active, effect id5 present, post effects/merge on, r_sunshafts nonzero and wrapper special-mode byte zero, shafts generate. The effect list is the constructor's full list (3825E6C0); HDR does not consult standalone Active or the runtime preprocess flag. |
+| Accessor 3806E3C0; color 3806D661..3806D75D | Packed customRGBA, 0, 0, RaysAmount, influence. HDR SunCol = lerp(customRGB, L2-normalized GetSunColor, influence) * RaysAmount. No extra 1.4 gain or solar-elevation fade. |
+| Generator 3815D290 | Fixed reaches 0.1 / 0.025 / 0.01. Attenuation clamps 0..10. Projects GetSunDir*1000; Cry3DEngine SetSunDir 30126C30 stores normalized direction*7500. SunPos.w is normalized sun dotted with the view-projection Z row. |
+| `commonzpass.cfi`, `common.cfi`, `sunshafts.cfx` | Scene Z is axial distance/far. Mask samples full-resolution depth at (0,1), (1,.65), (-1,.65) pixels, sum*.333. Each blur has eight taps, weights 1-i/8, sum/4. Each pass multiplies by saturate(facing)*saturate(1-saturate(length(toSun*(1,1.333*height/width))*attenuation)); taps step by reach*facing. |
+| Targets 38266500, format name 381C0330 | HDR target $BackBufferScaled_d4 uses floor(width/4), floor(height/4), format2 = A8R8G8B8. Rgba8Unorm ping-pong retains per-pass saturation/quantization (channel storage ordering does not affect sampled RGB). |
+| `postprocess.cfx::HDRFinalScenePS` | Screen blend `c += rays * SunCol * (1-c)` on the saturated gamma-encoded film result, before color charts/grading. Standalone SunShaftsDisplay's Amount soft-light term is absent. |
+
+`crates/aa-world/tools/native_sun_shafts_oracle.py` runs the original x86 in Unicorn (pefile + unicorn required).
+It records 9 TOD setter probes, 4 accessor/color probes and 7 HDR-list/gating probes; the HDR probes begin after its
+HDR-enabled early check and stop before graphics calls. Only the TOD external setter is mocked in the binding slice;
+accessor float/color getters and normalization execute original instructions. Retained goldens include DLL SHA256 hashes:
+`crates/aa-world/tools/native_sun_shafts_golden.json`. Read-only DLL inputs are existing extracted originals under
+`data/extract/aa-cry/ida/`; the tool writes only ignored WR3 evidence. Native decompilation/assembly evidence remains under
+`data/extract/aa-world/wr3/` (small text files); our copied IDA database is removed after use.
+
+Renderer limits: this implements the normal merged HDR3/default influence path. There is no generic post-effect parameter
+API, custom ray tint/influence override, non-HDR Amount soft-light path, night-vision/stereo wrapper, or optional standalone
+r_sunshafts>1 occlusion-query mode. Orthographic projections are not native shaft cameras. Bevy keeps a distant sky and an
+infinite reversed-Z projection, so mask reconstruction uses the configured world view limit (`brush_distance`, default
+2000m) and the Bevy perspective near plane to construct native normalized depth and forward projection. The original
+runtime camera-far producer upstream of renderer vslot372 (projection retrieved by 3806B310), including scene-specific
+adjustments beyond e_max_view_dst, is not recreated; custom view
+caps can therefore change masking/facing relative to the original client. Existing bloom, grading and exposure bridges
+remain their documented approximations. These limits do not turn the recovered intensity and TOD controls into fitted gains.
+
+Validation: `cargo check -p aa-world --lib`, `cargo test -p aa-world --lib post_shafts::tests` (2 passed, 270 filtered),
+`cargo build -p aa-world --example fly --example sun_shafts`, and `cargo build -p aa-world --release --example fly` passed.
+No workspace/client builds were run by this task. `python crates/aa-world/tools/native_sun_shafts_oracle.py --check` passes
+all 20 original-code probes. The temporary copied IDA database was removed; small disassembly/decompilation and logs remain.
+
+`sun_shafts` uses aa-dev and the real world post pipelines, streaming disabled, a black plane with known axial depth, optional
+near occluder stripe and an independent CPU evaluation of the original mask/blur/blend equations. Screenshot observers
+check five positions against CPU values (including per-pass UNORM quantization), tolerance <=2 RGB8 counts. All six controls
+passed on RX 9070 XT/Vulkan at 640x360, and every PNG was opened and inspected:
+
+| Capture under `shots/aa-world/wr3/` | Extra args (all use `--shot-after 6`, depth case 8) |
+|---|---|
+| `gpu_depth.png` | defaults: depth .5, rays .5, attenuation 0 |
+| `gpu_gain_grade.png` | `--depth 1 --rays 2.5 --graded` |
+| `gpu_near.png` | `--depth .1` |
+| `gpu_away.png` | `--away` |
+| `gpu_off.png` | `--off --graded` |
+| `gpu_radial.png` | `--depth 1 --rays 2.5 --stripe --atten 5 --msaa` (4x) |
+
+GPU-control logs contain no shader/GPU warnings or errors; aa-dev logged 195-298 FPS across these small controls. The dark
+radial control is expected: near depth over the sun and attenuation applied three times strongly suppress the result.
+
+Matched world captures (1920x1080, release BEFORE and AFTER, default settings except the listed controls):
+
+| Pair | Reproduction / final five aa-dev FPS samples |
+|---|---|
+| `shaft_before.png` / `shaft_after_release.png` | `fly --pos 10388.6,15982.5 --yaw 45 --pitch 8 --hour 8 --shot-after 25`, `AA_TUNE=sun_az=40,sun_el=20`. BEFORE 98.5-115.9 (mean 109.4), AFTER 100.8-111.1 (mean 105.0). |
+| `reference_before.png` / `reference_after_release.png` | `fly --camera-json reference/ingame/spawn/camera.json --shift 11264,11264,0 --hour 19.166172 --shot-after 30`. BEFORE 110.8-124.8 (mean 116.2), AFTER 84.6-97.7 (mean 93.0). |
+
+All four images and `reference/ingame/spawn/real.png` were inspected. The forest AFTER removes the former broad white glow
+around the sky gap; the corrected native effect is much subtler here. The spawn composition stays close to BEFORE, with
+existing foliage/water/lighting differences from the original. That original reference is a composition/negative control;
+there is no matched original-client sun-facing forest capture, so these pictures do not independently prove original beam
+appearance. Native strength is established by source + executable probes, not by fitting those pictures.
+
+BEFORE is the retained b2f2499 release executable; AFTER includes intervening shared dependency integration. Shared builds
+were active. These are FPS observations, not an isolated performance gain/regression measurement. Spawn AFTER logged
+`aa_world::decals: deferred decal cell receiver budget exceeded at (14, 13)` during initial loading; this non-shaft streaming
+warning limits scene-completeness/performance conclusions. No shader/GPU errors occurred. Early dev AFTER captures and the
+same-dev-binary `shaft_off.png` remain diagnostic artifacts and are not used as matched-profile FPS evidence. Exact logs and
+sample lists are in `data/extract/aa-world/wr3/`, including `fps.json`. Our WR3 copied executables were removed after comparisons;
+root's `tools/before` artifacts and the earlier distance-task copies were left untouched.
+
+The prior distance/sprite change still has a separate visual regression: inspected
+`shots/aa-world/distance/recovered/bush_compare.png` and the elf BEFORE/FINAL captures show conspicuous flat olive patches.
+The isolated controls matched sprite footprint/center and the exact dissolve handoff dither, but the CPU atlas/shading lacks
+native self-lighting/backlighting and volume. This is a likely cause, not proof excluding a placement-specific bounds or
+handoff defect. Those captures are not an unqualified visual improvement. WR3 does not modify that subsystem.

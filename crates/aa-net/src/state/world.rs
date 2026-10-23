@@ -192,17 +192,23 @@ impl Chat {
                 self.spam = spam.clone();
             }
             Event::LeftWorld { .. } => {
-                if self.channels.is_empty() {
+                let spam_set = self.spam != crate::model::ChatSpam::default() || self.next_send.iter().any(Option::is_some);
+                if self.channels.is_empty() && !spam_set {
                     return false;
                 }
                 self.channels.clear();
+                self.spam = crate::model::ChatSpam::default();
+                self.next_send = [None; 15];
             }
             Event::Disconnected { .. } => {
-                if self.channels.is_empty() && self.log.is_empty() {
+                let spam_set = self.spam != crate::model::ChatSpam::default() || self.next_send.iter().any(Option::is_some);
+                if self.channels.is_empty() && self.log.is_empty() && !spam_set {
                     return false;
                 }
                 self.channels.clear();
                 self.log.clear();
+                self.spam = crate::model::ChatSpam::default();
+                self.next_send = [None; 15];
             }
             _ => return false,
         }

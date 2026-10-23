@@ -108,6 +108,10 @@ pub struct StepCtx<'a> {
     pub tint: Vec3,
     /// Direction to the sun in world space (shades opaque mesh particles).
     pub sun: Vec3,
+    /// `FxSettings::sun_light`, and the cosine between the direction to the sun and the one to the camera: a camera facing sprite is
+    /// lit by the sun like a surface that faces the camera.
+    pub sun_light: f32,
+    pub sun_facing: f32,
     /// How the effect entity moves (m/s, world space), for `InheritVelocity`.
     pub emitter_vel: Vec3,
     /// Height of the ground below a world position, for the emitters that collide (`CollideTerrain`).
@@ -272,6 +276,7 @@ pub struct EmitterState {
     deaths: Vec<Vec3>,
     collides: Vec<Vec3>,
     lit: f32,
+    decal_grid: crate::decal::Draped,
     // output, effect-local space
     pub pos: Vec<[f32; 3]>,
     pub uv: Vec<[f32; 2]>,
@@ -325,6 +330,7 @@ impl EmitterState {
             deaths: Vec::new(),
             collides: Vec::new(),
             lit: 1.0,
+            decal_grid: crate::decal::Draped::default(),
             pos: Vec::new(),
             uv: Vec::new(),
             uv1: Vec::new(),
@@ -893,6 +899,18 @@ impl EmitterState {
         (basis.0 * c + basis.1 * s) * r
     }
 
+    /// The light factor of the emitter now: the constant part (`lit`) plus the sun's share. The engine's particle pixel shader lights a
+    /// sprite with its camera facing normal (`particles.cfi`: `fIllum = saturate(N.L - N.L * b + b)`, `b` = `DiffuseBacklighting`) and the
+    /// sun's colour, times `DiffuseLighting`: a lit smoke is bright with the sun behind the camera and dark against it.
+    fn lit_now(&self, ctx: &StepCtx) -> f32 {
+        if ctx.sun_light <= 0.0 {
+            return self.lit;
+        }
+        let b = self.def.backlight.clamp(0.0, 1.0);
+        let illum = (ctx.sun_facing * (1.0 - b) + b).clamp(0.0, 1.0);
+        self.lit + self.def.diffuse * ctx.sun_light * illum
+    }
+
     /// The lights of the live particles (`CParticleContainer::RenderLights`): colour, radius and HDR power come from the
     /// particle's own random draws and the three age curves; the light is the particle's colour, not lit by anything.
     pub fn lights(&self, ctx: &StepCtx, hdr_base: f32, out: &mut Vec<LightSample>) {
@@ -949,7 +967,7 @@ impl EmitterState {
         let dv = 1.0 / tiling.y as f32;
         // the engine keeps the longer side of the texture tile at the authored size and shrinks the other
         let (kx, ky) = if self.aspect >= 1.0 { (1.0, 1.0 / self.aspect) } else { (self.aspect, 1.0) };
-        let lit = self.lit;
+        let lit = self.lit_now(ctx);
         let facing = def.facing;
         // `Decal` / `Terrain` cards follow the ground (`FxSettings::ground`) when it is known
         let drape = if def.decal && facing == Facing::Flat { ctx.ground } else { None };
@@ -1091,27 +1109,26 @@ impl EmitterState {
             }
             let c = inv.transform_point3(center) + shift;
             let v = [c - rx - uy, c + rx - uy, c + rx + uy, c - rx + uy];
-            // a decal over uneven ground is cut into cells (about 1.5 m) whose corners sit on the ground
-            let cells = match drape {
-                Some(ground) if ground(center).is_some() => crate::decal::cells_for(hx, hy),
-                _ => 1,
-            };
-            let corner = |s: f32, t: f32| -> Vec3 {
-                let local = v[0].lerp(v[1], s).lerp(v[3].lerp(v[2], s), t);
-                match drape {
-                    Some(ground) if cells > 1 => {
-                        let mut w = ctx.global.transform_point3(local);
-                        if let Some(gy) = ground(w) {
-                            w.y = gy + crate::decal::LIFT;
-                        }
-                        inv.transform_point3(w)
-                    }
-                    _ => local,
+            // Project even one-cell cards, and share the sampled terrain grid
+            // with the public reticle helper. Ordinary sprites use their quad.
+            let ground = drape.filter(|g| g(center).is_some());
+            if let Some(ground) = ground {
+                crate::decal::drape_into(
+                    &mut self.decal_grid, ctx.global.transform_point3(c),
+                    ctx.global.transform_vector3(rx), ctx.global.transform_vector3(uy),
+                    ground, crate::decal::LIFT, crate::decal::cells_for(hx, hy),
+                );
+                for p in &mut self.decal_grid.positions {
+                    let local = inv.transform_point3(Vec3::from(*p));
+                    *p = local.to_array();
+                    min = min.min(local);
+                    max = max.max(local);
                 }
-            };
-            for q in &v {
-                min = min.min(*q);
-                max = max.max(*q);
+            } else {
+                for p in &v {
+                    min = min.min(*p);
+                    max = max.max(*p);
+                }
             }
             // a blended frame is two quads on top of each other, weighted (1 - fade) and fade: exact for additive blends,
             // and within a few percent of the engine's lerp of the two frames for the others
@@ -1122,7 +1139,7 @@ impl EmitterState {
             for (tile, w) in std::iter::once((f, w0)).chain(second) {
                 let (u0, v0) = if tile == f { (u0, v0) } else { ((tile % tiling.x) as f32 * du, (tile / tiling.x) as f32 * dv) };
                 let colour = [colour.x, colour.y, colour.z, (alpha * w).min(1.0)];
-                if cells == 1 {
+                if ground.is_none() {
                     self.pos.extend_from_slice(&[v[0].to_array(), v[1].to_array(), v[2].to_array(), v[3].to_array()]);
                     self.uv.extend_from_slice(&[[u0, v0 + dv], [u0 + du, v0 + dv], [u0 + du, v0], [u0, v0]]);
                     if with_test {
@@ -1131,19 +1148,17 @@ impl EmitterState {
                     self.col.extend_from_slice(&[colour, colour, colour, colour]);
                     continue;
                 }
-                let k = 1.0 / cells as f32;
+                let grid = &self.decal_grid;
+                let cells = grid.cells;
+                let width = cells + 1;
                 for j in 0..cells {
-                    let (t0, t1) = (j as f32 * k, (j + 1) as f32 * k);
                     for i in 0..cells {
-                        let (s0, s1) = (i as f32 * k, (i + 1) as f32 * k);
-                        let q = [corner(s0, t0), corner(s1, t0), corner(s1, t1), corner(s0, t1)];
-                        for qp in &q {
-                            min = min.min(*qp);
-                            max = max.max(*qp);
+                        let a0 = j * width + i;
+                        for k in [a0, a0 + 1, a0 + width + 1, a0 + width] {
+                            self.pos.push(grid.positions[k]);
+                            let [s, t] = grid.uvs[k];
+                            self.uv.push([u0 + s * du, v0 + t * dv]);
                         }
-                        self.pos.extend_from_slice(&[q[0].to_array(), q[1].to_array(), q[2].to_array(), q[3].to_array()]);
-                        let (ua, ub, va, vb) = (u0 + s0 * du, u0 + s1 * du, v0 + (1.0 - t0) * dv, v0 + (1.0 - t1) * dv);
-                        self.uv.extend_from_slice(&[[ua, va], [ub, va], [ub, vb], [ua, vb]]);
                         if with_test {
                             self.uv1.extend_from_slice(&[[p.atest * luts.alpha_test.at(a), 0.0]; 4]);
                         }
@@ -1192,6 +1207,8 @@ impl EmitterState {
         let opaque = m.blend == Blend::Opaque;
         let pivot = if def.no_offset { Vec3::ZERO } else { t.center };
         let alpha_k = if def.no_material_alpha { 1.0 } else { m.opacity };
+        // RenderGeometry has its own lighting; the camera-facing particle shader
+        // (`particles.cfi`) supplies the wrapped sun term only for sprites.
         let lit = self.lit + m.emissive * 0.5;
         let basis = self.orbit_basis(ctx);
         let to_local = inv3.x_axis.length().max(inv3.y_axis.length()).max(inv3.z_axis.length()).max(1.0);
@@ -1398,11 +1415,6 @@ pub struct EffectSim {
 
 impl EffectSim {
     pub fn new(mut emitters: Vec<EmitterState>, light: f32, emissive: f32, hdr_base: f32) -> EffectSim {
-        for e in emitters.iter_mut() {
-            let d = &e.def;
-            // the engine's mesh path: colour *= diffuse + emissive * pow(HDR multiplier, EmissiveHDRDynamic)
-            e.lit = d.diffuse * light + d.backlight * light * 0.5 + d.emissive * emissive * hdr_base.max(1e-3).powf(d.emissive_hdr);
-        }
         let triggers: Vec<(Option<usize>, Spawn)> = emitters.iter().map(|e| (e.parent, e.def.spawn)).collect();
         for (parent, spawn) in triggers {
             if let Some(p) = parent {
@@ -1414,7 +1426,18 @@ impl EffectSim {
                 }
             }
         }
-        EffectSim { emitters, time: 0.0, primed: false }
+        let mut sim = EffectSim { emitters, time: 0.0, primed: false };
+        sim.set_lighting(light, emissive, hdr_base);
+        sim
+    }
+
+    /// Refresh scene lighting without changing particle ages, random draws or emission.
+    pub(crate) fn set_lighting(&mut self, light: f32, emissive: f32, hdr_base: f32) {
+        for e in &mut self.emitters {
+            let d = &e.def;
+            // RenderGeometry: colour *= diffuse + emissive * pow(HDR multiplier, EmissiveHDRDynamic).
+            e.lit = d.diffuse * light + d.backlight * light * 0.5 + d.emissive * emissive * hdr_base.max(1e-3).powf(d.emissive_hdr);
+        }
     }
 
     pub fn alive(&self) -> usize {
@@ -1547,6 +1570,8 @@ mod tests {
             count_over_life: true,
             tint: Vec3::ONE,
             sun: Vec3::Y,
+            sun_light: 0.0,
+            sun_facing: 0.0,
             emitter_vel: Vec3::ZERO,
             ground: None,
             wind: Vec3::ZERO,
@@ -2064,6 +2089,27 @@ mod tests {
     }
 
     #[test]
+    fn a_single_cell_decal_projects_in_a_rotated_effect_frame() {
+        let budget = AtomicI32::new(10_000);
+        let mut s = sim(r#"ParticleLifeTime="4" Facing="Decal" Texture="textures/x.dds" Size="0.2" Speed="0""#);
+        let ground = |p: Vec3| Some(0.5 * p.x - 0.2 * p.z);
+        let mut c = ctx(&budget);
+        let rotation = Quat::from_rotation_y(0.7);
+        c.global = Affine3A::from_rotation_translation(rotation, Vec3::new(4.0, 8.0, -2.0));
+        c.rot = Mat3::from_quat(rotation);
+        c.ground = Some(&ground);
+        s.step(&c);
+        let e = &s.emitters[0];
+        assert_eq!(e.units, 1);
+        for p in &e.pos {
+            let local = Vec3::from(*p);
+            let world = c.global.transform_point3(local);
+            assert!((world.y - ground(world).unwrap() - crate::decal::LIFT).abs() < 1e-5, "{world:?}");
+            assert!(local.cmpge(e.min).all() && local.cmple(e.max).all());
+        }
+    }
+
+    #[test]
     fn a_light_particle_gives_its_colour_times_the_intensity_and_the_hdr_power() {
         let budget = AtomicI32::new(10_000);
         let mut s = sim(r#"Count="1" ParticleLifeTime="4" Texture="textures/x.dds" Speed="0" Color="(1,0.5,0)" LightSourceIntensity="2" LightSourceRadius="3" LightHDRDynamic="1""#);
@@ -2081,6 +2127,82 @@ mod tests {
         out.clear();
         s.emitters[0].lights(&c, 2.0, &mut out);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn the_sun_lights_a_sprite_by_its_facing_and_the_backlighting() {
+        let xml = r#"<ParticleLibrary Name="T"><Particles Name="a"><Params/><Childs><Particles Name="e"><Params Texture="textures/x.dds" DiffuseLighting="0.5" DiffuseBacklighting="0.2"/></Particles></Childs></Particles></ParticleLibrary>"#;
+        let lib = Library::parse(xml).unwrap();
+        let eff = lib.get("a").unwrap();
+        let em = eff.emitters.iter().map(|e| EmitterState::new(e.def.clone(), e.parent, 0, 1.0, 7, bevy::prelude::Entity::PLACEHOLDER)).collect();
+        let sim = EffectSim::new(em, 1.0, 1.0, 2.0);
+        let e = &sim.emitters[0];
+        let budget = AtomicI32::new(10_000);
+        let mut c = ctx(&budget);
+        // no sun: the constant part (diffuse 0.5 x light 1 + backlighting 0.2 x light x 0.5)
+        assert!((e.lit_now(&c) - e.lit).abs() < 1e-6);
+        c.sun_light = 10.0;
+        // the sun behind the camera (the sprite faces it): the whole sun times the diffuse factor
+        c.sun_facing = 1.0;
+        assert!((e.lit_now(&c) - (e.lit + 5.0)).abs() < 1e-5);
+        // the sun at right angles: only the backlighting coefficient is left; the sun in front of the camera: nothing (the wrap is 0.2)
+        c.sun_facing = 0.0;
+        assert!((e.lit_now(&c) - (e.lit + 0.5 * 10.0 * 0.2)).abs() < 1e-5);
+        c.sun_facing = -1.0;
+        assert!((e.lit_now(&c) - e.lit).abs() < 1e-5);
+    }
+
+    #[test]
+    fn sunlight_changes_live_sprite_colours_without_restarting_them() {
+        let budget = AtomicI32::new(10_000);
+        let mut s = sim(r#"ParticleLifeTime="4" Texture="textures/x.dds" DiffuseLighting="0.5" DiffuseBacklighting="0.2" Speed="0""#);
+        let mut c = ctx(&budget);
+        s.step(&c);
+        let age = s.emitters[0].particles[0].age;
+        let ambient = s.emitters[0].col[0][0];
+        c.sun_light = 10.0;
+        c.sun_facing = 1.0;
+        s.step(&c);
+        assert!((s.emitters[0].col[0][0] - ambient - 5.0).abs() < 1e-5);
+        assert!(s.emitters[0].particles[0].age > age);
+        c.sun_facing = -1.0;
+        s.step(&c);
+        assert!((s.emitters[0].col[0][0] - ambient).abs() < 1e-5);
+        // An emissive particle has no diffuse response to the sun.
+        let mut glow = sim(r#"Texture="textures/x.dds" DiffuseLighting="0" EmissiveLighting="2" Speed="0""#);
+        glow.step(&c);
+        let before = glow.emitters[0].col[0];
+        c.sun_facing = 1.0;
+        glow.step(&c);
+        assert_eq!(glow.emitters[0].col[0], before);
+    }
+
+    #[test]
+    fn lighting_and_hdr_changes_reach_existing_particles() {
+        let budget = AtomicI32::new(10_000);
+        let mut s = sim(r#"ParticleLifeTime="4" Texture="textures/x.dds" DiffuseLighting="0.5" EmissiveLighting="0.5" EmissiveHDRDynamic="2" Speed="0""#);
+        let c = ctx(&budget);
+        s.step(&c);
+        let id = s.emitters[0].particles[0].id;
+        let age = s.emitters[0].particles[0].age;
+        assert!((s.emitters[0].col[0][0] - 0.9).abs() < 1e-5);
+        s.set_lighting(2.0, 1.0, 2.0);
+        s.step(&c);
+        assert!((s.emitters[0].col[0][0] - 3.0).abs() < 1e-5);
+        assert_eq!(s.emitters[0].particles[0].id, id);
+        assert!(s.emitters[0].particles[0].age > age);
+        assert_eq!(s.alive(), 1);
+        // The separate geometry path gets the same refreshed HDR term, without the sprite-facing sun term.
+        let mut mesh = sim(r#"Geometry="x.cgf" ParticleLifeTime="4" DiffuseLighting="0.5" EmissiveLighting="0.5" EmissiveHDRDynamic="2" Speed="0""#);
+        mesh.emitters[0].set_geom(triangle());
+        mesh.step(&c);
+        assert!((mesh.emitters[0].col[0][0] - 0.9).abs() < 1e-5);
+        mesh.set_lighting(0.8, 1.0, 2.0);
+        let mut sun = ctx(&budget);
+        sun.sun_light = 10.0;
+        sun.sun_facing = 1.0;
+        mesh.step(&sun);
+        assert!((mesh.emitters[0].col[0][0] - 2.4).abs() < 1e-5);
     }
 
     #[test]

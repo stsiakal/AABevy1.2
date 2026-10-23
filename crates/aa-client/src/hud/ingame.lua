@@ -563,6 +563,12 @@ X2Bag.GetBagCooldown = function(self, slot)
 end
 
 local fakeIconSet, fakeStackable, fakeLevel = X2Item.GetItemIconSet, X2Item.IsStackable, X2Item.GetLevelRequirement
+local fakeItemName = X2Item.Name
+X2Item.Name = function(self, itemType)
+  local name = HUD.item_info(itemType)
+  if name == nil then return fakeItemName(self, itemType) end
+  return name
+end
 X2Item.GetItemIconSet = function(self, itemType, grade)
   local name, icon, maxStack, fixedGrade = HUD.item_info(itemType)
   -- A real item always gets a table, even without an icon: SetInfo indexes the
@@ -688,7 +694,7 @@ end
 
 AAUI.ChatSend = function(channel, text, target)
   text = string.gsub(text or "", "^%s+", "")
-  if text ~= "" then HUD.request("chat", channel, text, target or "") end
+  if text ~= "" and not (HUD.slash and HUD.slash(text)) then HUD.request("chat", channel, text, target or "") end
 end
 
 -- A click on a bound slot (after the script's own OnClick): the action bar slot is used like its number

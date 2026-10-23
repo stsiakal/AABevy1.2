@@ -6743,3 +6743,190 @@ Tests: `tests/listctrl_keys.rs` (6). In game (account `bevytest`, the book's `X2
 because `bevyportal` was online in another session): `shots/aa-ui/listctrl/after_book_rows.png` (Default Site, 3 rows),
 `after_book_recorded_tab.png` (Recorded Site, 10 rows, page 1/2, row 3 selected, buttons enabled), against
 `before_book_empty.png` (empty rows); `achievement.png` (Summary with the recent list, unchanged). fps 75-100.
+
+### Window-position persistence callback recovery (2026-10-23)
+
+Recovered the inherited `src/lua/drag.rs` / `tests/drag.rs` changes and validated
+the actual original-script save path. Native evidence corrects the inherited
+"only if visible and final rectangle differs" guard: Lua binding `392651e0`
+calls `39278ab0` on its receiver regardless of capture, visibility or movement.
+The stop clears the manager capture through `392a6a10(0)`, resets the cursor,
+then invokes receiver virtual `+138`. Script chat `395129b0` sends event 31;
+table `39ac6ab0[31]` names it `OnMovedPosition`. Manager cleanup `392aa910`
+calls stop only for a captured widget. Consequently an original title-bar
+click sends this callback even without movement, while an ordinary chat-tab
+click (no capture/explicit stop) does not. Repeated explicit stops each notify;
+an explicit stop on another widget cancels capture and notifies that receiver.
+
+The toolkit now distinguishes the existing pointer-release entry from the Lua
+method without changing public signatures. Automatic release consumes capture
+and notifies once, including outside the OS window and a move returned to its
+starting rectangle. The title's explicit stop clears capture before the later
+release fallback, preventing duplicate callbacks. Capture and its move image
+are cleared, and the UI borrow is dropped, before Lua runs. A handler can read
+final bounds, change anchors, retire its window or start a new capture. Existing
+retirement removes capture without inventing a movement callback. The existing
+hidden-resize cancellation also completes through the callback rather than
+silently dropping capture; its visibility cancellation policy is retained,
+not newly claimed as a fully audited native manager policy. Handler errors do
+not restore capture or retry delivery on another release.
+
+Evidence: ignored `data/extract/aa-ui/moved_position_oracle.py`,
+`native-moved-position-oracle-20261023.json` and
+`native-moved-position-source-20261023.txt`. Eight offline groups execute the
+actual binding, stop, capture setter and script-chat virtual: matching/no/other
+capture, hidden and unchanged bounds, repeated stops, a callback installing a
+new capture, and failed host cast. Host/class casts, GUI lookup, pointer query,
+cursor reset, final script delivery and base-chat continuation are controlled
+endpoints; callback selection and capture clearing execute unchanged. The JSON
+records the read-only original PE SHA-256. Source also records the manager stop
+and retirement sites; those manager sites are disassembly evidence, not extra
+executed groups. No live client or local configuration is modified.
+
+`tests/window_bounds.rs` runs unchanged pak bytecode for `ui_management.alb`,
+`chat/chat_window.alb` and their ordinary World-stage dependencies. The actual
+chat `OnScale` installs `AddUISaveHandlerByKey`, native first-tab movement or
+border sizing reaches `OnMovedPosition -> SaveBound -> X2:SetCharacterUiData`,
+and the original `ApplyLastWindowBound` restores a newly created window. Tests
+check `ui_bound_chatWindow[0]`, final x/y/width/height, screen resolution, one
+completion save before the next layout tick, and no save from a plain chat-tab
+click or another release. The following tick can independently save through
+the original `OnBoundChanged`; it does not repeat movement completion. Only the
+application-owned X2 storage boundary is
+an in-memory fixture: on-disk persistence, character isolation and account
+switching remain aa-client's separate responsibility/tests. No new integration
+hook or aa-client change is required.
+
+Validation: `cargo test -p aa-ui --lib --test drag --test resizing --test
+window_bounds --test chat_lock --test chat_reset --test chat_lifecycle --test
+popup_lifecycle --test button_fading --test event_handlers --test widget_frame`
+passes **108 tests**, with the existing optional font-metrics test ignored.
+Seven recovered/new drag regressions cover arity/receiver identity, duplicate
+release prevention, explicit stops, outside release, returned motion,
+reentrancy, retirement, hidden sizing and expected handler failure; two
+original-script regressions cover persistence. Only aa-ui targets were built,
+using the shared target directory. No drawing, movement geometry, visual
+example or GUI process changed in this behavioral slice, so no new PNG/FPS
+claim is made; no copied executables or temporary native binaries remain.
+
+Limits: in the original-chat fixture the message child wins hit testing over
+the side/bottom resize strips; the acceptance test uses its exposed top border.
+Child-versus-owner resize arbitration needs its own native input audit.
+Secondary-tab splitting/cross-window reparenting remain the previously recorded
+chat boundary. Native `OnChangedAnchor` dispatch is still absent; the existing
+tick-based `OnBoundChanged` path is unchanged. This slice closes completion
+notification and original-script bounds persistence, not those toolkit gaps.
+
+## Native OnChangedAnchor dispatch (2026-10-23)
+
+`OnChangedAnchor(self)` is native event **32**, with no additional arguments.
+The script-chat VT `399e7400 + d4` points at `395129d0`, which calls
+`3927b8b0(32)` before its chat continuation `392ca030`. Event-name table
+`39ac6ab0[32]` names it `OnChangedAnchor`. Actual `3927b8b0` and
+`39279ae0` marshalling push one ScriptAnyValue(type 6), the receiver's script
+table. This is a synchronous native setter/propagation notification, not a
+rectangle comparison in the later `OnBoundChanged` tick.
+
+`39276dd0` installs/replaces an anchor, rejects dependency cycles through
+`39275e70`, and calls `39276350(1)` even for an identical anchor. Its final
+sixth argument is not consulted by this body. `39276940` / `39276a70` remove
+all anchors and dependency records without emitting the event. Replaced
+points retain their old target dependency record until removal: changing the
+old target still propagates, even if the current point targets another widget.
+The retained records also participate in native cycle rejection.
+
+`39276350` resolves its source, then walks its **live** dependent vector
+(`+44..48`) in registration order before invoking source virtual `+d4`.
+The tree relation is independent of widget parenting and visibility. New
+target installation invalidates downstream records via `39275ec0`; a node
+whose targets are not all ready is skipped by `39275f10`. Existing-target
+updates do not perform that invalidation. A diamond therefore sends one
+downstream callback on the first new-target propagation, but can send two on
+an existing-target update. Native integer-coordinate controls expose width
+99 followed by 100 in those two callbacks, before returning to final width
+100. The toolkit preserves these intermediate target bounds during dispatch,
+without replacing its ordinary final layout/cache outside dispatch.
+
+Native width/height/extent bodies `392763c0`, `39276410`, `39276460` propagate
+even for unchanged values. Bindings `39261740`, `392617c0`, `39261840` read
+their notification control at Lua parameter **2**. For SetExtent this is the
+height, not a third flag: zero height suppresses notifications, and a third
+false does not suppress a nonzero-height extent. Actual Cry GetParam
+`3550a460` / conversion `3550bf90` execute in the oracle; bools and numeric
+zero/nonzero control delivery, while failed optional conversions retain true.
+Silent size setters still resolve/propagate bounds, including during another
+handler. Required numeric setter arguments and invalid anchor targets/pairs
+are rejected before a notification can be invented.
+
+The existing implemented anchor, size, drawable and status-bar child-anchor
+setters now use this dispatch. Native `39278a10` installs the absolute anchor
+before manager capture; movement/resize continuation `3927a4ab` propagates
+after its geometry writes. Capture start and subsequent admitted toolkit motion
+now dispatch, retaining dependency readiness during motion. Native scale
+`3927d120` / `3927b2f0` first recurse through owned children and propagate
+their anchors, then propagate the source before OnScale. The existing explicit,
+started, inherited and stepped scale entries use that same callback ordering.
+The source's native `+7c` readiness override remains active through its anchor
+callbacks, including a reentrant scale while another target is pending, and is
+cleared before OnScale. Alpha-only changes do not acquire an anchor notification.
+
+No Ui borrow survives into Lua. Reentrant setters run before the outer setter
+returns; live handler replacement, self-unanchoring and appended dependents are
+observed. Retirement detaches incoming/outgoing anchor records and notifies
+surviving dependents (`39276a80` / `39276750`), without later dispatch to dead
+objects. A handler error does not enqueue a retry. Native active-vector
+invalidation is not reproduced as unsafe memory access: toolkit lifetime and
+vector bounds checks remain. The append oracle explicitly supplies spare
+capacity; it does not claim native safety after iterator-invalidating growth.
+Composite retirement retains the toolkit's existing batching; the executed
+detach controls do not prove every composite-destructor interleaving.
+
+Evidence retained, git-ignored, under `data/extract/aa-ui/`:
+`changed_anchor_oracle.py`, `native-changed-anchor-oracle-20261023.json`, and
+`native-changed-anchor-source-20261023.txt`. **40 offline native groups**
+execute anchor installation/removal, readiness, propagation, size bodies and
+optional controls, event marshalling, reentry, stable live-vector mutations,
+detach and scale propagation. Allocator/free/memmove, script VM primitives,
+host/class lookup, final clip-cache geometry and chat-specific continuations
+are explicit endpoints; callback admission/order and anchor geometry execute.
+The original x2game SHA-256 is
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`;
+the JSON also records the original CryScriptSystem hash. FPCW is explicitly
+037f; no real-runtime FPCW, fractional-layout precision or live-client claim
+is inferred. No Ghidra project or original client/configuration file was opened
+for modification.
+
+`tests/changed_anchor.rs` covers synchronous identity/arity, no-op and rejected
+setters, silent controls, hidden/nonchild and diamond ordering/intermediate
+bounds, retained targets/cycles, reentry, live mutations, retirement, handler
+failure, drawable dependencies, scale order and captured parent movement.
+`tests/window_bounds.rs` still runs unchanged original World-stage bytecode:
+its actual OnChangedAnchor invokes SaveBound and ProcChangedAnchor before a
+layout tick, without setting isMoved or inventing OnMovedPosition. Repeating
+an anchor/extent still saves a previously moved window. Original
+ApplyLastWindowBound restores the saved rectangle and now produces its two
+expected synchronous saves (anchor, then extent). Only the X2 storage boundary
+is an in-memory fixture; account/disk persistence remains owned by aa-client.
+
+No public API, integration hook, dependency, manifest, or aa-client change is
+added. The existing tick-based OnBoundChanged behavior remains unchanged.
+Child-covered resize arbitration and secondary-tab splitting remain separate
+gaps; this is not a claim that the whole UI is complete. This behavioral change
+has no new visual example/window, PNG or FPS measurement.
+
+Validation: `cargo test -p aa-ui --lib --test changed_anchor --test
+window_bounds --test drag --test resizing --test chat_lock --test chat_reset
+--test chat_lifecycle --test popup_lifecycle --test button_fading --test
+event_handlers --test widget_frame --test widget_channel --test
+animation_inherit --test screen_bounds --test statusbar --test natives` passes
+**175 checks across 17 targets**, with the existing optional font-metrics test
+ignored. After the final capture-baseline/cache fix, the **37 affected checks**
+in changed_anchor, drag, resizing and window_bounds pass again. Twelve new
+dispatch regressions plus the additional original-chat persistence regression
+are included. Only aa-ui targets were selected, using the shared target
+directory. One `cargo clippy -p aa-ui --lib --test changed_anchor --test
+window_bounds` run exits successfully, retaining 27 warnings in unchanged
+aa-ui code (plus the existing aa-dev dependency/aa-client manifest warnings).
+Its output is retained in ignored
+`data/extract/aa-ui/changed-anchor-clippy-20261023.log`. No automatic lint fixes
+or other crate changes were applied.
