@@ -1,4 +1,5 @@
-//! Animation-graph port, steps 1-3: pure leaves, the static graph loader and the graph state machine.
+//! Animation-graph port, steps 1-4 (partial): pure leaves, the static graph loader, the graph
+//! state machine, the LMG capabilities/per-layer bodies and the unit-parent rider copy.
 //!
 //! Step 1 is a line-by-line port of the pure functions used by the 1.2 animation graph:
 //! `CAnimationGraph::SStateInfo::EvaluateGuards` (`cryaction+0x5f7a80`), the integer/float/key
