@@ -36,6 +36,7 @@
 pub(crate) mod addons;
 mod achievement;
 mod alerts;
+pub(crate) use alerts::UseFailed;
 mod auction;
 #[allow(dead_code, clippy::type_complexity)]
 mod housing;
@@ -61,6 +62,7 @@ mod speech;
 mod appellation;
 mod enchant;
 mod expansion;
+pub(crate) use expansion::fixture::spawn as fixture_spawn;
 mod sorting;
 mod specialty;
 mod formula;
@@ -77,6 +79,32 @@ mod items;
 mod loot;
 mod loot_roll;
 mod look;
+mod look_conversion;
+pub(crate) use look_conversion::{ItemLookSource, source_use as use_look_source};
+pub(crate) use look_conversion::{PointerFinished, blocks_look_pointer};
+#[cfg(test)]
+pub(crate) use look_conversion::test_runtime as look_test_runtime;
+#[cfg(test)]
+pub(crate) use targeting::escape_key as test_escape_key;
+#[cfg(test)]
+pub(crate) use chat::ScriptedKeys as TestScriptedKeys;
+pub(crate) fn cancel_look_target(rt: Option<&aa_ui::UiRuntime>, bridge: Option<&api::HudBridge>) {
+    if let (Some(rt),Some(bridge)) = (rt,bridge) { look_conversion::cancel_target(&rt.lua,&bridge.0); }
+}
+
+/// Complete received equipment for an existing actor's visual refresh. Unknown
+/// native records never fall back to the tolerant inventory projection.
+pub(crate) fn received_equipment(bridge: &api::HudBridge) -> Option<aa_net::model::Equipment> {
+    let data = bridge.0.borrow();
+    let records = enchant::records(&data);
+    if data.disconnected || records.owner() != Some(data.character_id) { return None; }
+    let mut equipment = aa_net::model::Equipment::default();
+    for slot in 0..28 {
+        let item = records.item(1, slot)?;
+        equipment.slots[usize::from(slot)] = (item.template_id != 0).then(|| item.clone());
+    }
+    Some(equipment)
+}
 mod mail;
 mod marks;
 mod markers;
@@ -197,6 +225,11 @@ pub(crate) fn enchant_fixture() {
 }
 
 #[allow(dead_code)]
+pub(crate) fn look_conversion_fixture() {
+    look_conversion::fixture();
+}
+
+#[allow(dead_code)]
 pub(crate) fn specialty_fixture() {
     specialty::fixture::run();
 }
@@ -279,6 +312,10 @@ pub struct HudKeyboardFocus(pub bool);
 /// UI key capture and consumption are current before any gameplay input runs.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HudInputReady;
+
+/// Both physical action keys and Lua requests have published their item uses.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct HudItemUse;
 
 pub use input::HudPointerOverUi;
 pub use usable::InFlight;
@@ -510,6 +547,7 @@ impl Plugin for HudPlugin {
         ranking::plugin(app);
         buffs::cancel::plugin(app);
         enchant::plugin(app);
+        look_conversion::plugin(app);
         mail::plugin(app);
         loot_roll::plugin(app);
         trade::plugin(app);
@@ -577,13 +615,14 @@ impl Plugin for HudPlugin {
                     .run_if(in_state(Screen::InGame)),
             )
             .add_systems(Update, (mirror_keyboard_focus, input::swallow_keys, crate::settings::update_input, input::hotkeys).chain().after(aa_ui::UiInput).in_set(HudInputReady).run_if(in_state(Screen::InGame)))
+            .add_systems(Update, targeting::escape_key.after(HudInputReady).after(chat::chat_keys).before(api::handle_requests).run_if(in_state(Screen::InGame)))
             .add_systems(
                 Update,
                 (
                     build_hud.run_if(hud_wanted),
                     session::route_session,
                     session::scripted_session.run_if(hud_up),
-                    (sync_hud, houses::sync_window, houses::route_build_progress, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::tick_quest_left_time, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys, targeting::tab_target, targeting::click_target, houses::right_click_build, targeting::escape_key, api::handle_requests, addons::handle_commands, alerts::show).run_if(hud_up),
+                    (sync_hud, houses::sync_window, houses::route_build_progress, combat::route_combat, cast::route_casts, items::route_items, loot::fake_loot, loot::sync_loot, loot::loot_input, (dialog::sync_quests, dialog::tick_quest_left_time, dialog::talk_input, dialog::handle_dialog).chain(), chat::route_chat, chat::chat_keys, panels::action_keys.in_set(HudItemUse), targeting::tab_target, houses::right_click_build, api::handle_requests.in_set(HudItemUse), addons::handle_commands, alerts::show).run_if(hud_up),
                     cameras::match_world_camera,
                     cameras::dev_fov,
                     addons::tick.after(sync_hud).before(aa_ui::UiFrame),
@@ -592,6 +631,7 @@ impl Plugin for HudPlugin {
                     .chain()
                     .run_if(in_state(Screen::InGame)),
             );
+        app.add_systems(Update, targeting::click_target.after(PointerFinished).run_if(hud_up).run_if(in_state(Screen::InGame)));
     }
 }
 

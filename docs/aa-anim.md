@@ -1256,3 +1256,190 @@ raw CHR explicitly has no inferred headring. Client assembly can now iterate
 `Character.assets.parts[*].attachments` after Character is added, for in-game
 characters and login previews alike. Payload dispatch and native hidden/emitter
 lifetime handling remain client responsibilities.
+
+### Received equipment on an existing character (2026-10-23)
+
+`character::replace_character_parts(world, root, rig, bones, assets) -> Result<()>`
+replaces a complete resolved appearance under an existing Character's model root.
+The caller copies the rig Arc and bone entity vector from its current Animator
+or parked Animator, releases that world borrow, and passes `&rig` and `&bones`.
+No Animator is taken, updated, recreated or reinserted by the helper. This also
+avoids retriggering Added<Animator> rope initialization. Actor, model root, base
+bone identities, RopeSim, clip clocks, private body fades/layers and root gameplay
+components remain intact. The model transform receives only the authored heel
+delta; placement, movement, seating, camera and combat stay caller-owned.
+
+The supported case is ordinary equipment: same model/race/gender and normalized
+skeleton/CAL identity, with every part joint mapped to the existing base bones.
+Existing skeleton/CAL string spelling is retained because seat presentation compares
+CAL strings directly. Supplied bones must be live, uniquely indexed and match the
+base hierarchy and names. Incompatible actor-model changes, malformed old part
+ownership, unmapped auxiliary joints and incompatible active facial bindings return
+an explicit error. The original equipment inventory found all 13,017 available
+visuals mapped to base bones; this helper does not introduce an auxiliary-joint
+registry or a generic actor controller.
+
+All parts, Cut hulls, required materials, static morphs, face composition, dye and
+facial descriptors are prepared before entity mutation. Missing required inputs
+return errors rather than publishing a partial parts array. Some ordinary spawn
+callers still retain their existing warning/skip policy for part errors; replacement
+always propagates them. Failed replacement preserves the old Character, hierarchy,
+heel, weights and playback state. Preparation can warm shared caches; unused private
+handles are released by Bevy, without manually deleting potentially shared assets.
+Successful replacement makes Character.parts correspond exactly to assets.parts.
+
+Facial expression correspondence is still proved against the original neutral
+head. Descriptor vertex order now follows the actual statically customized,
+post-Cut geometry passed to aa-cry's subset converter. The original Nuian female
+hood item 18230 collapses 370 neutral face triangles and changes skin-subset vertex
+count from 2234 to 2195. Applying descriptors built from the uncut first-use order
+is incorrect even though the head file and expression library did not change.
+Late enable uses this same recipe when rebuilding CPU data after renderer extraction.
+
+For compatible active faces, only the private mesh-ID list is rebound: expression
+sequence/time/pause, weights, channels, private fades and applied bone state are
+retained. An in-place-enabled remote face also receives new plain styled/Cut
+original handles, so disable restores the refreshed appearance. Spawn-time facial
+playback remains spawn-time playback; the existing disable helper does not gain
+permission to disable it. Changed facial target order/library/CAL mapping is rejected
+without replacing or neutralizing the old face.
+
+The client owns received-source authority, async preparation/cache warming, stale
+result and actor-reuse guards, and marking a source applied only after success.
+It also owns CDF payload/weapon retirement and new-part discovery: Added<Character>
+alone does not observe this in-place mutation. Refresh is an exclusive operation
+before animation/transform propagation, performed only on accepted source changes.
+This is application behavior, not proof of native graph/FIFO/importer parity.
+
+`gear_refresh` uses aa-dev's standard plugins and screenshot/exit harness. Three
+existing original Nuian female actors enable their face after one second. At three
+seconds, the middle receives helmet 22874 (alternate hair) and the right hood 18230
+plus heeled boots 18180 (hidden hair, cut face, 0.09-m heel). At five seconds the
+right face disables to its new styled/Cut originals. All three retain actor, model
+root, bones and their frozen body clock; the left is an unchanged visual control.
+
+Frozen source commit: `0df6603f78040e44a5c40bcbc81475ef947e4d46`.
+`cargo test -p aa-anim`: **86 library tests + 1 integration test passed, 1 ignored**.
+The new regressions cover paused/fading/layered and parked Animator state, later
+sampling against a control, locked sit-loop sampling, facial clocks/fades/weights,
+exact post-Cut expression delta order, extraction/re-enable/refresh/disable,
+mesh churn/root despawn and independence of another actor. They also exercise
+hair variants/hiding, costume/body removal, underwear, heels and failed required
+part/material/decal preparation with the complete old actor retained.
+
+One `cargo clippy -p aa-anim --all-targets` completed with exit 0. Existing warnings
+remain; its two findings in new code (complex return type and fixed-size triangle
+iteration) were corrected before the final full tests/build, without a second
+Clippy invocation. No other crate, workspace manifest or lock file was edited.
+
+Inspected original-asset captures, all exit 0 with no WARN/ERROR/panic log entries:
+`shots/aa-anim/gear_refresh_{before,refreshed,disabled,body,feet}_20261023.png`.
+Head views show matching pre-refresh actors, helmet alternate hair, hood-hidden
+hair and the retained expression, then the restored new plain/Cut face after
+late disable. Body/feet views show the authored 0.09-m model lift with a frozen
+idle pose and common plane; they do not establish native floor-contact parity.
+There was no matching native screenshot comparison for this exact outfit/pose.
+Shared RX 9070 XT FPS: **412.5-467.9** in head runs, **246.8-457.1** in body/feet runs.
+
+Immutable copied executable: `data/extract/aa-anim/gear-refresh-20261023/gear-refresh-qa.exe`,
+SHA256 `654555ad46f815a68ae7063b783295cbdc981a50b860154875b82503687eed53`.
+The sibling `evidence.json` records per-file frozen source hashes, dependency tree
+IDs, compiler/workspace inputs, representative original pak asset hashes, five
+screenshot/log hashes, test/build/Clippy log hashes and explicit scope limits.
+Evidence manifest SHA256:
+`b55cb9080dbd4a54e614f28e8622733cff2c79141c48650f8be92e78aed03aaa`.
+No native DLL, game/server or foreign process was controlled for this work.
+
+### Received dye item lookup (2026-10-24)
+
+`GameDb::dye_color(dye_item_id) -> Option<[u8; 3]>` resolves
+`item_dyeings.item_id -> dyeing_colors.id/color_rgb` and decodes the packed
+`0x00BBGGRR` value through the existing `dye::dye_rgb`. This accepts a received
+dye item ID, rather than the equipment item ID accepted by `default_dye`.
+Unknown IDs, unresolved/null colors and conflicting duplicate mappings return
+None. Equal duplicate packed colors are accepted; no row-order choice or map
+overwrite selects a conflicting color. Black remains a valid `[0, 0, 0]` result.
+
+Read-only current-corpus audit: 52 dye-item rows, 27 color rows, zero duplicate
+dye item IDs or color IDs and zero unresolved dye-color references. Item 29382
+maps to color 15 / packed 66102 / RGB `[54, 2, 1]`. All 37 default-dye mappings
+agree with the new received-dye lookup. `default_dye` itself is unchanged,
+including its existing lookup/failure behavior. No character replacement,
+rendering, dependency or public data-shape changes accompany this addition.
+
+`cargo test -p aa-anim --lib dye_color -- --nocapture`: **2 passed**. The real-DB
+regression checks the known dye, unknown IDs, catalog ambiguity/unresolved rows,
+literal default colors and all default mappings. A separate in-memory regression
+checks equal/conflicting duplicates, black, missing references and null colors;
+it never writes to the original DB. The client owns assigning the received RGB
+to the corresponding resolved PartAsset and failing preparation atomically for
+an unresolved nonzero received dye before acknowledging the appearance as applied.
+One `cargo clippy -p aa-anim --lib --tests` completed with exit 0; existing
+warnings remain. No GPU/device or game/server process was used for this lookup.
+
+### Modelview reference heel lookup (2026-10-24)
+
+`GameDb::modelview_reference_heel(race: Race, gender: Gender) -> Result<f32>`
+provides the reference scalar for Root's conditional native shop-camera height
+correction. The first matching race/gender in the original characters-loader SQL
+return order supplies `model_id` and `preview_cloth_pack_id`, including a
+non-creatable row. That pack supplies `cosplay_id` and `shoes_id`. Each armor
+group's nonzero `default_asset_id` takes precedence without a model check; a
+missing nonzero default does not retry model-specific links. Otherwise the first
+existing linked asset matching the source model wins. A present costume asset's
+heel wins even at zero, then feet, then native zero. Missing reference rows,
+packs and assets return zero as established by the producer; SQL/open/step/decode
+failures propagate as the existing `Error::Db` instead of becoming absence.
+Native SQLite null scalars retain their zero conversion. No mesh is loaded.
+
+Authority: the full 75-line `HEIGHT_PRODUCER_REPORT.md`,
+`PRIVATE_ROOT_INPUT_TEST_CONTRACT.json`, actual catalog fixtures and all 47 retained
+native cases under
+`data/extract/aa-ui/ingame-shop-audit-20261024/modelview-height-producer/`.
+Original module SHA256:
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+The remaining mixed-link ordering question was closed by bounded static reads:
+original `396bd580` executes `SELECT id, armor_asset_id, asset_id FROM
+item_armor_assets` into sequential records; `396b4990` indexes them without
+reordering; `396a41e0` checks presence only. Group loader `396c8f25..396c8f87`
+walks those records and `3969f200` appends each pointer. `394e5701..394e5734`
+returns the first matching model asset. The new method uses that original
+unfiltered link query, preserving its return order instead of sorting by asset
+or link ID. Synthetic different-height duplicates test this explicitly. The
+actual catalog's two duplicate-model groups (3232/19, 3663/18) have equal heels.
+New ignored research and read-only audit:
+`data/extract/aa-anim/modelview-reference-heel-20261024/`.
+
+Read-only catalog SHA256:
+`cae798b4e291292df939eecf6b1a757246108f6a739ffaaf9f1d2a54d1a7a5f0`.
+All 13 character, six cloth-pack, seven armor-item, six armor-group, 42 link and
+42 asset fixture rows match this catalog; the original 42 asset records have
+matching f32 heel bytes. The eight race/gender results are Nuian female
+`0.07999999821186066` (`0x3da3d70a`) and zero for the other seven. These are
+lookup results from this identified catalog, not hardcoded production defaults
+or claims about every encrypted retail database. The model11 controls preserve
+feet18180/asset11270 = `0.09000000357627869`, costume8000028/asset8000006 =
+`0.07999999821186066`, and present costume28439/asset17324 = zero over those feet.
+All 39 producer files, including the accepted 12 state and 35 height/selection/
+camera outputs, were read and pinned for byte preservation without rerunning or
+rewriting them.
+
+Root owns camera application, applied shop state and preview admission. This
+method supplies only the reference heel; current `CharacterAssets::heel`, its
+model-root lift, existing login/item-visual behavior, gear/facial replacement
+and received dye APIs are unchanged. The source-backed contract is closed with
+explicit conditional inputs; it establishes no retail/live preview or renderer
+parity. No GPU/device, server or game process is used for this scalar lookup.
+
+Validation: eight new focused tests pass, covering first/non-creatable source
+rows, source model/pack, default precedence, native duplicate order, present
+zero, missing rows/packs/assets, SQL execution and typed row failures, file-open
+and invalid-file errors, all eight real references and the actual model11 item
+controls. `cargo test -p aa-anim --lib`: **96 passed, 1 ignored**, including
+existing character heel, gear/facial replacement and dye regressions.
+`cargo test -p aa-anim --test part_attachments`: **1 passed**.
+`cargo check -p aa-anim --lib --tests` and the single final
+`cargo clippy -p aa-anim --lib --tests` both exited 0. Clippy waited for the
+shared target lock and reported existing warnings; none points to the new
+lookup or its tests. No manifests, lock files, dependencies or public data
+layouts changed.

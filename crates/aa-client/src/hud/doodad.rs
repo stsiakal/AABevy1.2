@@ -140,6 +140,8 @@ pub(super) struct Tables {
     radii: HashMap<u32, f32>,
     /// The doodads that do not light up when they are in reach or under the pointer (`use_target_highlight` off).
     dark: HashSet<u32>,
+    /// Attachment funcs require a known-free doodad bond and the separate mount gate.
+    attachment_skills: HashSet<(u32, u32)>,
 }
 
 impl Tables {
@@ -205,6 +207,9 @@ impl Tables {
         if kind == "DoodadFuncPurchase" {
             return;
         }
+        if skill != 0 && kind == "DoodadFuncAttachment" {
+            self.attachment_skills.insert((group, skill));
+        }
         let navi = match kind {
             "DoodadFuncNaviTeleport" => Some(Navi::Teleport),
             "DoodadFuncNaviOpenPortal" => Some(Navi::OpenPortal),
@@ -238,6 +243,10 @@ impl Tables {
 
     pub(super) fn purchase(&self, func_id: u32) -> Option<&Purchase> {
         self.purchases.get(&func_id)
+    }
+
+    fn allows_attachment(&self, group: u32, skill: u32, bond_free: bool, mount_free: bool) -> bool {
+        !self.attachment_skills.contains(&(group, skill)) || (bond_free && mount_free)
     }
 
     /// Does the doodad light up (`use_target_highlight`)?
@@ -324,6 +333,8 @@ pub(super) struct View {
     coin_buys: Vec<(u32, u32)>,
     /// The coffer window was closed.
     coffer_close: bool,
+    pointer_pick: Option<u32>,
+    arrived: Option<u32>,
 }
 
 /// The doodad tooltip (`DRAW_DOODAD_TOOLTIP` of `interaction.lua`): the name, `Owner: ...` and the time the growth has left.
@@ -901,13 +912,15 @@ fn track(
         log_near(&d, &doodads);
     }
     // the pointer: a right click uses, a hover names
+    let blocked = super::blocks_look_pointer(&d, MouseButton::Right);
+    if blocked { *pressed_at = None; }
     let ray = pointer.ray();
     let cursor = pointer.windows.single().ok().and_then(|w| w.cursor_position());
-    if pointer.mouse.just_pressed(MouseButton::Right) {
+    if !blocked && pointer.mouse.just_pressed(MouseButton::Right) {
         *pressed_at = if pointer.over_ui.0 { None } else { cursor };
     }
     let mut clicked = None;
-    if pointer.mouse.just_released(MouseButton::Right)
+    if !blocked && pointer.mouse.just_released(MouseButton::Right)
         && let (Some(start), Some(end), Some(ray)) = (pressed_at.take(), cursor, ray)
         && start.distance(end) <= CLICK_SLOP
     {
@@ -918,7 +931,7 @@ fn track(
     }
     if script.rclicks.last().is_some_and(|t| script.since >= *t) {
         script.rclicks.pop();
-        clicked = nearest_usable(&d, &doodads, &units, &houses);
+        clicked = (!blocked).then(|| nearest_usable(&d, &doodads, &units, &houses)).flatten();
         info!("doodad: --doodad-rclick on {clicked:?}");
     }
     if script.hovers.last().is_some_and(|t| script.since >= *t) {
@@ -931,8 +944,8 @@ fn track(
     let hover_changed = hover != d.doodad.hover;
     d.doodad.hover = hover;
     let arrived = walk_to(&mut d, &doodads, time.elapsed_secs(), moving, &mut fx.cameras, &mut fx.dev);
-    let clicked = clicked.or(arrived);
-    let menu = clicked.is_some_and(|obj_id| right_click(&mut d, &doodads, obj_id, time.elapsed_secs()));
+    d.doodad.pointer_pick = clicked;
+    d.doodad.arrived = arrived;
     let coin = std::mem::take(&mut d.doodad.coin_open);
     // the glow: the doodad the bar is about and the one under the pointer
     let glow: Vec<u32> = d
@@ -980,9 +993,6 @@ fn track(
     if coin && let Err(error) = rt.exec("@doodad_coin", "OpenCoinShop()") {
         warn!("doodad: coin shop dialog: {error}");
     }
-    if menu {
-        rt.fire_event("INTERACTION_START", ());
-    }
     if hover_house_changed || tip_changed {
         match (hover_house.as_ref(), tip.as_ref()) {
             (Some(house), _) => {
@@ -1018,6 +1028,27 @@ fn track(
             }
             (None, None) => rt.fire_event("DRAW_DOODAD_SIGN_TAG", ()),
         }
+    }
+}
+
+fn pointer_use(
+    rt: Option<NonSend<UiRuntime>>,
+    bridge: NonSend<HudBridge>,
+    doodads: Res<Doodads>,
+    time: Res<Time>,
+) {
+    let mut data = bridge.0.borrow_mut();
+    let clicked = data.doodad.pointer_pick.take();
+    let clicked = (!super::blocks_look_pointer(&data, MouseButton::Right))
+        .then_some(clicked)
+        .flatten();
+    let arrived = data.doodad.arrived.take();
+    let menu = clicked
+        .or(arrived)
+        .is_some_and(|id| right_click(&mut data, &doodads, id, time.elapsed_secs()));
+    drop(data);
+    if menu && let Some(rt) = rt {
+        rt.fire_event("INTERACTION_START", ());
     }
 }
 
@@ -1167,6 +1198,8 @@ fn execute(
     aiming: Option<Res<crate::ingame::ground_target::Aiming>>,
     units: Res<Units>,
     houses: Res<Houses>,
+    seats: Option<Res<crate::ingame::seating::Seats>>,
+    player: Option<Res<aa_net::state::Player>>,
     mut out: MessageWriter<NetCommand>,
     mut failed: MessageWriter<super::alerts::UseFailed>,
 ) {
@@ -1286,6 +1319,16 @@ fn execute(
     }
     let game = d.game.get();
     for (obj_id, command) in commands {
+        if let Command::UseDoodadSkill { skill_id, .. } = &command {
+            let group = doodads.by_id.get(&obj_id).map(|o| o.func_group_id);
+            let mount_free = player.as_ref().and_then(|p| p.spawn.as_ref())
+                .is_some_and(|spawn| spawn.unit.attached_to.is_none());
+            let bond_free = seats.as_ref().is_some_and(|seats| seats.own_free());
+            if group.zip(game).is_some_and(|(group, game)| !game.doodad.allows_attachment(group, *skill_id, bond_free, mount_free)) {
+                debug!("doodad: attachment use {skill_id} requires known-free bond and mount");
+                continue;
+            }
+        }
         if let Some((house_obj, state)) = &opened
             && *house_obj == obj_id
         {
@@ -1385,14 +1428,16 @@ pub(super) fn plugin(app: &mut App) {
     app.insert_resource(Scripted::from_args())
         .add_systems(
             Update,
-            (track, execute, coffer_window, results)
+            (track, coffer_window, results)
                 .chain()
+                .after(crate::ingame::seating::track)
                 .after(super::sync_hud)
                 .after(aa_ui::UiInput)
                 .before(super::dialog::talk_input)
                 .run_if(super::hud_up)
                 .run_if(in_state(crate::Screen::InGame)),
         )
+        .add_systems(Update, (pointer_use, execute).chain().after(super::PointerFinished).after(track).before(super::dialog::talk_pointer).run_if(super::hud_up).run_if(in_state(crate::Screen::InGame)))
         .add_systems(OnExit(crate::Screen::InGame), reset);
 }
 
@@ -2059,6 +2104,19 @@ mod tests {
         assert!(hit(ray, Vec3::new(0.0, 10.0, 0.5), 1.0).is_some_and(|a| (a - 10.0).abs() < 1e-3));
         assert!(hit(ray, Vec3::new(3.0, 10.0, 0.0), 1.0).is_none());
         assert!(hit(ray, Vec3::new(0.0, -10.0, 0.0), 1.0).is_none(), "behind the camera");
+    }
+
+    #[test]
+    fn attachment_funcs_need_known_free_bond_and_mount_without_blocking_other_uses() {
+        let conn = Connection::open_with_flags(aa_anim::db::DEFAULT_DB, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let tables = Tables::load(&conn).unwrap();
+        for (group, skill) in [(1951, 20847), (16414, 20847), (22863, 20847), (22477, 26592), (23046, 26592)] {
+            assert!(tables.uses(group).unwrap().skills.contains(&skill));
+            for (bond_free, mount_free) in [(false, false), (false, true), (true, false), (true, true)] {
+                assert_eq!(tables.allows_attachment(group, skill, bond_free, mount_free), bond_free && mount_free);
+            }
+        }
+        assert!(tables.allows_attachment(13066, 14602, false, false), "ordinary Memory Tome use stays on its existing path");
     }
 
     #[test]

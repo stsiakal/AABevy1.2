@@ -427,7 +427,7 @@ pub fn drive_locomotion(
     time: Res<Time>,
     library: Res<ClipLibrary>,
     local_jump: Option<Res<LocalJump>>,
-    mut units: Query<(&mut Animator, &mut Locomotion, &Motion, Option<&Acting>, Option<&Drawn>, Option<&Wield>, Has<LocalPlayer>, Option<&mut MateGait>, &Transform), Without<Dead>>,
+    mut units: Query<(&mut Animator, &mut Locomotion, &Motion, Option<&Acting>, Option<&Drawn>, Option<&Wield>, Has<LocalPlayer>, Option<&mut MateGait>, &Transform), (Without<Dead>, Without<super::seating::SeatPose>)>,
 ) {
     let dt = time.delta_secs();
     let now = time.elapsed_secs_f64();

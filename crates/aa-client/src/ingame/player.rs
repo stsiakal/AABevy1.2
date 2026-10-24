@@ -308,6 +308,8 @@ pub fn spawn_player(
         weapons::LookCarried(look_carried),
         actor,
         stances,
+        weapons::base_wield(&db, equipment),
+        super::gear_refresh::Applied::new(spawn.unit.model_id, race, gender, equipment, params),
     ));
     if spawn.unit.hp <= 0 {
         commands.entity(root).insert(super::combat::Dead { at: f64::MIN / 4.0 });
@@ -461,10 +463,11 @@ pub fn control_player(
         Option<&ActorParams>,
         Option<&Stances>,
         Has<super::combat::Dead>,
-        Has<super::skill_motion::SkillMove>,
+        Option<&super::skill_motion::SkillMove>,
         Has<super::mount::Dismounting>,
         Has<super::ship::DeckRide>,
         Has<super::ladder::Ladder>,
+        Has<super::seating::Seated>,
     )>,
     (net_player, stats): (Res<aa_net::state::Player>, Option<Res<aa_net::state::PlayerStats>>),
     terrain: Res<TerrainQuery>,
@@ -478,7 +481,7 @@ pub fn control_player(
     over_ui: Option<Res<crate::hud::HudPointerOverUi>>,
     (mut trace, sprint, mut local_jump, gliding, mut mounting): (Local<(f32, Option<bool>)>, Option<Res<super::sprint::Sprint>>, ResMut<LocalJump>, Res<super::glide::Gliding>, ResMut<super::mount::MountFlow>),
 ) {
-    let Ok((local, mut mover, mut transform, mut motion, actor, stances, dead, skill_moving, dismounting, deck_ride, on_ladder)) = player.single_mut() else { return };
+    let Ok((local, mut mover, mut transform, mut motion, actor, stances, dead, skill_moving, dismounting, deck_ride, on_ladder, seated)) = player.single_mut() else { return };
     // a ladder owns the character: `ladder::control_ladder` moves it and sends the hanging packets
     // (the component and `Motion::on_ladder` are set in the same frame as the grab)
     if on_ladder || motion.on_ladder {
@@ -511,10 +514,13 @@ pub fn control_player(
         return;
     }
     // a skill moves the character (a charge, a back step, a knockback): `skill_motion::drive_local` plays it and sends the packets
-    if skill_moving && !dead {
-        *input_state = PlayerInput::default();
-        state.autorun = AutoRun::default();
-        return;
+    if let Some(skill_move) = skill_moving.filter(|_| !dead) {
+        // A declined parented Blink/impulse does not swallow genuine exit keys.
+        if !seated || skill_move.controller_activity() {
+            *input_state = PlayerInput { moving: skill_move.controller_activity(), ..default() };
+            state.autorun = AutoRun::default();
+            return;
+        }
     }
     if dead || stats.is_some_and(|s| s.obj_id == local.obj_id && s.dead) {
         *motion = Motion::default();
@@ -533,7 +539,7 @@ pub fn control_player(
     // scripted keys (`--walk`) count like pressed ones
     let t = state.since_spawn;
     // the first step waits for the collision around the character (a deck or a house is not there before it is built)
-    if !state.settled {
+    if !state.settled && !seated {
         state.wait += dt;
         if collision.ready_around(mover.pos.x, mover.pos.y, 24.0) || state.wait > COLLISION_WAIT {
             state.settled = true;
@@ -578,6 +584,24 @@ pub fn control_player(
     let jump_held = pressed("jump", 'J');
     let jump_tapped = tapped("jump") || (dev.scripted(t, 'J') && !dev.scripted(t - dt, 'J'));
     let vertical = jump_held as i32 as f32 - key("down", 'X');
+
+    // Read movement/character-yaw intent before HoldPosition prevents motion. A
+    // successful UnbondRequested completion releases the seat; enqueue alone does not.
+    // Space and camera-only orbit have no independently proven seat-exit binding.
+    if seated {
+        let moving = fwd != 0.0 || strafe != 0.0;
+        let snap = face_camera(left_mouse, right_mouse, moving, state.asked_before) == FaceCamera::Snap;
+        *input_state = PlayerInput {
+            moving,
+            jumped: false,
+            turned: turn != 0.0 || (snap && (orbit.yaw - mover.facing).sin().atan2((orbit.yaw - mover.facing).cos()).abs() > 1e-4),
+        };
+        *motion = Motion::default();
+        *local_jump = LocalJump::default();
+        mover.velocity = Vec3::ZERO;
+        state.autorun = AutoRun::default();
+        return;
+    }
 
     let before_facing = mover.facing;
     if turn != 0.0 {
