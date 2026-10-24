@@ -15,7 +15,10 @@ pub mod cast;
 pub mod cooldown;
 pub mod equality;
 pub mod front;
+pub mod presentation;
 pub mod reaction;
+pub mod requirement;
+pub mod targeting;
 pub mod slot;
 pub mod timeline;
 pub mod token;
@@ -36,7 +39,23 @@ pub use front::{
     auto_attack_gate, result_name, target_override, use_skill, write_bc, CategorySlot,
     GateInput, Refusal, StartSkillRequest, TargetType, UseSkillInput, UseSkillOutcome,
 };
+pub use presentation::{
+    AggroOutcome, BuffApply, BuffApplyOutcome, BuffListKind, BuffLists, BuffRow, CombatUnit,
+    DamagePresentation, DamageRecord, DispatchOutcome, HealPresentation, HealRecord, Party,
+    SourceResolution, aggro_link, append_buff, apply_buff, damage_presentation, engage_combat,
+    heal_presentation, party_last_hitter, MAX_BUFFS, MAX_DEBUFFS, MAX_HIDDEN,
+};
 pub use reaction::{BIG_HIT_THRESHOLD, HitRecordView, Reaction, big_hit, reaction};
+pub use requirement::{
+    INVALID_SKILL, INVALID_SOURCE, INVALID_TARGET, ReqBlock, ReqBuff, ReqCtx, ReqItem, ReqResult,
+    ReqRow, ReqUnit, evaluate_requirements, evaluate_row,
+};
+pub use targeting::{
+    Candidate, ClickSelect, CombatByte, FirstHit, ForceAttackRequest, ForceAttackSet, MY_TEAM,
+    NO_FIRST_HIT, NO_UNIT, STATE_FRIENDLY, STATE_HOSTILE, TabActor, TabMode, TabOutcome, TabState, TabStates, TargetHistory,
+    TargetSet, TargetSetResult, TargetingConfig, can_toggle_force_attack, collect_candidates,
+    select_next, set_first_hit, tab_select,
+};
 pub use timeline::{
     AUTO_ATTACK_SKILL, ClientSkill, ComboEntry, EVENT_AUTO_ATTACK_STOPPED, EVENT_CASTING_STOPPED,
     EVENT_SKILL_ENDED, EVENT_SKILL_FIRED, EVENT_SKILL_STARTED, NO_TARGET, SkillInstance,
