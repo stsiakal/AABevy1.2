@@ -543,7 +543,7 @@ fn store_scale(ctl: &mut QuadController, ext: &QuadExternals, cfg: &QuadConfig) 
         );
         let y_arg = -((y * x - w * z) * K_TWO);
         let x_arg = (w * w + y * y) * K_TWO - K_ONE;
-        let deg = ((y_arg as f64).atan2(x_arg as f64) as f32) * K_RAD_TO_DEG;
+        let deg = (super::libm_sse2_atan2(y_arg as f64, x_arg as f64) as f32) * K_RAD_TO_DEG;
         (f32::from_bits(deg.to_bits() & 0x7fff_ffff)) / dt
     } else {
         K_ZERO

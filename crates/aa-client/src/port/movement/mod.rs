@@ -9,6 +9,8 @@
 #![allow(dead_code, unused_imports)]
 
 mod asinf;
+mod atan2;
+mod atan2_tables;
 mod asinf_tables;
 mod clamp;
 mod direction;
@@ -26,6 +28,7 @@ mod update;
 mod tests;
 
 pub use asinf::libm_sse2_asinf;
+pub use atan2::libm_sse2_atan2;
 pub use clamp::clamp;
 pub use direction::{MovementParams, direction_factor};
 pub use input::{

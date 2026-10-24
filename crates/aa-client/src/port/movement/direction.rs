@@ -9,9 +9,8 @@
 //! forward-diagonal factor when walking.
 //!
 //! All arithmetic below is the original SSE `f32` sequence, including the two-vector helper
-//! `FUN_391119f0` used by three sectors. The only non-bit-exact part is `atan2`: Rust's
-//! `f64::atan2` is a different libm implementation, so this function is tested with a 1e-6
-//! tolerance (the captured f32 angles agree in every golden case).
+//! `FUN_391119f0` used by three sectors.  The angles come from the ported MSVCR100
+//! `__libm_sse2_atan2` (`super::atan2`), so the function is tested bit-exactly.
 
 use super::FLT_EPSILON;
 
@@ -72,7 +71,7 @@ impl Default for MovementParams {
 }
 
 fn atan2_f32(y: f32, x: f32) -> f32 {
-    (y as f64).atan2(x as f64) as f32
+    crate::port::movement::libm_sse2_atan2(y as f64, x as f64) as f32
 }
 
 /// `FUN_391119f0` (x2game.dll, 0x391119f0, 172 bytes): the two-vector weight helper.

@@ -1,9 +1,7 @@
 //! Golden tests against the original functions captured from the running 1.2 client.
 //!
 //! Every `goldens/*.json` file stores the original input and output as raw `f32` bits
-//! (`bits`) plus the decimal value for readability. The tests require bit-exact equality
-//! except for the direction factor, whose `atan2` is a different libm implementation; that
-//! test allows a documented 1e-6 relative error.
+//! (`bits`) plus the decimal value for readability. The tests require bit-exact equality.
 
 use super::*;
 use serde_json::Value;
@@ -98,7 +96,7 @@ fn direction_factor_matches_goldens() {
         let params = movement_params(&case["params"]);
         let dir = [f32_of(&case["dir"][0]), f32_of(&case["dir"][1])];
         let got = direction_factor(&params, bool_of(case, "walk"), dir);
-        assert_close(i, "direction_factor", got, &case["out"]);
+        assert_bits(i, "direction_factor", got, &case["out"]);
     }
 }
 
@@ -1268,4 +1266,31 @@ fn quad_final_pass_matches_goldens() {
             &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, 0x84).to_bits())}),
         );
     }
+}
+
+#[test]
+fn atan2_matches_crt_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/atan2.json")).expect("atan2 JSON");
+    let mut checked = 0usize;
+    for case in doc["cases"].as_array().unwrap() {
+        let y = f64_bits_of(case["y"].as_str().unwrap());
+        let x = f64_bits_of(case["x"].as_str().unwrap());
+        let want = hex_bytes(case["out"].as_str().unwrap());
+        let want = u64::from_le_bytes(want[..8].try_into().unwrap());
+        let got = libm_sse2_atan2(y, x).to_bits();
+        assert_eq!(
+            got, want,
+            "atan2(y={:#018x}, x={:#018x}): got {got:#018x} want {want:#018x}",
+            y.to_bits(),
+            x.to_bits()
+        );
+        checked += 1;
+    }
+    assert!(checked >= 900, "only {checked} atan2 goldens");
+}
+
+fn f64_bits_of(hex: &str) -> f64 {
+    let bits = u64::from_str_radix(hex.trim_start_matches("0x"), 16).expect("hex bits");
+    f64::from_bits(bits)
 }
