@@ -906,11 +906,13 @@ fn ctl_from(bytes: &[u8]) -> QuadController {
         movement_extra_7c: f_at(bytes, 0x7c),
         val_a4: u32::from_le_bytes(bytes[0xa4..0xa8].try_into().unwrap()),
         flag_a8: bytes[0xa8],
+        val_84: f_at(bytes, 0x84),
     }
 }
 
 fn block_from(bytes: &[u8]) -> QuadBlock {
     QuadBlock {
+        field_04: f_at(bytes, 0x04),
         jump_scalar: f_at(bytes, 0x0c),
         jump_dir: [f_at(bytes, 0x9c), f_at(bytes, 0xa0), f_at(bytes, 0xa4)],
         jump_extra: [f_at(bytes, 0xd4), f_at(bytes, 0xd8), f_at(bytes, 0xdc)],
@@ -1131,6 +1133,8 @@ fn quad_mounted_matches_goldens() {
         accel_time: f32_json(&v["440"]),
         friction_time: f32_json(&v["444"]),
         swim_scale: 0.0,
+        final_scale: 0.0,
+        final_cut: 0.0,
     };
     for case in doc["cases"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
@@ -1184,5 +1188,84 @@ fn quad_mounted_matches_goldens() {
                 &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
             );
         }
+    }
+}
+
+#[test]
+fn quad_final_pass_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/final_pass.json")).expect("final JSON");
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.dt = f32_of(&case["dt"]);
+        ctl.quat = [
+            f32_of(&case["move_quat"][0]),
+            f32_of(&case["move_quat"][1]),
+            f32_of(&case["move_quat"][2]),
+            f32_of(&case["move_quat"][3]),
+        ];
+        ctl.velocity = [
+            f32_of(&case["velocity"][0]),
+            f32_of(&case["velocity"][1]),
+            f32_of(&case["velocity"][2]),
+        ];
+        let block = QuadBlock {
+            field_04: f32_of(&case["block_jump"]),
+            mounted: case["block_mounted"].as_bool().unwrap() as u8,
+            block_101: case["block_101"].as_bool().unwrap() as u8,
+            ..QuadBlock::default()
+        };
+        let actor = QuadActor {
+            ground_align_off: case["ground_align_off"].as_bool().unwrap() as u8,
+            ..QuadActor::default()
+        };
+        let ext = QuadExternals {
+            entity_quat: [
+                f32_of(&case["entity_quat"][0]),
+                f32_of(&case["entity_quat"][1]),
+                f32_of(&case["entity_quat"][2]),
+                f32_of(&case["entity_quat"][3]),
+            ],
+            is_swim_stance: case["swim"].as_bool().unwrap(),
+            final_scale_flag: case["cfg_flag"].as_u64().unwrap() != 0,
+            ..QuadExternals::default()
+        };
+        let cfg = QuadConfig {
+            final_scale: f32_of(&case["cfg_5c"]),
+            final_cut: f32_of(&case["cfg_60"]),
+            ..QuadConfig::default()
+        };
+        final_pass(&mut ctl, &block, &actor, &ext, &cfg);
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        for (i, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
+            assert_bits(
+                i,
+                name,
+                ctl.velocity[i],
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
+        }
+        for (i, off) in [0x70usize, 0x74, 0x78, 0x7c].iter().enumerate() {
+            let got = [
+                ctl.movement_extra_70,
+                ctl.movement_extra_74,
+                ctl.movement_extra_78,
+                ctl.movement_extra_7c,
+            ][i];
+            assert_bits(
+                i,
+                name,
+                got,
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
+        }
+        assert_bits(
+            0,
+            name,
+            ctl.val_84,
+            &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, 0x84).to_bits())}),
+        );
     }
 }

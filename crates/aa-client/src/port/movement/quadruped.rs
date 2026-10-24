@@ -29,11 +29,16 @@ pub const K_SQRT_EPS: f32 = 1e-10; // DAT_399aa82c
 pub const K_GLIDE_SMOOTH_1: f32 = 0.48; // DAT_399a2998
 pub const K_GLIDE_SMOOTH_2: f32 = 0.235; // DAT_399a2994
 pub const K_SIXTH: f32 = 0.166_666_67;
+pub const K_RAD_TO_DEG: f32 = 57.295_776; // DAT_399a44f4 0x42652ee0
+pub const K_30: f32 = 30.0; // DAT_3999f7c0
+pub const K_TURN_CUT: f32 = 0.006_666_667; // DAT_399acc40 0x3bda740e
 
 /// `actor+0x50` animation block fields read by the movement functions (offsets relative to
 /// the block, i.e. `+0x15c` is `actor+0x1ac`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QuadBlock {
+    /// `+0x04`: final-pass special-branch gate.
+    pub field_04: f32,
     /// `+0x0c`: jump scalar.
     pub jump_scalar: f32,
     /// `+0x9c..0xa4`: jump direction.
@@ -160,6 +165,10 @@ pub struct QuadConfig {
     pub friction_time: f32,
     /// `+0xe8`: swim speed scale (`FUN_3912b330`).
     pub swim_scale: f32,
+    /// `+0x5c`: turn-speed scale (`FUN_3912bfb0`).
+    pub final_scale: f32,
+    /// `+0x60`: turn-speed cut (`FUN_3912bfb0`).
+    pub final_cut: f32,
 }
 
 /// Controller object fields.
@@ -192,6 +201,8 @@ pub struct QuadController {
     /// `+0xa4` / `+0xa8`: apply extras.
     pub val_a4: u32,
     pub flag_a8: u8,
+    /// `+0x84`: final-pass speed cut output.
+    pub val_84: f32,
 }
 
 /// Results the original obtains from the engine.
@@ -224,6 +235,8 @@ pub struct QuadExternals {
     pub swimming: bool,
     /// `actor->vtable+0x68` swim-stance flag.
     pub is_swim_stance: bool,
+    /// `cfg+0x54 -> vtable+8()` result (non-zero enables the turn-speed scale).
+    pub final_scale_flag: bool,
 }
 
 fn rot(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
@@ -436,7 +449,7 @@ pub fn dispatch(
         }
     };
     if actor.ground_align_off == 0 {
-        final_pass(ctl, block, actor, ext);
+        final_pass(ctl, block, actor, ext, cfg);
     }
     path
 }
@@ -454,66 +467,109 @@ pub enum DispatchPath {
 }
 
 /// `FUN_3912bfb0` (0x3912bfb0): final ground align and cvar speed scale.
+///
+/// `ext.entity_quat` is the entity orientation from `entity vtable+0xa0`; `ext.final_scale_flag`
+/// is the `cfg+0x54 -> vtable+8()` result.  Both the swim and the non-swim block compute
+/// `conj(normalize(entity_quat)) * ctl+0x48`; the swim-only vector at `ctl+0x4c` is dead in the
+/// original (its length only feeds a discarded reciprocal square root).  The swim block has one
+/// visible shortcut: with `block+0x04 != 0` and `block+0xa8 != 0` the product is stored
+/// **unnormalized** and skips the second normalization.
 pub fn final_pass(
     ctl: &mut QuadController,
-    block: &mut QuadBlock,
-    actor: &mut QuadActor,
+    block: &QuadBlock,
+    actor: &QuadActor,
     ext: &QuadExternals,
+    cfg: &QuadConfig,
 ) {
     if block.block_101 != 0 || actor.ground_align_off != 0 {
         return;
     }
-    let q = ext.entity_quat;
-    let len = q[3] * q[3] + q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
-    let n = rsqrt(len);
-    let q = [q[0] * n, q[1] * n, q[2] * n, q[3] * n];
-    let sx = f32::from_bits(q[0].to_bits() ^ 0x8000_0000);
-    let sy = f32::from_bits(q[1].to_bits() ^ 0x8000_0000);
-    let sz = f32::from_bits(q[2].to_bits() ^ 0x8000_0000);
-    let sw = f32::from_bits(q[3].to_bits() ^ 0x8000_0000);
+    let eq = ext.entity_quat;
+    let n = rsqrt(((eq[3] * eq[3] + eq[0] * eq[0]) + eq[1] * eq[1]) + eq[2] * eq[2]);
+    let ex = eq[0] * n;
+    let ey = eq[1] * n;
+    let ez = eq[2] * n;
+    let ew = eq[3] * n;
+
     let r = ctl.quat;
-    let (mut a, mut b, mut c, mut d);
-    if !ext.is_swim_stance {
-        a = (sy * r[2] - sw * r[1]) + q[3] * r[0] + r[3] * sx;
-        b = (sw * r[0] - sx * r[2]) + q[3] * r[1] + sy * r[3];
-        c = r[1] * sx - sy * r[0];
-        d = q[3] * r[3] - (sx * r[1] + sy * r[0] + sz * r[2]);
+    let (x, y, z, w) = quat_turn(&r, ex, ey, ez, ew);
+
+    // `block+0x04` is compared with `ucomiss`; unordered falls through to the normal branch.
+    let jump_shortcut = matches!(
+        block.field_04.partial_cmp(&K_ZERO),
+        Some(core::cmp::Ordering::Less | core::cmp::Ordering::Greater)
+    ) && block.mounted != 0;
+    if ext.is_swim_stance && jump_shortcut {
+        ctl.movement_extra_70 = x;
+        ctl.movement_extra_74 = y;
+        ctl.movement_extra_78 = z;
+        ctl.movement_extra_7c = w;
+        store_scale(ctl, ext, cfg);
+        ctl.val_84 = cfg.final_cut;
+        return;
+    }
+
+    let n = rsqrt(((x * x + w * w) + y * y) + z * z);
+    ctl.movement_extra_70 = x * n;
+    ctl.movement_extra_74 = y * n;
+    ctl.movement_extra_78 = z * n;
+    ctl.movement_extra_7c = w * n;
+    store_scale(ctl, ext, cfg);
+    ctl.val_84 = cfg.final_cut;
+}
+
+/// `conj(entity) * r` in the original's operation order (`x2game` 0x3912c3b1 / 0x3912c2ff).
+fn quat_turn(r: &[f32; 4], ex: f32, ey: f32, ez: f32, ew: f32) -> (f32, f32, f32, f32) {
+    let (r0, r1, r2, r3) = (r[0], r[1], r[2], r[3]);
+    let x = ((ez * r1 - ey * r2) + ew * r0) - ex * r3;
+    let y = ((ex * r2 - ez * r0) + ew * r1) - ey * r3;
+    let z = ((ey * r0 - ex * r1) + ew * r2) - ez * r3;
+    let w = ew * r3 - ((-ey * r1 - ex * r0) - ez * r2);
+    (x, y, z, w)
+}
+
+/// The cvar turn-speed cut applied to `ctl+0x64..0x6c`.
+fn store_scale(ctl: &mut QuadController, ext: &QuadExternals, cfg: &QuadConfig) {
+    if !cfg_scale_enabled(ext, cfg) {
+        return;
+    }
+    let dt = ctl.dt;
+    let speed = if dt > K_ZERO {
+        let (x, y, z, w) = (
+            ctl.movement_extra_70,
+            ctl.movement_extra_74,
+            ctl.movement_extra_78,
+            ctl.movement_extra_7c,
+        );
+        let y_arg = -((y * x - w * z) * K_TWO);
+        let x_arg = (w * w + y * y) * K_TWO - K_ONE;
+        let deg = ((y_arg as f64).atan2(x_arg as f64) as f32) * K_RAD_TO_DEG;
+        (f32::from_bits(deg.to_bits() & 0x7fff_ffff)) / dt
     } else {
-        let u = (q[2] * q[0] + q[3] * q[1]) * K_TWO;
-        let v = (q[3] * q[3] + q[1] * q[1]) * K_TWO - K_ONE;
-        let w = (q[2] * q[1] - q[3] * q[0]) * K_TWO;
-        let l = r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + K_ONE;
-        let ln = rsqrt(l);
-        let lx = r[0] * ln;
-        let ly = r[1] * ln;
-        let lz = r[2] * ln;
-        a = ly * w * K_TWO - r[2] * ln * u;
-        b = r[2] * ln * v - w * lx;
-        c = u * lx - ly * v;
-        let l2 = a * a + b * b + c * c + K_ONE;
-        let _ = rsqrt(l2);
-        d = 0.0;
-        if block.jump_scalar != 0.0 && block.mounted != 0 {
-            a = (sy * r[2] - sw * r[1]) + q[3] * r[0] + d * r[3];
-            b = (sw * r[0] - d * r[2]) + q[3] * r[1] + sy * r[3];
-            c = (d * r[1] - sy * r[0]) + q[3] * r[2] + sw * r[3];
-            d = q[3] * r[3] - (sy * r[1] + d * r[0] + sw * r[2]);
-            ctl.spare_velocity = [a, b, c];
-            return;
-        }
-        let r1 = r[1];
-        a = (sy * r[2] - sw * r1) + q[3] * r[0] + sx * r[3];
-        b = (sw * r[0] - sx * r[2]) + q[3] * r1 + sy * r[3];
-        c = sx * r1 - sy * r[0];
-        d = q[3] * r[3] - (sx * r1 + sy * r[0] + sz * r[2]);
+        K_ZERO
+    };
+    let t = clamp_unit((speed - K_30) * K_TURN_CUT);
+    let s = clamp_unit(cfg.final_scale);
+    let factor = (s - K_ONE) * t + K_ONE;
+    ctl.velocity[0] *= factor;
+    ctl.velocity[1] *= factor;
+    ctl.velocity[2] *= factor;
+}
+
+/// Gate after the quaternion store: `cfg+0x60 == 0` (ordered) and `cfg+0x54 -> vtable+8()` non-zero.
+fn cfg_scale_enabled(ext: &QuadExternals, cfg: &QuadConfig) -> bool {
+    ext.final_scale_flag && cfg.final_cut == K_ZERO
+}
+
+/// The `comiss` clamp to `[0, 1]`; unordered (NaN) selects 1.
+fn clamp_unit(v: f32) -> f32 {
+    if K_ZERO > v {
+        K_ZERO
+    } else if K_ONE <= v || v.is_nan() {
+        K_ONE
+    } else {
+        v
     }
-    let mut out = [a, b, c, d];
-    let l = out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3];
-    let n = rsqrt(l);
-    for v in &mut out {
-        *v *= n;
-    }
-    ctl.spare_velocity = [out[0], out[1], out[2]];
 }
 
 /// `FUN_3912b330` (0x3912b330): ground movement and the jump impulse.
