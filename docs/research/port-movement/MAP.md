@@ -986,10 +986,11 @@ Wrapper findings:
 
 Remaining phase C blockers:
 
-* `FUN_3912ce00` reads the physics status/ray interfaces and calls MSVCR100
-  `__libm_sse2_pow` on the surface-blend branch.  `FUN_3912f600` needs `FUN_3912e540` +
-  `FUN_3912ebc0`, which use `__libm_sse2_acosf/sinf`.  Neither the pow/acosf/sinf family nor
-  the engine ray/current services are ported yet, so those functions cannot be made
-  bit-exact without first porting the MSVCR100 routines and stubbing the physics interface.
+* `FUN_3912ce00` reads the physics status/ray interfaces.  Its `__libm_sse2_pow` call at
+  `0x3912d70c` receives `xmm0 = (double)local_c` and `xmm1 = 1.0` (loaded at `0x3912d6e5`
+  from `0x3999cc10`), i.e. it is `pow(x, 1)` and is replaceable by `x` (the result is
+  `cvtsd2ss`-converted back), so no pow port is needed.  The remaining blocker is the engine
+  ray/water-current interface.  `FUN_3912f600` needs `FUN_3912e540` + `FUN_3912ebc0`, which
+  use `__libm_sse2_acosf/sinf` (still unported), so scope C cannot be made bit-exact yet.
 * `FUN_39118650` is orchestration around `thunk_FUN_3a979a34` / `thunk_FUN_3a982448` /
   `thunk_FUN_3a66f782`; only the ground-normal cache at `0x39118c58` is self-contained.
