@@ -1,0 +1,145 @@
+{
+  "function": "FUN_39429e40 click selection",
+  "cases": [
+    {
+      "hover": 0,
+      "aux": 0,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 41213,
+      "aux": 1,
+      "before": 0,
+      "after": 652806631,
+      "selection": 41213
+    },
+    {
+      "hover": 26243,
+      "aux": 2,
+      "before": 0,
+      "after": 652857241,
+      "selection": 26243
+    },
+    {
+      "hover": 2147483647,
+      "aux": 0,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 0,
+      "aux": 1,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 41213,
+      "aux": 2,
+      "before": 0,
+      "after": 652806631,
+      "selection": 41213
+    },
+    {
+      "hover": 26243,
+      "aux": 0,
+      "before": 0,
+      "after": 652857241,
+      "selection": 26243
+    },
+    {
+      "hover": 2147483647,
+      "aux": 1,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 0,
+      "aux": 2,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 41213,
+      "aux": 0,
+      "before": 0,
+      "after": 652806631,
+      "selection": 41213
+    },
+    {
+      "hover": 26243,
+      "aux": 1,
+      "before": 0,
+      "after": 652857241,
+      "selection": 26243
+    },
+    {
+      "hover": 2147483647,
+      "aux": 2,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 0,
+      "aux": 0,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 41213,
+      "aux": 1,
+      "before": 0,
+      "after": 652806631,
+      "selection": 41213
+    },
+    {
+      "hover": 26243,
+      "aux": 2,
+      "before": 0,
+      "after": 652857241,
+      "selection": 26243
+    },
+    {
+      "hover": 2147483647,
+      "aux": 0,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 0,
+      "aux": 1,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    },
+    {
+      "hover": 41213,
+      "aux": 2,
+      "before": 0,
+      "after": 652806631,
+      "selection": 41213
+    },
+    {
+      "hover": 26243,
+      "aux": 0,
+      "before": 0,
+      "after": 652857241,
+      "selection": 26243
+    },
+    {
+      "hover": 2147483647,
+      "aux": 1,
+      "before": 0,
+      "after": 652847386,
+      "selection": 0
+    }
+  ]
+}

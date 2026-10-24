@@ -195,6 +195,7 @@ impl Refusal {
 
 /// `CSStartSkillPacket` caster kinds (`SkillCasterType`).
 pub const CASTER_UNIT: u8 = 0;
+pub const CASTER_UNK1: u8 = 1;
 pub const CASTER_ITEM: u8 = 2;
 pub const CASTER_MOUNT: u8 = 3;
 pub const CASTER_DOODAD: u8 = 4;
@@ -202,15 +203,19 @@ pub const CASTER_DOODAD: u8 = 4;
 /// `CSStartSkillPacket` target kinds (`SkillCastTargetType`).
 pub const TARGET_UNIT: u8 = 0;
 pub const TARGET_POSITION: u8 = 1;
+pub const TARGET_POSITION2: u8 = 2;
+pub const TARGET_ITEM: u8 = 3;
+pub const TARGET_DOODAD: u8 = 4;
 
 /// The request the front end hands to the network layer.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StartSkillRequest {
     pub skill_id: u32,
     pub caster_kind: u8,
     pub caster_id: u32,
     pub target_kind: u8,
     pub target_id: u32,
+    pub target_position: [f32; 3],
     pub flag: u8,
 }
 
@@ -221,16 +226,31 @@ pub fn write_bc(out: &mut Vec<u8>, value: u32) {
 }
 
 impl StartSkillRequest {
-    /// The 13-byte `CSStartSkillPacket` body for a unit caster and unit target with no
-    /// skill-object block (captured from the live client, see `front.json`).
+    /// The `CSStartSkillPacket` body.  Unit/unk1/doodad casters and unit/doodad targets are the
+    /// 13-byte form; a position target is the 40-byte form the 1.2 client writes (object-id
+    /// block, four zero bytes, three f32 coordinates, eleven trailing zero/flag bytes).  The
+    /// item and mount caster forms are rejected by the 1.2 request body for the skills probed
+    /// live and remain unverified (see `front_forms.json`).
     pub fn body(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(13);
+        let mut out = Vec::with_capacity(40);
         out.extend_from_slice(&self.skill_id.to_le_bytes());
         out.push(self.caster_kind);
         write_bc(&mut out, self.caster_id);
         out.push(self.target_kind);
-        write_bc(&mut out, self.target_id);
-        out.push(self.flag);
+        if self.target_kind == TARGET_POSITION {
+            write_bc(&mut out, self.target_id);
+            out.push(0);
+            out.extend_from_slice(&[0; 4]);
+            for value in self.target_position {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+            out.extend_from_slice(&[0; 11]);
+            let flag_index = out.len() - 11;
+            out[flag_index] = self.flag;
+        } else {
+            write_bc(&mut out, self.target_id);
+            out.push(self.flag);
+        }
         out
     }
 }
@@ -336,7 +356,7 @@ pub fn target_override(
 }
 
 /// Outcome of `UseSkill`: either a request to send or a refusal.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UseSkillOutcome {
     Sent(StartSkillRequest),
     Refused(Refusal),
@@ -385,6 +405,7 @@ where
         caster_id,
         target_kind: TARGET_UNIT,
         target_id,
+        target_position: [0.0; 3],
         flag: 0,
     };
     if input.skill_id == input.auto_attack_skill

@@ -30,6 +30,18 @@ fn load(name: &str) -> Value {
         "combo" => include_str!("goldens/combo.json"),
         "client_only" => include_str!("goldens/client_only.json"),
         "front" => include_str!("goldens/front.json"),
+        "requirements" => include_str!("goldens/requirements.json"),
+        "targeting_collect" => include_str!("goldens/targeting_collect.json"),
+        "targeting_select" => include_str!("goldens/targeting_select.json"),
+        "targeting_tab" => include_str!("goldens/targeting_tab.json"),
+        "target_set" => include_str!("goldens/target_set.json"),
+        "click_select" => include_str!("goldens/click_select.json"),
+        "combat_state" => include_str!("goldens/combat_state.json"),
+        "first_hit" => include_str!("goldens/first_hit.json"),
+        "force_attack" => include_str!("goldens/force_attack.json"),
+        "engage" => include_str!("goldens/engage.json"),
+        "buff_append" => include_str!("goldens/buff_append.json"),
+        "front_forms" => include_str!("goldens/front_forms.json"),
         other => panic!("unknown golden file {other}"),
     };
     serde_json::from_str(text).expect("golden JSON parses")
@@ -1484,4 +1496,519 @@ fn result_names_cover_the_table() {
     assert_eq!(result_name(0x2f), "PROTECTED_FACTION");
     assert_eq!(result_name(0x84), "EXCEPT_READY_QUEST_CONTEXT");
     assert_eq!(result_name(0x7f), "URK_UNKNOWN");
+}
+
+fn req_unit_from(value: &Value) -> ReqUnit {
+    if value.is_null() {
+        return ReqUnit::default();
+    }
+    let stats = value["stats"].as_array().expect("stats");
+    let mut stat_values = [0i32; 4];
+    for (index, stat) in stats.iter().take(4).enumerate() {
+        stat_values[index] = i32_of(stat);
+    }
+    ReqUnit {
+        id: u32_of(&value["id"]),
+        attached: value["attached"].as_bool().unwrap_or(false),
+        rider: value["rider"].as_bool().unwrap_or(false),
+        kind: i32_of(&value["kind"]),
+        owner: u32_of(&value["owner"]),
+        class_id: i32_of(&value["class_id"]),
+        req_level: i32_of(&value["req_level"]),
+        stat_3a7c: i32_of(&value["stat_3a7c"]),
+        stat_3a80: i32_of(&value["stat_3a80"]),
+        stats: stat_values,
+        relation: u32_of(&value["relation"]),
+        buffs: Vec::new(),
+    }
+}
+
+#[test]
+fn requirement_evaluators_match_goldens() {
+    let doc = load("requirements");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 600, "at least 20 cases per evaluator kind");
+    for (index, case) in cases.iter().enumerate() {
+        let kind = i32_of(&case["kind"]);
+        let values: [i32; 8] = {
+            let array = case["values"].as_array().expect("values");
+            let mut values = [0i32; 8];
+            for (slot, value) in values.iter_mut().zip(array.iter()) {
+                *slot = i32_of(value);
+            }
+            values
+        };
+        let caster = case["caster_block"].as_array().expect("caster block");
+        let mut block = [0u32; 8];
+        for (slot, value) in block.iter_mut().zip(caster.iter()) {
+            *slot = u32_of(value);
+        }
+        let helpers = case["helpers"].as_object().expect("helpers");
+        let mut map = std::collections::BTreeMap::new();
+        for (key, value) in helpers {
+            map.insert(key.clone(), i32_of(value));
+        }
+        let local = req_unit_from(&case["ctx"]["local"]);
+        let target_snapshot = req_unit_from(&case["ctx"]["target"]);
+        let target = if case["ctx"]["target_ptr"].as_bool().unwrap_or(false) {
+            Some(target_snapshot.clone())
+        } else {
+            None
+        };
+        let ctx = ReqCtx {
+            local_id: local.id,
+            local: Some(local.clone()),
+            source: Some(local.clone()),
+            target: target.clone(),
+            source_block: ReqBlock { raw: block },
+            target_block: ReqBlock::default(),
+            flags: u32_of(&case["flags"]),
+            units: vec![target_snapshot],
+            items: Vec::new(),
+            desc_target_type: 0,
+            desc_flag_1a1: false,
+            desc_range: 0,
+            helpers: map,
+            now_ms: 0,
+            filetime: 0,
+        };
+        let row = ReqRow {
+            kind,
+            values,
+            applies: case["applies"].as_bool().unwrap_or(true),
+            row_id: 0,
+        };
+        let got = evaluate_requirements(&[row], &ctx);
+        let want = case["result"].as_array().expect("result");
+        assert_eq!(
+            (got.result, got.text_id, got.value),
+            (u32_of(&want[0]) as u8, u32_of(&want[1]) as u16, u32_of(&want[2])),
+            "requirement case {index}: kind {kind:#x} sub {:#x} values {values:?}",
+            values[0]
+        );
+    }
+}
+
+fn tab_actor_from(value: &Value) -> TabActor {
+    let pos = value["pos"].as_array().expect("pos");
+    TabActor {
+        id: u32_of(&value["id"]),
+        pos: [pos[0].as_f64().unwrap() as f32, pos[1].as_f64().unwrap() as f32,
+              pos[2].as_f64().unwrap() as f32],
+        attached: value["attached"].as_bool().unwrap_or(false),
+        rider: value["rider"].as_bool().unwrap_or(false),
+        kind: i32_of(&value["kind"]),
+        hidden: value["hidden"].as_bool().unwrap_or(false),
+        stealth: value["stealth"].as_bool().unwrap_or(false),
+        stealth_visible: value["stealth_visible"].as_bool().unwrap_or(false),
+        relation: u32_of(&value["relation"]),
+        selectable: value["selectable"].as_bool().unwrap_or(false),
+    }
+}
+
+fn tab_cfg_from(value: &Value) -> TargetingConfig {
+    TargetingConfig {
+        round_dist: value["round_dist"].as_f64().unwrap() as f32,
+        fan_dist: value["fan_dist"].as_f64().unwrap() as f32,
+        fan_angle_deg: value["fan_angle_deg"].as_f64().unwrap() as f32,
+        z_limit: value["z_limit"].as_f64().unwrap() as f32,
+        history_expire_s: value["history_expire_s"].as_f64().unwrap() as f32,
+        history_max: u32_of(&value["history_max"]) as usize,
+        dir: i32_of(&value["dir"]),
+    }
+}
+
+#[test]
+fn targeting_candidates_match_goldens() {
+    let doc = load("targeting_collect");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 20);
+    for (index, case) in cases.iter().enumerate() {
+        let cfg = tab_cfg_from(&case["cfg"]);
+        let local_id = u32_of(&case["local_id"]);
+        let actors: Vec<TabActor> = case["actors"].as_array().expect("actors")
+            .iter().map(tab_actor_from).collect();
+        let local = actors.iter().find(|a| a.id == local_id).expect("local actor");
+        let mut state = TabState::new(if case["mode"].as_str() == Some("hostile") {
+            STATE_HOSTILE
+        } else {
+            STATE_FRIENDLY
+        });
+        state.seen.clear();
+        let camera = case["camera"].as_array().expect("camera");
+        let local = TabActor {
+            pos: [camera[0].as_f64().unwrap() as f32, camera[1].as_f64().unwrap() as f32,
+                  camera[2].as_f64().unwrap() as f32],
+            ..*local
+        };
+        let forward = case["forward"].as_array().expect("forward");
+        let forward = [forward[0].as_f64().unwrap() as f32, forward[1].as_f64().unwrap() as f32];
+        let got = collect_candidates(&state, &local, &actors, forward, &cfg);
+        let want = case["candidates"].as_array().expect("candidates");
+        assert_eq!(got.len(), want.len(), "collect case {index}");
+        for (slot, expected) in got.iter().zip(want.iter()) {
+            let pair = expected.as_array().expect("pair");
+            assert_eq!(slot.id, u32_of(&pair[0]), "collect case {index} id");
+            let distance = pair[1].as_f64().unwrap() as f32;
+            assert!((slot.distance - distance).abs() < 1e-3,
+                    "collect case {index} distance {} vs {distance}", slot.distance);
+        }
+    }
+}
+
+#[test]
+fn targeting_selection_matches_goldens() {
+    let doc = load("targeting_select");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 20);
+    for (index, case) in cases.iter().enumerate() {
+        let cfg = tab_cfg_from(&case["cfg"]);
+        let local_id = u32_of(&case["local_id"]);
+        let actors: Vec<TabActor> = case["actors"].as_array().expect("actors")
+            .iter().map(tab_actor_from).collect();
+        let camera = case["camera"].as_array().expect("camera");
+        let forward = case["forward"].as_array().expect("forward");
+        let forward = [forward[0].as_f64().unwrap() as f32, forward[1].as_f64().unwrap() as f32];
+        let mut state = TabState::new(if case["mode"].as_str() == Some("hostile") {
+            STATE_HOSTILE
+        } else {
+            STATE_FRIENDLY
+        });
+        state.last_time = case["last_time"].as_f64().unwrap() as f32;
+        let now = case["now"].as_f64().unwrap() as f32;
+        let got = select_next(&mut state, &cfg, now, local_id, |state| {
+            let local = actors.iter().find(|a| a.id == local_id).expect("local");
+            let local = TabActor {
+                pos: [camera[0].as_f64().unwrap() as f32, camera[1].as_f64().unwrap() as f32,
+                      camera[2].as_f64().unwrap() as f32],
+                ..*local
+            };
+            collect_candidates(state, &local, &actors, forward, &cfg)
+        });
+        let want = u32_of(&case["selected"]);
+        assert_eq!(got.unwrap_or(0), want, "select case {index}");
+    }
+}
+
+#[test]
+fn tab_entry_matches_goldens() {
+    let doc = load("targeting_tab");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 20);
+    for (index, case) in cases.iter().enumerate() {
+        let cfg = tab_cfg_from(&case["cfg"]);
+        let local_id = u32_of(&case["local_id"]);
+        let actors: Vec<TabActor> = case["actors"].as_array().expect("actors")
+            .iter().map(tab_actor_from).collect();
+        let camera = case["camera"].as_array().expect("camera");
+        let forward = case["forward"].as_array().expect("forward");
+        let forward = [forward[0].as_f64().unwrap() as f32, forward[1].as_f64().unwrap() as f32];
+        let mode = if u32_of(&case["byte"]) == 0 { TabMode::Hostile } else { TabMode::Friendly };
+        let mut states = TabStates::new();
+        let local = actors.iter().find(|a| a.id == local_id).expect("local");
+        let local = TabActor {
+            pos: [camera[0].as_f64().unwrap() as f32, camera[1].as_f64().unwrap() as f32,
+                  camera[2].as_f64().unwrap() as f32],
+            ..*local
+        };
+        let outcome = tab_select(mode, &mut states, &cfg, 0.0, &local, true, |state| {
+            collect_candidates(state, &local, &actors, forward, &cfg)
+        });
+        let want = u32_of(&case["selection"]);
+        assert_eq!(outcome.target.unwrap_or(0), want, "tab case {index}");
+    }
+}
+
+#[test]
+fn target_setter_and_click_match_goldens() {
+    let doc = load("target_set");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let target = u32_of(&case["target"]);
+        let selection = u32_of(&case["selection"]);
+        let set = TargetSet {
+            unit_id: u32_of(&case["unit_id"]),
+            old_target: u32_of(&case["before"]),
+            new_target: target,
+            local: true,
+            target_present: target != 0,
+            frame_events: [None, None],
+        };
+        let result = set.apply();
+        assert_eq!(result.target, target, "target set {index}");
+        let resolved = match target {
+            0 => 0,
+            id if id == selection => id,
+            _ => 0,
+        };
+        assert_eq!(resolved, selection, "target set selection {index}");
+    }
+    let doc = load("click_select");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let hover = u32_of(&case["hover"]);
+        let selection = u32_of(&case["selection"]);
+        let click = ClickSelect {
+            hover,
+            hover_aux: u32_of(&case["aux"]),
+            current: u32_of(&case["before"]),
+            current_aux: 0,
+            hover_present: selection != 0 || hover == 0,
+            can_select: true,
+            mouse_clear_targeting: false,
+        };
+        let got = click.apply().unwrap_or(u32_of(&case["before"]));
+        assert_eq!(got, hover, "click case {index}");
+        let resolved = if hover == selection { selection } else { 0 };
+        assert_eq!(resolved, selection, "click selection {index}");
+    }
+}
+
+#[test]
+fn combat_state_matches_goldens() {
+    let doc = load("combat_state");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let mut byte = CombatByte { value: u32_of(&case["before"]) != 0 };
+        match case["fn"].as_str().expect("fn") {
+            "combat_set" => {
+                byte.engage();
+            }
+            "combat_clear" => {
+                byte.clear();
+            }
+            other => panic!("unknown combat fn {other}"),
+        }
+        assert_eq!(u32::from(byte.value), u32_of(&case["after"]), "combat case {index}");
+    }
+}
+
+#[test]
+fn first_hit_matches_goldens() {
+    let doc = load("first_hit");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let mut unit = FirstHit::default();
+        set_first_hit(&mut unit, u32_of(&case["hitter"]), u32_of(&case["team"]));
+        let after = case["after"].as_array().expect("after");
+        let word = |offset: usize| {
+            u32_of(&after[offset])
+                | (u32_of(&after[offset + 1]) << 8)
+                | (u32_of(&after[offset + 2]) << 16)
+                | (u32_of(&after[offset + 3]) << 24)
+        };
+        assert_eq!(unit.hitter, word(0), "first hit {index} hitter");
+        assert_eq!(unit.team, word(4), "first hit {index} team");
+    }
+}
+
+#[test]
+fn force_attack_matches_goldens() {
+    let doc = load("force_attack");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        if case.get("fn").and_then(|value| value.as_str()) == Some("send") {
+            let byte = u32_of(&case["byte"]) != 0;
+            let body = case["body"].as_array().expect("body");
+            assert_eq!(
+                ForceAttackRequest::build(byte).body.as_slice(),
+                &[u32_of(&body[0]) as u8],
+                "force send {index}"
+            );
+            continue;
+        }
+        let packet_on = u32_of(&case["packet_on"]) != 0;
+        let set = ForceAttackSet {
+            unit_id: 0,
+            on: packet_on,
+            resolved: true,
+        };
+        assert_eq!(set.apply(), Some(0xe8), "force set event {index}");
+        assert_eq!(u32::from(packet_on), u32_of(&case["after"]), "force set byte {index}");
+    }
+}
+
+fn combat_unit_from(value: &Value, in_combat: bool) -> CombatUnit {
+    CombatUnit {
+        id: u32_of(&value["id"]),
+        attached: value["attached"].as_bool().unwrap_or(false),
+        rider: value["rider"].as_bool().unwrap_or(false),
+        kind: i32_of(&value["kind"]),
+        owner: u32_of(&value["owner"]),
+        in_combat,
+    }
+}
+
+#[test]
+fn engage_matches_goldens() {
+    let doc = load("engage");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let source = combat_unit_from(&case["source"], false);
+        let target = combat_unit_from(&case["target"], false);
+        let engaged = engage_combat(
+            i32_of(&case["damage"]),
+            u32_of(&case["engage"]) != 0,
+            Some(source),
+            Some(target),
+            None,
+            0,
+        );
+        let source_after = engaged.contains(&source.id);
+        let target_after = engaged.contains(&target.id);
+        assert_eq!(source_after, u32_of(&case["source_after"]) != 0, "engage {index} source");
+        assert_eq!(target_after, u32_of(&case["target_after"]) != 0, "engage {index} target");
+    }
+}
+
+#[test]
+fn buff_append_matches_goldens() {
+    let doc = load("buff_append");
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let kind = i32_of(&case["kind"]);
+        let mut lists = BuffLists::default();
+        let appended = append_buff(&mut lists, kind, 1);
+        let row = u32_of(&case["row"]);
+        let offset = match appended {
+            Some(BuffListKind::Buff) => {
+                assert_eq!(lists.buffs.len(), 1);
+                0x28
+            }
+            Some(BuffListKind::Debuff) => {
+                assert_eq!(lists.debuffs.len(), 1);
+                0xd30
+            }
+            Some(BuffListKind::Hidden) => {
+                assert_eq!(lists.hidden.len(), 1);
+                0x16f8
+            }
+            None => 0,
+        };
+        assert_eq!(offset, row, "buff append {index} row");
+        let counts = case["counts"].as_array().expect("counts");
+        assert_eq!(u32_of(&counts[0]), u32::from(lists.buffs.len() == 1), "buffs {index}");
+        assert_eq!(u32_of(&counts[1]), u32::from(lists.debuffs.len() == 1), "debuffs {index}");
+        assert_eq!(u32_of(&counts[2]), u32::from(lists.hidden.len() == 1), "hidden {index}");
+    }
+}
+
+
+#[test]
+fn cs_start_skill_forms_match_goldens() {
+    let doc = load("front_forms");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 20, "20 live request-form cases");
+    for (index, case) in cases.iter().enumerate() {
+        let caster = case["caster_block"].as_array().expect("caster");
+        let target = case["target_block"].as_array().expect("target");
+        let word = |array: &Vec<Value>, slot: usize| u32_of(&array[slot]);
+        let float = |slot: usize| f32::from_bits(word(target, slot));
+        let request = StartSkillRequest {
+            skill_id: u32_of(&case["skill_id"]),
+            caster_kind: word(caster, 0) as u8,
+            caster_id: word(caster, 2),
+            target_kind: word(target, 0) as u8,
+            target_id: word(target, 2),
+            target_position: [float(4), float(5), float(6)],
+            flag: 0,
+        };
+        let want: Vec<u8> = case["body"]
+            .as_str()
+            .expect("body")
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).expect("hex"))
+            .collect();
+        assert_eq!(request.body(), want, "front form {index} {}", case["label"]);
+    }
+}
+
+#[test]
+fn damage_dispatch_decisions_cover_all_source_kinds() {
+    let mut cases = 0;
+    for source_kind in 0..=4 {
+        for damage in [0, 1, 100] {
+            for engage in [false, true] {
+                let record = DamageRecord {
+                    source_kind,
+                    source_type: 1,
+                    key: 2,
+                    caster_kind: 0,
+                    source_unit: 7,
+                    source_unit2: 0,
+                    target_id: 9,
+                    aux: 2,
+                    hit_type: 5,
+                    absorbed: 0,
+                    damage,
+                    mana_burn: 0,
+                    engage,
+                    text_flag: false,
+                    desc_big_hit: 0,
+                    client_mode: 0,
+                    critical: false,
+                    weapon: false,
+                };
+                let source = SourceResolution {
+                    skill_instance: true,
+                    desc_present: true,
+                    template_present: true,
+                    buff_row: true,
+                    item_present: true,
+                    source_unit: true,
+                    target_unit: true,
+                    target_is_local: false,
+                };
+                let out = damage_presentation(&record, &source);
+                assert_eq!(out.outcome, Some(DispatchOutcome::Presented));
+                assert!(out.kind_handled);
+                if source_kind == 0 {
+                    assert!(out.record_copied);
+                }
+                cases += 1;
+            }
+        }
+    }
+    assert_eq!(cases, 30);
+}
+
+#[test]
+fn heal_dispatch_decisions_cover_all_source_kinds() {
+    for source_kind in 0..=4 {
+        let record = HealRecord {
+            source_kind,
+            source_type: 1,
+            key: 2,
+            caster_kind: 0,
+            source_unit: 7,
+            source_unit2: 0,
+            item_id: 3,
+            target_id: 9,
+            amount: 100,
+            aux: 100,
+        };
+        let source = SourceResolution {
+            skill_instance: true,
+            desc_present: true,
+            template_present: true,
+            buff_row: true,
+            item_present: true,
+            source_unit: true,
+            target_unit: true,
+            target_is_local: false,
+        };
+        let out = heal_presentation(&record, &source);
+        assert_eq!(out.outcome, Some(DispatchOutcome::Presented));
+        assert!(out.heal_text && out.applied);
+    }
+}
+
+#[test]
+fn aggro_and_party_tracker_match_the_client_rules() {
+    let target = CombatUnit { id: 7, kind: 5, owner: 1, in_combat: true, ..CombatUnit::default() };
+    assert_eq!(aggro_link(5, Some(&target), 9, 1).add_source, Some(5));
+    assert_eq!(aggro_link(5, Some(&target), 9, 2).add_source, None);
+    assert_eq!(aggro_link(9, Some(&target), 9, 1).add_source, None);
+    let mut parties = [Party { id: 3, members: 2, ..Party::default() }];
+    party_last_hitter(9, 7, 9, &mut parties);
+    assert_eq!(parties[0].first, 7);
+    let mut parties = [Party { id: 9, members: 2, ..Party::default() }];
+    party_last_hitter(5, 9, 9, &mut parties);
+    assert_eq!(parties[0].last, 5);
+    assert!(can_toggle_force_attack(false, false, true));
+    assert!(can_toggle_force_attack(true, true, true));
+    assert!(!can_toggle_force_attack(true, false, true));
 }

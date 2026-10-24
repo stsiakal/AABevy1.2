@@ -1,0 +1,5723 @@
+{
+  "function": "FUN_393672c0 candidate collection",
+  "cases": [
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4266.47265625,
+            4081.130615234375,
+            133.1639862060547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4236.51708984375,
+            4045.984130859375,
+            131.4636993408203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4305.95263671875,
+            4015.753662109375,
+            140.30747985839844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4326.986328125,
+            3996.861328125,
+            137.91015625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4203.064453125,
+            4025.5234375,
+            134.61485290527344
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4235.92822265625,
+            3989.443115234375,
+            132.54859924316406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4207.189453125,
+            3994.716796875,
+            133.4003448486328
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 0.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4260.880859375,
+            4081.57421875,
+            133.9485626220703
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4238.267578125,
+            4050.46484375,
+            132.2808837890625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4310.734375,
+            4015.517578125,
+            142.7501220703125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4330.37255859375,
+            3994.5498046875,
+            136.423828125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4202.83056640625,
+            4026.61474609375,
+            134.56005859375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4231.72265625,
+            3994.1015625,
+            132.2978973388672
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4208.3798828125,
+            3997.115234375,
+            133.41476440429688
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 10.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4261.2802734375,
+            4081.3916015625,
+            133.88775634765625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4238.07763671875,
+            4050.576416015625,
+            132.2696075439453
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4310.734375,
+            4013.732666015625,
+            140.69044494628906
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.107421875,
+            3993.365234375,
+            135.76730346679688
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4202.33203125,
+            4028.943359375,
+            134.32171630859375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4231.72265625,
+            3994.1015625,
+            132.2978973388672
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4210.08935546875,
+            4000.56591796875,
+            133.33824157714844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 10.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4265.0673828125,
+            4079.656982421875,
+            133.39181518554688
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4234.4150390625,
+            4052.730224609375,
+            131.67555236816406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4310.73046875,
+            4012.669921875,
+            139.763916015625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.107421875,
+            3993.365234375,
+            135.76730346679688
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4202.33203125,
+            4028.943359375,
+            134.32171630859375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4232.43310546875,
+            3993.246826171875,
+            132.33778381347656
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4210.08984375,
+            4000.56640625,
+            133.33831787109375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 180.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4265.224609375,
+            4079.5859375,
+            133.38233947753906
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.140625,
+            4054.06640625,
+            131.22354125976562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4310.73046875,
+            4012.669921875,
+            139.763916015625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4331.93896484375,
+            3995.02294921875,
+            136.19332885742188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4204.986328125,
+            4027.07275390625,
+            134.4884490966797
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4235.09912109375,
+            3990.038818359375,
+            132.48170471191406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4208.5185546875,
+            4000.21826171875,
+            133.49327087402344
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 1.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4267.71875,
+            4081.088134765625,
+            133.04808044433594
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.140625,
+            4054.06640625,
+            131.22354125976562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4311.18603515625,
+            4015.280029296875,
+            142.7835235595703
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4331.806640625,
+            3996.310546875,
+            136.53561401367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4205.41796875,
+            4026.76953125,
+            134.5067901611328
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4235.326171875,
+            3989.767578125,
+            132.5179443359375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4204.40869140625,
+            3999.31494140625,
+            133.8668212890625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 1
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4268.46484375,
+            4081.5390625,
+            132.86611938476562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.25341796875,
+            4051.92724609375,
+            131.2404327392578
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4311.4921875,
+            4017.03515625,
+            143.31028747558594
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4331.798828125,
+            3996.29345703125,
+            136.53433227539062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4202.91943359375,
+            4028.328857421875,
+            134.40188598632812
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4236.15234375,
+            3991.09375,
+            132.29188537597656
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4202.48828125,
+            3998.892578125,
+            133.76548767089844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 100.0,
+        "fan_dist": 500.0,
+        "fan_angle_deg": 360.0,
+        "z_limit": 500.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4268.6875,
+            4081.546875,
+            132.81915283203125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.3515625,
+            4050.130859375,
+            131.26046752929688
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4310.46923828125,
+            4013.294921875,
+            139.96249389648438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4328.68017578125,
+            3989.612060546875,
+            135.6180877685547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4199.923828125,
+            4030.201171875,
+            134.02264404296875
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4237.0126953125,
+            3989.6884765625,
+            132.42222595214844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4206.37060546875,
+            3995.78125,
+            133.5179901123047
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ],
+        [
+          35116,
+          31.92091178894043
+        ],
+        [
+          5724,
+          36.11476516723633
+        ],
+        [
+          25072,
+          107.91930389404297
+        ],
+        [
+          41213,
+          116.83600616455078
+        ],
+        [
+          25092,
+          117.0793228149414
+        ],
+        [
+          25111,
+          119.0003890991211
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4267.50830078125,
+            4081.816650390625,
+            132.93426513671875
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4235.92578125,
+            4048.212890625,
+            131.6856231689453
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4309.306640625,
+            4009.041015625,
+            139.46682739257812
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4327.97265625,
+            3988.09375,
+            135.46517944335938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4202.7890625,
+            4026.82373046875,
+            134.52810668945312
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4237.974609375,
+            3988.1171875,
+            132.6680145263672
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4211.783203125,
+            3991.443359375,
+            133.29930114746094
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 0.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4266.080078125,
+            4081.504638671875,
+            133.14390563964844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4237.099609375,
+            4048.697265625,
+            131.7756805419922
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4306.69921875,
+            4011.392822265625,
+            139.1201629638672
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4330.85595703125,
+            3993.853271484375,
+            136.12803649902344
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4205.05859375,
+            4024.1484375,
+            134.6238250732422
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4232.26416015625,
+            3989.87646484375,
+            132.7942352294922
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4211.783203125,
+            3991.443359375,
+            133.29930114746094
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 10.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4265.796875,
+            4079.33984375,
+            133.35531616210938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4235.9951171875,
+            4049.132080078125,
+            131.69384765625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4303.546875,
+            4014.240234375,
+            139.37574768066406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.064453125,
+            3996.26953125,
+            136.48655700683594
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4207.599609375,
+            4027.029296875,
+            134.5267791748047
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4232.005859375,
+            3989.955078125,
+            132.80909729003906
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4211.283203125,
+            3992.349609375,
+            133.29930114746094
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 10.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4263.36669921875,
+            4076.913330078125,
+            133.53939819335938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.03515625,
+            4050.69140625,
+            131.196533203125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4303.55078125,
+            4015.947265625,
+            139.84693908691406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4330.484375,
+            3996.115234375,
+            136.7677001953125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4205.70361328125,
+            4026.984130859375,
+            134.49481201171875
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4230.078125,
+            3986.623046875,
+            133.7064666748047
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4208.15673828125,
+            3996.1982421875,
+            133.42626953125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 180.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4263.060546875,
+            4076.607421875,
+            133.53939819335938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.517578125,
+            4050.027099609375,
+            131.2874298095703
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4303.736328125,
+            4014.96044921875,
+            139.5996856689453
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4330.484375,
+            3996.115234375,
+            136.7677001953125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4201.876953125,
+            4026.893798828125,
+            134.5806884765625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4230.177734375,
+            3986.610595703125,
+            133.6931610107422
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4207.64453125,
+            3996.828125,
+            133.48333740234375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 1.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4265.37744140625,
+            4078.79248046875,
+            133.3808135986328
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4234.66064453125,
+            4047.082275390625,
+            131.42808532714844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4304.41650390625,
+            4011.36767578125,
+            139.1800079345703
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.560546875,
+            3995.8125,
+            136.3375244140625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4200.025390625,
+            4026.8515625,
+            134.7698211669922
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4233.9599609375,
+            3986.14208984375,
+            133.29002380371094
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4207.64453125,
+            3996.828125,
+            133.48333740234375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 1
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4268.11865234375,
+            4081.37841796875,
+            132.94862365722656
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4235.08203125,
+            4046.501953125,
+            131.4205322265625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4304.994140625,
+            4008.30078125,
+            139.0076141357422
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.560546875,
+            3995.8125,
+            136.3375244140625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4200.025390625,
+            4026.8515625,
+            134.7698211669922
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4237.64306640625,
+            3985.68603515625,
+            132.96173095703125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4207.28564453125,
+            3998.325927734375,
+            133.5423583984375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 100.0,
+        "fan_dist": 500.0,
+        "fan_angle_deg": 360.0,
+        "z_limit": 500.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4268.72265625,
+            4081.94921875,
+            132.7110595703125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4235.08203125,
+            4046.501953125,
+            131.4205322265625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4304.994140625,
+            4008.30078125,
+            139.00759887695312
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4332.63525390625,
+            3995.705810546875,
+            136.3144989013672
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4200.125,
+            4027.17529296875,
+            134.7040557861328
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4238.2578125,
+            3985.609375,
+            132.90713500976562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4206.53515625,
+            4001.460205078125,
+            133.83433532714844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ],
+        [
+          35116,
+          31.92091178894043
+        ],
+        [
+          5724,
+          36.11476516723633
+        ],
+        [
+          25072,
+          107.91930389404297
+        ],
+        [
+          41213,
+          116.83600616455078
+        ],
+        [
+          25092,
+          117.0793228149414
+        ],
+        [
+          25111,
+          119.0003890991211
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4268.72265625,
+            4081.94921875,
+            132.7110595703125
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.54345703125,
+            4049.000244140625,
+            131.26235961914062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4304.994140625,
+            4008.30078125,
+            139.00759887695312
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4333.943359375,
+            3993.8203125,
+            135.789306640625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4201.30029296875,
+            4030.935302734375,
+            134.04495239257812
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4237.01123046875,
+            3986.6796875,
+            132.91098022460938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4206.53515625,
+            4001.4609375,
+            133.8345184326172
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 0.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4267.181640625,
+            4081.664794921875,
+            132.99761962890625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4231.779296875,
+            4049.751953125,
+            131.15147399902344
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4308.01220703125,
+            4007.829345703125,
+            139.3204803466797
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4333.943359375,
+            3993.8203125,
+            135.789306640625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4201.7265625,
+            4032.30078125,
+            133.88853454589844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4234.2236328125,
+            3989.072509765625,
+            132.75643920898438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4206.53515625,
+            4001.4609375,
+            133.8345184326172
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    },
+    {
+      "mode": "hostile",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 10.0,
+        "fan_angle_deg": 60.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4263.5439453125,
+            4080.997314453125,
+            133.4711151123047
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4232.876953125,
+            4049.813232421875,
+            131.34202575683594
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4309.25,
+            4007.634765625,
+            139.38775634765625
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4334.67578125,
+            3993.345703125,
+            135.62924194335938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4201.7265625,
+            4032.30078125,
+            133.88853454589844
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4231.35693359375,
+            3991.53125,
+            132.68740844726562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4205.52685546875,
+            3998.77197265625,
+            133.76622009277344
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": []
+    },
+    {
+      "mode": "friendly",
+      "cfg": {
+        "round_dist": 4.0,
+        "fan_dist": 50.0,
+        "fan_angle_deg": 10.0,
+        "z_limit": 20.0,
+        "history_expire_s": 3.0,
+        "history_max": 10,
+        "dir": 0
+      },
+      "camera": [
+        4314.041015625,
+        4118.12109375,
+        126.24569702148438
+      ],
+      "forward": [
+        0.0,
+        1.0
+      ],
+      "local_id": 26243,
+      "actors": [
+        {
+          "id": 5724,
+          "pos": [
+            4299.83984375,
+            4084.96875,
+            128.12319946289062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 7620,
+          "pos": [
+            4262.3359375,
+            4080.77734375,
+            133.72145080566406
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25045,
+          "pos": [
+            4237.7666015625,
+            4050.08740234375,
+            132.12892150878906
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25068,
+          "pos": [
+            4307.32177734375,
+            4008.590087890625,
+            139.2937469482422
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25072,
+          "pos": [
+            4259.349609375,
+            4025.21875,
+            131.20352172851562
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25092,
+          "pos": [
+            4265.46875,
+            4011.759765625,
+            132.2097930908203
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25111,
+          "pos": [
+            4258.529296875,
+            4012.939453125,
+            130.2909393310547
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 25123,
+          "pos": [
+            4334.59814453125,
+            3994.886962890625,
+            135.94223022460938
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25126,
+          "pos": [
+            4204.505859375,
+            4032.929931640625,
+            134.10983276367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25142,
+          "pos": [
+            4231.6884765625,
+            3991.65869140625,
+            132.63739013671875
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25143,
+          "pos": [
+            4204.37109375,
+            3995.69140625,
+            133.6634521484375
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25158,
+          "pos": [
+            4205.21875,
+            3976.330078125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 25244,
+          "pos": [
+            4204.2890625,
+            3976.26953125,
+            133.36880493164062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 257,
+          "selectable": true
+        },
+        {
+          "id": 26243,
+          "pos": [
+            4314.041015625,
+            4118.12109375,
+            126.24569702148438
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 0,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 196611,
+          "selectable": true
+        },
+        {
+          "id": 35116,
+          "pos": [
+            4298.44921875,
+            4090.3203125,
+            127.96530151367188
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        },
+        {
+          "id": 41213,
+          "pos": [
+            4260.400390625,
+            4014.4296875,
+            130.87466430664062
+          ],
+          "attached": false,
+          "rider": false,
+          "kind": 1,
+          "hidden": false,
+          "stealth": false,
+          "stealth_visible": true,
+          "relation": 65539,
+          "selectable": true
+        }
+      ],
+      "candidates": [
+        [
+          26243,
+          0.0
+        ]
+      ]
+    }
+  ]
+}

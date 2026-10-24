@@ -1,0 +1,1005 @@
+{
+  "function": "FUN_39391670 engage combat",
+  "cases": [
+    {
+      "damage": 0,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 100,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 0,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 100,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 0,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 100,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 0,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 100,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 0,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 100,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 0,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 100,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    },
+    {
+      "damage": 0,
+      "engage": 0,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 0,
+      "target_after": 0
+    },
+    {
+      "damage": 1,
+      "engage": 1,
+      "source": {
+        "id": 26243,
+        "attached": false,
+        "rider": false,
+        "kind": 0,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 72000,
+        "stat_3a80": 67000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1241940975,
+          1372201132
+        ],
+        "relation": 966592720
+      },
+      "target": {
+        "id": 41213,
+        "attached": false,
+        "rider": false,
+        "kind": 1,
+        "owner": 0,
+        "class_id": 1,
+        "req_level": 0,
+        "stat_3a7c": 38800,
+        "stat_3a80": 41000,
+        "stats": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          136323201,
+          1372357948
+        ],
+        "relation": 966592720
+      },
+      "source_after": 1,
+      "target_after": 1
+    }
+  ]
+}

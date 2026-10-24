@@ -1,0 +1,105 @@
+{
+  "function": "FUN_390b36f0/FUN_390b3710 combat byte",
+  "cases": [
+    {
+      "fn": "combat_clear",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 0,
+      "after": 1
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    },
+    {
+      "fn": "combat_clear",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "fn": "combat_set",
+      "before": 1,
+      "after": 1
+    }
+  ]
+}
