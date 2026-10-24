@@ -237,6 +237,26 @@ pub struct QuadExternals {
     pub is_swim_stance: bool,
     /// `cfg+0x54 -> vtable+8()` result (non-zero enables the turn-speed scale).
     pub final_scale_flag: bool,
+    /// `actor+0xc != 0` (the entity the movement is applied to).
+    pub entity_present: bool,
+    /// `FUN_390b3750(unit)` game object, vtable+0x8c result.
+    pub unit_gate: bool,
+    /// `FUN_390b3750(unit)` game object, vtable+4 result.
+    pub unit_kind: i32,
+    /// `[actor+0x3ec]+0x84` (jump height).
+    pub jump_height: f32,
+    /// `actor+0x40 & 0x1000` (walk flag used by `FUN_39112690`).
+    pub walk: bool,
+    /// `actor+0x3ec` movement parameters.
+    pub params: MovementParams,
+    /// `gEnv+0x96 == 0` (the swim scale is not suppressed).
+    pub swim_gate: bool,
+    /// `actor vtable+0x9c` returned an animation object.
+    pub anim_present: bool,
+    /// `actor+8 == DAT_39af92c8` (0): the `jumpVec` graph input is emitted.
+    pub graph_push: bool,
+    /// `cfg+0xe8` swim speed scale.
+    pub cfg_swim_scale: f32,
 }
 
 fn rot(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
@@ -572,116 +592,256 @@ fn clamp_unit(v: f32) -> f32 {
     }
 }
 
+/// `f32` value of the original's `x & 0x7fffffff` absolute-value mask.
+fn abs_bits(v: f32) -> f32 {
+    f32::from_bits(v.to_bits() & 0x7fff_ffff)
+}
+
+/// The `up` vector used for the jump impulse (`0x3912ba1c..0x3912ba93`).
+///
+/// All operations are SSE `f32` in the original instruction order.
+fn up_jump(q: [f32; 4]) -> [f32; 3] {
+    let (q0, q1, q2, q3) = (q[0], q[1], q[2], q[3]);
+    [
+        (q0 * q2 + q1 * q3) * K_TWO,
+        (q2 * q1 - q0 * q3) * K_TWO,
+        (q2 * q2 + q3 * q3) * K_TWO - K_ONE,
+    ]
+}
+
+/// The `up` vector used by the ground projection (`0x3912b691..0x3912b878`).
+///
+/// The original forms each product in `f64` (`cvtps2pd`/`mulsd`) and rounds the sums once
+/// to `f32` (`cvtpd2ps`), so this helper keeps the `f64` intermediates.
+fn up_matrix(q: [f32; 4]) -> [f32; 3] {
+    let q0 = q[0] as f64;
+    let q1 = q[1] as f64;
+    let q2 = q[2] as f64;
+    let q3 = q[3] as f64;
+    let two = 2.0f64;
+    let p0 = q0 * (q0 * two);
+    let p1 = q1 * (q1 * two);
+    let p02 = q0 * (q2 * two);
+    let p12 = q1 * (q2 * two);
+    let p03 = q0 * (q3 * two);
+    let p13 = q1 * (q3 * two);
+    [
+        (p02 + p13) as f32,
+        (p12 - p03) as f32,
+        ((1.0f64 - p0) - p1) as f32,
+    ]
+}
+
+/// Quaternion rotation of `v` in the exact packed-SSE lane order of `0x3912b560..0x3912b5f0`
+/// (the classic `xmm` shuffle sequence with `B = (v0, v1, v2, 0)`).
+fn quat_rot(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+    let a = q;
+    let b = [v[0], v[1], v[2], 0.0];
+    let x4 = [a[1], a[2], a[0], a[3]];
+    let x5 = [a[2], a[0], a[1], a[0]];
+    let mut x2 = [
+        a[3] * b[0],
+        a[3] * b[1],
+        a[3] * b[2],
+        a[3] * b[3],
+    ];
+    let mut x1 = [b[1], b[2], b[0], b[3]];
+    x1 = [-x1[0] * x5[0], -x1[1] * x5[1], -x1[2] * x5[2], -x1[3] * x5[3]];
+    let x7 = [b[2], b[0], b[1], b[0]];
+    let x7 = [x7[0] * x4[0], x7[1] * x4[1], x7[2] * x4[2], x7[3] * x4[3]];
+    x1 = [x1[0] + x7[0], x1[1] + x7[1], x1[2] + x7[2], x1[3] + x7[3]];
+    x1 = [x1[0] + x2[0], x1[1] + x2[1], x1[2] + x2[2], x1[3] + x2[3]];
+    let mut l2 = [x1[1], x1[2], x1[0], x1[3]];
+    let mut l1 = [x1[2], x1[0], x1[1], x1[3]];
+    l2 = [-l2[0] * x5[0], -l2[1] * x5[1], -l2[2] * x5[2], -l2[3] * x5[3]];
+    l1 = [l1[0] * x4[0], l1[1] * x4[1], l1[2] * x4[2], l1[3] * x4[3]];
+    x2 = [l2[0] + l1[0], l2[1] + l1[1], l2[2] + l1[2], l2[3] + l1[3]];
+    x2 = [x2[0] + x2[0], x2[1] + x2[1], x2[2] + x2[2], x2[3] + x2[3]];
+    x2 = [x2[0] + b[0], x2[1] + b[1], x2[2] + b[2], x2[3] + b[3]];
+    [x2[0], x2[1], x2[2]]
+}
+
+/// Raw `rsqrtss` (no Newton step) as the original uses it in the re-orthogonalisation tail.
+fn rsqrt_raw(v: f32) -> f32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use core::arch::x86_64::{_mm_cvtss_f32, _mm_rsqrt_ss, _mm_set_ss};
+        unsafe { _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(v))) }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        1.0 / v.sqrt()
+    }
+}
+
+/// Outputs of `FUN_3912b330` that are not stored in the controller.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GroundOutput {
+    /// Argument passed to the controlled unit's `vtable+0x2a8` (`Some(true)` for the jump
+    /// event, `Some(false)` for the in-place cancel); `None` when the unit is not kind 1.
+    pub unit_event: Option<bool>,
+}
+
 /// `FUN_3912b330` (0x3912b330): ground movement and the jump impulse.
+///
+/// The engine services are explicit inputs: `ext.entity_present` is `actor+0xc != 0`,
+/// `ext.controlled_unit` is `FUN_390b3750(FUN_39111d60(actor)) != 0`, `ext.unit_gate` its
+/// `vtable+0x8c`, `ext.unit_kind` its `vtable+4`, `ext.mounted_unit` is `FUN_391136c0`,
+/// `ext.speed_multiplier` is `FUN_39113800`, `ext.jump_height` is `[actor+0x3ec]+0x84`,
+/// `ext.params`/`ext.walk` feed `FUN_39112690`, `ext.swimming` is `actor vtable+0xa8`,
+/// `ext.swim_gate` is `gEnv+0x96 == 0`, `ext.anim_present`/`ext.jump_in_place` are the
+/// animation name query and `ext.graph_push` is `actor+8 == 0`.
 pub fn ground(
     ctl: &mut QuadController,
     block: &QuadBlock,
-    actor: &QuadActor,
+    _actor: &QuadActor,
     ext: &QuadExternals,
     graph: &mut Vec<(&'static str, [f32; 3])>,
-) {
-    if !ext.controlled_unit {
-        return;
-    }
-    let mut dir = [0.0f32; 3];
-    let mut planar = [0.0f32; 3];
-    if ctl.input[0] != 0.0 || ctl.input[1] != 0.0 {
-        if !ext.mounted_unit {
-            let input = [ctl.input[0], ctl.input[1], ctl.input[2]];
-            let mut norm = input;
-            let l = input[0] * input[0] + input[1] * input[1] + input[2] * input[2];
-            if K_ONE < l {
-                let inv = K_ONE / l.sqrt();
-                norm = [input[0] * inv, input[1] * inv, input[2] * inv];
-            }
-            let factor = direction_factor(
-                &MovementParams::default(),
-                actor.stride.to_bits() & 0x1000 != 0,
-                [norm[0], norm[1]],
-            );
-            let q = ctl.quat;
-            let r = rot(q, norm);
-            planar = [r[0] * factor, r[1] * factor, r[2] * factor];
-        } else {
-            let q = ctl.quat;
-            let a = ctl.input[0];
-            let b = ctl.input[1];
-            planar = [
-                (q[0] * q[0] + q[3] * q[3]) * K_TWO * b + (q[0] * q[1] - q[2] * q[3]) * K_TWO * a,
-                (q[1] * q[3] + q[2] * q[0]) * K_TWO * a + (q[1] * q[1] + q[2] * q[2]) * K_TWO * b,
-                (q[3] * q[1] + q[2] * q[0]) * K_TWO * b + (q[0] * q[1] - q[2] * q[3]) * K_TWO * a,
-            ];
-        }
-        dir = planar;
-    }
-    let mut local = [0.0f32; 3];
-    if planar != [0.0; 3] || ext.speed_multiplier != 0.0 {
-        local = [
-            planar[0] * ext.speed_multiplier,
-            planar[1] * ext.speed_multiplier,
-            planar[2] * ext.speed_multiplier,
-        ];
+) -> GroundOutput {
+    let mut out = GroundOutput::default();
+    if !ext.entity_present {
+        return out;
     }
     let q = ctl.quat;
-    let f = K_TWO;
-    let horizontal = [
-        (q[1] * q[1] + q[3] * q[3]) * f - K_ONE,
-        (q[0] * q[1] - q[2] * q[3]) * f,
-        (q[0] * q[1] + q[2] * q[3]) * f,
-    ];
+    let mut local = [0.0f32; 3];
+    if ctl.input[0] != 0.0 || ctl.input[1] != 0.0 {
+        if ext.mounted_unit {
+            // 0x3912b3c5..0x3912b4ca: planar input through the (transposed) quaternion axes.
+            let (q0, q1, q2, q3) = (q[0], q[1], q[2], q[3]);
+            let ix = ctl.input[0];
+            let iy = ctl.input[1];
+            let a = (q0 * q0 + q3 * q3) * K_TWO - K_ONE;
+            let b = (q0 * q1 + q2 * q3) * K_TWO;
+            let c = (q2 * q0 - q1 * q3) * K_TWO;
+            let d = (q0 * q1 - q2 * q3) * K_TWO;
+            let e = (q3 * q3 + q1 * q1) * K_TWO - K_ONE;
+            let f = (q3 * q0 + q2 * q1) * K_TWO;
+            local = [
+                d * iy + a * ix,
+                e * iy + b * ix,
+                f * iy + c * ix,
+            ];
+        } else {
+            // 0x3912b4d4..0x3912b622: normalise, direction factor, quaternion rotation.
+            let input = [ctl.input[0], ctl.input[1], ctl.input[2]];
+            let mut norm = input;
+            let len = (input[0] * input[0] + input[1] * input[1] + input[2] * input[2]).sqrt();
+            if K_ONE < len {
+                let inv = K_ONE / len;
+                norm = [input[0] * inv, input[1] * inv, input[2] * inv];
+            }
+            let factor = direction_factor(&ext.params, ext.walk, [norm[0], norm[1]]);
+            let r = quat_rot(q, norm);
+            local = [r[0] * factor, r[1] * factor, r[2] * factor];
+        }
+    }
+    if abs_bits(local[0]) > K_ZERO
+        || abs_bits(local[1]) > K_ZERO
+        || abs_bits(local[2]) > K_ZERO
+        || (ext.controlled_unit && ext.unit_gate)
+    {
+        let m = ext.speed_multiplier;
+        local = [local[0] * m, local[1] * m, local[2] * m];
+    }
+
+    // 0x3912b87d..0x3912bc95: jump startup / in-place / airborne handling.
     ctl.mode = 1;
     let mut jump = [0.0f32; 3];
     if ctl.jump_button != 0 && ctl.airborne == 0 {
-        if ctl.input[0].abs() > K_POS_X || ctl.input[1].abs() > K_POS_X {
+        if K_POS_X < abs_bits(ctl.input[0]) || K_POS_X < abs_bits(ctl.input[1]) {
             if block.jump_scalar > K_ZERO {
                 ctl.mode = 7;
-                let mag = (block.jump_dir[0] * block.jump_dir[0]
-                    + block.jump_dir[1] * block.jump_dir[1]
-                    + block.jump_dir[2] * block.jump_dir[2])
-                    .sqrt();
-                if mag > K_ZERO {
-                    let height = actor.stride;
-                    let n = (mag * K_TWO * height).sqrt() / mag;
-                    let up = n - if ext.above_support { K_HALF } else { 0.0 };
-                    jump = [block.jump_dir[0] * up, block.jump_dir[1] * up, block.jump_dir[2] * up];
+                let d = block.jump_dir;
+                let mag = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                let mut scale = K_ZERO;
+                if K_ZERO < mag {
+                    let above = if block.field_04 != K_ZERO { K_HALF } else { K_ZERO };
+                    scale = (mag * K_TWO * ext.jump_height).sqrt() / mag - above;
                 }
-                if block.jump_extra[0] != 0.0
-                    || block.jump_extra[1] != 0.0
-                    || block.jump_extra[2] != 0.0
-                {
-                    let speed = (block.jump_extra[0] * block.jump_extra[0]
-                        + block.jump_extra[1] * block.jump_extra[1]
-                        + block.jump_extra[2] * block.jump_extra[2])
-                        .sqrt();
-                    let s = (block.jump_extra[2] - 0.25) * K_TWO;
-                    let s = s.clamp(0.0, K_ONE);
-                    jump = [
-                        block.jump_extra[0] + (K_ONE - block.jump_extra[0]) * s,
-                        block.jump_extra[1] + (K_ONE - block.jump_extra[1]) * s,
-                        block.jump_extra[2] + (K_ONE - block.jump_extra[2]) * s,
-                    ];
-                    jump = [jump[0] * speed, jump[1] * speed, jump[2] * speed];
+                let up = up_jump(q);
+                jump = [up[0] * mag * scale, up[1] * mag * scale, up[2] * mag * scale];
+                let e = block.jump_extra;
+                if e[0] * e[0] + e[1] * e[1] + e[2] * e[2] > K_ZERO {
+                    let raw = (e[2] - 0.25) * K_TWO;
+                    let s = if K_ZERO <= raw {
+                        if raw < K_ONE {
+                            raw
+                        } else {
+                            K_ONE
+                        }
+                    } else {
+                        K_ZERO
+                    };
+                    let nx = e[0] + (-e[0]) * s;
+                    let ny = e[1] + (-e[1]) * s;
+                    let nz = e[2] + (K_ONE - e[2]) * s;
+                    let jlen = (jump[0] * jump[0] + jump[1] * jump[1] + jump[2] * jump[2]).sqrt();
+                    jump = [nx * jlen, ny * jlen, nz * jlen];
                 }
+                let up = up_matrix(q);
+                let dot = up[0] * local[0] + up[1] * local[1] + up[2] * local[2];
+                local = [local[0], local[1], local[2] - dot];
                 ctl.airborne = 1;
+                if ext.controlled_unit && ext.unit_kind == 1 {
+                    out.unit_event = Some(true);
+                }
                 ctl.jumped = 1;
             }
-        } else if !ext.jump_in_place {
+        } else if !(ext.anim_present && ext.jump_in_place) {
             ctl.airborne = 1;
             ctl.jumped = 1;
-            if ext.mounted_unit {
-                ctl.airborne = 1;
+            if ext.anim_present && ext.controlled_unit && ext.unit_kind == 1 {
+                out.unit_event = Some(false);
             }
         }
     }
-    if ext.speed_multiplier != 0.0 {
+
+    // 0x3912bc95..0x3912bceb: swim speed scale.
+    if ext.swimming && ext.swim_gate {
+        let s = ext.cfg_swim_scale;
+        local = [local[0] * s, local[1] * s, local[2] * s];
+    }
+
+    // 0x3912bceb..0x3912bd6d: pick the velocity that the tail operates on.
+    let mut v = [0.0f32; 3];
+    if block.jump_scalar == K_ZERO {
+        let len2 = local[0] * local[0] + local[1] * local[1] + local[2] * local[2];
+        if K_POINT_01 < len2 {
+            v = local;
+        }
+    } else {
+        v = local;
+    }
+
+    // 0x3912bd6d..0x3912bdff: remove the up component (always).
+    let up = up_matrix(q);
+    let dot = up[0] * v[0] + up[1] * v[1] + up[2] * v[2];
+    v = [v[0], v[1], v[2] - dot];
+
+    // 0x3912be02..0x3912be3a: graph jumpVec input.
+    if ext.graph_push {
         graph.push(("jumpVec", jump));
     }
-    ctl.velocity = [
-        horizontal[0] + local[0] + jump[0],
-        horizontal[1] + local[1] + jump[1],
-        horizontal[2] + local[2] + jump[2],
-    ];
+
+    // 0x3912be3a..0x3912bf59: remove the up component again and re-normalise to the old
+    // length.  The branch skips this when `block+0x04 == 0` (ordered).
+    if !(block.field_04 == K_ZERO) {
+        let len0 = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        let dot = up[0] * v[0] + up[1] * v[1] + up[2] * v[2];
+        v = [v[0], v[1], v[2] - dot];
+        let len2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        if len2 >= K_SQRT_EPS || len2.is_nan() {
+            let rs = rsqrt_raw(len2);
+            let t = ((rs * len2) * rs) * K_HALF;
+            let scale = ((K_ONE_POINT_FIVE - t) * rs) * len0;
+            v = [v[0] * scale, v[1] * scale, v[2] * scale];
+        }
+    }
+
+    // 0x3912bf5d..0x3912bf9e.
+    ctl.velocity = [v[0] + jump[0], v[1] + jump[1], v[2] + jump[2]];
     ctl.spare_velocity = [0.0; 3];
+    out
 }
 
 /// `FUN_3912c770` (0x3912c770): mounted / vehicle movement.
@@ -770,9 +930,9 @@ pub fn mounted(
         decay(ctl.spare_velocity[2], rate),
     ];
     let add = ctl.dt / cfg.accel_time;
-    ctl.spare_velocity[0] = add * out[0] + ctl.spare_velocity[0];
-    ctl.spare_velocity[1] = ctl.spare_velocity[1] + out[1] * add;
-    ctl.spare_velocity[2] = ctl.spare_velocity[2] + out[2] * add;
+    ctl.spare_velocity[0] += add * out[0];
+    ctl.spare_velocity[1] += out[1] * add;
+    ctl.spare_velocity[2] += out[2] * add;
     ctl.velocity = ctl.spare_velocity;
     ctl.mode = 2;
 }

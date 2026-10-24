@@ -95,18 +95,23 @@ impl CRotation {
     /// normal branch are modelled; the air (`0x3913f020`) and ladder-transform
     /// (`0x3913f710`) paths are listed in the unknowns document.
     pub fn dispatch(&mut self, actor: &RotationActor) -> RotationPath {
-        if actor.anim_4 == 0.0 || actor.anim_a8 == 0 {
+        let path = if actor.anim_4 == 0.0 || actor.anim_a8 == 0 {
             if actor.actor_171 == 1 {
-                return RotationPath::Air;
-            }
-            if actor.actor_18b == 0 {
+                RotationPath::Air
+            } else if actor.actor_18b == 0 {
                 self.process_normal(actor);
-                return RotationPath::Normal;
+                RotationPath::Normal
+            } else {
+                self.process_ladder();
+                RotationPath::Ladder
             }
-            self.process_ladder();
-            return RotationPath::Ladder;
-        }
-        RotationPath::Air
+        } else {
+            RotationPath::Air
+        };
+        // `0x39140e25`: the tail of the dispatcher copies `+0x20..0x2c` into
+        // `+0x30..0x3c` on every path, so the bound third quaternion is the first one.
+        self.q30 = self.q20;
+        path
     }
 
     /// `FUN_3913ff90`: align the current orientation to the desired direction and
@@ -362,7 +367,7 @@ impl CRotation {
             let excess = params.pitch_wrap - v.abs();
             if excess < 0.0 {
                 let sign = if v > 0.0 { 1.0 } else { -1.0 };
-                self.move_rot[0] = sign * excess + self.move_rot[0];
+                self.move_rot[0] += sign * excess;
             }
         }
         if params.pitch_low != 0.0 || params.pitch_high != 0.0 {
@@ -381,7 +386,7 @@ impl CRotation {
             let excess = params.yaw_wrap - v.abs();
             if excess < 0.0 {
                 let sign = if v > 0.0 { 1.0 } else { -1.0 };
-                self.move_rot[2] = sign * excess + self.move_rot[2];
+                self.move_rot[2] += sign * excess;
             }
         }
     }
@@ -441,7 +446,9 @@ pub fn inverse3x3(m: &mut [f32; 9]) {
     m[5] = u;
 
     let det = q * d + p * a + r * g;
-    if det.abs() < 9.999_999_7e-21 {
+    #[allow(clippy::excessive_precision)]
+    let det_eps = 9.999_999_7e-21f32;
+    if det.abs() < det_eps {
         return;
     }
     let scale = 1.0 / det;

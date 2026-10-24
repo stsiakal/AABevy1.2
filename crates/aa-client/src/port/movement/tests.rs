@@ -399,7 +399,7 @@ fn phase_b_reset_matches_goldens() {
 #[test]
 fn phase_b_smoothing_matches_goldens() {
     let doc = load("phase_b");
-    for (i, case) in doc["smoothing"].as_array().expect("smoothing").iter().enumerate() {
+    for case in doc["smoothing"].as_array().expect("smoothing").iter() {
         let mut state = InputState {
             accel: f32_of(&case["accel"]),
             ..InputState::default()
@@ -415,7 +415,7 @@ fn phase_b_smoothing_matches_goldens() {
                 0 => state.smoothed_vel = v,
                 1 => smooth_velocity(&mut state, v, f32_of(&case["dt"])),
                 _ => {
-                    for (j, want) in v.iter().enumerate() {
+                    for (j, _want) in v.iter().enumerate() {
                         assert_bits(j, "smoothing", state.smoothed_vel[j], &values[j]);
                     }
                 }
@@ -1035,8 +1035,10 @@ fn quad_glide_straight_matches_goldens() {
             continue;
         }
         let mut ctl = ctl_from(&hex_bytes(case["before"].as_str().unwrap()));
-        let mut block = QuadBlock::default();
-        block.speed_normal = f32_of(&case["speed"]);
+        let block = QuadBlock {
+            speed_normal: f32_of(&case["speed"]),
+            ..QuadBlock::default()
+        };
         ctl.quat = quats[idx % quats.len()];
         idx += 1;
         glide_straight(&mut ctl, &block);
@@ -1097,8 +1099,10 @@ fn quad_dispatch_matches_goldens() {
         });
         block.stance_171 = stance as u8;
         block.block_101 = 1;
-        let mut actor = QuadActor::default();
-        actor.ground_align_off = 1;
+        let mut actor = QuadActor {
+            ground_align_off: 1,
+            ..QuadActor::default()
+        };
         ctl.quat = q_at(&actor_before, 0x2d0);
         let ext = QuadExternals::default();
         let mut graph = Vec::new();
@@ -1319,4 +1323,211 @@ fn inverse3x3_matches_goldens() {
         checked += 1;
     }
     assert!(checked >= 20, "only {checked} inverse goldens");
+}
+
+#[test]
+fn quad_ground_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/ground.json")).expect("ground JSON");
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let after = hex_bytes(case["after"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.input = [
+            f32_of(&case["input"][0]),
+            f32_of(&case["input"][1]),
+            f32_of(&case["input"][2]),
+        ];
+        ctl.jump_button = case["jump_button"].as_u64().unwrap() as u8;
+        ctl.airborne = case["airborne"].as_u64().unwrap() as u8;
+        ctl.jumped = 0;
+        ctl.quat = [
+            f32_of(&case["quat"][0]),
+            f32_of(&case["quat"][1]),
+            f32_of(&case["quat"][2]),
+            f32_of(&case["quat"][3]),
+        ];
+        let block = QuadBlock {
+            field_04: f32_of(&case["field_04"]),
+            jump_scalar: f32_of(&case["jump_scalar"]),
+            jump_dir: [
+                f32_of(&case["jump_dir"][0]),
+                f32_of(&case["jump_dir"][1]),
+                f32_of(&case["jump_dir"][2]),
+            ],
+            jump_extra: [
+                f32_of(&case["jump_extra"][0]),
+                f32_of(&case["jump_extra"][1]),
+                f32_of(&case["jump_extra"][2]),
+            ],
+            ..QuadBlock::default()
+        };
+        let ext = QuadExternals {
+            entity_present: true,
+            controlled_unit: case["unit_present"].as_bool().unwrap(),
+            mounted_unit: case["mounted_stance"].as_u64().unwrap() != 0,
+            unit_gate: case["unit_gate"].as_u64().unwrap() != 0,
+            unit_kind: case["unit_kind"].as_u64().unwrap() as i32,
+            jump_height: f32_of(&case["jump_height"]),
+            walk: case["walk"].as_u64().unwrap() != 0,
+            params: movement_params(&case["params"]),
+            speed_multiplier: f32_of(&case["speed_multiplier"]),
+            swimming: case["swim"].as_u64().unwrap() != 0,
+            swim_gate: case["game_96"].as_u64().unwrap() == 0,
+            anim_present: !case["anim"].is_null(),
+            jump_in_place: case["anim"]
+                .as_str()
+                .map(|s| s.contains("jump_in_place"))
+                .unwrap_or(false),
+            graph_push: false,
+            cfg_swim_scale: f32_of(&case["swim_scale"]),
+            ..QuadExternals::default()
+        };
+        let mut graph = Vec::new();
+        let out = ground(&mut ctl, &block, &QuadActor::default(), &ext, &mut graph);
+        assert_eq!(
+            ctl.mode,
+            u32::from_le_bytes(after[0x60..0x64].try_into().unwrap()),
+            "{name} mode"
+        );
+        for (i, off) in [0x64usize, 0x68, 0x6c, 0x8c, 0x90, 0x94].iter().enumerate() {
+            let got = if i < 3 {
+                ctl.velocity[i]
+            } else {
+                ctl.spare_velocity[i - 3]
+            };
+            assert_eq!(
+                got.to_bits(),
+                f_at(&after, *off).to_bits(),
+                "{name} velocity[{i}]: got {got:?}, want {:?}",
+                f_at(&after, *off)
+            );
+        }
+        assert_eq!(ctl.airborne, after[0x98], "{name} airborne");
+        assert_eq!(ctl.jumped, after[0x99], "{name} jumped");
+        let ev = case["unit_event"].as_u64().unwrap() as u32;
+        let want_ev = if ev == 0xFFFF_FFFF {
+            None
+        } else {
+            Some(ev != 0)
+        };
+        assert_eq!(out.unit_event, want_ev, "{name} unit_event");
+        assert!(graph.is_empty(), "{name} graph");
+    }
+}
+
+#[test]
+fn wrapper_frame_movement_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/wrappers.json")).expect("wrapper JSON");
+    for (i, case) in doc["cases"].as_array().unwrap().iter().enumerate() {
+        let eff = &case["effective"];
+        let bits = |v: &Value| -> u32 { (v.as_f64().expect("number") as f32).to_bits() };
+        let one = bits(&eff["one_80"]);
+        let sync = FrameSync {
+            velocity: [
+                bits(&eff["velocity"][0]),
+                bits(&eff["velocity"][1]),
+                bits(&eff["velocity"][2]),
+            ],
+            q70: [
+                bits(&eff["q70"][0]),
+                bits(&eff["q70"][1]),
+                bits(&eff["q70"][2]),
+                bits(&eff["q70"][3]),
+            ],
+            one_80: one,
+            flag_84: eff["flag_84"].as_u64().unwrap() as u8,
+            word_88: bits(&eff["word_88"]),
+            flag_8c: eff["flag_8c"].as_u64().unwrap() as u8,
+        };
+        let (_, actor) = process_frame_movement(&MoverInput::default(), &sync);
+        let out = hex_bytes(case["out"].as_str().unwrap());
+        let mut got = Vec::new();
+        for v in actor.field_308 {
+            got.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in actor.field_314 {
+            got.extend_from_slice(&v.to_le_bytes());
+        }
+        got.push(actor.field_328);
+        got.extend_from_slice(&actor.field_32c.to_le_bytes());
+        got.push(actor.field_330);
+        let mut want = Vec::new();
+        want.extend_from_slice(&out[8..0x14]);
+        want.extend_from_slice(&out[0x14..0x28]);
+        want.extend_from_slice(&out[0x28..0x29]);
+        want.extend_from_slice(&out[0x2c..0x30]);
+        want.extend_from_slice(&out[0x30..0x31]);
+        assert_eq!(got, want, "wrapper movement case {i}");
+    }
+}
+
+#[test]
+fn wrapper_frame_rotation_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/wrappers.json")).expect("wrapper JSON");
+    for (i, case) in doc["rotation_cases"].as_array().unwrap().iter().enumerate() {
+        let q = |v: &Value| -> [f32; 4] {
+            [
+                f32_of(&v[0]),
+                f32_of(&v[1]),
+                f32_of(&v[2]),
+                f32_of(&v[3]),
+            ]
+        };
+        let vec3 = |v: &Value| -> [f32; 3] { [f32_of(&v[0]), f32_of(&v[1]), f32_of(&v[2])] };
+        let actor = RotationActor {
+            quats: [q(&case["q20"]), q(&case["q30"]), q(&case["q40"]), [0.0; 4]],
+            support: [q(&case["q60"]), q(&case["q70"]), [0.0; 4], [0.0; 4]],
+            swim: vec3(&case["swim"]),
+            view_limit: vec3(&case["view"]),
+            stride: 1.0,
+            desired: [0.0; 3],
+            anim_4: 0.0,
+            anim_a8: 0,
+            actor_171: 0,
+            actor_18b: 1,
+            ground_align: false,
+            on_ladder: false,
+            stance: 0,
+            ground_factor: 0.0,
+            ground_cvar: [0.0; 2],
+        };
+        let (_, bound, path) = process_frame_rotation(
+            &actor,
+            vec3(&case["request_move"]),
+            f32_of(&case["scale"]),
+        );
+        assert_eq!(path, crate::port::movement::RotationPath::Ladder);
+        let after = hex_bytes(case["after"].as_str().unwrap());
+        let check = |off: usize, want: [f32; 4]| {
+            for (j, value) in want.iter().enumerate() {
+                assert_eq!(
+                    value.to_bits(),
+                    f_at(&after, off + j * 4).to_bits(),
+                    "rotation wrapper {i} +{off:#x}[{j}]"
+                );
+            }
+        };
+        check(0x2B0, bound.move_quats[0]);
+        check(0x2C0, bound.move_quats[1]);
+        check(0x2D0, bound.move_quats[2]);
+        check(0x33C, bound.support_quats[0]);
+        check(0x34C, bound.support_quats[1]);
+        check(0x950, bound.out_pos);
+        for j in 0..3 {
+            assert_eq!(
+                bound.swim[j].to_bits(),
+                f_at(&after, 0x960 + j * 4).to_bits(),
+                "rotation wrapper {i} swim[{j}]"
+            );
+            assert_eq!(
+                bound.view_limit[j].to_bits(),
+                f_at(&after, 0x154 + j * 4).to_bits(),
+                "rotation wrapper {i} view[{j}]"
+            );
+        }
+    }
 }

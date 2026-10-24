@@ -144,7 +144,7 @@ fn branch_c(y: f64, xb: u64, v3_min: f64, num: f64, q: u32) -> f64 {
 fn poly(
     _y: f64,
     x: f64,
-    yb: u64,
+    _yb: u64,
     xb: u64,
     v3_min: f64,
     mask: u64,
