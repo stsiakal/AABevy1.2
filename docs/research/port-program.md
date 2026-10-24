@@ -53,7 +53,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
 | F7 | Remote-unit smoothing (interpolation/extrapolation of other units) | movement section 6 + [`port-vehicles/`](port-vehicles/MAP.md) D | mapped |
-| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **bit-exact** (~760 goldens); step 2-3 **ported with 20 live cases per function** (StopSkill, combo add/update, client-only skills, Start/Fire/End, CastingStopped, StopCasting, `6e67277d`); CastingDelayed and Fire's 0x15 event keep decompile behaviour (write not observable in the harness); skill-use front end UseSkill + gate + refusal: 18 live cases, CSStartSkill 13-byte body exact; requirement evaluators (U3) without per-kind goldens |
+| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **bit-exact** (~760 goldens); steps 2-3 with 20 live cases per function; skill-use front end exact (CSStartSkill 13-byte body); step 4 (`661a8ef1`, `8c4ef7a8`): requirement evaluators, 36 kinds / 620 live cases; tab target collect/select/entry, target setter, click select, combat and force bytes, force-attack sender (0x4f), first hit, engage, buff append with 20 live cases each; CSStartSkill forms for unit, doodad and position targets (25 bodies); **damage/heal dispatch, aggro/party and buff apply only synthetic** (crafted records crash the hidden client); key-to-slot dispatch (U8) open |
 | S2 | Doodad and NPC interaction rules: range gates, interaction selection, gathering/farming, coffers, phases, loot | [`port-interaction/`](port-interaction/MAP.md), 220 fn / 57 KB | mapped |
 | S3 | Vehicles and ships: wagon/cart driving, helm, boarding, cannons, transfers | [`port-vehicles/`](port-vehicles/MAP.md), 191 fn / 115 KB | mapped |
 | S4 | Housing and decoration placement, construction display, seeds | [`port-housing/`](port-housing/MAP.md), 197 fn / 84 KB | mapped |
@@ -90,6 +90,8 @@ client confirms it.
 | Interaction bar | F/G/H/J = actions 31-34, up to 10 shown, 2.1 m doodad / 3-3.5 m NPC, LOS | [`port-interaction/`](port-interaction/MAP.md) |
 | NPC talk | 500 ms rate limit, 3 m gate + auto-walk, 17 service tags | [`port-interaction/`](port-interaction/MAP.md) |
 | Local cast start | only on `SCSkillStarted`, never predicted | [`port-combat/`](port-combat/MAP.md) |
+| Tab targeting chain | `FUN_39368630` -> `FUN_39368520` -> `FUN_393672c0`; hostile flag bit 0x100; a separate 10-entry previous-target list | combat step 4, 20 live cases each |
+| Force attack | sender `FUN_39390ec0`, opcode 0x4f with an inverted byte, gate `FUN_39390f20` | combat step 4 |
 | Client skill prechecks | the 1.2 client checks **no** range, LOS, facing, resources, mount or swim before sending `CSStartSkill`; those are server-side | combat step 3, `FUN_393989e0` path, 18 live cases |
 | Cast cancel by movement | server-driven (`SCCastingStopped`); no input-layer caller of `FUN_39395b50`; no queue margin, 1000 ms client-only grace | combat step 3 (U7, U9) |
 | Combo entries | keyed by the **next** skill id; expiry inserts the next skill's cooldown (18 s seen live) | combat step 3 |
