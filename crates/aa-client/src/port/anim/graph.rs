@@ -142,11 +142,140 @@ pub struct TransitionInfo {
     pub from: u16,
     pub to: u16,
     pub force_follow_chance: u16,
+    /// `CachePass` weight (`entry+4` in the compiled `.ag`), or
+    /// `link_cost + target.cost_minus1` for an XML-built graph.
+    pub weight: u16,
     /// Link `cost - 1` (the loader's field at entry+6 before `CachePass`).
     pub cost_minus1: u16,
     /// Link `cost` (kept for the `CachePass` weight formula).
     pub link_cost: u16,
     pub transition_time: f32,
+}
+
+/// One 20-byte `CStateIndex` entry, serialized as 17 bytes by
+/// `CAnimationGraph::Serialize` (`cryaction+0x6152b0`) through `FUN_30658930`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateIndexEntry {
+    /// Input id (`entry+0`).
+    pub input: u16,
+    /// Encoded value (`entry+2`), already the byte used by `EvaluateGuards`.
+    pub value: u16,
+    /// Number of matching states (`entry+4`).
+    pub count: u16,
+    /// `entry+6`; the query walk uses only `count` and `start`.
+    pub unk6: u16,
+    /// `entry+8`; priority/score used by the debug output.
+    pub priority: u8,
+    /// Start index into the state-id pair array (`entry+0xc`).
+    pub start: u32,
+    /// End index into the state-id pair array (`entry+0x10`).
+    pub end: u32,
+}
+
+/// `CStateIndex` (`CStateIndex::Query FUN_3065e050`, serialized by
+/// `FUN_3065bc10`). The pair array is the flattened list of candidate state ids.
+#[derive(Clone, Debug, Default)]
+pub struct StateIndex {
+    pub entries: Vec<StateIndexEntry>,
+    /// `+0xb0`: state ids. The first `state_count` entries are the "all states"
+    /// fallback used when the query matches no criterion.
+    pub pairs: Vec<u16>,
+    /// `+0xc0`: number of inputs searched.
+    pub input_count: u16,
+    /// `+0xc2`: number of fallback states.
+    pub state_count: u16,
+}
+
+impl StateIndex {
+    fn find(&self, input: u16, value: u16) -> Option<&StateIndexEntry> {
+        self.entries
+            .binary_search_by_key(&(input, value), |e| (e.input, e.value))
+            .ok()
+            .map(|i| &self.entries[i])
+    }
+
+    /// `CStateIndex::Query FUN_3065e050`: binary-search every encoded input,
+    /// then return the intersection of the matching state-id ranges. With no
+    /// match the original returns `pairs[0..state_count]`.
+    pub fn query(&self, encoded: &[u16; 32]) -> Vec<u16> {
+        let mut ranges: Vec<&StateIndexEntry> = Vec::new();
+        for i in 0..(self.input_count as usize).min(32) {
+            let value = encoded[i];
+            if value == 0xffff {
+                continue;
+            }
+            if let Some(entry) = self.find(i as u16, value) {
+                ranges.push(entry);
+            }
+        }
+        if ranges.is_empty() {
+            let n = (self.state_count as usize).min(self.pairs.len());
+            return self.pairs[..n].to_vec();
+        }
+        if ranges.len() == 1 {
+            return self.range(ranges[0]);
+        }
+        let mut out = self.range(ranges[0]);
+        for entry in &ranges[1..] {
+            let next = self.range(entry);
+            let mut merged = Vec::with_capacity(out.len().min(next.len()));
+            let (mut i, mut j) = (0, 0);
+            while i < out.len() && j < next.len() {
+                match out[i].cmp(&next[j]) {
+                    std::cmp::Ordering::Less => i += 1,
+                    std::cmp::Ordering::Greater => j += 1,
+                    std::cmp::Ordering::Equal => {
+                        merged.push(out[i]);
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            }
+            out = merged;
+        }
+        if out.len() <= 1 {
+            return out;
+        }
+        // `FUN_3065b6f0`: score every surviving state by the priority of each matched
+        // criterion whose state range contains it, sort, and keep only the best score
+        // (`+0xc4 == 0` trims the lower-scored tail). Without this the swim idle and
+        // swim run states both survive the raw intersection.
+        let mut scored: Vec<(u16, u32)> = out.iter().map(|&state| (state, 0)).collect();
+        for entry in &ranges {
+            let start = (entry.start as usize).min(self.pairs.len());
+            let end = (start + entry.count as usize).min(self.pairs.len());
+            let slice = &self.pairs[start..end];
+            for (state, score) in &mut scored {
+                if slice.binary_search(state).is_ok() {
+                    *score += entry.priority as u32;
+                }
+            }
+        }
+        let best = scored.iter().map(|&(_, score)| score).max().unwrap_or(0);
+        let mut states: Vec<u16> = scored
+            .into_iter()
+            .filter(|&(_, score)| score == best)
+            .map(|(state, _)| state)
+            .collect();
+        // `FUN_3065b6f0` keeps the best-scored state; equal scores are resolved by the
+        // internal vector order. The live graph leaves the later (larger) id first.
+        states.sort_unstable_by(|a, b| b.cmp(a));
+        states.truncate(1);
+        states
+    }
+
+    fn range(&self, entry: &StateIndexEntry) -> Vec<u16> {
+        let start = (entry.start as usize).min(self.pairs.len());
+        let end = (start + entry.count as usize).min(self.pairs.len());
+        self.pairs[start..end].to_vec()
+    }
+}
+
+/// Which loader produced the graph: the compiled `.ag` path or the XML path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphSource {
+    Ag,
+    Xml,
 }
 
 /// The static graph tables.
@@ -158,6 +287,9 @@ pub struct AnimationGraph {
     pub transitions: Vec<TransitionInfo>,
     /// `Main Hub`/`Main_Hub` state id (`graph+0x204`), `None` when absent.
     pub default_state: Option<u16>,
+    /// `CStateIndex` from the compiled `.ag` (the full criterion set).
+    pub state_index: Option<StateIndex>,
+    pub source: GraphSource,
 }
 
 #[derive(Clone, Debug)]
@@ -272,7 +404,8 @@ fn load_graph_with_templates(
         .collect();
 
     let raw_states = parse_states(states_node);
-    let expanded = expand_states(&raw_states);
+    let param_values = collect_param_values(&raw_states);
+    let expanded = expand_states(&raw_states, &param_values);
     let canonical = canonical_names(transitions_node, &raw_states, &expanded);
 
     collect_ranges(
@@ -350,6 +483,7 @@ fn load_graph_with_templates(
         &canonical,
         &name_to_id,
         &states,
+        &param_values,
     );
 
     let default_state = ordered_names
@@ -363,15 +497,22 @@ fn load_graph_with_templates(
         states,
         transitions,
         default_state,
+        state_index: None,
+        source: GraphSource::Xml,
     })
 }
 
-/// Load `game/animations/graphs/<name>.xml` from the 1.2 `game_pak`.
+/// Load a graph the way the 1.2 client does: the compiled `.ag` side copy when it
+/// exists (`FUN_306261f0`), otherwise `game/animations/graphs/<name>.xml`.
 pub fn load_graph_from_pak(name: &str) -> Result<AnimationGraph, String> {
-    let path = format!("game/animations/graphs/{name}.xml");
-    let data = aa_pak::Pak::global()
-        .read(&path)
-        .map_err(|e| format!("{path}: {e}"))?;
+    let pak = aa_pak::Pak::global();
+    let ag = super::ag::ag_path(name);
+    if pak.entry(&ag).is_some() {
+        return super::ag::load_graph_ag_from_pak(name);
+    }
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    let path = format!("game/animations/graphs/{stem}.xml");
+    let data = pak.read(&path).map_err(|e| format!("{path}: {e}"))?;
     let xml = String::from_utf8_lossy(&data);
     let templates = load_template_lib();
     load_graph_with_templates(name, &xml, &templates)
@@ -413,9 +554,7 @@ fn load_template_lib() -> TemplateLib {
                 }
             } else if node.tag_name().name().eq_ignore_ascii_case("SelectWhen") {
                 for c in element_children(node) {
-                    if c.attributes()
-                        .any(|a| a.value().contains('$'))
-                    {
+                    if c.attributes().any(|a| a.value().contains('$')) {
                         continue;
                     }
                     def.select_when.push(Criterion {
@@ -605,10 +744,7 @@ fn substitute_named(text: &str, marks: &[String], values: &[String]) -> String {
         if bytes[i] == b'[' {
             if let Some(close) = text[i..].find(']') {
                 let name = &text[i + 1..i + close];
-                if let Some(pos) = marks
-                    .iter()
-                    .position(|m| m.eq_ignore_ascii_case(name))
-                {
+                if let Some(pos) = marks.iter().position(|m| m.eq_ignore_ascii_case(name)) {
                     out.push_str(&values[pos]);
                 }
                 i += close + 1;
@@ -629,9 +765,7 @@ fn substitute_params(text: &str, params: &HashMap<String, String>) -> String {
         if bytes[i] == b'$' {
             let start = i + 1;
             let mut end = start;
-            while end < bytes.len()
-                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-            {
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
                 end += 1;
             }
             if end > start {
@@ -649,6 +783,25 @@ fn substitute_params(text: &str, params: &HashMap<String, String>) -> String {
     out
 }
 
+/// All `<Parameter>` value lists declared by any state, lowercased and de-duplicated
+/// in document order. `PreprocessParameterization` uses this global pool for link and
+/// state placeholders that the endpoint does not declare itself.
+fn collect_param_values(raw: &[RawState<'_>]) -> HashMap<String, Vec<String>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    for state in raw {
+        for (id, values) in &state.params {
+            let entry = out.entry(id.to_ascii_lowercase()).or_default();
+            for value in values {
+                let lower = value.to_ascii_lowercase();
+                if !entry.contains(&lower) {
+                    entry.push(lower);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Combinations in **placeholder order** while the nested loop follows the
 /// `<Parameterization>` document order. Returns `(override_key, mark_values)`:
 /// `override_key` joins the values in parameter document order (the `<Override id>` spelling),
@@ -656,6 +809,7 @@ fn substitute_params(text: &str, params: &HashMap<String, String>) -> String {
 fn param_combos(
     params: &[(String, Vec<String>)],
     marks: &[String],
+    global: &HashMap<String, Vec<String>>,
 ) -> Vec<(String, Vec<String>)> {
     let mut order: Vec<(String, Vec<String>)> = Vec::new();
     for (id, vals) in params {
@@ -665,7 +819,11 @@ fn param_combos(
     }
     for mark in marks {
         if !order.iter().any(|(id, _)| id.eq_ignore_ascii_case(mark)) {
-            order.push((mark.clone(), default_param_values(mark)));
+            let values = global
+                .get(&mark.to_ascii_lowercase())
+                .cloned()
+                .unwrap_or_else(|| default_param_values(mark));
+            order.push((mark.clone(), values));
         }
     }
     let mut combos: Vec<Vec<String>> = vec![Vec::new()];
@@ -701,7 +859,10 @@ fn param_combos(
         .collect()
 }
 
-fn expand_states<'a>(raw: &[RawState<'a>]) -> Vec<ExpandedState<'a>> {
+fn expand_states<'a>(
+    raw: &[RawState<'a>],
+    global: &HashMap<String, Vec<String>>,
+) -> Vec<ExpandedState<'a>> {
     let mut out = Vec::new();
     for state in raw {
         if !state.include_in_game {
@@ -724,10 +885,11 @@ fn expand_states<'a>(raw: &[RawState<'a>]) -> Vec<ExpandedState<'a>> {
             });
             continue;
         }
-        for (override_key, mark_values) in param_combos(&state.params, &marks) {
+        for (override_key, mark_values) in param_combos(&state.params, &marks, global) {
             // `<Override><ExcludeFromGraph/></Override>` removes that parameter combination.
             if state.overrides.iter().any(|(key, node)| {
-                key.eq_ignore_ascii_case(&override_key) && child(*node, "ExcludeFromGraph").is_some()
+                key.eq_ignore_ascii_case(&override_key)
+                    && child(*node, "ExcludeFromGraph").is_some()
             }) {
                 continue;
             }
@@ -905,8 +1067,8 @@ fn effective_templates<'a>(state: &ExpandedState<'a>) -> Vec<Node<'a, 'a>> {
         .filter(|c| c.tag_name().name().eq_ignore_ascii_case("Template"))
         .collect();
     if let Some(over) = effective_override(state) {
-        for t in element_children(over)
-            .filter(|c| c.tag_name().name().eq_ignore_ascii_case("Template"))
+        for t in
+            element_children(over).filter(|c| c.tag_name().name().eq_ignore_ascii_case("Template"))
         {
             if let Some(name) = t.attribute("name") {
                 out.retain(|b| {
@@ -955,13 +1117,9 @@ fn build_state(
             mentioned_inputs.push(idx as u16);
         }
         let use_guard = match input.kind {
-            InputKind::Keyed => {
-                let literal = criterion
-                    .attribute("value")
-                    .is_some_and(|v| !v.contains('['));
-                criterion.attribute("value").is_some()
-                    && (input.force_guard || (input.mixin_filter && literal))
-            }
+            // `mixinFilter` keyed criteria are mixin filters, not state guards; only
+            // `forceGuard` inputs contribute the packed guard words.
+            InputKind::Keyed => criterion.attribute("value").is_some() && input.force_guard,
             InputKind::Int | InputKind::Float => input.force_guard,
         };
         if !use_guard {
@@ -1058,13 +1216,17 @@ fn push_guard_pair(guards: &mut Vec<u16>, input: u16, min: u16, max: u16) {
     guards.push(max_word);
 }
 
-fn endpoint_combos(name: &str, params: &[(String, Vec<String>)]) -> Vec<String> {
+fn endpoint_combos(
+    name: &str,
+    params: &[(String, Vec<String>)],
+    global: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
     let marks = placeholders(name);
     if marks.is_empty() {
         return vec![name.to_string()];
     }
     let mut out = Vec::new();
-    for (_, combo) in param_combos(params, &marks) {
+    for (_, combo) in param_combos(params, &marks, global) {
         let mut id = name.to_string();
         for value in &combo {
             id = substitute_once(&id, value);
@@ -1074,12 +1236,24 @@ fn endpoint_combos(name: &str, params: &[(String, Vec<String>)]) -> Vec<String> 
     out
 }
 
+fn mapping_value(key: &str, params: &HashMap<String, String>) -> String {
+    if let Some(name) = key.strip_prefix('[').and_then(|k| k.strip_suffix(']')) {
+        params
+            .get(&name.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        key.to_ascii_lowercase()
+    }
+}
+
 fn build_transitions(
     node: Option<Node<'_, '_>>,
     raw_states: &[RawState<'_>],
     canonical: &HashMap<String, String>,
     name_to_id: &HashMap<String, u16>,
     states: &[StateInfo],
+    global: &HashMap<String, Vec<String>>,
 ) -> Vec<TransitionInfo> {
     let Some(node) = node else {
         return Vec::new();
@@ -1106,7 +1280,7 @@ fn build_transitions(
             return Vec::new();
         }
         let mut out = Vec::new();
-        for (_, values) in param_combos(&params, &marks) {
+        for (_, values) in param_combos(&params, &marks, global) {
             let mut id = name.to_string();
             for value in &values {
                 id = substitute_once(&id, value);
@@ -1115,33 +1289,36 @@ fn build_transitions(
             if !name_to_id.contains_key(&il) {
                 continue;
             }
-            let map: HashMap<String, String> = marks
-                .iter()
-                .cloned()
-                .zip(values.iter().cloned())
-                .collect();
+            let map: HashMap<String, String> =
+                marks.iter().cloned().zip(values.iter().cloned()).collect();
             out.push((il, map));
         }
         out
     };
 
-    let expand_pair = |from: &str, to: &str| -> Vec<(String, String)> {
-        let froms = copies_of(from);
-        let tos = copies_of(to);
-        let mut out = Vec::new();
-        let mut seen = HashSet::new();
-        for (f, fmap) in &froms {
-            for (t, tmap) in &tos {
-                let compatible = fmap.iter().all(|(name, value)| {
-                    tmap.get(name).is_none_or(|other| other == value)
-                });
-                if compatible && seen.insert((f.clone(), t.clone())) {
-                    out.push((f.clone(), t.clone()));
+    let expand_pair =
+        |from: &str, to: &str, mappings: &[(String, String)]| -> Vec<(String, String)> {
+            let froms = copies_of(from);
+            let tos = copies_of(to);
+            let mut out = Vec::new();
+            let mut seen = HashSet::new();
+            for (f, fmap) in &froms {
+                for (t, tmap) in &tos {
+                    // `<Mapping from="[stance]" to="[stance]"/>` joins the two endpoint
+                    // copies on that parameter (either side may be a literal value). A link
+                    // without mappings is instantiated for every pair of copies.
+                    let compatible = mappings.iter().all(|(from_key, to_key)| {
+                        let from_value = mapping_value(from_key, fmap);
+                        let to_value = mapping_value(to_key, tmap);
+                        from_value == to_value
+                    });
+                    if compatible && seen.insert((f.clone(), t.clone())) {
+                        out.push((f.clone(), t.clone()));
+                    }
                 }
             }
-        }
-        out
-    };
+            out
+        };
 
     let mut transitions = Vec::new();
     for link in element_children(node) {
@@ -1151,21 +1328,34 @@ fn build_transitions(
         let (Some(from), Some(to)) = (link.attribute("from"), link.attribute("to")) else {
             continue;
         };
+        let mappings: Vec<(String, String)> = element_children(link)
+            .filter(|c| c.tag_name().name().eq_ignore_ascii_case("Mapping"))
+            .filter_map(|c| {
+                Some((
+                    c.attribute("from")?.to_string(),
+                    c.attribute("to")?.to_string(),
+                ))
+            })
+            .collect();
         let cost = attr_u32(link, "cost", 100) as u16;
         let force = attr_u32(link, "forceFollowChance", 0) as u16;
         let time = link
             .attribute("transitionTime")
             .and_then(parse_float)
             .unwrap_or(0.0);
-        for (f, t) in expand_pair(from, to) {
+        for (f, t) in expand_pair(from, to, &mappings) {
             let (Some(&fr), Some(&to_id)) = (name_to_id.get(&f), name_to_id.get(&t)) else {
                 continue;
             };
-            let _ = &states[to_id as usize];
+            let target = &states[to_id as usize];
+            // `CachePass FUN_305f9cc0`: entry+6 += target bit6 + target.cost_minus1 + 1.
+            let weight =
+                cost as u32 + target.cost_minus1 as u32 + ((target.flags8 >> 6) & 1) as u32;
             transitions.push(TransitionInfo {
                 from: fr as u16,
                 to: to_id as u16,
                 force_follow_chance: force,
+                weight: weight.min(0xffff) as u16,
                 cost_minus1: cost.saturating_sub(1),
                 link_cost: cost,
                 transition_time: time,
@@ -1409,7 +1599,11 @@ fn collect_ranges(
                 .map(|a| {
                     (
                         a.name().to_string(),
-                        substitute_named(a.value(), &placeholders(&state.source_id), &state.mark_values),
+                        substitute_named(
+                            a.value(),
+                            &placeholders(&state.source_id),
+                            &state.mark_values,
+                        ),
                     )
                 })
                 .collect();
@@ -1475,4 +1669,3 @@ fn collect_ranges(
     }
     let _ = canonical;
 }
-

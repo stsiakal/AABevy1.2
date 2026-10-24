@@ -89,9 +89,11 @@ impl GraphState {
         let inputs = graph
             .inputs
             .iter()
-            .map(|_| InputValues {
-                raw: 0,
-                encoded: [0xffff, 0xffff],
+            .map(|input| InputValues {
+                raw: input.default_encoded as u32,
+                // `CAnimationGraphState` starts with every input at its graph default;
+                // an untouched 0xffff would make `CStateIndex::Query` skip its criterion.
+                encoded: [input.default_encoded, input.default_encoded],
             })
             .collect();
         let change_ids = vec![0; graph.inputs.len()];
@@ -212,9 +214,16 @@ impl GraphState {
         evaluate_guards(&info.guards, &encoded)
     }
 
-    /// `BasicQuery FUN_30630c20`: the selectable states whose guards pass, else the default.
+    /// `BasicQuery FUN_30630c20`: `CStateIndex::Query FUN_3065e050` over the encoded
+    /// bank. XML-only graphs fall back to the state guards.
     pub fn basic_query(&self, graph: &AnimationGraph) -> Vec<u16> {
         let encoded = self.bank_values();
+        if let Some(index) = &graph.state_index {
+            let states = index.query(&encoded);
+            if !states.is_empty() {
+                return states;
+            }
+        }
         let mut out = Vec::new();
         for state in &graph.states {
             if !state.allow_select {
@@ -232,45 +241,26 @@ impl GraphState {
         out
     }
 
-    /// `PerformQuery FUN_306359e0`: pick a transition target for the current state, else fall
-    /// back to the `BasicQuery` set. The weighted choice uses `time % totalWeight`.
+    /// `PerformQuery FUN_306359e0`: the immediate target is the `CStateIndex` candidate
+    /// list. The current state stays selected while it is still a candidate; otherwise the
+    /// first (or, when several remain, a clock-weighted) candidate is the target. The
+    /// outgoing transition links are used later by the path finder, not to choose it.
     pub fn perform_query(&self, graph: &AnimationGraph) -> Option<u16> {
+        let mut candidates = self.basic_query(graph);
+        if candidates.is_empty() {
+            return graph.default_state;
+        }
         if let Some(current) = self.current {
-            let mut total: u32 = 0;
-            let mut chosen: Option<u16> = None;
-            let mut first: Option<u16> = None;
-            for t in graph.transitions.iter().filter(|t| t.from == current) {
-                if !self.guards_pass(graph, t.to) {
-                    continue;
-                }
-                let weight = t.link_cost as u32
-                    + graph.states[t.to as usize].cost_minus1 as u32;
-                total = total.saturating_add(weight);
-                if first.is_none() {
-                    first = Some(t.to);
-                }
-                chosen = Some(t.to);
-            }
-            if let Some(first) = first {
-                if total == 0 {
-                    return Some(first);
-                }
-                let mut pick = (self.time * 1000.0) as u32 % total;
-                for t in graph.transitions.iter().filter(|t| t.from == current) {
-                    if !self.guards_pass(graph, t.to) {
-                        continue;
-                    }
-                    let weight = t.link_cost as u32
-                        + graph.states[t.to as usize].cost_minus1 as u32;
-                    if pick < weight {
-                        return Some(t.to);
-                    }
-                    pick -= weight;
-                }
-                return chosen;
+            if let Some(pos) = candidates.iter().position(|&s| s == current) {
+                candidates.swap(0, pos);
+                return Some(current);
             }
         }
-        self.basic_query(graph).first().copied()
+        if candidates.len() > 1 {
+            let pick = (self.time * 1000.0) as usize % candidates.len();
+            candidates.swap(0, pick);
+        }
+        candidates.first().copied()
     }
 
     /// `ForceTeleportToQueriedState FUN_30636480`: clear the queue, jump to `state`.
@@ -282,7 +272,8 @@ impl GraphState {
         self.next = Some(state);
         self.pending = Some(state);
         self.learn_state(graph, state);
-        self.events.push(GraphEvent::StateChange { from, to: state });
+        self.events
+            .push(GraphEvent::StateChange { from, to: state });
         self.update_kind = UpdateKind::Steady;
         self.state_time = 0.0;
     }
@@ -323,20 +314,16 @@ impl GraphState {
         if let Some(default) = graph.default_state {
             let from = self.current;
             self.learn_state(graph, default);
-            self.events.push(GraphEvent::StateChange {
-                from,
-                to: default,
-            });
+            self.events
+                .push(GraphEvent::StateChange { from, to: default });
             self.update_kind = UpdateKind::Steady;
             return;
         }
         if let Some(target) = self.perform_query(graph) {
             let from = self.current;
             self.learn_state(graph, target);
-            self.events.push(GraphEvent::StateChange {
-                from,
-                to: target,
-            });
+            self.events
+                .push(GraphEvent::StateChange { from, to: target });
             self.update_kind = UpdateKind::Steady;
         }
     }
@@ -360,7 +347,8 @@ impl GraphState {
                 .map(|t| t.transition_time as f64)
                 .unwrap_or(0.0)
                 .max(0.0);
-            self.events.push(GraphEvent::TransitionStarted { from, to: target });
+            self.events
+                .push(GraphEvent::TransitionStarted { from, to: target });
             self.update_kind = UpdateKind::Transition;
             if self.transition_time > 0.0 {
                 return;
@@ -379,10 +367,8 @@ impl GraphState {
         };
         let from = self.current;
         self.learn_state(graph, target);
-        self.events.push(GraphEvent::StateChange {
-            from,
-            to: target,
-        });
+        self.events
+            .push(GraphEvent::StateChange { from, to: target });
         self.update_kind = UpdateKind::Steady;
     }
 
@@ -391,10 +377,7 @@ impl GraphState {
         if let Some(next) = self.pending_ring.pop_front() {
             let from = self.current;
             self.learn_state(graph, next);
-            self.events.push(GraphEvent::StateChange {
-                from,
-                to: next,
-            });
+            self.events.push(GraphEvent::StateChange { from, to: next });
         } else {
             self.update_kind = UpdateKind::Steady;
         }
@@ -437,12 +420,7 @@ mod tests {
 </AnimationSetup>"#;
 
     fn id(graph: &AnimationGraph, name: &str) -> u16 {
-        graph
-            .states
-            .iter()
-            .find(|s| s.name == name)
-            .unwrap()
-            .id
+        graph.states.iter().find(|s| s.name == name).unwrap().id
     }
 
     #[test]
@@ -482,5 +460,4 @@ mod tests {
         assert_eq!(state.current, Some(id(&graph, "Walk")));
         assert!(state.pending_ring.is_empty());
     }
-
 }

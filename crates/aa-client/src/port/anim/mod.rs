@@ -15,27 +15,29 @@
 
 #![allow(dead_code, unused_imports)]
 
+mod ag;
 mod fourcc;
 mod graph;
 mod guards;
-mod machine;
 mod inputs;
+mod machine;
 mod side;
 
 #[cfg(test)]
 mod tests;
 
+pub use ag::{ag_path, load_graph_ag, load_graph_ag_from_pak};
 pub use fourcc::{FOURCC_TABLE, fourcc_case};
 pub use graph::{
-    AnimationGraph, GraphInput, InputKind, StateInfo, TemplateInfo, TransitionInfo, load_graph,
-    load_graph_from_pak,
+    AnimationGraph, GraphInput, GraphSource, InputKind, StateIndex, StateIndexEntry, StateInfo,
+    TemplateInfo, TransitionInfo, load_graph, load_graph_from_pak,
 };
 pub use guards::evaluate_guards;
-pub use machine::{GraphEvent, GraphState, InputValues, UpdateKind};
 pub use inputs::{
     encode_float, encode_float_str, encode_int, encode_int_str, encode_key, encode_key_index,
     parse_float, parse_int,
 };
+pub use machine::{GraphEvent, GraphState, InputValues, UpdateKind};
 pub use side::{Placement, Vec3, approach_side, entry_side, side_placement};
 
 /// `0x3999cffc` in `x2game.dll`: the 2.0 used by every quaternion/matrix conversion.
