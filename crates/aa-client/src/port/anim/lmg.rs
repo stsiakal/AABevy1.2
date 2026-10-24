@@ -9,9 +9,9 @@
 //!   `+0x148`/`+0x14c`, extra blend parameters at `+0x144`, `+0x150`, `+0x154`),
 //! * the LMG example list (`Lmg`, 8 rows of `0x2c` bytes; position at `+0x1c`/`+0x20`).
 //!
-//! The buffer types deliberately keep the original's byte offsets. TSTP is bit-exact against
-//! the live client (`goldens/lmg_weights.json`); the shared S8_1 body is ported but its 8-way
-//! fallback order is still open (see `D-graph-runtime.md` §7).
+//! The buffer types deliberately keep the original's byte offsets. The TSTP body and the shared
+//! S8_1/M2I8/MI01/MI02/S8SW body (including the hardcoded fallback directions) are bit-exact
+//! against the live client (`goldens/lmg_weights.json`, `goldens/lmg_s8_fallback.json`).
 
 /// `DAT_316745a0`: 1.0.
 pub const ONE: f32 = 1.0;
@@ -162,61 +162,26 @@ pub fn fun_31569a20(points: &[(f32, f32); 8], dir: (f32, f32)) -> [f32; 8] {
     if dx * dx + dy * dy == 0.0 {
         return [EIGHTH; 8];
     }
-    let c0 = cross(dir, points[0]);
-    let c1 = cross(dir, points[1]);
-    let c2 = cross(dir, points[2]);
-    let c3 = cross(dir, points[3]);
-    let c4 = cross(dir, points[4]);
-    let c5 = cross(dir, points[5]);
-    let c6 = cross(dir, points[6]);
-    let c7 = cross(dir, points[7]);
-    if c0 >= 0.0 && c1 <= 0.0 && c0 != c1 {
-        let (a, b) = barycentric(points[0], points[1], dir);
-        out[0] = a;
-        out[1] = b;
-        return out;
-    }
-    if c1 >= 0.0 && c2 <= 0.0 {
-        let (a, b) = barycentric(points[1], points[2], dir);
-        out[1] = a;
-        out[2] = b;
-        return out;
-    }
-    if c2 >= 0.0 && c3 <= 0.0 {
-        let (a, b) = barycentric(points[2], points[3], dir);
-        out[2] = a;
-        out[3] = b;
-        return out;
-    }
-    if c3 >= 0.0 && c4 <= 0.0 {
-        let (a, b) = barycentric(points[3], points[4], dir);
-        out[3] = a;
-        out[4] = b;
-        return out;
-    }
-    if c4 >= 0.0 && c5 <= 0.0 && c4 != c5 {
-        let (a, b) = barycentric(points[4], points[5], dir);
-        out[4] = a;
-        out[5] = b;
-        return out;
-    }
-    if c5 >= 0.0 && c6 <= 0.0 {
-        let (a, b) = barycentric(points[5], points[6], dir);
-        out[5] = a;
-        out[6] = b;
-        return out;
-    }
-    if c6 >= 0.0 && c7 <= 0.0 {
-        let (a, b) = barycentric(points[6], points[7], dir);
-        out[6] = a;
-        out[7] = b;
-        return out;
-    }
-    if c7 >= 0.0 && c0 <= 0.0 {
-        let (a, b) = barycentric(points[7], points[0], dir);
-        out[7] = a;
-        out[0] = b;
-        return out;
+    let c: [f32; 8] = std::array::from_fn(|i| cross(dir, points[i]));
+    // Sector topology of the original: points (p0,p1), (p1,p3), (p3,p5), (p5,p4),
+    // (p4,p6), (p6,p7), (p7,p2), (p2,p0); the two results land in slots (i,i+1 mod 8).
+    let sectors: [(usize, usize, usize, usize, bool); 8] = [
+        (0, 1, 0, 1, false),
+        (1, 3, 1, 2, false),
+        (3, 5, 2, 3, false),
+        (5, 4, 3, 4, false),
+        (4, 6, 4, 5, true),
+        (6, 7, 5, 6, false),
+        (7, 2, 6, 7, false),
+        (2, 0, 7, 0, false),
+    ];
+    for (a, b, oa, ob, strict) in sectors {
+        if c[a] >= 0.0 && c[b] <= 0.0 && (!strict || c[a] != c[b]) {
+            let (wa, wb) = barycentric(points[a], points[b], dir);
+            out[oa] = wa;
+            out[ob] = wb;
+            return out;
+        }
     }
     [EIGHTH; 8]
 }

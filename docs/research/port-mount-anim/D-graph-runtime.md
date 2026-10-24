@@ -480,9 +480,10 @@ against live goldens.
    * `TSTP FUN_3156bf40` is ported line by line and gated by 12 live captures
      (`goldens/lmg_weights.json`): speed spans, `+0x48/+0x4c`, flags and the `+0x54` slot.
    * The shared `S8_1`/`M2I8`/`MI01`/`MI02`/`S8SW` body `FUN_31574e70` and its 8-way helper
-     `FUN_31569a20` are ported, and live cases for the three player LMGs are captured, but the
-     **fallback point order** used when the LMG has no example positions still differs from the
-     original; those cases are kept in the golden and the test currently gates only TSTP.
+     `FUN_31569a20` are ported and gated by 24 synthetic-position and 24 real-LMG (fallback
+     direction) live cases. The helper's sector topology is the original's star order
+     `(p0,p1), (p1,p3), (p3,p5), (p5,p4), (p4,p6), (p6,p7), (p7,p2), (p2,p0)`, with the two
+     results stored in slots `(i, i+1 mod 8)` — this was the capture mismatch.
    * `XL14 FUN_3156e950`/`FUN_3156b020`, `XL15 FUN_3156ef10`/`FUN_31574380` and
      `ISTP FUN_3156cfd0`/`FUN_31569f80` are not ported yet: their angle helpers call libm
      `atan2` with two float vectors and the decompiled argument order is ambiguous; the

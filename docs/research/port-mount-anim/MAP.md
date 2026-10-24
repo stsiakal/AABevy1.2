@@ -386,11 +386,12 @@ Inferred / unresolved: see section 6.
 ## 6. Unknowns (ranked)
 
 1. **LMG weight formulas per blend type** — **partial (step 4).** `TSTP FUN_3156bf40` is ported
-   and gated by 12 live cases. The shared `S8_1`/`M2I8`/`MI01`/`MI02`/`S8SW` body
-   `FUN_31574e70` is ported, but its fallback point order (LMGs with no example positions) is
-   still open; the live cases are in `goldens/lmg_weights.json`. `XL14`, `XL15` and `ISTP` are
-   not ported yet (the libm `atan2` operand pairs need the disassembly). The per-layer body and
-   command writer are mapped but not ported.
+   and gated by 24 live cases. The shared `S8_1`/`M2I8`/`MI01`/`MI02`/`S8SW` body
+   `FUN_31574e70` is ported and gated by 24 positioned and 24 fallback (real LMG) cases; its
+   8-way helper uses the star sector order `(p0,p1),(p1,p3),(p3,p5),(p5,p4),(p4,p6),(p6,p7),
+   (p7,p2),(p2,p0)`. `XL14`, `XL15` and `ISTP` are not ported yet (the libm `atan2` operand
+   pairs need the disassembly). The per-layer body and command writer are mapped but not
+   ported.
 2. ~~**`CAnimationGraph::PreprocessParameterization`**~~ **resolved (port step 2)** — the body is
    `cryaction+0x3061bd50` (the profiler string at its entry misled the first map). A copy is
    generated per `<Parameter>` value combination in document-parameter order, the template

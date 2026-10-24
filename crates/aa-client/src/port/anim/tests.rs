@@ -812,9 +812,7 @@ fn lmg_shared_blend_and_tstp_match_goldens() {
         let lmg = Lmg { examples };
         let mut caps = Caps::init_lmg();
         match case["kind"].as_str().unwrap() {
-            // The shared S8_1 body is ported; its 8-way fallback order is still open (see
-            // D-graph-runtime.md §7), so only the TSTP body is gated here.
-            "s8" => continue,
+            "s8" | "s8fb" => fun_31574e70(&set, &desc, 0.0, &lmg, &mut caps),
             "tstp" => fun_3156bf40(&set, &desc, &lmg, &mut caps),
             other => panic!("unknown kind {other}"),
         }
@@ -856,5 +854,31 @@ fn rider_copy_matches_live_mount() {
             (case["rider_turn"].as_f64().unwrap() as f32).to_bits(),
             "rider case {i} RequestedTurnSpeedLZ"
         );
+    }
+}
+
+#[test]
+fn lmg_s8_fallback_matches_goldens() {
+    let doc: Value = serde_json::from_str(include_str!("goldens/lmg_s8_fallback.json"))
+        .expect("fallback golden parses");
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let ids: Vec<i16> = case["ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap() as i16).collect();
+        let rows: Vec<AnimRow> = case["set_rows"].as_array().unwrap().iter().map(|v| {
+            let bytes = hex_bytes(v.as_str().unwrap());
+            let mut row = [0u8; 0xdc];
+            row.copy_from_slice(&bytes);
+            row
+        }).collect();
+        let mut entries = vec![[0u8; 0x10]; 256];
+        for (i, id) in ids.iter().enumerate() {
+            entries[*id as usize][8..12].copy_from_slice(&(i as u32).to_le_bytes());
+        }
+        let set = AnimSet { entries, rows };
+        let desc = hex_bytes(case["desc"].as_str().unwrap());
+        let examples: Vec<u8> = case["lmg"].as_array().unwrap().iter().flat_map(|v| hex_bytes(v.as_str().unwrap())).collect();
+        let lmg = Lmg { examples };
+        let mut caps = Caps::init_lmg();
+        fun_31574e70(&set, &desc, 0.0, &lmg, &mut caps);
+        assert_eq!(caps.0.as_slice(), hex_bytes(case["caps"].as_str().unwrap()).as_slice(), "fallback case {n}");
     }
 }
