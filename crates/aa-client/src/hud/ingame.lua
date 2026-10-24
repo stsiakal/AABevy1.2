@@ -432,6 +432,12 @@ AAUI.SlotContent = function(slotType, slotIdx)
     local s = HUD.bag[slotIdx]
     if s == nil then return nil end
     return slotContent(s)
+  elseif slotType == ISLOT_MODE_ACTION then
+    local s = HUD.mode_slot(slotIdx)
+    if s == nil then return nil end
+    local c = slotContent(s)
+    c.learned = true
+    return c
   end
   return nil
 end

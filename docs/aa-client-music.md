@@ -292,3 +292,177 @@ explicitly executes that guard and all music/device fixtures. Caller rebuilds an
 include the final production source. Raw logs are retained under `data/local/resume`.
 The single scoped Clippy run exits0 with175 existing test-target warnings, including the old
 native TSV `chunks_exact` helper; it reports no new voice-controller or caller-example warning.
+
+## Placed instruments: admission and snapshot recovery
+
+Original394eaac0/394eb0e2 blocks blank-paper opening with error702 while raw own buff6010
+or performance buffs6176/6177/7011/8216 are present. Sitting buffs5068/8079 are allowed.
+The lookup walks all three native lists and does not infer expiry from the displayed timer.
+Written MusicSheet28051 with detail discriminator8 bypasses this composer guard and takes
+the normal note lookup path. Root now follows that branch distinction; unknown buff history
+does not establish permission or produce an invented error702.
+
+The original instructions pass51 admission cases, including24 blank-paper cases. Root's
+28 focused music checks pass, including all24 admission goldens, original Lua opening/hiding,
+written-sheet bypass, and actual own-snapshot recovery across early/late catalog readiness,
+decode loss and bounded startup overflow. Lua callbacks run after HUD borrows are released.
+The source-backed packet is now Event::OwnUnitSnapshot, guarded by Session's current actor,
+selected persistent character and InWorld phase. It reseeds received buff/bond history without
+PlayerSpawn, duplicate figures, UI reset or playback retirement. Snapshot identity is retained
+even before catalog readiness; raw entries remain unavailable to admission until rules exist.
+
+The owning aa-net slicefd66072 passes717 tests plus20 original archive executions. Bond
+data preserves signed space/spot, native absent-bond sentinels and guarded CS0xcd unbond.
+Sending does not fabricate SC139/13a or clear received bonds. Complete character tails are
+required; compressed snapshots use the proven ten-ability lane layout, while standalone
+ten/eleven-ability exact-frame compatibility remains. Doodad seat presentation and unbond
+controls are still client work, separate from the deferred mount feature set.
+
+Original generic doodad requests already cover piano20847 and drum26592. The missing mode
+bar is a distinct integration:5068 supplies20848-20855,6010 supplies22213/22214/22217, and8079
+supplies no buff skills. Native refresh emits BUFF_SKILL_CHANGED539 before rebuilding mode
+actions, then enables input mode1 and emits MODE_ACTIONS_UPDATE95. It preserves SQLite's
+`SELECT buff_id, skill_id FROM buff_skills` return order and duplicates, skipping unresolved
+descriptors; sorting by ID changes six real vectors. Removal publication excludes every row
+with the removed instance ID, while physical erasure removes only the first matching record.
+The combined cap is15 after base actions, and slot246 routes an ordinary local-unit skill
+through ordinary targeting. The integration below now supplies that original mode bar.
+
+Reproducers are `tools/user_music_actions_oracle.py` (62 executed cases) and
+`tools/user_music_action_refresh_oracle.py` (567 actual rows,546 appended, refresh/removal,
+combined-cap and target-choice controls). Sources, hashes, SQLite provenance, goldens and
+substituted endpoints are retained in `tools/evidence/user_music_actions`. They access no
+live process, network, audio device or original game window. Native scene/server/device
+success must be verified separately.
+
+Final integration on the committed network source passes613 default client tests with57 optional
+checks ignored (80.12s). The same compiled test binary passes all28 focused music/device checks
+(19.76s). The single scoped client Clippy run exits0 with175 existing test-target warnings and no
+new admission/resync diagnostic. Fresh main/stored-score builds pass. Inspected1920x1080 idle
+login and stored-score captures exit0 with no Lua/render warnings or errors; shared-machine FPS
+ranges are269.5-411.6 and408.6-489.1. The stored-score image is unchanged at every RGBA pixel.
+Logs, binary/image hashes and samples are retained in `data/local/resume/composer-bond-callers.json`.
+The idle capture uses `--login-screen --mute`; it does not authenticate. None of these controls
+establishes live composition settlement or placed-instrument presentation.
+
+## Received buff mode actions and chronological input modes
+
+The original modeSkillActionBar now reads received buff skills through slot246. Piano5068
+provides eight notes; memorized-score6010 provides Play22213, Stop22214 and Close22217;
+drum8079 provides no buff skills. The exact native SQL order and duplicates are preserved:
+567 rows resolve to546 entries, including both copies of4438/19167. Missing descriptors
+are skipped. The app does not sort, deduplicate, expire raw rows by their display clock,
+or treat a caster from another player as a foreign provider owner.
+
+Each eligible own application/reapplication publishes539 with the fresh buff vector and
+old mode count, rebuilds the15-entry action list, enables/promotes input mode1, then
+publishes95 with the fresh count. BuffUpdated does not refresh it. Removal determines
+eligibility from the first pre-removal record in Good/Bad/Hidden order; its publication
+excludes every matching instance ID, while NativeBuffs physically erases only the first.
+Ordinary refresh excludes instance0; a removal of another index does not also exclude0.
+Original callbacks can reenter without a held HUD borrow. Session/context retirement
+invalidates pending publications and cached slot data.
+
+The initial own binding emits one539/95 pair, including an empty list. Six additional
+executed original cases establish that repeated SCUnitState of an existing object exits
+before hydration/replay/binding and emits no such pair. The remake's matched snapshot
+recovery remains an explicit safety path after unknown history: it silently rebuilds the
+mode bar, without claiming a native binding notification. Separate model-change replay
+exists in the original and is not yet wired as an automatic animation-load callback.
+
+Received startup rows are replayed in order once the catalog is ready. Decode loss clears
+mode certainty; only an own snapshot restores it. Changes folded while the HUD is suspended
+retain a visual refresh for its return, without replaying native events or re-promoting an
+input mode. Full mode SlotSnaps track cooldown sweeps and usability independently of ordinary
+action bars and inventory; their widget refresh occurs outside HUD borrows and survives
+suspension. Slot246 clicks and bindings use the ordinary Env/SkillPressed path and current
+target, with a local unit caster rather than the paper item or a forced-self target.
+
+Active input modes follow native393fe030 chronology. Enabling an older active mode moves
+it to the newest position; enabling the tail is a no-op, and disabling one preserves the
+others. Matching tries exact then ALT fallback within each mode, newest first, then Normal.
+Mode-bar refresh promotes1, quest entry promotes4 even on reentry, and builder Rotate state2
+promotes2. Refused placement reasserts2. The other builder stages disable only2. Broader
+screenshot-state producers and base/vehicle/function mode actions remain outside this slice;
+the15-entry appender is checked with existing base counts0/1/12/14/15, without fabricating
+those unimplemented producers or resuming deferred mount work.
+
+Reproducers: tools/user_music_input_modes_oracle.py passes14 native scenarios including
+all six activation orders; tools/user_music_snapshot_callbacks_oracle.py passes6 cases.
+The prior refresh/loader oracle covers567 rows, duplicate/removal behavior, combined caps
+and ordinary target choice. Goldens, original instruction excerpts, substituted endpoints
+and hashes are retained under tools/evidence/user_music_actions. These are isolated CPU
+proofs, not live retail-server or original-render captures.
+
+The offline example is `cargo run --locked -p aa-client --example mode_actions -- --shot PATH`.
+Its `--before` control folds the same explicit piano/score buff receipts while restoring the
+former zero-count getter; it is a controlled prior-contract view, not an immutable old-binary
+capture. Both views run the original Lua bar. Live doodad seat presentation/unbond controls,
+model-change callback timing and wider mode producers remain open.
+
+Final frozen-source validation passes624 default client checks (58 optional ignores), all9
+mode checks including original Lua, and all28 music/device regressions with optional cases
+enabled. The single scoped Clippy invocation exits0 with175 existing test-target warnings
+and no new mode-module diagnostic. Main and example builds include frozen CELT sourcee33a783.
+Inspected1920x1080 captures exit0 without Lua/render warnings or errors. Before samples are
+299.8/377.9/403.7FPS and after378.8/387.3/397.4FPS on the shared machine. Full source, image,
+binary/log provenance and scope are retained in tools/evidence/user_music_actions/client-mode-validation.json.
+
+Actual isolated-lane Bevy QA also composed a sheet and consumed paper3->2. After relogin,
+its three mode actions sent compiled MIDI (56 bytes observed by the server), Stop and Close.
+This is not a passing complete live suite: fresh-sheet use exposed the strict item-record
+reducer's unimplemented detail8 task path, and an original language callback reports self(nil)
+on entry. A duplicate await subscription in the script runner can overcount a broadcast;
+the second play is therefore not claimed. These are separate follow-ups, with no invented
+wire success, suppressed error, or changed server End policy.
+
+The language audit is now complete:8 original-bytecode and6 native-instruction cases
+establish a shipped-script defect rather than a dispatcher mismatch. The zero-argument
+ACTABILITY_REFRESH_ALL closure reads global self at line178; native dispatch supplies
+only widget/eventName and no implicit global. Supplying self would expose a second
+missing countLabel at line188. The toolkit is unchanged. Evidence is retained in
+tools/evidence/user_music_actions/language-error. Any later music-only run that permits
+this exact known source failure must report the allowance explicitly; it is not a clean
+whole-client Lua pass. Removing synthetic activation refresh requires separate proof that
+all prebuilt proficiency widgets already reflect the final received snapshot.
+
+## Fresh-sheet live integration checkpoint
+
+Network613c9a4 recovers the original padded detail8 path for Add5/Take6/Owner15/Update9.
+The eight-byte opaque song ID must agree with the complete received128-byte union; other
+unsupported tags and malformed/mismatched records remain guarded. Seven original cases,
+1116 wire truncation prefixes and722 network checks pass. The root regression now folds a
+fresh Add through the real dispatcher, captures the exact sheet, performs cold use, receives
+the note without automatic retry, then emits buff-only use without relogin.
+
+The rebuilt client passes625 default checks (59 optional ignores), all29 music checks with
+optional original assets/device cases enabled, and the corrected script-event subscription
+regression. The actual windowed Bevy scenario then passes on the owned isolated lane:
+paper2->1, a distinct new sheet for song8, cold tooltip retrieval, immediate fresh-sheet use,
+three original mode actions, two distinct compiled56-byte MIDI uploads, Stop and Close,
+then an empty mode list. Server logs and DB corroborate the new sheet rather than the old
+one. The scenario uses the real PreSaveNotes/SaveNotes API after opening the editor; the
+physical original confirmation is separately exercised in the original-Lua regression.
+
+This music-only PASS has one exact, explicit `tab_language.alb:178` allowance supported by
+the original-script audit above. It reports0 server errors and0 logged errors, with3 warnings
+(decal receiver budget, the known Lua defect, and intentional disconnection). No generic Lua
+whitelist or production toolkit/bytecode repair was added. Server callbacks are proposed in
+[draft PR45](https://github.com/NickMesser/AAEmu/pull/45); its own full CI passes3674 checks
+with162 ignores. Existing bevy is unchanged. No MIDI hash, retail-server capture, measured
+WAN margin or native speaker-output parity is claimed.
+
+The inspected live screenshot exposed a separate rendering failure: original HUD pixels are
+absent and the actor is sky-colored even though API visibility and wire checks pass. It is
+retained as `shots/resume/mode-actions/live.png` for the render audits, not a successful visual
+deliverable. The offline original-HUD before/after pair remains the verified mode-bar view.
+Machine-readable results, exact scenario, evidence boundaries and remaining gaps are in
+tools/evidence/user_music_actions/live-fresh-validation.json.
+
+
+The follow-up render probe shows the actual original mode buttons in a windowed session
+(`docs/screenshots/music_modes_live.png`). Stationary captures and a separate normal-entry
+loading/curtain run render the actor and HUD correctly. An instrumented direct-entry capture
+while 83 pipelines were pending reproduces incomplete color; it later settles. This bounds the
+earlier failure to an unresolved readiness investigation rather than establishing a material fix.
+See `docs/aa-client-loading.md` and `render-readiness-validation.json` for exact frames and limits.

@@ -72,7 +72,9 @@ fn ready_buff_catalog(data: &mut HudData) {
     let rules = game.native_buffs.clone();
     data.user_music.buffs.set_catalog(rules);
     for event in std::mem::take(&mut data.user_music.buff_startup) {
+        let removed = super::mode_actions::removal(data, &event);
         data.user_music.buffs.apply(&event);
+        super::mode_actions::reduce(data, &event, removed);
     }
 }
 
@@ -91,6 +93,7 @@ fn buff_receipt(data: &mut HudData, event: &Event) {
             | Event::Kicked { .. }
     ) || matches!(event,Event::UnitsRemoved(ids) if ids.contains(&data.user_music.buff_actor))
     {
+        data.input_modes.clear();
         data.user_music.buff_actor = 0;
         data.user_music.buffs = default();
         data.user_music.buff_startup.clear();
@@ -100,11 +103,19 @@ fn buff_receipt(data: &mut HudData, event: &Event) {
     let snapshot = match event {
         Event::PlayerSpawn(spawn) => Some(spawn.obj_id),
         Event::UnitSpawned(unit) if unit.obj_id == data.user_music.buff_actor => Some(unit.obj_id),
+        Event::OwnUnitSnapshot(unit) if unit.obj_id == data.user_music.buff_actor => {
+            Some(unit.obj_id)
+        }
         _ => None,
     };
     if let Some(actor) = snapshot {
         data.user_music.buff_actor = actor;
-        data.user_music.buffs = default();
+        if matches!(event, Event::PlayerSpawn(_)) {
+            data.user_music.buffs = default();
+        }
+        // Retain the received own identity even before the catalog is ready.
+        // NativeBuffs snapshots need no stack rules; deltas still wait for replay.
+        data.user_music.buffs.apply(event);
         data.user_music.buff_startup.clear();
         data.user_music.buff_startup_lost = false;
     }
@@ -136,8 +147,7 @@ fn instrument(data: &HudData) -> Option<aa_midi::mml::Voice> {
     // The wrapper first requires a valid equipped instrument. The compiler's
     // initializer then checks raw buff template IDs across all three lists.
     let base = data.game.get()?.user_music.voice(item.template_id)?;
-    let (_, actor) = data.user_music.cache.borrow().context()?;
-    let buffs = data.user_music.buffs.of(actor)?;
+    let buffs = own_buffs(data)?;
     Some(if buffs.iter().any(|entry| entry.buff.buff_id == 5068) {
         aa_midi::mml::Voice::melodic(0)
     } else if buffs.iter().any(|entry| entry.buff.buff_id == 8079) {
@@ -145,6 +155,28 @@ fn instrument(data: &HudData) -> Option<aa_midi::mml::Voice> {
     } else {
         base
     })
+}
+
+pub(super) fn own_buffs(data: &HudData) -> Option<&[aa_net::state::BuffEntry]> {
+    if !data.user_music.buffs.catalog_loaded() || data.user_music.buff_startup_lost {
+        return None;
+    }
+    let (_, actor) = data.user_music.cache.borrow().context()?;
+    data.user_music.buffs.of(actor)
+}
+
+pub(super) fn own_identity(data: &HudData) -> Option<(u32, u32)> {
+    data.user_music.cache.borrow().context()
+}
+
+// Original394eaac0/394eb0e2 checks these raw IDs before opening blank paper.
+// Sitting at a piano/drum is allowed; a written sheet bypasses this guard.
+fn composer_allowed(data: &HudData) -> Option<bool> {
+    Some(
+        !own_buffs(data)?
+            .iter()
+            .any(|entry| matches!(entry.buff.buff_id, 6010 | 6176 | 6177 | 7011 | 8216)),
+    )
 }
 
 fn quality(data: &HudData, song_grade: u8) -> Option<f32> {
@@ -500,6 +532,41 @@ fn receive(data: &mut HudData, event: &Event) -> Option<Command> {
     None
 }
 
+fn item_use(rt: Option<&UiRuntime>, state: &Shared, id: u64) {
+    ready_buff_catalog(&mut state.borrow_mut());
+    if let Some(rt) = rt {
+        cache::sync_directory(&rt.lua, &state.borrow().user_music.cache);
+    }
+    let paper = super::enchant::music_paper(&state.borrow(), id).is_some();
+    if paper {
+        let allowed = composer_allowed(&state.borrow());
+        match allowed {
+            Some(true) => {
+                if let Some(rt) = rt {
+                    rt.fire_event("OPEN_MUSIC_SHEET", (true, id.to_string()));
+                }
+            }
+            Some(false) => state.borrow_mut().user_music.errors.push(702),
+            None => {} // A discarded buff history cannot establish admission.
+        }
+    } else if let Some(source) = super::enchant::music_sheet(&state.borrow(), id)
+        && source.item.detail.kind() == 8
+        && let Some(note_id) = source
+            .item
+            .detail_payload
+            .as_deref()
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u64::from_le_bytes)
+    {
+        state
+            .borrow()
+            .user_music
+            .cache
+            .borrow_mut()
+            .lookup(note_id, false);
+    }
+}
+
 fn update(
     bridge: NonSend<HudBridge>,
     rt: Option<NonSend<UiRuntime>>,
@@ -509,30 +576,7 @@ fn update(
     mut playback: ResMut<playback::Playback>,
 ) {
     for MusicItemUsed(id) in opened.read() {
-        if let Some(rt) = rt.as_ref() {
-            cache::sync_directory(&rt.lua, &bridge.0.borrow().user_music.cache);
-        }
-        if super::enchant::music_paper(&bridge.0.borrow(), *id).is_some()
-            && let Some(rt) = rt.as_ref()
-        {
-            rt.fire_event("OPEN_MUSIC_SHEET", (true, id.to_string()));
-        } else if let Some(source) = super::enchant::music_sheet(&bridge.0.borrow(), *id)
-            && source.item.detail.kind() == 8
-            && let Some(note_id) = source
-                .item
-                .detail_payload
-                .as_deref()
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u64::from_le_bytes)
-        {
-            bridge
-                .0
-                .borrow()
-                .user_music
-                .cache
-                .borrow_mut()
-                .lookup(note_id, false);
-        }
+        item_use(rt.as_deref(), &bridge.0, *id);
     }
     let mut data = bridge.0.borrow_mut();
     for (character_id, command) in data.user_music.cache.borrow_mut().drain() {
@@ -645,6 +689,8 @@ pub(super) fn plugin(app: &mut App) {
                     cache,
                     ..default()
                 };
+                bridge.0.borrow_mut().mode_actions = default();
+                bridge.0.borrow_mut().input_modes.clear();
                 playback.clear(engine.as_deref());
             },
         );
@@ -657,6 +703,8 @@ pub(super) fn receipt(rt: Option<&UiRuntime>, state: &Shared, event: &Event) {
     }
     cache.borrow_mut().apply(event);
     let mut data = state.borrow_mut();
+    ready_buff_catalog(&mut data);
+    let removed = super::mode_actions::removal(&data, event);
     buff_receipt(&mut data, event);
     data.user_music.actabilities.apply(event);
     if matches!(
@@ -755,6 +803,9 @@ pub(super) fn receipt(rt: Option<&UiRuntime>, state: &Shared, event: &Event) {
     if let Some(command) = receive(&mut data, event) {
         data.user_music.commands.push(command);
     }
+super::mode_actions::reduce(&mut data, event, removed);
+    drop(data);
+    super::mode_actions::flush(rt, state);
 }
 
 fn observe_events(

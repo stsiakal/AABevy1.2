@@ -447,7 +447,7 @@ for other units is event only.
 | `SCSkillEnded`, `SCCastingStopped`, `SCSkillStopped`, `SCPlotEnded`, `SCPlotCastingStopped`, `SCPlotChannelingStopped` | `SkillEnded`, `CastingStopped`, `SkillStopped`, `PlotEnded`, `PlotStopped` | `casting` entry removed |
 | `SCCooldowns` | `Cooldowns(SkillCooldowns)` | received skill/tag timers appended for an existing local player (see native cooldown lists below) |
 | `SCSkillCooldownReset` | `SkillCooldownReset { obj_id, skill_id, tag_id, gcd }` | `last_used[skill]` removed, `reset_tags`, first matching received entries reset, GCD cleared when requested |
-| `SCUnitDamaged` | `UnitDamaged(UnitDamage { action, caster_obj_id, target_obj_id, damage, absorbed, mana_burn, hit_type })` | event only (HP follows in `UnitPoints`) |
+| `SCUnitDamaged` | `UnitDamaged(UnitDamage { action, caster_obj_id, target_obj_id, damage, absorbed, mana_burn, holdable_id, raw_hit, hit_type })` | event only (HP follows in `UnitPoints`) |
 | `SCUnitHealed` | `UnitHealed(UnitHeal { target_obj_id, heal_type, hit_type, value })` | event only |
 | `SCCombatText` | `CombatText { source, target, text_type }` | event only |
 
@@ -8344,3 +8344,354 @@ BOM, embedded-NUL, Unicode and truncation boundaries. Compiler-body fixtures
 only establish arguments/order; original MML synthesis fidelity remains the
 separate aa-midi oracle's responsibility. No Cargo build, clippy, window or
 visual/FPS claim applies to this research-only change.
+
+
+## Placed piano/drum doodad bonds (2026-10-23)
+
+This is the missing placed-instrument seating transport and received history. It
+does not add mounts, piano-specific requests, guessed cameras, animation attachment
+transforms, playback, or complete placement/music parity. Existing
+`UseDoodadSkill` remains the start request: retained read-only catalog evidence
+`data/extract/aa-client/placed-music/catalog.json` joins piano 20847 / buff 5068 and
+drum 26592 / buff 8079 to attachment point 2, space 1, bond kind 2. That catalog also
+contains other attachment rows; these values are not parser defaults.
+
+### Exact wire/model and original code
+
+`DoodadBond { owner_obj_id:u32, attach_point:u8, kind:u8, space:i32, spot:i32 }`
+preserves the received doodad object identity and every field, without translating
+space/spot into unsigned counts or defaulting a spot. Wire order is **point/u8,
+owner/BC3, kind/u8, space/i32 LE, spot/i32 LE**, thirteen bytes. Character
+`Unit::doodad_bond:Option<DoodadBond>` now retains its previously skipped second
+attachment. `None` is the one-byte0xff snapshot sentinel. `CharacterState`,
+mount/slave and skill APIs remain unchanged; `Unit::attached_to` remains separate.
+
+| Packet | Exact body | Bytes |
+|---|---|---|
+| SCBondDoodad0x139 | actor/BC3 + full bond |16|
+| Native empty SCBondDoodad0x139 | actor/BC3 +0xff |4|
+| SCUnbondDoodad0x13a | actor/BC3 + persistent character/u32 + doodad/BC3 |10|
+| CSUnbondDoodad0x0cd | actor/BC3 + doodad/BC3 |6|
+
+Native DLL SHA256 is
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+Factories391b0e10/391b0ee0 identify SC139/13a and packet vtables 399b39e4/399b39f0;
+archives397b5ab0/397b5b10 give the actor and unbond character/doodad fields.
+Bond archive3983bf10 reads/writes its point sentinel, BC3 owner through397b25d0,
+kind, then independent four-byte space/spot. Runtime sentinel value is pinned
+by the existing read-only native-data SHA in the oracle.
+
+Received handlers391db770->393b2b90 and391db7f0->393b2bd0 retain actual packet
+member dispatch. Native393566c0 checks existing bond/mount state before applying a
+bond; net history rejects overwriting an occupied actor except for the next own
+receipt after a matching successful local unbond send (see below), and never
+materializes an unknown actor. Root still owns the mount gate and presentation.
+Native3935a520 sends opcode0xcd, initializes actor/doodad through397ac640,
+serializes BC3/BC3 through397bb470, then calls local detach393566f0. Its local
+presentation change is not an SC13a server acknowledgement.
+
+Actual lane sources were read only: `rust/crates/aaemu-game/src/models/doodad.rs`,
+`systems/npcs/doodad/packets.rs`, `world/unit_state.rs`, and
+`aaemu-commons/src/packet_stream.rs` beneath `D:/aaemu-wt/bevy/`. Extracted
+writer/reader bodies and source hashes are committed in
+`crates/aa-net/tests/fixtures/doodad-bond/lane.rs`; full character writer evidence
+is in `lane-snapshot-source.txt`. The lane always writes a full SC139 bond; the
+empty native SC139 variant is handled separately as `BondAbsent`, which does not
+assert detach or known-free state.
+
+### Public integration contract
+
+New exports are `DoodadBond`, `DoodadBondEvent`, `DoodadBonds`, and
+`UnbondDoodadRequest { character_id:u32, actor_obj_id:u32, bond:DoodadBond }`.
+`Event::DoodadBond` wraps `Bonded {unit_obj_id,bond}`,
+`BondAbsent {unit_obj_id}`,
+`Unbonded {character_obj_id,character_id,doodad_obj_id}`,
+`UnbondRequested(request)`, and `UnbondRejected {request,message}`.
+`Command::UnbondDoodad(request)` captures the selected character, own actor and
+**entire received bond** when queuing; only the two BC3 object IDs are serialized.
+InWorld phase, matching selected header/actor, nonzero BC3 bounds, an attached
+game socket, and exact current received bond history are mandatory. A socket
+write emits only UnbondRequested; it does not delete the bond or invent a
+server receipt. A write failure follows existing connection-loss handling.
+
+`WorldState::doodad_bonds` and the Bevy `DoodadBonds` resource fold the same
+receipts as the session's private request validator. `by_unit` records known
+bonds; `own()` returns the current own bond when identity matches.
+**`own()==None` proves free only when `own_known()==true`.** An initial own
+PlayerSpawn or a complete matched own snapshot establishes that distinction.
+SC139 for the known actor can reestablish a present bond after history loss. A
+matched SC13a removes only the current actor/character/doodad bond and preserves
+known history. Foreign IDs, stale doodads, absent-sentinel receipts and local
+request/rejection events cannot turn unknown history into known-free.
+
+Actor/doodad removal and object reuse invalidate affected bonds; character
+selection, kick, leave, disconnect and lobby/session reset clear them.
+`GameDecodeFailed` and **nonempty** compressed Unhandled invalidate bond
+history, including known-free history, while retaining the actor identity needed
+to correlate a later real receipt. A boundary-known ordinary unsupported packet
+or a zero-byte compressed Unhandled does not alone prove data loss.
+
+`Event::OwnUnitSnapshot(Box<Unit>)` preserves repeated own SCUnitState receipts.
+The session admits it only in InWorld for `obj_id==self_obj`,
+`UnitKind::Character {char_id:selected}` and a matching selected CharacterState
+header. It emits neither UnitSpawned nor PlayerSpawn. Only `DoodadBonds` and
+`Buffs.native` consume its snapshot; player stats, transform, raw HUD buff list,
+3D spawn and other UI state stay untouched. `NativeBuffs` keeps the own
+actor/character tuple from PlayerSpawn, requires that tuple on refresh, retains
+it across decode gaps and clears it on teardown/removal. Bevy marks the buff
+resource changed for the own snapshot so dependent native-mode logic sees it.
+
+Character parsing now requires a complete tail. The former guessed9/12-ability
+fallback could accept a truncated packet as an empty buff snapshot. Standalone
+10/11-ability compatibility parsing must end exactly at the frame boundary;
+DD04 character entries use the actual lane's ten-ability schema, established by
+CharacterAbilities::default 1..11 exclusive and its writer loop. NPC/mate
+best-effort tail behavior is unchanged. Supporting another compressed character
+schema requires source-backed framing rather than guessing over the next opcode.
+
+### Fresh own SC139 after a local unbond send
+
+Native `3935a520` sends CS0xcd and immediately clears its local bond through
+`393566f0`. Its next receive gate `393566c0` is therefore open before SC13a,
+for an identical **or different** fresh bond. The original fd66072 reducer kept
+received history correctly but used that retained occupancy to refuse the
+different bond. A single private `own_rebond_eligible` flag now separates this
+receive eligibility from received history; no public API, wire or command changes.
+
+Only `UnbondRequested` whose full capture still passes `matches_request` opens
+eligibility. That event remains socket-write status: `by_unit`, `own()` and
+`own_known()` stay unchanged, and no `Unbonded` is synthesized. The next valid
+own SC139 may replace the retained full bond and consumes eligibility even when
+its fields are identical. The occupied gate then rejects further duplicates or
+conflicts until another matching successful send or actual freeing receipt.
+Remote actors cannot use the own eligibility. Existing outbound identity,
+full-capture, phase, BC3 and socket guards are unchanged; after B is replaced by
+different C, capture B rejects and exact capture C can send the same six bytes.
+
+Matched own snapshots (present or absent), matched own SC13a, affected actor or
+owner invalidation/replacement, decode loss and session teardown reset the flag.
+An invalid completion, rejection, absent SC139 sentinel, zero owner, unknown
+actor, unrelated event or unmatched SC13a neither opens nor consumes it.
+`apply()` reports a private eligibility change, including an identical accepted
+SC139, so Bevy change detection stays consistent with the complete reducer state.
+That change flag is not a received free-state assertion or physical attachment.
+The session's private validator, WorldState and Bevy all fold the same events.
+Root still owns presentation serials/suppression, request sequencing, input and
+the separate native mount gate; polling retained history cannot establish a
+fresh receipt or replace those controls.
+
+SC13a keeps the stronger existing actor/character/current-owner checks despite
+the original handler's broader detach behavior. Wrong identities and an old
+different-owner ACK remain rejected. **An old same-owner ACK is inherently
+indistinguishable** after a fresh bond, including changed spot/kind/space: the
+packet has no generation or full bond fields. A matching ACK still clears the
+current bond; local counters cannot claim to identify its server-side epoch.
+
+`python -B crates/aa-net/tests/doodad_rebond_oracle.py` independently executes
+eight original-instruction sequences using the existing pinned read-only game
+DLL and runtime constants. `tests/fixtures/doodad-bond/rebond-native.json` retains
+observations, `rebond-native.tsv` supplies three Rust-consumed received-bond
+goldens (identical, different owner, same-owner changed signed fields), and
+`rebond-source.txt` records disassembly and per-range SHA256. The oracle is
+self-contained within tracked code and does not import ignored aa-client probes.
+Original gate, store, send-constructor and clear instructions execute;
+actor/owner lookup, render/attach, packet/action sinks and callback registration
+or cancellation are fixtures. Missing-owner cases prove accepted storage and
+readiness wait, not live seating or interpretation of signed space/spot.
+The native mount refusal is evidence for root's separate gate, not a new aa-net
+mount/presentation implementation. Root's earlier 50 executed lifecycle cases
+and 18 schema-only consumer vectors were inspected separately, not rerun here.
+
+Regressions cover eligibility consumption for equal/different bonds and every
+captured field, invalid/rejected completions, absent/invalid/unrelated receipts,
+remote isolation, snapshots, decode gaps, removal/reuse and teardown. They pin
+different-owner ACK rejection and same-owner ambiguity. Actual decoded DD01/DD04
+and scripted loopback writes verify unchanged CS0xcd frames, no synthetic
+receipts, stale-capture refusal, fresh C captures, and snapshot supersession.
+Session emissions replay through WorldState and the Bevy fold with complete
+state equality and resource change detection checked after each event.
+
+Follow-up validation: all eight native oracle cases and all 19 focused bond
+tests passed. `cargo test --locked -p aa-net --features bevy` passed 736 tests
+(731 library, two scripted-login, three recovered-packet); the same nine live
+lane tests remained ignored. The single final
+`cargo clippy --locked -p aa-net --features bevy --all-targets` completed
+successfully with existing warnings and none in the added code/tests. Both
+Cargo runs used the normal shared target; production source was frozen and the
+unchanged API announced before the full run. Logs are under
+`data/extract/aa-net/seat-eligibility-followup/`. No aa-client, server, manifest,
+lockfile, live process or original asset changes are part of this follow-up.
+
+### Retained verification and limits
+
+`python -B crates/aa-net/tests/doodad_bond_oracle.py` executes original packet and
+bond instructions in isolated Unicorn memory, substitutes only primitive archive
+operations, and retains ten goldens from twenty original read/write executions.
+These include point0/2/254, BC3 maxima, distinct space/spot, i32 extremes, and the
+native empty-bond sentinel. No live game process, audio device, socket, lane
+server, or database write is involved. `native-source.txt`, `native.tsv`, the
+actual lane methods and snapshot source are retained alongside the oracle.
+The prior research's 62 executed mode/bond cases remain in the ignored
+`data/extract/aa-client/placed-music/` proof directory.
+
+Rust coverage compares native goldens with actual lane writers/reader, every
+packet-body prefix, complete character prefixes and buff/bond snapshot retention,
+DD01/DD04 alignment and a following packet, exact loopback CS0xcd frames without
+synthetic replies, all captured-field/identity/phase/socket rejections,
+stale/foreign unbonds, decode-loss readiness, own-snapshot recovery,
+removal/object reuse, session kick/disconnect/reselect/leave and the Bevy fold.
+These are protocol/reducer/scripted-loopback checks, not a live placement,
+instrument interaction, sound or visual parity claim. Root owns aa-client
+seat/render/unbond controls and any local detach presentation.
+
+Validation: `cargo test -p aa-net --features bevy` passed 717 tests
+(712 unit, 2 scripted login, 3 recovered-packet); 9 live-lane tests stayed ignored.
+The single `cargo clippy -p aa-net --features bevy --all-targets` run completed
+successfully with existing crate/example/test warnings. Its two new style
+suggestions (character-tail let-chain and the golden hex decoder) were applied;
+Clippy was not run a second time. Focused bond/Bevy tests were rerun afterward.
+
+## Strict native MusicSheet detail8 task projection (2026-10-23)
+
+The newly composed-sheet gap was the strict `qualified_detail` allowlist: Add5,
+Take6, Owner15 and Update9 already decode and retain tag8, but projection refused
+it and `NativeItemRecords::apply_row` retired the physical record. A later full
+snapshot admitted the same item through `Item::read`, explaining recovery after
+relogin. This change adds **only tag8** to the existing tags0/1/3 guard. No public
+types, receipt framing, lookup, row ordering, pending or observer paths change.
+
+Original 1.2 evidence is retained in
+`crates/aa-net/tests/fixtures/music-sheet-detail/source.txt`:
+
+* Tagged archive3961edf0 reads the tag at3961edfe..ee06. Tag8's actual switch
+  entry3961eea8 selects3961ee42 (`eax=9`), then3961ee52 subtracts one and the
+  archive copies exactly8 bytes beginning at union+1. Original item use at
+  394eb108 checks tag8, loads both dwords at Item+19/+1d and forwards them to
+  39082550. The projection keeps these as eight opaque bytes/`Other(8)`; it
+  introduces no ID validity, range or float conversion policy.
+* Task-item constructor/reset397ccbf0 zeros all128 union bytes at397ccc01..21;
+  normal Item constructor3901cb10 does the same at3901cb24..45. Both execute
+  against a nonzero-filled synthetic record in the oracle. Captured original
+  runtime sentinel values come from a SHA-pinned read-only RE data image.
+* Add/Take slot archive397d0f90 and Owner archive397d0fe0 call397d0a00. That
+  serializer passes fixed128 to blob archive input+d8/output+dc at397d0a8e..ab.
+  Update archive397cfd40 likewise passes128 at397cfda0..c3. This is the padded
+  task union, distinct from `Item::read`'s unpadded tag+8-byte snapshot prefix.
+* Dispatcher397d1030 table entries5 AND6 select397d10d1->397cda20; entry15
+  selects397d11bf->397cdef0. Their existing physical lookup/virtual-container
+  guards remain in force. Assignment397ad440 copies the complete128 union at
+  397ad472..87 plus all serialized Item metadata, then actual3901c0a0 copies
+  the post-assignment output (including another full128 union copy).
+* Entry9 selects397d112e->397cdc10. After physical lookup/observers it copies
+  task+10's complete128 into Item+18 at397cdc67..74, then calls actual output
+  copy3901c0a0 at397cdc80. Packet itemID is ignored; all other Item fields stay
+  unchanged. All these bodies execute in the oracle, including original
+  physical/container helpers and full output copy; only primitive archive,
+  memcpy/memset and observer sinks are substituted.
+
+Qualification still requires an exactly128-byte received block, successful
+reparse, equal parsed detail and an **exactly matching eight-byte payload** for
+tag8. Missing/synthetic raw data, non128 lengths, wrong tag, absent/short/long or
+different parsed payload, and unknown/inconsistent PRE-row context still refuse.
+Other opaque tags2/4/5/6/7/9 and unknown tags remain unsupported by this strict
+projection. Native Add template0 refusal, Add/Take virtual4/5 bypass, Owner's
+container restrictions and Update's physical lookup/output timing are unchanged.
+The complete raw128, including nonzero reserved tail, remains on the original
+ItemTask receipt; normalized Item retains only its exact parsed prefix, as before.
+There is no new raw-padding field or reconstruction from legacy Inventory.
+
+Reproduce with `python -B crates/aa-net/tests/music_sheet_detail_oracle.py`.
+The pinned original DLL SHA is
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e`.
+The oracle passes2 constructors,4 tag8 read/write values (0,7,high64,UINT64_MAX)
+and7 padded task read/write/dispatch cases. `native.tsv` retains exact original-
+serialized task bytes and independently serialized post-write Item goldens; `native.json`
+records full128 blocks and observer/copy ordering. Rust tests need neither the
+RE binaries nor Python packages.
+
+Regressions compare all Add/Take/Owner/Update goldens and metadata/output order,
+all1116 task wire truncation prefixes, following-Money alignment, every raw-union
+length0..127 plus129/256, tag/payload disagreements and still-unsupported tags.
+The actual shared `NativeItemRecords` test starts from a fresh known-empty
+snapshot, applies Add sheet28051/note7, then immediately resolves the exact same
+Item by physical slot and persistent ID without a relogin. Subsequent Count and
+Update see the previous row's mutation (including count0), and malformed rows
+retire only the declared slot without recovering certainty from a later Add.
+Root owns the aa-client integration regression and actual OwnServer rerun; this
+CPU-only change performs no live connection, server/process or client edits.
+
+Validation: `cargo test -p aa-net --features bevy` passed722 tests (717 unit,
+2 scripted login,3 recovered-packet), preserving all prior717 passing cases;
+the same9 live-lane tests stayed ignored. The single
+`cargo clippy -p aa-net --features bevy --all-targets` run succeeded with the
+existing warnings and one new test-only hex-decoder `as_chunks` suggestion.
+That suggestion was applied without a second Clippy run.
+All5 focused `--lib music_sheet` tests passed again after that test-helper change.
+Root separately reported its actual `aa-client` dispatcher regression passed:
+`cargo test --locked -p aa-client --bin aa-client newly_created_sheet_is_usable_before_relogin -- --include-ignored`
+(1passed,0failed; `data/local/resume/fresh-sheet-hud-regression-tests.log`).
+It covers Add5 raw128/tag8 -> strict captured-item equality -> cold use(false,false),
+an actual SC1e0 fixture without automatic retry, then use(false,true). That
+consumer test and the fresh-sheet live6010/mode/MIDI rerun remain root-owned.
+
+## Received combat holdable and packed hit word (2026-10-23)
+
+`skill::UnitDamage` now retains `holdable_id: u8` and `raw_hit: u16` exactly as
+received in SCUnitDamaged0x0a7. `pierce_selector() -> u8` returns `raw_hit >> 12`.
+The existing `hit_type` remains `raw_hit & 0x1f`; the generic critical/miss helpers
+keep their existing classifications. These are primitive fields, with no DB
+lookup, range rejection, enum conversion, sound policy, or equipment inference.
+All256 holdable bytes and all65536 packed words remain representable.
+
+Original packet archive397ca630 calls context archive397c8760. Its received
+holdable byte goes to context+118. The packed word goes to +48 (low5 hit), +44
+(bits5..7), +4c (bits8..11), and +64 (high4 pierce selector). The middle groups
+remain in `raw_hit` without assigning unproven semantic names. This includes the
+group consulted by the native plot damage timing path. The reader still consumes
+exactly one holdable byte and one little-endian word at their original positions;
+the subsequent flag/result handling is unchanged.
+
+`tests/unit_damage_oracle.py` executes the pinned original DLL in place, hooking
+only primitive archive calls. It retains63 hol/de/flag suffix write/read pairs in
+`tests/fixtures/unit-damage/native-suffix.tsv`, including holdables0/3/255,
+selectors0/1/2/15, independent middle groups, unknown hit31, and flags0/1/15.
+Original write397c8a4e..397c8ad1 and read397c88ae..397c894c execute against
+nonzero-filled synthetic contexts. `source.txt` retains disassembly and the
+original SHA256851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e.
+Reproduce with `python -B crates/aa-net/tests/unit_damage_oracle.py` (pefile,
+Unicorn and Capstone required only for evidence regeneration).
+
+The same oracle extracts actual lane SCUnitDamaged, CastAction, SkillCaster and
+PacketStream writer methods verbatim into the executable `lane.rs` fixture,
+with input file hashes. The current lane writes `holdable_id`, then
+`0x0120 | hit_type`, then flag1/result1: its pierce selector is zero. No server
+change is required for retention. Any future writer must preserve the same
+one-byte/two-byte widths and keep the four packed groups independent. aa-net
+does not add an outgoing UnitDamage writer.
+
+Rust regressions compare a fixed full-body lane golden,200 actual lane writer
+cases (all5 cast actions, all5 caster forms, all4 PISC widths), every isolated
+truncation prefix and an untouched following sentinel. They exhaust the65536
+words and256 bytes independently, verify legacy helper classifications, and
+check200 adjacent distinct damage contexts plus following messages through
+DD04 and Session. The existing fire/hit/death/end batch also checks retained
+fields. Ordinary tests need neither the DLL, lane sources, DB nor Python.
+
+Scope: original suffix evidence does not establish the full native optional
+tail; Rust goldens embed hol/de in the unchanged lane flag1/result1 tail.
+No live packet/animation ordering or impact callback is claimed. Root owns the
+three aa-client struct literal updates and carrying each received context to
+impact. Native sound source material comes from the packet holdable's
+`sound_material_id`; sound `twohand` separately uses the current mainhand's
+holdable `slot_type_id == 16`. A zero selector is received data, not a missing
+value; selectors1/2 map to native sound values1/0.3 outside aa-net. Existing
+generic hit helpers are broader than the native weapon-audio admission rules.
+
+Validation: the original suffix oracle passed63 write/read cases. The focused
+Bevy run passed all7 new tests. `cargo test --locked -p aa-net --features bevy`
+passed729 tests (724 unit,2 scripted login,3 recovered-packet), with the same9
+live-lane tests ignored. The single
+`cargo clippy --locked -p aa-net --features bevy --all-targets` run succeeded;
+its warnings are in existing code, with none in the added API, damage tests or
+retained lane writer. Logs are under `data/extract/aa-net/unit-damage-audit/`.
+No server, process, aa-client, manifest or lockfile changes are part of this work.

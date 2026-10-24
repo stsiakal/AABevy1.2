@@ -593,6 +593,7 @@ pub struct WorldState {
     pub actabilities: Actabilities,
     pub mates: Mates,
     pub slaves: Slaves,
+    pub doodad_bonds: crate::DoodadBonds,
     pub gimmicks: Gimmicks,
     pub houses: Houses,
     pub farms: Farms,
@@ -655,6 +656,7 @@ impl WorldState {
         self.mates.apply(e);
         self.units.apply_mate_equipment_flags(e, &self.mates);
         self.slaves.apply(e);
+        self.doodad_bonds.apply(e);
         self.gimmicks.apply(e);
         self.houses.apply(e);
         self.farms.apply(e);
@@ -950,6 +952,7 @@ pub(crate) mod tests {
             house_posture: None,
             state_attachments: None,
             attached_to: None,
+            doodad_bond: None,
             max_hp: 10,
             max_mp: 0,
             dead: false,

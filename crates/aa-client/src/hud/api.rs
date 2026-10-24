@@ -40,7 +40,9 @@ pub enum Request {
     /// `HUD.request("leave_cancel")`: `X2World:CancelLeaveWorld()`.
     CancelLeave,
     /// `HUD.request("use_action", slot)`: a click on action bar slot `slot` (1 based).
-    UseAction { slot: usize },
+    UseAction {
+        slot: usize,
+    },
     /// `HUD.request("use_bag", slot)`: a right click on the bag item in real slot `slot` (1 based).
     UseBag { slot: usize },
     /// `HUD.request("use_pet_action", index)`: the original pet bar's `ISLOT_PET_ACTION` slot (`1`
@@ -131,6 +133,7 @@ pub struct HudData {
     pub cooldowns: aa_net::state::Skills,
     /// Received initial-config FeatureSet bytes; empty until `SCInitialConfig` arrives.
     pub feature_bytes: Vec<u8>,
+    pub input_modes: crate::settings::InputModes,
     /// The client's own combat state: the server only ever says "cleared" (`CombatChanged`); the client
     /// enters combat itself when it attacks or is attacked (`combat::route_combat`).
     pub local_combat: bool,
@@ -142,6 +145,7 @@ pub struct HudData {
     pub(super) repair: super::repair::View,
     pub(super) crafting: super::crafting::View,
     pub(super) user_music: super::user_music::View,
+    pub(super) mode_actions: super::mode_actions::View,
     pub(super) pets: super::pets::View,
     pub(super) vehicles: super::vehicles::View,
     /// The transfer bar's boarded transfer and the leave button (`transfer.rs`).
@@ -230,6 +234,7 @@ impl Default for HudData {
             passive_buffs: Vec::new(),
             cooldowns: Default::default(),
             feature_bytes: Vec::new(),
+            input_modes: Default::default(),
             local_combat: false,
             pvp: Default::default(),
             radar: Default::default(),
@@ -239,6 +244,7 @@ impl Default for HudData {
             repair: Default::default(),
             crafting: Default::default(),
             user_music: Default::default(),
+            mode_actions: Default::default(),
             pets: Default::default(),
             vehicles: Default::default(),
             transfer: Default::default(),
@@ -391,6 +397,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::repair::install(lua, bridge)?;
     super::crafting::install(lua, bridge)?;
     super::user_music::install(lua, bridge)?;
+    super::mode_actions::install(lua, bridge)?;
     super::pets::install(lua, bridge)?;
     super::vehicles::install(lua, bridge)?;
     super::transfer::install(lua, bridge)?;
@@ -972,6 +979,7 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
     data.target_pos = target_pos;
     data.target_radius = target_radius;
     super::battlefield::refresh_slots(world, &mut data);
+super::mode_actions::refresh_slots(world, &mut data);
 }
 
 /// `--hud-sim mp=N` / `--hud-sim dead` (dev): the HUD behaves as if the player had at most N mana / were dead, for screenshots of
@@ -1260,6 +1268,32 @@ pub fn handle_requests(
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
                 panels::use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut plant, &mut house, &mut deco, &mut failed);
             }
+            Request::UseModeAction { slot } => {
+                let data = bridge.0.borrow();
+                if data.vehicles.current.is_some() {
+                    if let Some(press) = super::vehicles::ground_press(&data, slot) {
+                        pressed.write(press);
+                    } else if let Some(command) = super::vehicles::use_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
+                        net.write(NetCommand(command));
+                    }
+                } else {
+                    let env = Env::of(
+                        &data,
+                        Some(&skills),
+                        buffs.of(skills.obj_id),
+                        Some(&inventory),
+                    );
+                    super::mode_actions::use_slot(
+                        &data,
+                        slot - 1,
+                        &env,
+                        &flight,
+                        &target,
+                        &mut pressed,
+                        &mut failed,
+                    );
+                }
+            }
             Request::UseBag { slot } => {
                 let data = bridge.0.borrow();
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
@@ -1268,14 +1302,6 @@ pub fn handle_requests(
             Request::UsePetAction { slot } => {
                 let data = bridge.0.borrow();
                 if let Some(command) = super::pets::use_pet_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
-                    net.write(NetCommand(command));
-                }
-            }
-            Request::UseModeAction { slot } => {
-                let data = bridge.0.borrow();
-                if let Some(press) = super::vehicles::ground_press(&data, slot) {
-                    pressed.write(press);
-                } else if let Some(command) = super::vehicles::use_action(&data, slot, selected.unwrap_or(0), data.target_pos) {
                     net.write(NetCommand(command));
                 }
             }
@@ -1310,6 +1336,7 @@ pub fn mark_pushed(bridge: &Shared) {
 
 /// Push what changed into the Lua state and raise the events the scripts listen for.
 pub fn push_changes(rt: &UiRuntime, bridge: &Shared) {
+    super::mode_actions::push_slots(rt, bridge);
     super::pets::push(rt, bridge);
     super::vehicles::push(rt, bridge);
     push_state(rt, bridge);

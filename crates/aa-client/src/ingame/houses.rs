@@ -350,6 +350,7 @@ mod tests {
             attached_to: None,
             house_posture: None,
             state_attachments: None,
+            doodad_bond: None,
         }
     }
 
