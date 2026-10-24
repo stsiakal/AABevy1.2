@@ -853,6 +853,13 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
   invalid/unsupported target type (`0x1e`), and the auto-attack relation gate (`0x2f`). The
   30 evaluator kinds remain a data-driven dispatcher (`FUN_393a0510`); their per-kind
   `unit_reqs` alignment is still U3.
+* **Range / LOS / facing / resources / mounted / swimming are not client prechecks.** The
+  live `UseSkill` goldens send the same 13-byte `CSStartSkill` for a target regardless of
+  distance, line of sight, facing or the caster's resource pools; the server's `StartSkill`
+  (not the client wrapper) answers `TOO_FAR_RANGE`/`OBSTACLE`/`OUTOF_ANGLE`/`LACK_MANA` as
+  `SCSkillStarted` errors. The only client-side gates are the ones above plus the wrapper's
+  target-type fix-ups and the auto-attack relation gate. A mounted/attached target is refused
+  by the gate (`TARGET_DIED`/`TARGET_DESTROYED`), not by a separate mount check.
 
 ### Resolved by the Stage B port (`port/combat-b`, 2026-10-23)
 
