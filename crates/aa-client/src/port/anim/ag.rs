@@ -115,8 +115,8 @@ pub fn load_graph_ag(name: &str, data: &[u8]) -> Result<AnimationGraph, String> 
             "{name}: unsupported .ag version {version:#x} (expected {VERSION:#x})"
         ));
     }
-    for start in 12..data.len() {
-        if data[start] == 0 || data[start + 0..start + 4].iter().all(|&b| b == 0) {
+    for start in 12..data.len().saturating_sub(3) {
+        if data[start] == 0 || data[start..start + 4].iter().all(|&b| b == 0) {
             continue;
         }
         if let Some(graph) = try_parse(name, data, start) {
