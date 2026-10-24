@@ -1,0 +1,8585 @@
+{
+  "function": "StartSkill/Fire/End/CastingStopped/CastingDelayed/StopCasting (wide)",
+  "cases": [
+    {
+      "label": "start_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598484,
+      "skill_id": 10001,
+      "target_key": 0,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405569,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            681,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405569": {
+            "ptr": 1630302316,
+            "key": 7405569,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2452606,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10024,
+      "target_key": 7405569,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405570,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            727,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405570": {
+            "ptr": 1630303156,
+            "key": 7405570,
+            "skill_id": 10201,
+            "timing": [
+              1000,
+              0,
+              0,
+              2455140,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10201,
+      "target_key": 7405570,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            183,
+            500
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405571": {
+            "ptr": 1630299796,
+            "key": 7405571,
+            "skill_id": 10501,
+            "timing": [
+              0,
+              0,
+              0,
+              2457738,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10501,
+      "target_key": 7405571,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405572,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405572": {
+            "ptr": 1630295596,
+            "key": 7405572,
+            "skill_id": 2,
+            "timing": [
+              500,
+              0,
+              0,
+              2460595,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 2,
+      "target_key": 7405572,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598516,
+      "skill_id": 999999,
+      "target_key": 7405573,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            669,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405574": {
+            "ptr": 1630302316,
+            "key": 7405574,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              0,
+              0,
+              2465625,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10001,
+      "target_key": 7405574,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598484,
+      "skill_id": 10024,
+      "target_key": 0,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405576,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            682,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405576": {
+            "ptr": 1630293916,
+            "key": 7405576,
+            "skill_id": 10201,
+            "timing": [
+              1000,
+              0,
+              0,
+              2471302,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10201,
+      "target_key": 7405576,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 24,
+      "skill_id": 10501,
+      "target_key": 7405577,
+      "cast_time": 0,
+      "mirror": true
+    },
+    {
+      "label": "start_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405578,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405578": {
+            "ptr": 1630303156,
+            "key": 7405578,
+            "skill_id": 2,
+            "timing": [
+              500,
+              0,
+              0,
+              2476021,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 2,
+      "target_key": 7405578,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598516,
+      "skill_id": 999999,
+      "target_key": 7405579,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            682,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405580": {
+            "ptr": 1630302316,
+            "key": 7405580,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              0,
+              0,
+              2480880,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10001,
+      "target_key": 7405580,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405581,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            683,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405581": {
+            "ptr": 1630307356,
+            "key": 7405581,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2483630,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10024,
+      "target_key": 7405581,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598484,
+      "skill_id": 10201,
+      "target_key": 0,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            182,
+            500
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405583": {
+            "ptr": 1630292236,
+            "key": 7405583,
+            "skill_id": 10501,
+            "timing": [
+              0,
+              0,
+              0,
+              2488855,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10501,
+      "target_key": 7405583,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 7405584,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405584": {
+            "ptr": 1630309036,
+            "key": 7405584,
+            "skill_id": 2,
+            "timing": [
+              500,
+              0,
+              0,
+              2491682,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 2,
+      "target_key": 7405584,
+      "cast_time": 500,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598516,
+      "skill_id": 999999,
+      "target_key": 7405585,
+      "cast_time": 1000,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            730,
+            1000
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405586": {
+            "ptr": 1630302316,
+            "key": 7405586,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              0,
+              0,
+              2496841,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": 24,
+      "skill_id": 10001,
+      "target_key": 7405586,
+      "cast_time": 0,
+      "mirror": false
+    },
+    {
+      "label": "start_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 24,
+      "skill_id": 10024,
+      "target_key": 7405587,
+      "cast_time": 500,
+      "mirror": true
+    },
+    {
+      "label": "fire_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405588": {
+            "ptr": 1630299796,
+            "key": 7405588,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2500189,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59594,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405588": {
+            "ptr": 1630299796,
+            "key": 7405588,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2500189,
+              2501407,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405588,
+      "setup": true,
+      "time7": 0,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405589": {
+            "ptr": 1630307356,
+            "key": 7405589,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2502401,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17596,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405589": {
+            "ptr": 1630307356,
+            "key": 7405589,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              4000,
+              2502401,
+              2503619,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405589,
+      "setup": true,
+      "time7": 500,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            688,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29554,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405590": {
+            "ptr": 1630292236,
+            "key": 7405590,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              0,
+              2505462,
+              2505462,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405590,
+      "setup": false,
+      "time7": 1000,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405591": {
+            "ptr": 1630295596,
+            "key": 7405591,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2506538,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59587,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405591": {
+            "ptr": 1630295596,
+            "key": 7405591,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              4000,
+              2506538,
+              2507756,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405591,
+      "setup": true,
+      "time7": 0,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405592": {
+            "ptr": 1630302316,
+            "key": 7405592,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2508757,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17538,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405592": {
+            "ptr": 1630302316,
+            "key": 7405592,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              0,
+              2508757,
+              2510086,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405592,
+      "setup": true,
+      "time7": 500,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            668,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29528,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405593": {
+            "ptr": 1630296436,
+            "key": 7405593,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              4000,
+              2512118,
+              2512118,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405593,
+      "setup": false,
+      "time7": 1000,
+      "time9": 4000,
+      "error": true
+    },
+    {
+      "label": "fire_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405594": {
+            "ptr": 1630303156,
+            "key": 7405594,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2513281,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59583,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405594": {
+            "ptr": 1630303156,
+            "key": 7405594,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2513281,
+              2514794,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405594,
+      "setup": true,
+      "time7": 0,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405595": {
+            "ptr": 1630308196,
+            "key": 7405595,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2515799,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17591,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405595": {
+            "ptr": 1630308196,
+            "key": 7405595,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              4000,
+              2515799,
+              2517018,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405595,
+      "setup": true,
+      "time7": 500,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            733,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29599,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405596": {
+            "ptr": 1630307356,
+            "key": 7405596,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              0,
+              2518863,
+              2518863,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405596,
+      "setup": false,
+      "time7": 1000,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405597": {
+            "ptr": 1630292236,
+            "key": 7405597,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2519897,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59596,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405597": {
+            "ptr": 1630292236,
+            "key": 7405597,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              4000,
+              2519897,
+              2521117,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405597,
+      "setup": true,
+      "time7": 0,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405598": {
+            "ptr": 1630309036,
+            "key": 7405598,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2522106,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17538,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405598": {
+            "ptr": 1630309036,
+            "key": 7405598,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              0,
+              2522106,
+              2523345,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405598,
+      "setup": true,
+      "time7": 500,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            639,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29367,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405599": {
+            "ptr": 1630293916,
+            "key": 7405599,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              4000,
+              2525627,
+              2525627,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405599,
+      "setup": false,
+      "time7": 1000,
+      "time9": 4000,
+      "error": true
+    },
+    {
+      "label": "fire_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405600": {
+            "ptr": 1630310716,
+            "key": 7405600,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2526941,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59596,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405600": {
+            "ptr": 1630310716,
+            "key": 7405600,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2526941,
+              2528203,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405600,
+      "setup": true,
+      "time7": 0,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405601": {
+            "ptr": 1630302316,
+            "key": 7405601,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2529187,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17592,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405601": {
+            "ptr": 1630302316,
+            "key": 7405601,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              4000,
+              2529187,
+              2530409,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405601,
+      "setup": true,
+      "time7": 500,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            728,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29594,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405602": {
+            "ptr": 1630295596,
+            "key": 7405602,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              0,
+              2532259,
+              2532259,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405602,
+      "setup": false,
+      "time7": 1000,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405603": {
+            "ptr": 1630299796,
+            "key": 7405603,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2533296,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59550,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405603": {
+            "ptr": 1630299796,
+            "key": 7405603,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              4000,
+              2533296,
+              2534565,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405603,
+      "setup": true,
+      "time7": 0,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "fire_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405604": {
+            "ptr": 1630303156,
+            "key": 7405604,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2535604,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17549,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405604": {
+            "ptr": 1630303156,
+            "key": 7405604,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              0,
+              2535604,
+              2536838,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405604,
+      "setup": true,
+      "time7": 500,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            730,
+            1000
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              29591,
+              30000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405605": {
+            "ptr": 1630296436,
+            "key": 7405605,
+            "skill_id": 10001,
+            "timing": [
+              0,
+              1000,
+              4000,
+              2538732,
+              2538732,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        20
+      ],
+      "eax": null,
+      "skill_id": 10001,
+      "target_key": 7405605,
+      "setup": false,
+      "time7": 1000,
+      "time9": 4000,
+      "error": true
+    },
+    {
+      "label": "fire_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405606": {
+            "ptr": 1630307356,
+            "key": 7405606,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2539819,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59588,
+              60000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405606": {
+            "ptr": 1630307356,
+            "key": 7405606,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2539819,
+              2541044,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10024,
+      "target_key": 7405606,
+      "setup": true,
+      "time7": 0,
+      "time9": 0,
+      "error": false
+    },
+    {
+      "label": "fire_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405607": {
+            "ptr": 1630293916,
+            "key": 7405607,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2542146,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17554,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405607": {
+            "ptr": 1630293916,
+            "key": 7405607,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              500,
+              4000,
+              2542146,
+              2543406,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "skill_id": 10201,
+      "target_key": 7405607,
+      "setup": true,
+      "time7": 500,
+      "time9": 4000,
+      "error": false
+    },
+    {
+      "label": "end_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405608,
+      "setup": false
+    },
+    {
+      "label": "end_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405609": {
+            "ptr": 1630302316,
+            "key": 7405609,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2546827,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405609,
+      "setup": true
+    },
+    {
+      "label": "end_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405610": {
+            "ptr": 1630302316,
+            "key": 7405610,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2549558,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405610,
+      "setup": true
+    },
+    {
+      "label": "end_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 8323075,
+      "setup": false
+    },
+    {
+      "label": "end_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405612": {
+            "ptr": 1630299796,
+            "key": 7405612,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2553316,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405612,
+      "setup": true
+    },
+    {
+      "label": "end_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405613": {
+            "ptr": 1630307356,
+            "key": 7405613,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2555724,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405613,
+      "setup": true
+    },
+    {
+      "label": "end_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405614,
+      "setup": false
+    },
+    {
+      "label": "end_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405615": {
+            "ptr": 1630307356,
+            "key": 7405615,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2559796,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405615": {
+            "ptr": 1630307356,
+            "key": 7405615,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2559796,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 8323079,
+      "setup": true
+    },
+    {
+      "label": "end_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405616": {
+            "ptr": 1630292236,
+            "key": 7405616,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2561881,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405616,
+      "setup": true
+    },
+    {
+      "label": "end_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405617,
+      "setup": false
+    },
+    {
+      "label": "end_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405618": {
+            "ptr": 1630292236,
+            "key": 7405618,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2565746,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405618,
+      "setup": true
+    },
+    {
+      "label": "end_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405619": {
+            "ptr": 1630292236,
+            "key": 7405619,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2568220,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405619": {
+            "ptr": 1630292236,
+            "key": 7405619,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2568220,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 8323083,
+      "setup": true
+    },
+    {
+      "label": "end_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405620,
+      "setup": false
+    },
+    {
+      "label": "end_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405621": {
+            "ptr": 1630296436,
+            "key": 7405621,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2571848,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405621,
+      "setup": true
+    },
+    {
+      "label": "end_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405622": {
+            "ptr": 1630307356,
+            "key": 7405622,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2573980,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405622,
+      "setup": true
+    },
+    {
+      "label": "end_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 8323087,
+      "setup": false
+    },
+    {
+      "label": "end_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405624": {
+            "ptr": 1630303156,
+            "key": 7405624,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2578328,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405624,
+      "setup": true
+    },
+    {
+      "label": "end_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405625": {
+            "ptr": 1630307356,
+            "key": 7405625,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2580946,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405625,
+      "setup": true
+    },
+    {
+      "label": "end_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 7405626,
+      "setup": false
+    },
+    {
+      "label": "end_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405627": {
+            "ptr": 1630299796,
+            "key": 7405627,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2584626,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405627": {
+            "ptr": 1630299796,
+            "key": 7405627,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2584626,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        22
+      ],
+      "eax": null,
+      "target_key": 8323091,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405628": {
+            "ptr": 1630307356,
+            "key": 7405628,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2586844,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405628": {
+            "ptr": 1630307356,
+            "key": 7405628,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2586844,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405628,
+      "duration": 0,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405629": {
+            "ptr": 1630292236,
+            "key": 7405629,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2588982,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              0,
+              100
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405629": {
+            "ptr": 1630292236,
+            "key": 7405629,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2588982,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405629,
+      "duration": 100,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405630": {
+            "ptr": 1630308196,
+            "key": 7405630,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2591580,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              325,
+              777
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405630": {
+            "ptr": 1630308196,
+            "key": 7405630,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2591580,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405630,
+      "duration": 777,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405631": {
+            "ptr": 1630296436,
+            "key": 7405631,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2593670,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              4595,
+              5000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405631": {
+            "ptr": 1630296436,
+            "key": 7405631,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2593670,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405631,
+      "duration": 5000,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405632,
+      "duration": 1,
+      "setup": false
+    },
+    {
+      "label": "casting_stopped_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405633": {
+            "ptr": 1630299796,
+            "key": 7405633,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2597171,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405633": {
+            "ptr": 1630299796,
+            "key": 7405633,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2597171,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405633,
+      "duration": 0,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405634": {
+            "ptr": 1630295596,
+            "key": 7405634,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2599206,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              0,
+              100
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405634": {
+            "ptr": 1630295596,
+            "key": 7405634,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2599206,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405634,
+      "duration": 100,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405635": {
+            "ptr": 1630293916,
+            "key": 7405635,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2601193,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              373,
+              777
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405635": {
+            "ptr": 1630293916,
+            "key": 7405635,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2601193,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405635,
+      "duration": 777,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405636": {
+            "ptr": 1630307356,
+            "key": 7405636,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2603225,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              4547,
+              5000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405636": {
+            "ptr": 1630307356,
+            "key": 7405636,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2603225,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405636,
+      "duration": 5000,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405637,
+      "duration": 1,
+      "setup": false
+    },
+    {
+      "label": "casting_stopped_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405638": {
+            "ptr": 1630292236,
+            "key": 7405638,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2606740,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405638": {
+            "ptr": 1630292236,
+            "key": 7405638,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2606740,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405638,
+      "duration": 0,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405639": {
+            "ptr": 1630308196,
+            "key": 7405639,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2608733,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              0,
+              100
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405639": {
+            "ptr": 1630308196,
+            "key": 7405639,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2608733,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405639,
+      "duration": 100,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405640": {
+            "ptr": 1630295596,
+            "key": 7405640,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2610934,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              322,
+              777
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405640": {
+            "ptr": 1630295596,
+            "key": 7405640,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2610934,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405640,
+      "duration": 777,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405641": {
+            "ptr": 1630309036,
+            "key": 7405641,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2613156,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              4547,
+              5000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405641": {
+            "ptr": 1630309036,
+            "key": 7405641,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2613156,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405641,
+      "duration": 5000,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405642,
+      "duration": 1,
+      "setup": false
+    },
+    {
+      "label": "casting_stopped_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405643": {
+            "ptr": 1630302316,
+            "key": 7405643,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2617028,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405643": {
+            "ptr": 1630302316,
+            "key": 7405643,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2617028,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405643,
+      "duration": 0,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405644": {
+            "ptr": 1630307356,
+            "key": 7405644,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2619463,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              0,
+              100
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405644": {
+            "ptr": 1630307356,
+            "key": 7405644,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2619463,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405644,
+      "duration": 100,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405645": {
+            "ptr": 1630299796,
+            "key": 7405645,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2621799,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              325,
+              777
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405645": {
+            "ptr": 1630299796,
+            "key": 7405645,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2621799,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405645,
+      "duration": 777,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405646": {
+            "ptr": 1630303156,
+            "key": 7405646,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2623888,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              4549,
+              5000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405646": {
+            "ptr": 1630303156,
+            "key": 7405646,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2623888,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [
+        24
+      ],
+      "eax": null,
+      "target_key": 7405646,
+      "duration": 5000,
+      "setup": true
+    },
+    {
+      "label": "casting_stopped_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405647,
+      "duration": 1,
+      "setup": false
+    },
+    {
+      "label": "casting_delayed_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405648": {
+            "ptr": 1630292236,
+            "key": 7405648,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2627603,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405648": {
+            "ptr": 1630292236,
+            "key": 7405648,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2627603,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405648,
+      "duration": 1
+    },
+    {
+      "label": "casting_delayed_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405649": {
+            "ptr": 1630308196,
+            "key": 7405649,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2629781,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405649": {
+            "ptr": 1630308196,
+            "key": 7405649,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2629781,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405649,
+      "duration": 250
+    },
+    {
+      "label": "casting_delayed_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405650": {
+            "ptr": 1630307356,
+            "key": 7405650,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2631911,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405650": {
+            "ptr": 1630307356,
+            "key": 7405650,
+            "skill_id": 10024,
+            "timing": [
+              6000,
+              0,
+              0,
+              2631911,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405650,
+      "duration": 1000
+    },
+    {
+      "label": "casting_delayed_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405651": {
+            "ptr": 1630309036,
+            "key": 7405651,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2634040,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405651": {
+            "ptr": 1630309036,
+            "key": 7405651,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2634040,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405651,
+      "duration": 5000
+    },
+    {
+      "label": "casting_delayed_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405652": {
+            "ptr": 1630293916,
+            "key": 7405652,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2636382,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405652": {
+            "ptr": 1630293916,
+            "key": 7405652,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2636382,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405652,
+      "duration": 1
+    },
+    {
+      "label": "casting_delayed_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405653": {
+            "ptr": 1630292236,
+            "key": 7405653,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2639022,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405653": {
+            "ptr": 1630292236,
+            "key": 7405653,
+            "skill_id": 10024,
+            "timing": [
+              5250,
+              0,
+              0,
+              2639022,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405653,
+      "duration": 250
+    },
+    {
+      "label": "casting_delayed_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405654": {
+            "ptr": 1630299796,
+            "key": 7405654,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2641744,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405654": {
+            "ptr": 1630299796,
+            "key": 7405654,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2641744,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405654,
+      "duration": 1000
+    },
+    {
+      "label": "casting_delayed_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405655": {
+            "ptr": 1630310716,
+            "key": 7405655,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2644222,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405655": {
+            "ptr": 1630310716,
+            "key": 7405655,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2644222,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405655,
+      "duration": 5000
+    },
+    {
+      "label": "casting_delayed_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405656": {
+            "ptr": 1630302316,
+            "key": 7405656,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2646416,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405656": {
+            "ptr": 1630302316,
+            "key": 7405656,
+            "skill_id": 10024,
+            "timing": [
+              5001,
+              0,
+              0,
+              2646416,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405656,
+      "duration": 1
+    },
+    {
+      "label": "casting_delayed_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405657": {
+            "ptr": 1630303156,
+            "key": 7405657,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2649162,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405657": {
+            "ptr": 1630303156,
+            "key": 7405657,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2649162,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405657,
+      "duration": 250
+    },
+    {
+      "label": "casting_delayed_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405658": {
+            "ptr": 1630296436,
+            "key": 7405658,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2651349,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405658": {
+            "ptr": 1630296436,
+            "key": 7405658,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2651349,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405658,
+      "duration": 1000
+    },
+    {
+      "label": "casting_delayed_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405659": {
+            "ptr": 1630293916,
+            "key": 7405659,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2653475,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405659": {
+            "ptr": 1630293916,
+            "key": 7405659,
+            "skill_id": 10024,
+            "timing": [
+              10000,
+              0,
+              0,
+              2653475,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405659,
+      "duration": 5000
+    },
+    {
+      "label": "casting_delayed_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405660": {
+            "ptr": 1630307356,
+            "key": 7405660,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2655512,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405660": {
+            "ptr": 1630307356,
+            "key": 7405660,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2655512,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405660,
+      "duration": 1
+    },
+    {
+      "label": "casting_delayed_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405661": {
+            "ptr": 1630292236,
+            "key": 7405661,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2657648,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405661": {
+            "ptr": 1630292236,
+            "key": 7405661,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2657648,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405661,
+      "duration": 250
+    },
+    {
+      "label": "casting_delayed_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405662": {
+            "ptr": 1630299796,
+            "key": 7405662,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2659770,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405662": {
+            "ptr": 1630299796,
+            "key": 7405662,
+            "skill_id": 10024,
+            "timing": [
+              6000,
+              0,
+              0,
+              2659770,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405662,
+      "duration": 1000
+    },
+    {
+      "label": "casting_delayed_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405663": {
+            "ptr": 1630302316,
+            "key": 7405663,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2661857,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405663": {
+            "ptr": 1630302316,
+            "key": 7405663,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2661857,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405663,
+      "duration": 5000
+    },
+    {
+      "label": "casting_delayed_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405664": {
+            "ptr": 1630309876,
+            "key": 7405664,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2663938,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405664": {
+            "ptr": 1630309876,
+            "key": 7405664,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2663938,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405664,
+      "duration": 1
+    },
+    {
+      "label": "casting_delayed_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405665": {
+            "ptr": 1630303156,
+            "key": 7405665,
+            "skill_id": 10024,
+            "timing": [
+              5000,
+              0,
+              0,
+              2666004,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405665": {
+            "ptr": 1630303156,
+            "key": 7405665,
+            "skill_id": 10024,
+            "timing": [
+              5250,
+              0,
+              0,
+              2666004,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405665,
+      "duration": 250
+    },
+    {
+      "label": "casting_delayed_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405666": {
+            "ptr": 1630307356,
+            "key": 7405666,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2668079,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405666": {
+            "ptr": 1630307356,
+            "key": 7405666,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2668079,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405666,
+      "duration": 1000
+    },
+    {
+      "label": "casting_delayed_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405667": {
+            "ptr": 1630295596,
+            "key": 7405667,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2670250,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405667": {
+            "ptr": 1630295596,
+            "key": 7405667,
+            "skill_id": 10024,
+            "timing": [
+              1000,
+              0,
+              0,
+              2670250,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": null,
+      "target_key": 7405667,
+      "duration": 5000
+    },
+    {
+      "label": "stop_casting_wide_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405668": {
+            "ptr": 1630296436,
+            "key": 7405668,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2672459,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405668": {
+            "ptr": 1630296436,
+            "key": 7405668,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2672459,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405668,
+      "slots": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405669": {
+            "ptr": 1630302316,
+            "key": 7405669,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2675013,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405669": {
+            "ptr": 1630302316,
+            "key": 7405669,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2675013,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405669,
+      "slots": [
+        7405669,
+        7405669
+      ]
+    },
+    {
+      "label": "stop_casting_wide_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405670": {
+            "ptr": 1630293916,
+            "key": 7405670,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2677240,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405670": {
+            "ptr": 1630293916,
+            "key": 7405670,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2677240,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405670,
+      "slots": [
+        7405670,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405671": {
+            "ptr": 1630299796,
+            "key": 7405671,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2679428,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405671": {
+            "ptr": 1630299796,
+            "key": 7405671,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2679428,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405671,
+      "slots": [
+        7405671,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405672": {
+            "ptr": 1630303156,
+            "key": 7405672,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2681546,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405672": {
+            "ptr": 1630303156,
+            "key": 7405672,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2681546,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 1057785344,
+      "target_key": 8323076,
+      "slots": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405673": {
+            "ptr": 1630307356,
+            "key": 7405673,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2684149,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405673": {
+            "ptr": 1630307356,
+            "key": 7405673,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2684149,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405673,
+      "slots": [
+        7405673,
+        7405673
+      ]
+    },
+    {
+      "label": "stop_casting_wide_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405674": {
+            "ptr": 1630292236,
+            "key": 7405674,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2686441,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405674": {
+            "ptr": 1630292236,
+            "key": 7405674,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2686441,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405674,
+      "slots": [
+        7405674,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405675": {
+            "ptr": 1630308196,
+            "key": 7405675,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2688878,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405675": {
+            "ptr": 1630308196,
+            "key": 7405675,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2688878,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405675,
+      "slots": [
+        7405675,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405676": {
+            "ptr": 1630295596,
+            "key": 7405676,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2691128,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405676": {
+            "ptr": 1630295596,
+            "key": 7405676,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2691128,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405676,
+      "slots": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405677": {
+            "ptr": 1630309036,
+            "key": 7405677,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2693467,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405677": {
+            "ptr": 1630309036,
+            "key": 7405677,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2693467,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 1057785344,
+      "target_key": 8323081,
+      "slots": [
+        7405677,
+        7405677
+      ]
+    },
+    {
+      "label": "stop_casting_wide_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405678": {
+            "ptr": 1630302316,
+            "key": 7405678,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2695817,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405678": {
+            "ptr": 1630302316,
+            "key": 7405678,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2695817,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405678,
+      "slots": [
+        7405678,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405679": {
+            "ptr": 1630296436,
+            "key": 7405679,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2698166,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405679": {
+            "ptr": 1630296436,
+            "key": 7405679,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2698166,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405679,
+      "slots": [
+        7405679,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405680": {
+            "ptr": 1630299796,
+            "key": 7405680,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2700858,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405680": {
+            "ptr": 1630299796,
+            "key": 7405680,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2700858,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405680,
+      "slots": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405681": {
+            "ptr": 1630303156,
+            "key": 7405681,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2703156,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405681": {
+            "ptr": 1630303156,
+            "key": 7405681,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2703156,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405681,
+      "slots": [
+        7405681,
+        7405681
+      ]
+    },
+    {
+      "label": "stop_casting_wide_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405682": {
+            "ptr": 1630307356,
+            "key": 7405682,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2705878,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405682": {
+            "ptr": 1630307356,
+            "key": 7405682,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2705878,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 1057785344,
+      "target_key": 8323086,
+      "slots": [
+        7405682,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405683": {
+            "ptr": 1630293916,
+            "key": 7405683,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2707983,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405683": {
+            "ptr": 1630293916,
+            "key": 7405683,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2707983,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405683,
+      "slots": [
+        7405683,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405684": {
+            "ptr": 1630295596,
+            "key": 7405684,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2710294,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405684": {
+            "ptr": 1630295596,
+            "key": 7405684,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2710294,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405684,
+      "slots": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405685": {
+            "ptr": 1630296436,
+            "key": 7405685,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2712833,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405685": {
+            "ptr": 1630296436,
+            "key": 7405685,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2712833,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405685,
+      "slots": [
+        7405685,
+        7405685
+      ]
+    },
+    {
+      "label": "stop_casting_wide_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405686": {
+            "ptr": 1630302316,
+            "key": 7405686,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2715046,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405686": {
+            "ptr": 1630302316,
+            "key": 7405686,
+            "skill_id": 10024,
+            "timing": [
+              500,
+              0,
+              0,
+              2715046,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 0,
+      "target_key": 7405686,
+      "slots": [
+        7405686,
+        0
+      ]
+    },
+    {
+      "label": "stop_casting_wide_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405687": {
+            "ptr": 1630299796,
+            "key": 7405687,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2717464,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {
+          "7405687": {
+            "ptr": 1630299796,
+            "key": 7405687,
+            "skill_id": 10201,
+            "timing": [
+              500,
+              0,
+              0,
+              2717464,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "events": [],
+      "eax": 1057785344,
+      "target_key": 8323091,
+      "slots": [
+        7405687,
+        0
+      ]
+    }
+  ],
+  "local": {
+    "id": 41779,
+    "ptr": 1330383100
+  }
+}

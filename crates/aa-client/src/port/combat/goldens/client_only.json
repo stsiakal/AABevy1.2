@@ -1,0 +1,2245 @@
+{
+  "function": "UpdateClientOnlySkills FUN_3939bfd0",
+  "cases": [
+    {
+      "label": "client_only_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 45285376,
+            "head": [
+              10001,
+              9437184,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437184,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 45285376,
+            "head": [
+              10001,
+              9437184,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437184,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        10001,
+        9437184,
+        45285384,
+        45285416,
+        45285472,
+        500,
+        0,
+        100,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437184,
+        "fire_time": 852544,
+        "end_time": 847554,
+        "fired": 0,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 852544,
+        "end_time": 847554,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 45416448,
+            "head": [
+              10024,
+              9437185,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437185,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 45416448,
+            "head": [
+              10024,
+              9437185,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437185,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 857429,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437185,
+        "fire_time": 855850,
+        "end_time": 860860,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 855850,
+        "end_time": 860860,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 49610752,
+            "head": [
+              10024,
+              9437186,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437186,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 49676288,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437186,
+        "fire_time": 859577,
+        "end_time": 854587,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 859577,
+        "end_time": 854587,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 49741824,
+            "head": [
+              10001,
+              9437187,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437187,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 49741824,
+            "head": [
+              10001,
+              9437187,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437187,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437187,
+        "fire_time": 862742,
+        "end_time": 857752,
+        "fired": 1,
+        "damaged": 0,
+        "local": 1,
+        "has_hit": true
+      },
+      "client": {
+        "fire_time": 862742,
+        "end_time": 857752,
+        "fired": 1,
+        "damaged": 1,
+        "local": 1
+      }
+    },
+    {
+      "label": "client_only_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 49872896,
+            "head": [
+              10024,
+              9437188,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437188,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 144769024,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437188,
+        "fire_time": 866076,
+        "end_time": 861086,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 866076,
+        "end_time": 861086,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 144834560,
+            "head": [
+              10024,
+              9437189,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437189,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 144834560,
+            "head": [
+              10024,
+              9437189,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437189,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        10024,
+        9437189,
+        144834568,
+        144834600,
+        144834656,
+        500,
+        0,
+        105,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437189,
+        "fire_time": 869242,
+        "end_time": 864252,
+        "fired": 0,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 869242,
+        "end_time": 864252,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 432275456,
+            "head": [
+              10001,
+              9437190,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437190,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 432275456,
+            "head": [
+              10001,
+              9437190,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437190,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 873751,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437190,
+        "fire_time": 872538,
+        "end_time": 877548,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 872538,
+        "end_time": 877548,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 432406528,
+            "head": [
+              10024,
+              9437191,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437191,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 471793664,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437191,
+        "fire_time": 875851,
+        "end_time": 870861,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 875851,
+        "end_time": 870861,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 471859200,
+            "head": [
+              10024,
+              9437192,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437192,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 471859200,
+            "head": [
+              10024,
+              9437192,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437192,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437192,
+        "fire_time": 879042,
+        "end_time": 874052,
+        "fired": 1,
+        "damaged": 0,
+        "local": 1,
+        "has_hit": true
+      },
+      "client": {
+        "fire_time": 879042,
+        "end_time": 874052,
+        "fired": 1,
+        "damaged": 1,
+        "local": 1
+      }
+    },
+    {
+      "label": "client_only_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 471990272,
+            "head": [
+              10001,
+              9437193,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437193,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 472055808,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437193,
+        "fire_time": 883217,
+        "end_time": 878227,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 883217,
+        "end_time": 878227,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472121344,
+            "head": [
+              10024,
+              9437194,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437194,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472121344,
+            "head": [
+              10024,
+              9437194,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437194,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        10024,
+        9437194,
+        472121352,
+        472121384,
+        472121440,
+        500,
+        0,
+        110,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437194,
+        "fire_time": 887161,
+        "end_time": 882171,
+        "fired": 0,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 887161,
+        "end_time": 882171,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472252416,
+            "head": [
+              10024,
+              9437195,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437195,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472252416,
+            "head": [
+              10024,
+              9437195,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437195,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 891867,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437195,
+        "fire_time": 890436,
+        "end_time": 895446,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 890436,
+        "end_time": 895446,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472383488,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 472449024,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437196,
+        "fire_time": 894073,
+        "end_time": 889083,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 894073,
+        "end_time": 889083,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472514560,
+            "head": [
+              10024,
+              9437197,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437197,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472514560,
+            "head": [
+              10024,
+              9437197,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437197,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437197,
+        "fire_time": 897142,
+        "end_time": 892152,
+        "fired": 1,
+        "damaged": 0,
+        "local": 1,
+        "has_hit": true
+      },
+      "client": {
+        "fire_time": 897142,
+        "end_time": 892152,
+        "fired": 1,
+        "damaged": 1,
+        "local": 1
+      }
+    },
+    {
+      "label": "client_only_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472645632,
+            "head": [
+              10024,
+              9437198,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437198,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 472711168,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437198,
+        "fire_time": 900917,
+        "end_time": 895927,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 900917,
+        "end_time": 895927,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472776704,
+            "head": [
+              10001,
+              9437199,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437199,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 472776704,
+            "head": [
+              10001,
+              9437199,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437199,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        10001,
+        9437199,
+        472776712,
+        472776744,
+        472776800,
+        500,
+        0,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437199,
+        "fire_time": 904138,
+        "end_time": 899148,
+        "fired": 0,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 904138,
+        "end_time": 899148,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 549584896,
+            "head": [
+              10024,
+              9437200,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437200,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 549584896,
+            "head": [
+              10024,
+              9437200,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437200,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 908683,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437200,
+        "fire_time": 907425,
+        "end_time": 912435,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 907425,
+        "end_time": 912435,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 562298880,
+            "head": [
+              10024,
+              9437201,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437201,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 562364416,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437201,
+        "fire_time": 910903,
+        "end_time": 905913,
+        "fired": 1,
+        "damaged": 0,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 910903,
+        "end_time": 905913,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    },
+    {
+      "label": "client_only_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 562429952,
+            "head": [
+              10001,
+              9437202,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437202,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 562429952,
+            "head": [
+              10001,
+              9437202,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437202,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10001,
+        "target_key": 9437202,
+        "fire_time": 914235,
+        "end_time": 909245,
+        "fired": 1,
+        "damaged": 0,
+        "local": 1,
+        "has_hit": true
+      },
+      "client": {
+        "fire_time": 914235,
+        "end_time": 909245,
+        "fired": 1,
+        "damaged": 1,
+        "local": 1
+      }
+    },
+    {
+      "label": "client_only_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 564592640,
+            "head": [
+              10024,
+              9437203,
+              0,
+              0,
+              41779,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437203,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [
+        22
+      ],
+      "eax": 564658176,
+      "fire_args": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "input": {
+        "skill_id": 10024,
+        "target_key": 9437203,
+        "fire_time": 917790,
+        "end_time": 912800,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0,
+        "has_hit": false
+      },
+      "client": {
+        "fire_time": 917790,
+        "end_time": 912800,
+        "fired": 1,
+        "damaged": 1,
+        "local": 0
+      }
+    }
+  ]
+}

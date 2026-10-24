@@ -25,6 +25,11 @@ fn load(name: &str) -> Value {
         "slot" => include_str!("goldens/slot.json"),
         "cast" => include_str!("goldens/cast.json"),
         "timeline" => include_str!("goldens/timeline.json"),
+        "timeline_wide" => include_str!("goldens/timeline_wide.json"),
+        "stop" => include_str!("goldens/stop.json"),
+        "combo" => include_str!("goldens/combo.json"),
+        "client_only" => include_str!("goldens/client_only.json"),
+        "front" => include_str!("goldens/front.json"),
         other => panic!("unknown golden file {other}"),
     };
     serde_json::from_str(text).expect("golden JSON parses")
@@ -674,6 +679,7 @@ fn timeline_desc(id: u32, cast_time: i32, channel_time: i32) -> TimelineDesc {
         id,
         cast_time,
         channel_time,
+        cooldown_ms: 0,
         cooldown_tag_id: 0,
         ignore_global_cooldown: true,
         custom_gcd_valid: false,
@@ -914,75 +920,6 @@ fn timeline_matches_goldens() {
     }
 }
 
-#[test]
-fn timeline_combo_and_client_only() {
-    let local_id = 7;
-    let mut world = TimelineWorld { now: 1000, ..TimelineWorld::default() };
-    let next = timeline_desc(10024, 0, 0);
-    world.descs.insert(10024, next.clone());
-    let current = TimelineDesc {
-        controllers: vec![TimelineController { kind: 0x18, values: vec![0x30, 10024, 100] }],
-        ..timeline_desc(10501, 0, 0)
-    };
-    world.descs.insert(10501, current.clone());
-    world.units.insert(
-        local_id,
-        TimelineUnit { id: local_id, ..TimelineUnit::default() },
-    );
-    assert!(world.combo_add(local_id, &current, 500));
-    assert_eq!(world.combo.len(), 1);
-    assert_eq!(world.combo[0].next_skill_id, 10024);
-    assert_eq!(world.units[&local_id].cooldowns.skills[0].id, 10024);
-    assert_eq!(world.units[&local_id].cooldowns.skills[0].total_ms, 500);
-    world.now = 1599;
-    world.combo_update();
-    assert_eq!(world.combo.len(), 1);
-    world.now = 1600;
-    world.combo_update();
-    assert!(world.combo.is_empty());
-    assert_eq!(world.units[&local_id].cooldowns.skills[0].remaining_ms, 0);
-
-    // client-only: fire, mark damaged, end after +0x2d4 + 1000
-    let mut world = TimelineWorld { now: 200, ..TimelineWorld::default() };
-    world.descs.insert(10024, timeline_desc(10024, 0, 0));
-    world.units.insert(local_id, TimelineUnit { id: local_id, ..TimelineUnit::default() });
-    world.client_only.push(ClientSkill {
-        skill_id: 10024,
-        target_key: 99,
-        normal_total: 0,
-        fire_time: 100,
-        end_time: 500,
-        ..ClientSkill::default()
-    });
-    world.update_client_only();
-    assert!(world.client_only[0].fired);
-    assert_eq!(world.instances.len(), 1);
-    assert_eq!(world.events, vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED]);
-    world.now = 600;
-    world.update_client_only();
-    assert!(world.client_only[0].damaged);
-    world.now = 1600;
-    world.update_client_only();
-    assert!(world.client_only.is_empty());
-    assert!(world.instances.is_empty());
-    assert_eq!(
-        world.events,
-        vec![EVENT_SKILL_STARTED, EVENT_SKILL_FIRED, EVENT_SKILL_ENDED]
-    );
-
-    // StopSkill only acts on the auto-attack pseudo skill (2) and emits 0x17.
-    let mut world = TimelineWorld::default();
-    world.units.insert(
-        local_id,
-        TimelineUnit { id: local_id, auto_attack: true, ..TimelineUnit::default() },
-    );
-    world.stop_skill(local_id, 10024);
-    assert!(world.units[&local_id].auto_attack);
-    assert!(world.events.is_empty());
-    world.stop_skill(local_id, AUTO_ATTACK_SKILL);
-    assert!(!world.units[&local_id].auto_attack);
-    assert_eq!(world.events, vec![EVENT_AUTO_ATTACK_STOPPED]);
-}
 
 // ---------------------------------------------------------------- synthetic branches
 
@@ -1067,4 +1004,484 @@ fn big_hit_threshold_is_zero() {
     assert!(!big_hit(&record, 0, 1, |_| true));
     assert!(big_hit(&record, 0, 0, |_| true));
     assert!(big_hit(&record, 0, 1, |_| false));
+}
+
+// ------------------------------------------------------------ stage 3 live goldens
+
+fn live_desc(id: u32) -> Option<TimelineDesc> {
+    let (cast, channel, cooldown) = match id {
+        10001 => (0, 0, 30000),
+        10024 => (500, 0, 60000),
+        10201 => (0, 4000, 18000),
+        10372 => (0, 12000, 120000),
+        10501 => (0, 0, 30000),
+        2 => (0, 0, 300),
+        _ => return None,
+    };
+    Some(TimelineDesc {
+        id,
+        cast_time: cast,
+        channel_time: channel,
+        cooldown_ms: cooldown,
+        cooldown_tag_id: 0,
+        ignore_global_cooldown: false,
+        custom_gcd_valid: false,
+        custom_gcd: 0,
+        target_type: 0,
+        default_gcd: true,
+        show_cast_bar: true,
+        category_index: -1,
+        category_id: 0,
+        controllers: Vec::new(),
+    })
+}
+
+fn live_world(before: &Value, now: u32) -> TimelineWorld {
+    let mut world = TimelineWorld { now, ..TimelineWorld::default() };
+    for id in [2, 10001, 10024, 10201, 10372, 10501] {
+        world.descs.insert(id, live_desc(id).unwrap());
+    }
+    let local_id = before["local_id"].as_u64().unwrap_or(0) as u32;
+    let unit = TimelineUnit {
+        id: local_id,
+        cast_key: u32_of(&before["slots"]["cast"]),
+        cast_delay_key: u32_of(&before["slots"]["cast_delay"]),
+        channel_key: u32_of(&before["slots"]["channel"]),
+        channel_delay_key: u32_of(&before["slots"]["channel_delay"]),
+        auto_attack: u32_of(&before["slots"]["auto_attack"]) != 0,
+        cooldowns: timeline_manager(&before["cooldowns"]),
+    };
+    world.units.insert(local_id, unit);
+    for (key, inst) in before["instances"].as_object().expect("instances") {
+        let key: u32 = key.parse().expect("key");
+        let timing = inst["timing"].as_array().expect("timing");
+        world.instances.insert(
+            key,
+            SkillInstance {
+                key,
+                skill_id: u32_of(&inst["skill_id"]),
+                caster: local_caster(local_id),
+                target: target_block(key),
+                normal_total: u32_of(&timing[0]),
+                computed_delay: u32_of(&timing[1]),
+                channel_total: u32_of(&timing[2]),
+                normal_start: u32_of(&timing[3]),
+                channel_start: u32_of(&timing[4]),
+            },
+        );
+    }
+    world
+}
+
+fn golden_before(case: &Value, local_id: u32) -> Value {
+    let mut before = case["before"].clone();
+    before["local_id"] = Value::from(local_id);
+    before
+}
+
+fn timing_of(value: &Value, index: usize) -> u32 {
+    value["instances"]
+        .as_object()
+        .and_then(|m| m.values().next())
+        .and_then(|inst| inst["timing"].as_array())
+        .map(|t| u32_of(&t[index]))
+        .unwrap_or(0)
+}
+
+fn assert_instances(case: &Value, world: &TimelineWorld, label: &str) {
+    let after = &case["after"]["instances"];
+    let want = after.as_object().expect("instances");
+    assert_eq!(world.instances.len(), want.len(), "{label}: instance count");
+    for (key, inst) in want {
+        let key: u32 = key.parse().expect("key");
+        let got = world.instances.get(&key).unwrap_or_else(|| panic!("{label}: missing {key}"));
+        let timing = inst["timing"].as_array().expect("timing");
+        assert_eq!(got.skill_id, u32_of(&inst["skill_id"]), "{label}: skill id");
+        assert_eq!(got.normal_total, u32_of(&timing[0]), "{label}: normal total");
+        assert_eq!(got.normal_start, u32_of(&timing[3]), "{label}: normal start");
+    }
+}
+
+#[test]
+fn wide_timeline_matches_live_goldens() {
+    let doc = load("timeline_wide");
+    let local_id = u32_of(&doc["local"]["id"]);
+    for (index, case) in doc["cases"].as_array().expect("cases").iter().enumerate() {
+        let label = case["label"].as_str().expect("label");
+        let mut before = golden_before(case, local_id);
+        if label.starts_with("stop_casting") || label.starts_with("casting_stopped")
+            || label.starts_with("casting_delayed")
+        {
+            before["slots"]["cast"] = case["before"]["slots"]["cast"].clone();
+        }
+        let key = case["before"]["instances"]
+            .as_object()
+            .and_then(|m| m.keys().next().cloned())
+            .map(|k| k.parse::<u32>().unwrap())
+            .or_else(|| {
+                case["after"]["instances"]
+                    .as_object()
+                    .and_then(|m| m.keys().next().cloned())
+                    .map(|k| k.parse().unwrap())
+            })
+            .unwrap_or(0x7f0000 + index as u32);
+        let mut world = live_world(&before, timing_of(&case["after"], 4).max(timing_of(&case["after"], 3)));
+        let caster = local_caster(local_id);
+        let target = target_block(key);
+        if label.starts_with("start_wide") {
+            let cast = u32_of(&case["cast_time"]);
+            let mirror = case["mirror"].as_bool().unwrap();
+            let target_key = u32_of(&case["target_key"]);
+            let gcd = {
+                let before_gcd = u32_of(&before["cooldowns"]["gcd"][1]);
+                let after_gcd = u32_of(&case["after"]["cooldowns"]["gcd"][1]);
+                (after_gcd != before_gcd).then_some(after_gcd)
+            };
+            world.now = timing_of(&case["after"], 3);
+            let out = world.start_skill(
+                &caster, &target, u32_of(&case["skill_id"]), target_key, cast, mirror, gcd,
+            );
+            if u32_of(&case["skill_id"]) == 999999 {
+                assert_eq!(out, StartOutcome::InvalidSkill, "{label}");
+            } else if mirror {
+                assert_eq!(out, StartOutcome::Mirrored, "{label}");
+            } else if target_key == 0 {
+                if u32_of(&case["skill_id"]) == AUTO_ATTACK_SKILL {
+                    assert_eq!(out, StartOutcome::AutoAttack, "{label}");
+                } else {
+                    assert_eq!(out, StartOutcome::ImpossibleNoTarget, "{label}");
+                }
+            } else {
+                assert_eq!(out, StartOutcome::Started, "{label}");
+            }
+            assert_instances(case, &world, label);
+            assert_eq!(
+                world.units[&local_id].cast_key,
+                u32_of(&case["after"]["slots"]["cast"]),
+                "{label}: cast slot"
+            );
+            if !mirror {
+                assert_eq!(
+                    world.units[&local_id].cooldowns.gcd_total_ms,
+                    u32_of(&case["after"]["cooldowns"]["gcd"][1]),
+                    "{label}: gcd"
+                );
+            }
+        } else if label.starts_with("fire_wide") {
+            let before_key = case["before"]["instances"]
+                .as_object()
+                .and_then(|m| m.keys().next().cloned())
+                .map(|k| k.parse::<u32>().unwrap());
+            let Some(before_key) = before_key else { continue };
+            world.fire_skill(
+                &caster,
+                &target_block(before_key),
+                u32_of(&case["skill_id"]),
+                before_key,
+                u32_of(&case["time7"]),
+                u32_of(&case["time9"]),
+                case["error"].as_bool().unwrap(),
+                None,
+            );
+            assert_instances(case, &world, label);
+        } else if label.starts_with("end_wide") {
+            world.end_skill(u32_of(&case["target_key"]));
+            assert_instances(case, &world, label);
+        } else if label.starts_with("casting_stopped") {
+            world.casting_stopped(key, u32_of(&case["duration"]));
+            assert_instances(case, &world, label);
+            assert_eq!(
+                world.units[&local_id].cast_key,
+                u32_of(&case["after"]["slots"]["cast"]),
+                "{label}: cast slot"
+            );
+        } else if label.starts_with("casting_delayed") {
+            let before_total = timing_of(&case["before"], 0);
+            let after_total = timing_of(&case["after"], 0);
+            world.now = timing_of(&case["after"], 3).max(1) - 1;
+            world.casting_delayed(key, u32_of(&case["duration"]));
+            if after_total != before_total {
+                assert_eq!(
+                    world.instances[&key].normal_total, after_total,
+                    "{label}: delayed total"
+                );
+            }
+        } else if label.starts_with("stop_casting") {
+            let got = world.stop_casting(u32_of(&case["target_key"]));
+            let want = (u32_of(&case["eax"]) & 1) != 0;
+            assert_eq!(got, want, "{label}: stop_casting return");
+        }
+    }
+}
+
+#[test]
+fn stop_matches_live_goldens() {
+    let doc = load("stop");
+    for case in doc["cases"].as_array().expect("cases").iter() {
+        let label = case["label"].as_str().unwrap();
+        let unit_id = u32_of(&case["unit_id"]);
+        let local_id = if unit_id == 0 || unit_id == 0xffff_fffe { 7 } else { unit_id };
+        let mut before = case["before"].clone();
+        before["local_id"] = Value::from(local_id);
+        let mut world = live_world(&before, 0);
+        world.stop_skill(unit_id, u32_of(&case["skill_id"]));
+        let armed = u32_of(&case["after"]["slots"]["auto_attack"]) != 0;
+        assert_eq!(
+            world.units[&local_id].auto_attack, armed, "{label}: local auto-attack flag"
+        );
+        if case["events"].as_array().unwrap().contains(&Value::from(23)) {
+            assert_eq!(world.events, vec![EVENT_AUTO_ATTACK_STOPPED], "{label}: event");
+            let row = world.units[&local_id].cooldowns.skills[0];
+            assert_eq!(row.id, 2, "{label}: auto cooldown id");
+            assert_eq!(row.total_ms, 300, "{label}: auto cooldown total");
+        } else {
+            assert!(world.events.is_empty(), "{label}: no event");
+        }
+    }
+}
+
+#[test]
+fn combo_add_matches_live_goldens() {
+    let doc = load("combo");
+    let local_id = 1;
+    for case in doc["cases"].as_array().expect("cases").iter() {
+        if case.get("skill_id").is_none() {
+            continue;
+        }
+        let label = case["label"].as_str().unwrap();
+        let skill = u32_of(&case["skill_id"]);
+        let next = u32_of(&case["next_skill"]);
+        let margin = u32_of(&case["margin"]);
+        let duration = u32_of(&case["duration"]);
+        let start = case["after"]["combo"]
+            .as_array()
+            .and_then(|rows| rows.first())
+            .map(|row| u32_of(&row[3]))
+            .unwrap_or(0);
+        let mut world = TimelineWorld { now: start, ..TimelineWorld::default() };
+        for id in [10001, 10024, 10201, 10501, 2] {
+            if let Some(desc) = live_desc(id) {
+                world.descs.insert(id, desc);
+            }
+        }
+        if next != 999999 {
+            world.descs.insert(next, live_desc(next).unwrap());
+        }
+        world.units.insert(local_id, TimelineUnit { id: local_id, ..TimelineUnit::default() });
+        let desc = TimelineDesc {
+            controllers: vec![TimelineController {
+                kind: 0x18,
+                values: vec![0x30, next as i32, margin as i32],
+            }],
+            ..live_desc(skill).unwrap()
+        };
+        let added = world.combo_add(local_id, &desc, duration);
+        let want = case["after"]["combo"].as_array().unwrap();
+        if want.is_empty() {
+            assert!(!added, "{label}: no entry");
+            assert!(world.combo.is_empty(), "{label}: combo vector");
+        } else {
+            assert!(added, "{label}: added");
+            assert_eq!(world.combo.len(), 1, "{label}: one entry");
+            let got = &world.combo[0];
+            assert_eq!(got.key, u32_of(&want[0][0]), "{label}: key");
+            assert_eq!(got.current_skill_id, u32_of(&want[0][1]), "{label}: current");
+            assert_eq!(got.next_skill_id, u32_of(&want[0][2]), "{label}: next");
+            assert_eq!(got.start, u32_of(&want[0][3]), "{label}: start");
+            assert_eq!(got.duration, u32_of(&want[0][4]), "{label}: duration");
+            assert_eq!(got.margin, u32_of(&want[0][5]), "{label}: margin");
+            if duration != 0 {
+                let row = world.units[&local_id].cooldowns.skills[0];
+                assert_eq!(row.id, next, "{label}: cooldown id");
+                assert_eq!(row.total_ms, duration, "{label}: cooldown total");
+            }
+        }
+    }
+}
+
+#[test]
+fn combo_update_matches_live_goldens() {
+    let doc = load("combo");
+    let local_id = 1;
+    for case in doc["update_cases"].as_array().expect("update").iter() {
+        let label = case["label"].as_str().unwrap();
+        let entries = case["entries"].as_array().unwrap();
+        let mut world = TimelineWorld::default();
+        world.descs.insert(10201, live_desc(10201).unwrap());
+        world.units.insert(local_id, TimelineUnit { id: local_id, ..TimelineUnit::default() });
+        for row in entries {
+            let row = row.as_array().unwrap();
+            world.combo.push(ComboEntry {
+                key: u32_of(&row[0]),
+                current_skill_id: u32_of(&row[1]),
+                next_skill_id: u32_of(&row[2]),
+                start: u32_of(&row[3]),
+                duration: u32_of(&row[4]),
+                margin: u32_of(&row[5]),
+            });
+        }
+        let now = entries
+            .iter()
+            .map(|row| {
+                let row = row.as_array().unwrap();
+                u32_of(&row[3])
+                    .wrapping_add(u32_of(&row[4]))
+                    .wrapping_add(u32_of(&row[5]))
+            })
+            .max()
+            .unwrap_or(0)
+            .wrapping_add(1);
+        world.now = now;
+        world.combo_update();
+        assert!(world.combo.is_empty(), "{label}: combo cleared");
+        let row = world.units[&local_id].cooldowns.skills[0];
+        assert_eq!(row.id, 10201, "{label}: cooldown id");
+        assert_eq!(
+            row.total_ms,
+            u32_of(&case["next_cooldown_ms"]),
+            "{label}: skill cooldown"
+        );
+    }
+}
+
+#[test]
+fn client_only_matches_live_goldens() {
+    let doc = load("client_only");
+    let local_id = 1;
+    for case in doc["cases"].as_array().expect("cases").iter() {
+        let label = case["label"].as_str().unwrap();
+        let input = &case["input"];
+        let mut world = TimelineWorld::default();
+        world.descs.insert(10001, live_desc(10001).unwrap());
+        world.descs.insert(10024, live_desc(10024).unwrap());
+        world.units.insert(local_id, TimelineUnit { id: local_id, ..TimelineUnit::default() });
+        world.client_only.push(ClientSkill {
+            skill_id: u32_of(&input["skill_id"]),
+            target_key: u32_of(&input["target_key"]),
+            normal_total: 500,
+            computed_delay: 100,
+            fire_time: u32_of(&input["fire_time"]),
+            end_time: u32_of(&input["end_time"]),
+            fired: u32_of(&input["fired"]) != 0,
+            damaged: u32_of(&input["damaged"]) != 0,
+            local_damage: u32_of(&input["local"]) != 0,
+            has_hit_record: input["has_hit"].as_bool().unwrap_or(false),
+            ..ClientSkill::default()
+        });
+        let end_time = u32_of(&input["end_time"]);
+        let fire_time = u32_of(&input["fire_time"]);
+        let got = &case["client"];
+        let damaged_after = u32_of(&got["damaged"]) != 0;
+        let removed = case["after"]["client_only"].as_array().unwrap().is_empty();
+        world.now = if u32_of(&input["fired"]) == 0 {
+            fire_time.wrapping_add(1)
+        } else if removed {
+            end_time.wrapping_add(1001)
+        } else if damaged_after {
+            end_time.wrapping_add(1)
+        } else {
+            end_time.wrapping_sub(1)
+        };
+        let mut calls = Vec::new();
+        world.update_client_only_with(|_, call| calls.push(call.clone()));
+        let skill = &world.client_only;
+        if skill.is_empty() {
+            assert_eq!(u32_of(&got["fired"]), 1, "{label}: fired");
+        } else {
+            assert_eq!(skill[0].fired, got["fired"].as_u64().unwrap() != 0, "{label}: fired");
+            assert_eq!(
+                skill[0].damaged,
+                got["damaged"].as_u64().unwrap() != 0,
+                "{label}: damaged"
+            );
+        }
+        let fire_args = case["fire_args"].as_array().unwrap();
+        if u32_of(&fire_args[0]) != 0 {
+            assert_eq!(calls.len(), 1, "{label}: fire call");
+            assert_eq!(calls[0].skill_id, u32_of(&fire_args[0]), "{label}: fire skill");
+            assert_eq!(calls[0].target_key, u32_of(&fire_args[1]), "{label}: fire target");
+            assert_eq!(calls[0].time7, u32_of(&fire_args[5]), "{label}: fire time7");
+        } else {
+            assert!(calls.is_empty(), "{label}: no fire call");
+        }
+        if case["events"].as_array().unwrap().contains(&Value::from(22)) {
+            assert!(world.events.contains(&EVENT_SKILL_ENDED), "{label}: end event");
+        }
+    }
+}
+
+#[test]
+fn front_matches_live_goldens() {
+    let doc = load("front");
+    for case in doc["cases"].as_array().expect("cases").iter() {
+        let label = case["label"].as_str().unwrap();
+        let skill = u32_of(&case["skill_id"]);
+        let target = u32_of(&case["target_id"]);
+        let refusal = case["refusal"].as_array().unwrap();
+        let packet = &case["packet"];
+        let body = packet["body"].as_str();
+        let outcome = use_skill(
+            &UseSkillInput {
+                unit_id: 41779,
+                unit_present: true,
+                skill_id: skill,
+                desc_present: skill != 999999,
+                desc_target_type: 0,
+                caster_id: 41779,
+                target_id: target,
+                caster_moving: false,
+                auto_attack_skill: 2,
+                gate: (skill == 2).then_some(GateInput {
+                    local_present: true,
+                    target_present: target != 0,
+                    target_attached: false,
+                    owner_type: 0,
+                    relation: 0,
+                    relation_result: (0x2f, 0x65),
+                }),
+            },
+            |_req| {
+                if body.is_some() {
+                    (0, 0)
+                } else if refusal.len() >= 2 {
+                    (u32_of(&refusal[0]) as u8, (u32_of(&refusal[1]) & 0xffff) as u16)
+                } else {
+                    (0, 0)
+                }
+            },
+        );
+        if skill == 999999 {
+            assert_eq!(outcome, UseSkillOutcome::Invalid, "{label}");
+            continue;
+        }
+        match outcome {
+            UseSkillOutcome::Sent(req) => {
+                let body = body.unwrap_or_else(|| panic!("{label}: expected a packet"));
+                let bytes: Vec<u8> = body
+                    .split_whitespace()
+                    .map(|b| u8::from_str_radix(b, 16).unwrap())
+                    .collect();
+                let payload = &bytes[6..];
+                assert_eq!(req.body(), payload, "{label}: request bytes");
+            }
+            UseSkillOutcome::Refused(got) => {
+                assert!(body.is_none(), "{label}: no packet on refusal");
+                assert_eq!(got.result, u32_of(&refusal[0]) as u8, "{label}: result");
+                if refusal.len() >= 2 {
+                    assert_eq!(got.arg, (u32_of(&refusal[1]) & 0xffff) as u16, "{label}: arg");
+                }
+            }
+            UseSkillOutcome::Invalid => panic!("{label}: unexpected invalid"),
+        }
+    }
+}
+
+#[test]
+fn result_names_cover_the_table() {
+    assert_eq!(result_name(0), "SUCCESS");
+    assert_eq!(result_name(8), "COOLDOWN_TIME");
+    assert_eq!(result_name(0x1e), "INVALID_SKILL");
+    assert_eq!(result_name(0x2f), "PROTECTED_FACTION");
+    assert_eq!(result_name(0x84), "EXCEPT_READY_QUEST_CONTEXT");
+    assert_eq!(result_name(0x7f), "URK_UNKNOWN");
 }

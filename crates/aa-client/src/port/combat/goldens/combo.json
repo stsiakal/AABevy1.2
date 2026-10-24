@@ -1,0 +1,3062 @@
+{
+  "function": "SkillComboMan FUN_3939ce90/FUN_3939cb80",
+  "cases": [
+    {
+      "label": "combo_add_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [
+          [
+            10001,
+            10001,
+            10024,
+            5359661,
+            0,
+            0
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1003033601,
+      "skill_id": 10001,
+      "next_skill": 10024,
+      "duration": 0,
+      "margin": 0,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              1
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5361861,
+            1,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10024,
+      "next_skill": 10201,
+      "duration": 1,
+      "margin": 100,
+      "action_arg": 10201
+    },
+    {
+      "label": "combo_add_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10201,
+            10201,
+            10001,
+            5364269,
+            500,
+            1000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10201,
+      "next_skill": 10001,
+      "duration": 500,
+      "margin": 1000,
+      "action_arg": 10001
+    },
+    {
+      "label": "combo_add_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59551,
+              60000
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10501,
+            10501,
+            10024,
+            5366678,
+            60000,
+            5000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10501,
+      "next_skill": 10024,
+      "duration": 60000,
+      "margin": 5000,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "skill_id": 10024,
+      "next_skill": 999999,
+      "duration": 250,
+      "margin": 50,
+      "action_arg": 0
+    },
+    {
+      "label": "combo_add_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [
+          [
+            10001,
+            10001,
+            10024,
+            5371043,
+            0,
+            0
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1003033601,
+      "skill_id": 10001,
+      "next_skill": 10024,
+      "duration": 0,
+      "margin": 0,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              1
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5373460,
+            1,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10024,
+      "next_skill": 10201,
+      "duration": 1,
+      "margin": 100,
+      "action_arg": 10201
+    },
+    {
+      "label": "combo_add_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10201,
+            10201,
+            10001,
+            5375818,
+            500,
+            1000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10201,
+      "next_skill": 10001,
+      "duration": 500,
+      "margin": 1000,
+      "action_arg": 10001
+    },
+    {
+      "label": "combo_add_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59542,
+              60000
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10501,
+            10501,
+            10024,
+            5378264,
+            60000,
+            5000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10501,
+      "next_skill": 10024,
+      "duration": 60000,
+      "margin": 5000,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "skill_id": 10024,
+      "next_skill": 999999,
+      "duration": 250,
+      "margin": 50,
+      "action_arg": 0
+    },
+    {
+      "label": "combo_add_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [
+          [
+            10001,
+            10001,
+            10024,
+            5382713,
+            0,
+            0
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1003033601,
+      "skill_id": 10001,
+      "next_skill": 10024,
+      "duration": 0,
+      "margin": 0,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              1
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5384864,
+            1,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10024,
+      "next_skill": 10201,
+      "duration": 1,
+      "margin": 100,
+      "action_arg": 10201
+    },
+    {
+      "label": "combo_add_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              47,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10201,
+            10201,
+            10001,
+            5387273,
+            500,
+            1000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10201,
+      "next_skill": 10001,
+      "duration": 500,
+      "margin": 1000,
+      "action_arg": 10001
+    },
+    {
+      "label": "combo_add_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59548,
+              60000
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10501,
+            10501,
+            10024,
+            5389654,
+            60000,
+            5000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10501,
+      "next_skill": 10024,
+      "duration": 60000,
+      "margin": 5000,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "skill_id": 10024,
+      "next_skill": 999999,
+      "duration": 250,
+      "margin": 50,
+      "action_arg": 0
+    },
+    {
+      "label": "combo_add_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [
+          [
+            10001,
+            10001,
+            10024,
+            5394243,
+            0,
+            0
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1003033601,
+      "skill_id": 10001,
+      "next_skill": 10024,
+      "duration": 0,
+      "margin": 0,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              1
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5396326,
+            1,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10024,
+      "next_skill": 10201,
+      "duration": 1,
+      "margin": 100,
+      "action_arg": 10201
+    },
+    {
+      "label": "combo_add_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10001,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10201,
+            10201,
+            10001,
+            5398702,
+            500,
+            1000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10201,
+      "next_skill": 10001,
+      "duration": 500,
+      "margin": 1000,
+      "action_arg": 10001
+    },
+    {
+      "label": "combo_add_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10024,
+              59539,
+              60000
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10501,
+            10501,
+            10024,
+            5401153,
+            60000,
+            5000
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "skill_id": 10501,
+      "next_skill": 10024,
+      "duration": 60000,
+      "margin": 5000,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_add_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "skill_id": 10024,
+      "next_skill": 999999,
+      "duration": 250,
+      "margin": 50,
+      "action_arg": 0
+    },
+    {
+      "label": "combo_replace_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5404892,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ],
+            [
+              10024,
+              0,
+              100
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5404892,
+            500,
+            100
+          ],
+          [
+            10024,
+            10024,
+            10024,
+            5406324,
+            100,
+            0
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_replace_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              40,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5408030,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              350
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5408030,
+            500,
+            100
+          ],
+          [
+            10024,
+            10024,
+            10201,
+            5409459,
+            350,
+            25
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "action_arg": 10201
+    },
+    {
+      "label": "combo_replace_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5411635,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ],
+            [
+              10001,
+              0,
+              600
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5411635,
+            500,
+            100
+          ],
+          [
+            10024,
+            10024,
+            10001,
+            5413274,
+            600,
+            50
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "action_arg": 10001
+    },
+    {
+      "label": "combo_replace_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5415418,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ],
+            [
+              10024,
+              343,
+              850
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5415418,
+            500,
+            100
+          ],
+          [
+            10024,
+            10024,
+            10024,
+            5416815,
+            850,
+            75
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682085889,
+      "action_arg": 10024
+    },
+    {
+      "label": "combo_replace_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5418805,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              0,
+              500
+            ]
+          ]
+        },
+        "combo": [
+          [
+            10024,
+            10024,
+            10201,
+            5418805,
+            500,
+            100
+          ]
+        ],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "action_arg": 0
+    }
+  ],
+  "update_cases": [
+    {
+      "label": "combo_update_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17201,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2195980312,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5422414,
+          100,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17304,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196045848,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5422317,
+          110,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5422017,
+          110,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17122,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196111384,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5422220,
+          120,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421920,
+          120,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421620,
+          120,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17489,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196176920,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5422123,
+          130,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17574,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196242456,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5422026,
+          140,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421726,
+          140,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17575,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196307992,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421929,
+          150,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421629,
+          150,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421329,
+          150,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17581,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196373528,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421832,
+          160,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17587,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196439064,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421735,
+          170,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421435,
+          170,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17585,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196504600,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421638,
+          180,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421338,
+          180,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421038,
+          180,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17581,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196570136,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421541,
+          190,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17585,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196635672,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421444,
+          200,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421144,
+          200,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17583,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196701208,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421347,
+          210,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5421047,
+          210,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420747,
+          210,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17434,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196766744,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421250,
+          220,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17529,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196832280,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421153,
+          230,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420853,
+          230,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17483,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196897816,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5421056,
+          240,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420756,
+          240,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420456,
+          240,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              16902,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2196963352,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5420959,
+          250,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17437,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2197028888,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5420862,
+          260,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420562,
+          260,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17494,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2197094424,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5420765,
+          270,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420465,
+          270,
+          50
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420165,
+          270,
+          100
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17298,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2197159960,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5420668,
+          280,
+          0
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    },
+    {
+      "label": "combo_update_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              10201,
+              17585,
+              18000
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 2197225496,
+      "entries": [
+        [
+          10024,
+          10024,
+          10201,
+          5420571,
+          290,
+          0
+        ],
+        [
+          10024,
+          10024,
+          10201,
+          5420271,
+          290,
+          50
+        ]
+      ],
+      "anim_desc_arg": 0,
+      "next_cooldown_ms": 18000
+    }
+  ]
+}

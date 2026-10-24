@@ -1,0 +1,1953 @@
+{
+  "function": "StopSkill FUN_39398410",
+  "cases": [
+    {
+      "label": "stop_00",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_01",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_02",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682072908,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_03",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_04",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598048,
+      "unit_id": 38444,
+      "skill_id": 10024,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_05",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682072908,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_06",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "unit_id": 0,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_07",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 0,
+      "unit_id": 4294967294,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_08",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682072908,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_09",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_10",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_11",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682072908,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_12",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_13",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_14",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 1682072908,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_15",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_16",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_17",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [],
+      "eax": 966598048,
+      "unit_id": 38444,
+      "skill_id": 10024,
+      "armed": false,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_18",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    },
+    {
+      "label": "stop_19",
+      "before": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 1
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": []
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "after": {
+        "slots": {
+          "cast": 0,
+          "cast_delay": 0,
+          "channel": 0,
+          "channel_delay": 0,
+          "auto_attack": 0
+        },
+        "cooldowns": {
+          "gcd": [
+            0,
+            0
+          ],
+          "tags": [],
+          "skills": [
+            [
+              2,
+              0,
+              300
+            ]
+          ]
+        },
+        "combo": [],
+        "client_only": [
+          {
+            "ptr": 1887371264,
+            "head": [
+              10001,
+              9437196,
+              0,
+              0,
+              38444,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              9437196,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "instances": {}
+      },
+      "events": [
+        23
+      ],
+      "eax": 24,
+      "unit_id": 38444,
+      "skill_id": 2,
+      "armed": true,
+      "anim_desc_arg": 0
+    }
+  ]
+}

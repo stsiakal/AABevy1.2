@@ -757,9 +757,17 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
    `UnitCastingInfo` reads it directly. The separate 0x2e0 `ClientSkill` (client-only list
    `+0x6c`) is the other object (`structs.md` §5). Keep a pointer dump at `0x3939b0b6` as a
    regression check.
-2. **U2 — CSStartSkill bytes and the request body.** `FUN_3ab63fb7` is split into tail cold
-   blocks; Ghidra's 114-byte fragment is not enough to recover the precheck order or the packet
-   fields. Capture at `0x3ac1058c` for instant/cast/channel/ground/mount/item.
+2. **U2 (partly resolved) — CSStartSkill bytes and the request body.** The unit-caster /
+   unit-target / no-object body was captured live from the game server
+   (`RUST_LOG=aaemu_game::net::fields=trace`, 13-byte payload):
+   `u32 skill_id, u8 caster_kind, write_bc(caster_id), u8 target_kind, write_bc(target_id),
+   u8 flag`; `write_bc` is a fixed 3-byte little-endian id, and `flag & 0x0f == 0` selects no
+   skill object. Example (`front.json`): skill 10024, caster 41779, target 38444 →
+   `28 27 00 00 00 33 a3 00 00 2c 96 00 00`. The precheck order inside `FUN_3ab63fb7` is still
+   only observable through behaviour: the live goldens record result `0x08`/arg `1` for a local
+   cooldown, `0x1e` for an invalid/unsupported target type, `0x2f` from the auto-attack gate,
+   and success for unit-target casts. Item/mount/doodad caster bodies and ground targets remain
+   uncaptured.
 3. **U3 — requirement kind table.** `FUN_393a0510` switches on values 0/6/9/0xc/0xd/0x18
    (nested)/0x19/0x1a/0x1b/0x1c/0x1d/0x22/0x26; the nested sub-kind under 0x18 is read from
    `value1`. Only part of the mapping is named from `unit_reqs`; align each case with a DB row.
@@ -773,16 +781,24 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
    `FUN_398a0bc0(this = owner+0x1aa0, unit, 0x4a, 0)`; there is no tag-key argument. The formulas
    and the `-999` attribute floor are in §4.2. Goldens: `gcd.json` (`custom` × `attr` × disabled,
    including `attr = 0`, negative and `i32::MAX`).
-7. **U7 — queue margin.** `queued_skill_margin` is a string with no code xref; the client-only
-   list uses fixed `+0x2d0/+0x2d4` timestamps and a 1000 ms grace in `FUN_3939bfd0`. Measure a
-   second key press at varying offsets.
+7. **U7 (resolved) — queue margin.** There is no client-side queue buffer and no
+   `queued_skill_margin` consumer (the string has no code xref). The only margin is the combo
+   entry's controller `values[2]` (entry `+0x14`), and the client-only list removes an entry at
+   `+0x2d4 + 1000 ms` (strict `>`). Proven by `client_only.json` (20 live cases) and
+   `combo.json` (`Update` expiry at `start + duration + margin`). A second key press does not
+   queue a skill; it is a fresh `UseSkill` request.
 8. **U8 — action-bar key → slot → UseSkill.** `action_bar_button` index 82 is consumed only by
    the label updater `FUN_392c4dd0`; the native dispatcher is indirect. Hook `FUN_393989e0` while
    pressing slot keys to capture the caller and the exact arguments.
-9. **U9 — cast cancel on movement/jump.** `FUN_39395b50` has only three callers (end, casting
-   stopped, fire), none from the movement/input layer. The movement-cancel path must be outside
-   x2game or is gated by `desc+0x...`; a breakpoint on `FUN_39395b50` during a cast + W press
-   settles it.
+9. **U9 (resolved) — cast cancel on movement/jump.** The cancel is **server-driven**: after a
+   `CSMoveUnit`/jump the game server answers `SCCastingStopped` (`0x0a5`), whose handler
+   `0x391d5cf0` calls `FUN_39396000` → `FUN_39395b50`. The complete direct-call graph of
+   `FUN_39395b50` is `FUN_3939b010` (fire error), `FUN_39396000` (casting stopped),
+   `FUN_39398550` (combo/executor clear) and `FUN_3939b010`'s non-local path; no input,
+   movement or jump function calls it or writes `Unit+0x3ac4/3acc`. The client therefore only
+   mirrors the server stop; there is no separate local movement-cancel rule to port beyond the
+   already-ported `StopCasting`/`SCCastingStopped` pair. `timeline_wide.json` covers
+   `casting_stopped` and `stop_casting` live (20 cases each).
 
 ### Resolved by the Stage A port (`port/combat-a`, 2026-10-23)
 
@@ -802,6 +818,48 @@ state A/B produce; D and E add packets and UI effects, and their oracle is the e
   in §4.3. `slot.json` proves the resolver.
 * **Reaction table** — the exact anim ids/flags are in [`structs.md`](structs.md) §9; the weapon
   flag is `FUN_397cd5f0(*(u32*)(unit+0x1000))` and the crit flag is `unit+0x5fc4`.
+
+### Resolved by the Stage C port (`port/combat-c`, 2026-10-24)
+
+* **StopSkill calling convention** — `FUN_39398410` is `__thiscall` with `ECX` = the skill
+  action manager (`ret 8`); the earlier synthetic fault was a `cdecl` call with a garbage
+  `ECX` plus the event payload ctor, not the animation. With the live manager its core writes
+  are `Unit+0x3ad5 = 0`, `FUN_39368f90(desc)` → `FUN_39368440` inserting the auto-attack
+  cooldown (`desc+0x88`, 300 ms) and UI event `0x17`. `stop.json` has 20 live cases.
+* **Combo entry key** — `SkillComboMan::Add` (`FUN_3939ce90`) keys entries by **`entry+0x08` =
+  the next skill id**, not by the current one. Layout: `+0x00` original starter, `+0x04`
+  current skill, `+0x08` next skill, `+0x0c` start, `+0x10` duration, `+0x14` margin.
+  `Update` (`FUN_3939cb80`) expires at `start + duration + margin` and calls
+  `FUN_39368f90(next_desc)` → `FUN_39368440`, which inserts the next skill's own cooldown
+  (`desc+0x88`) — it is not just a clear. `combo.json`: 20 add cases and 20 update cases.
+* **UpdateClientOnlySkills** — `FUN_3939bfd0` calls `FUN_3939b010` (`FireSkill`) with the
+  client skill's stored blocks, **not** `StartSkill`; `+0x2d0` fires (strict `<`), `+0x2d4`
+  marks the local damage, and the entry is removed after `+0x2d4 + 1000 ms` (strict `>`). The
+  fire args are 12 dwords: `(skill, target, caster, target, object, +0x138, 0, +0x13c,
+  +0x140, 0, 0, 0)`; `FireSkill` writes `+0x13c = arg7` and `+0x140 = arg9`. `client_only.json`
+  records 20 live transitions with the Fire call arguments.
+* **UseSkill argument order** — `FUN_393989e0(ECX=manager, unit*, skillId, caster*, target*,
+  object*)`: the third block is the **caster** and the fourth the **target**. The map's
+  `(target, caster)` naming was reversed; the live `CSStartSkill` fields prove it
+  (`caster` = local, `target` = selected unit). The wrapper's target-type fix-ups replace the
+  caster for `desc+0x1b0 ∈ {1,4,5}`.
+* **Refusal text** — `FUN_39897990` is the complete result-name table (`SUCCESS` …
+  `EXCEPT_READY_QUEST_CONTEXT`); every name is ported byte-for-byte. `FUN_39390900` packs the
+  low-byte result and high-word arg (`Refusal::packed`), looks up the object name for
+  item/buff/doodad/quest results and fires UI event `0x15` with `(result name, object name,
+  value)`; the object-name resolvers are UI-table lookups and are modelled as caller data.
+* **Unit requirements / request prechecks** — for the ported skills (`or_unit_reqs = f`) the
+  body returns success; the observed client refusals are the local cooldown (`0x08`/arg 1),
+  invalid/unsupported target type (`0x1e`), and the auto-attack relation gate (`0x2f`). The
+  30 evaluator kinds remain a data-driven dispatcher (`FUN_393a0510`); their per-kind
+  `unit_reqs` alignment is still U3.
+* **Range / LOS / facing / resources / mounted / swimming are not client prechecks.** The
+  live `UseSkill` goldens send the same 13-byte `CSStartSkill` for a target regardless of
+  distance, line of sight, facing or the caster's resource pools; the server's `StartSkill`
+  (not the client wrapper) answers `TOO_FAR_RANGE`/`OBSTACLE`/`OUTOF_ANGLE`/`LACK_MANA` as
+  `SCSkillStarted` errors. The only client-side gates are the ones above plus the wrapper's
+  target-type fix-ups and the auto-attack relation gate. A mounted/attached target is refused
+  by the gate (`TARGET_DIED`/`TARGET_DESTROYED`), not by a separate mount check.
 
 ### Resolved by the Stage B port (`port/combat-b`, 2026-10-23)
 
