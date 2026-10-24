@@ -526,11 +526,10 @@ fn neg4(a: [f32; 4]) -> [f32; 4] {
     [neg(a[0]), neg(a[1]), neg(a[2]), neg(a[3])]
 }
 
-/// `__libm_sse2_asinf` approximated by the correctly-rounded double result
-/// rounded once to `f32` (matches the original on the captured cases).
+/// `__libm_sse2_asinf` from MSVCR100, ported instruction by instruction in `asinf.rs`.
 #[inline]
 fn asinf(x: f32) -> f32 {
-    (x as f64).asin() as f32
+    super::libm_sse2_asinf(x)
 }
 
 /// x87 `fsincos` rounded to `f32` (the original stores both results as `f32`).

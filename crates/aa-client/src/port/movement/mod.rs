@@ -8,12 +8,15 @@
 
 #![allow(dead_code, unused_imports)]
 
+mod asinf;
+mod asinf_tables;
 mod clamp;
 mod direction;
 mod input;
 mod input_state;
 mod mouse;
 mod mover;
+mod quadruped;
 mod rotation;
 mod request;
 mod turn;
@@ -22,6 +25,7 @@ mod update;
 #[cfg(test)]
 mod tests;
 
+pub use asinf::libm_sse2_asinf;
 pub use clamp::clamp;
 pub use direction::{MovementParams, direction_factor};
 pub use input::{
@@ -33,6 +37,7 @@ pub use input_state::{
     external_target, is_local_unit, movement_type, reset, smooth_velocity, start_gate,
 };
 pub use mover::*;
+pub use quadruped::*;
 pub use request::{DEFAULT_REQUEST_PTR, MovementRequest, REQUEST_SIZE};
 pub use rotation::*;
 pub use update::{ControlledUnit, GateOutputs, MovementContext, pushed_flags, update_movement};
