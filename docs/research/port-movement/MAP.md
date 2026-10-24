@@ -920,3 +920,69 @@ move-golden lane. The glide goldens pin the startup/smoothing branch (startup ti
 `smoothed_v` pre-set so the timer-dependent filter is not exercised); the timer itself is read
 live because freezing it through the shared `gEnv+0x14` vtable crashes the client (other vtable
 slots are used during the call).
+
+### 9.4 Port/movement-g status (this branch)
+
+Ground/jump and the frame wrappers are now proven; the remaining phase C functions are still
+open. Everything below was captured from the original client in the `move-golden` lane.
+
+| item | state | live cases |
+|---|---|---|
+| `FUN_3912b330` ground/jump (`0x3912b330`) | **done, bit-exact**; walk/run/strafe/back/turn, jump start/air/land, in-place jump, extra impulse, mounted input, swim scale | 38 |
+| frame movement wrapper `FUN_39135fe0` | **done, bit-exact**; exact `actor+0x308..0x330` copy from movement `+0x64..+0x8c` | 20 |
+| frame rotation wrapper `FUN_39135ed0` | **done, bit-exact** via ctor/dispatch/bind; ladder path | 20 |
+| `FUN_3912ce00` swim control | not ported | 0 |
+| `FUN_39120300` swim stats | not ported | 0 |
+| `FUN_3912f600` scope C | not ported | 0 |
+| `CActor::UpdateMovementRequest` `0x39118650` | not ported | 0 |
+
+Ground/jump findings (all from the disassembly and confirmed by the goldens):
+
+* the input branch first checks `FUN_391136c0` (mount); the mounted planar formula is
+  `x = d*iy + a*ix`, `y = e*iy + b*ix`, `z = f*iy + c*ix` with
+  `a=2(q0²+q3²)-1`, `b=2(q0q1+q2q3)`, `c=2(q2q0-q1q3)`, `d=2(q0q1-q2q3)`,
+  `e=2(q3²+q1²)-1`, `f=2(q3q0+q2q1)`; the previous transcription had the x/y terms swapped;
+* the non-mounted path uses `FUN_39112690` with the movement block at `actor+0x3ec` and
+  `actor+0x40 & 0x1000`; the rotated vector must follow the packed-SSE shuffle order
+  (`0x3912b560..0x3912b5f0`), not the scalar `v + 2w(q×v) + 2q×(q×v)` form;
+* the jump direction is the *quaternion up axis* in the SSE form
+  `((q0q2+q1q3)*2, (q2q1-q0q3)*2, 2(q2²+q3²)-1)` scaled by `mag*scale`; the height comes from
+  `[actor+0x3ec]+0x84` (`actor+0x470`), not `actor+0x40`; the `-0.5` "above support" term is
+  `block+0x04 != 0` (`FUN_39111f40`), not a separate engine query;
+* the jump extra impulse is `s = clamp(2*(extra.z-0.25), 0, 1)` with the asymmetric blend
+  `(ex*(1-s), ey*(1-s), ez+(1-ez)*s)` scaled by the pre-blend jump length;
+* the ground projection is a **two-stage** operation: first the horizontal tail at
+  `0x3912bd6d..0x3912bdff` always subtracts `dot(V, up)` from `V.z`, then
+  `block+0x04 == 0` skips the second `dot`+renormalise block (`0x3912be3a..0x3912bf59`);
+  the jump path additionally runs the same projection at `0x3912bbc5`;
+* `up` for the projection is formed in `f64` (`cvtps2pd`/`mulsd`, `cvtpd2ps`) while the jump
+  direction `up` is plain `f32`; the two differ in the last bit, so both helpers are needed;
+* landing/in-place: with no direction the animation name is queried for `jump_in_place`;
+  without it `airborne=1, jumped=1` and the controlled unit's `vtable+2a8(0)` runs (only when
+  the animation object is non-null).  The jump branch calls `vtable+2a8(1)` only when the
+  game object's `vtable+4() == 1`;
+* the entity (`actor+0xc`) must be non-null for any work; `controlled_unit` only gates the
+  speed multiplier and the unit callback, not the whole function.
+
+Wrapper findings:
+
+* `FUN_39135fe0` copies movement `+0x64/+0x68/+0x6c` to `actor+0x308/+0x30c/+0x310`,
+  `+0x70..+0x80` to `+0x314..+0x324`, `+0x84` to `+0x328`, `+0x88` to `+0x32c`,
+  `+0x8c` to `+0x330`.  The two sync thunks are engine-side; the capture patches the
+  five-byte jumps (`0x3913da40`, `0x39139470`) to controlled stubs for the call.
+* `FUN_39135ed0` always executes the dispatch tail `0x39140e25`, which copies the rotation
+  object `+0x20..+0x2c` to `+0x30..+0x3c`; the bound "third" movement quaternion is therefore
+  a copy of the first.  This was missing from the port and broke the wrapper goldens until
+  `dispatch` replicated the tail.
+* The wrapper is `__thiscall` with `ret 8`; `param_2` is the 0x9C movement request pointer and
+  `param_3`/`param_3` (rotation) is the frame dt/scale float (`xmm0`).
+
+Remaining phase C blockers:
+
+* `FUN_3912ce00` reads the physics status/ray interfaces and calls MSVCR100
+  `__libm_sse2_pow` on the surface-blend branch.  `FUN_3912f600` needs `FUN_3912e540` +
+  `FUN_3912ebc0`, which use `__libm_sse2_acosf/sinf`.  Neither the pow/acosf/sinf family nor
+  the engine ray/current services are ported yet, so those functions cannot be made
+  bit-exact without first porting the MSVCR100 routines and stubbing the physics interface.
+* `FUN_39118650` is orchestration around `thunk_FUN_3a979a34` / `thunk_FUN_3a982448` /
+  `thunk_FUN_3a66f782`; only the ground-normal cache at `0x39118c58` is self-contained.
