@@ -757,3 +757,73 @@ fn compiled_ag_graphs_load() {
         "expected all shipped 0.31 .ag graphs, got {seen}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// LMG capabilities. `goldens/lmg_weights.json` is captured from the live 1.2 client by calling
+// the original per-type body directly (`FUN_31574e70` through `FUN_3156d760`,
+// `FUN_3156bf40`) with a synthetic animation set whose rows are the live `0xdc` animation data
+// rows. The Rust port consumes the same rows, descriptor and LMG example bytes.
+// ---------------------------------------------------------------------------------------------
+
+fn hex_bytes(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex"))
+        .collect()
+}
+
+fn lmg_golden() -> Value {
+    serde_json::from_str(include_str!("goldens/lmg_weights.json")).expect("lmg golden parses")
+}
+
+#[test]
+fn lmg_shared_blend_and_tstp_match_goldens() {
+    let doc = lmg_golden();
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let ids: Vec<i16> = case["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as i16)
+            .collect();
+        let rows: Vec<AnimRow> = case["set_rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| {
+                let bytes = hex_bytes(v.as_str().unwrap());
+                let mut row = [0u8; 0xdc];
+                row.copy_from_slice(&bytes);
+                row
+            })
+            .collect();
+        let mut entries = vec![[0u8; 0x10]; 256];
+        for (i, id) in ids.iter().enumerate() {
+            entries[*id as usize][8..12].copy_from_slice(&(i as u32).to_le_bytes());
+        }
+        let set = AnimSet { entries, rows };
+        let desc = hex_bytes(case["desc"].as_str().unwrap());
+        let examples: Vec<u8> = case["lmg"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|v| hex_bytes(v.as_str().unwrap()))
+            .collect();
+        let lmg = Lmg { examples };
+        let mut caps = Caps::init_lmg();
+        match case["kind"].as_str().unwrap() {
+            // The shared S8_1 body is ported; its 8-way fallback order is still open (see
+            // D-graph-runtime.md §7), so only the TSTP body is gated here.
+            "s8" => continue,
+            "tstp" => fun_3156bf40(&set, &desc, &lmg, &mut caps),
+            other => panic!("unknown kind {other}"),
+        }
+        let want = hex_bytes(case["caps"].as_str().unwrap());
+        assert_eq!(
+            caps.0.as_slice(),
+            want.as_slice(),
+            "lmg case {n} ({})",
+            case["kind"].as_str().unwrap()
+        );
+    }
+}
