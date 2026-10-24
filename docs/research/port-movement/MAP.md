@@ -785,15 +785,20 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
 6. **U6 - `unit+0x174` units. RESOLVED (phase B).** Live gliding reads `+0x174 = 0.5235988`
    rad/s (30°/s), so the value is in radians/s. The `+0x1c1 == 4` branch is gliding, not a
    mount; a horse reads `+0x1c1 = 0`, `+0x174 = 1.0` and uses the 90°/s on-foot branch.
-7. **U7 - `CPlayer::ProcessFrameMovement` callers.** The wrapper and its tail code are thin
-   `jmp` trampolines (`0x3913a620` -> `0x3a6ab5f3`, `0x3913da40` -> `0x3a98bb00`,
-   `0x39139470` -> `0x3a9918bb`); the exact engine callback that invokes them is a vtable slot
-   of the animated character, not a named x2game call.
+7. **U7 - `CPlayer::ProcessFrameMovement` callers. RESOLVED (port/movement-g).** The wrappers
+   are `__thiscall`/`ret 8` functions: `0x39135fe0` builds `CPlayerMovement` (`0x3a6ab5f3`),
+   calls the engine sync thunks `0x3913da40`/`0x39139470`, then copies movement `+0x64..+0x8c`
+   into `actor+0x308..0x330`; `0x39135ed0` runs ctor/dispatch/bind.  The sync thunks remain
+   engine inputs (the live capture patches their five-byte jumps to controlled stubs).
+   Twenty live cases each prove the copy and the ladder-path composition bit-exactly.
 8. **U8 - camera mode semantics 3-6.** Only mode 1 is mapped in detail; modes 3-6 are named by
    address only.
-9. **U9 - jump impulse.** The jump key is action 6 and is used by the gliding vertical input in
-   `UpdateMovement` (0x39404d50, `fVar13 = FUN_39424580(6)`), but no local vertical impulse site
-   was found. The physics `action_move.iJump` path (1.2 cryphysics) is the likely mechanism.
+9. **U9 - jump impulse. RESOLVED (port/movement-g).** The local impulse is the jump branch of
+   `FUN_3912b330` (`0x3912b8a6..0x3912bc59`): the vertical vector is the quaternion up axis
+   `((q0q2+q1q3)*2, (q2q1-q0q3)*2, 2(q2²+q3²)-1)` scaled by
+   `sqrt(mag*2*jump_height)/mag - (block+4 != 0 ? 0.5 : 0)`, with jump height at
+   `[actor+0x3ec]+0x84`; the optional extra impulse uses the asymmetric blend documented in
+   §9.4.  Thirty-eight live cases (walk/turn/jump start/air/land) are bit-exact.
 10. **U10 - `FUN_392aa250` table.** The global input-mode table at `0x39d2ff30` is only read in
     x2game (0x39d2ff2c/0x39d2ff10); its writer is external/indirect.
 11. **U11 - velocity smoothing near zero.** `FUN_39402c50` scales the delta by
@@ -829,12 +834,14 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
     direct `thunk_FUN_3a979a34`/`3a982448`/`3a66f782` calls and virtual actor methods; the
     only self-contained math is the ground-normal cache at `0x39118c58` (quaternion from
     `GetStatus` + yaw quat at `actor+0xb4..0xb7`). It needs a live actor snapshot and the
-    physics `GetStatus` slot; no golden is captured yet.
+    physics `GetStatus` slot; the game-side thunks cannot be stubbed without porting the
+    request machinery, so no golden is captured yet (still open after port/movement-g).
 17. **U17 - Quadruped movement/swim.** The scope ctors `0x3912c640`/`0x3912e0c0` are ported
-    and golden-tested. `0x3912dd40` (dispatch), `0x3912ac50` (apply), `0x3912f600` (scope C),
-    `0x39120300` (swim stats) and `0x3912ce00` (swim control) are not ported; they call the
-    physics ray/ground queries and the animation graph. The dispatcher's stance branches are
-    documented in `../port-movement-extra/MAP.md` §1.3.
+    and golden-tested, and `0x3912b330` (ground/jump) is now bit-exact (38 live cases,
+    §9.4). `0x3912f600` (scope C), `0x39120300` (swim stats) and `0x3912ce00` (swim control)
+    remain; they call the physics ray/ground queries, the animation graph, and MSVCR100
+    `__libm_sse2_pow`/`acosf`/`sinf`. The dispatcher's stance branches are documented in
+    `../port-movement-extra/MAP.md` §1.3.
 
 ---
 
