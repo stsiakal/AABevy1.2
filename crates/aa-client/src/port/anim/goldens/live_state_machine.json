@@ -1,0 +1,1641 @@
+{
+ "player_name": "Animhorse",
+ "player": {
+  "state": 1599123532,
+  "char": 1681429020,
+  "steps": [
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedTurnSpeedLZ",
+      "kind": "float",
+      "value": 0.0
+     }
+    ],
+    "current_before": 1913,
+    "current_before_name": "fist_relaxed_idle",
+    "current_after": 1913,
+    "current_after_name": "fist_relaxed_idle",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "idle"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "f"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.5
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.5
+     }
+    ],
+    "current_before": 1913,
+    "current_before_name": "fist_relaxed_idle",
+    "current_after": 1884,
+    "current_after_name": "fist_relaxed_WALK",
+    "target": 1884,
+    "target_name": "fist_relaxed_WALK",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     4,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1884
+    ],
+    "candidate_names": [
+     "fist_relaxed_WALK"
+    ],
+    "label": "walk"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 1.0
+     }
+    ],
+    "current_before": 1884,
+    "current_before_name": "fist_relaxed_WALK",
+    "current_after": 1844,
+    "current_after_name": "fist_relaxed_RUN",
+    "target": 1844,
+    "target_name": "fist_relaxed_RUN",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     7,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1844
+    ],
+    "candidate_names": [
+     "fist_relaxed_RUN"
+    ],
+    "label": "run"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 1844,
+    "current_before_name": "fist_relaxed_RUN",
+    "current_after": 1854,
+    "current_after_name": "fist_relaxed_RUNTOIDLE",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "stop"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "l"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.5
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.5
+     }
+    ],
+    "current_before": 1854,
+    "current_before_name": "fist_relaxed_RUNTOIDLE",
+    "current_after": 1884,
+    "current_after_name": "fist_relaxed_WALK",
+    "target": 1884,
+    "target_name": "fist_relaxed_WALK",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     4,
+     7,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1884
+    ],
+    "candidate_names": [
+     "fist_relaxed_WALK"
+    ],
+    "label": "turn_left"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "r"
+     }
+    ],
+    "current_before": 1884,
+    "current_before_name": "fist_relaxed_WALK",
+    "current_after": 1884,
+    "current_after_name": "fist_relaxed_WALK",
+    "target": 1884,
+    "target_name": "fist_relaxed_WALK",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     4,
+     8,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1884
+    ],
+    "candidate_names": [
+     "fist_relaxed_WALK"
+    ],
+    "label": "turn_right"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "l"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 1.0
+     }
+    ],
+    "current_before": 1884,
+    "current_before_name": "fist_relaxed_WALK",
+    "current_after": 1844,
+    "current_after_name": "fist_relaxed_RUN",
+    "target": 1844,
+    "target_name": "fist_relaxed_RUN",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     7,
+     7,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1844
+    ],
+    "candidate_names": [
+     "fist_relaxed_RUN"
+    ],
+    "label": "turn_run_left"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 1844,
+    "current_before_name": "fist_relaxed_RUN",
+    "current_after": 1854,
+    "current_after_name": "fist_relaxed_RUNTOIDLE",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "jump_idle"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Action",
+      "kind": "key",
+      "value": "jumpMP01"
+     }
+    ],
+    "current_before": 1854,
+    "current_before_name": "fist_relaxed_RUNTOIDLE",
+    "current_after": 2849,
+    "current_after_name": "jump_start_fist_s_relaxed",
+    "target": 2660,
+    "target_name": "jump_loop_fist_s_relaxed",
+    "next": 65535,
+    "encoded": [
+     374,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     2660
+    ],
+    "candidate_names": [
+     "jump_loop_fist_s_relaxed"
+    ],
+    "label": "jump"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Action",
+      "kind": "key",
+      "value": "idle"
+     }
+    ],
+    "current_before": 2849,
+    "current_before_name": "jump_start_fist_s_relaxed",
+    "current_after": 2331,
+    "current_after_name": "jump_end_fist_relaxed",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "jump_end"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Stance",
+      "kind": "key",
+      "value": "swim"
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "f"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 1.0
+     }
+    ],
+    "current_before": 2331,
+    "current_before_name": "jump_end_fist_relaxed",
+    "current_after": 2081,
+    "current_after_name": "fist_mo_swim_run",
+    "target": 2081,
+    "target_name": "fist_mo_swim_run",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     7,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     9,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     2081
+    ],
+    "candidate_names": [
+     "fist_mo_swim_run"
+    ],
+    "label": "swim"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 2081,
+    "current_before_name": "fist_mo_swim_run",
+    "current_after": 1962,
+    "current_after_name": "fist_ba_idle_swim",
+    "target": 1962,
+    "target_name": "fist_ba_idle_swim",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     9,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1962
+    ],
+    "candidate_names": [
+     "fist_ba_idle_swim"
+    ],
+    "label": "swim_stop"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Stance",
+      "kind": "key",
+      "value": "relaxed"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "f"
+     }
+    ],
+    "current_before": 1962,
+    "current_before_name": "fist_ba_idle_swim",
+    "current_after": 1844,
+    "current_after_name": "fist_relaxed_RUN",
+    "target": 1844,
+    "target_name": "fist_relaxed_RUN",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     7,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1844
+    ],
+    "candidate_names": [
+     "fist_relaxed_RUN"
+    ],
+    "label": "relaxed"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Vehicle",
+      "kind": "key",
+      "value": "horse"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 1844,
+    "current_before_name": "fist_relaxed_RUN",
+    "current_after": 2983,
+    "current_after_name": "Horse_DriverRunToIdle",
+    "target": 2980,
+    "target_name": "Horse_DriverIdle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     6,
+     0,
+     3
+    ],
+    "candidates": [
+     2980
+    ],
+    "candidate_names": [
+     "Horse_DriverIdle"
+    ],
+    "label": "mount"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "f"
+     }
+    ],
+    "current_before": 2983,
+    "current_before_name": "Horse_DriverRunToIdle",
+    "current_after": 2981,
+    "current_after_name": "Horse_DriverIdleToRun",
+    "target": 2982,
+    "target_name": "Horse_DriverRun",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     7,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     6,
+     0,
+     3
+    ],
+    "candidates": [
+     2982
+    ],
+    "candidate_names": [
+     "Horse_DriverRun"
+    ],
+    "label": "mount_run"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 2981,
+    "current_before_name": "Horse_DriverIdleToRun",
+    "current_after": 2983,
+    "current_after_name": "Horse_DriverRunToIdle",
+    "target": 2980,
+    "target_name": "Horse_DriverIdle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     6,
+     0,
+     3
+    ],
+    "candidates": [
+     2980
+    ],
+    "candidate_names": [
+     "Horse_DriverIdle"
+    ],
+    "label": "mount_stop"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Vehicle",
+      "kind": "key",
+      "value": "none"
+     }
+    ],
+    "current_before": 2983,
+    "current_before_name": "Horse_DriverRunToIdle",
+    "current_after": 1913,
+    "current_after_name": "fist_relaxed_idle",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "dismount"
+   },
+   {
+    "inputs": [
+     {
+      "name": "Action",
+      "kind": "key",
+      "value": "idle"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     },
+     {
+      "name": "Stance",
+      "kind": "int",
+      "value": 6
+     }
+    ],
+    "current_before": 1913,
+    "current_before_name": "fist_relaxed_idle",
+    "current_after": 1913,
+    "current_after_name": "fist_relaxed_idle",
+    "target": 1913,
+    "target_name": "fist_relaxed_idle",
+    "next": 65535,
+    "encoded": [
+     371,
+     9,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     8,
+     1,
+     65535,
+     1,
+     2,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     5,
+     590,
+     6,
+     0,
+     0,
+     3,
+     1,
+     11,
+     0,
+     3
+    ],
+    "candidates": [
+     1913
+    ],
+    "candidate_names": [
+     "fist_relaxed_idle"
+    ],
+    "label": "back_idle"
+   }
+  ]
+ },
+ "horse": {
+  "state": 1594775756,
+  "char": 1882022332,
+  "char_name": "Brown Lilyut Horse",
+  "steps": [
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     }
+    ],
+    "current_before": 138,
+    "current_before_name": "fist_ba_relaxed_idle_anim",
+    "current_after": 138,
+    "current_after_name": "fist_ba_relaxed_idle_anim",
+    "target": 138,
+    "target_name": "fist_ba_relaxed_idle_anim",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     138
+    ],
+    "candidate_names": [
+     "fist_ba_relaxed_idle_anim"
+    ],
+    "label": "idle"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "f"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.5
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.5
+     }
+    ],
+    "current_before": 138,
+    "current_before_name": "fist_ba_relaxed_idle_anim",
+    "current_after": 135,
+    "current_after_name": "FIST_MO_relaxed_WALK",
+    "target": 135,
+    "target_name": "FIST_MO_relaxed_WALK",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     3,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     135
+    ],
+    "candidate_names": [
+     "FIST_MO_relaxed_WALK"
+    ],
+    "label": "walk"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 1.0
+     }
+    ],
+    "current_before": 135,
+    "current_before_name": "FIST_MO_relaxed_WALK",
+    "current_after": 4,
+    "current_after_name": "FIST_MO_NORMAL_RUN",
+    "target": 4,
+    "target_name": "FIST_MO_NORMAL_RUN",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     5,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     4
+    ],
+    "candidate_names": [
+     "FIST_MO_NORMAL_RUN"
+    ],
+    "label": "run"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 3.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 3.0
+     }
+    ],
+    "current_before": 4,
+    "current_before_name": "FIST_MO_NORMAL_RUN",
+    "current_after": 4,
+    "current_after_name": "FIST_MO_NORMAL_RUN",
+    "target": 4,
+    "target_name": "FIST_MO_NORMAL_RUN",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     7,
+     4,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     4
+    ],
+    "candidate_names": [
+     "FIST_MO_NORMAL_RUN"
+    ],
+    "label": "gallop"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "l"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.5
+     }
+    ],
+    "current_before": 4,
+    "current_before_name": "FIST_MO_NORMAL_RUN",
+    "current_after": 135,
+    "current_after_name": "FIST_MO_relaxed_WALK",
+    "target": 135,
+    "target_name": "FIST_MO_relaxed_WALK",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     3,
+     7,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     135
+    ],
+    "candidate_names": [
+     "FIST_MO_relaxed_WALK"
+    ],
+    "label": "turn_left"
+   },
+   {
+    "inputs": [
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "r"
+     },
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 1.0
+     }
+    ],
+    "current_before": 135,
+    "current_before_name": "FIST_MO_relaxed_WALK",
+    "current_after": 4,
+    "current_after_name": "FIST_MO_NORMAL_RUN",
+    "target": 4,
+    "target_name": "FIST_MO_NORMAL_RUN",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     5,
+     8,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     4
+    ],
+    "candidate_names": [
+     "FIST_MO_NORMAL_RUN"
+    ],
+    "label": "turn_right"
+   },
+   {
+    "inputs": [
+     {
+      "name": "PseudoSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveSpeed",
+      "kind": "float",
+      "value": 0.0
+     },
+     {
+      "name": "RequestedMoveDir4LH",
+      "kind": "key",
+      "value": "s"
+     }
+    ],
+    "current_before": 4,
+    "current_before_name": "FIST_MO_NORMAL_RUN",
+    "current_after": 138,
+    "current_after_name": "fist_ba_relaxed_idle_anim",
+    "target": 138,
+    "target_name": "fist_ba_relaxed_idle_anim",
+    "next": 65535,
+    "encoded": [
+     37,
+     8,
+     65535,
+     65535,
+     65535,
+     65535,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     1,
+     1,
+     0,
+     9,
+     65535,
+     0,
+     65535,
+     65535,
+     1,
+     84,
+     2,
+     65535,
+     65535,
+     65535,
+     0,
+     1,
+     65535,
+     3,
+     65535,
+     65535,
+     65535
+    ],
+    "candidates": [
+     138
+    ],
+    "candidate_names": [
+     "fist_ba_relaxed_idle_anim"
+    ],
+    "label": "stop"
+   }
+  ]
+ }
+}

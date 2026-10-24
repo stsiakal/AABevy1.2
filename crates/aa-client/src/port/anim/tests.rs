@@ -312,18 +312,33 @@ fn graph_golden(name: &str) -> Value {
 fn compare_graph(
     name: &str,
     golden_name: &str,
-    exact_names: bool,
-    exact_guards: bool,
-    exact_transitions: bool,
+    names_exact: bool,
+    exact_guard_sentinels: bool,
+    check_guards: bool,
+    exact_weights: bool,
     allowed_range_inputs: &[&str],
 ) {
     let golden = graph_golden(golden_name);
-    let graph = load_graph_from_pak(name).expect("graph XML in the pak");
+    let graph = load_graph_from_pak(name).expect("graph in the pak");
+
+    assert_eq!(
+        graph.source,
+        if aa_pak::Pak::global().entry(&ag_path(name)).is_some() {
+            GraphSource::Ag
+        } else {
+            GraphSource::Xml
+        },
+        "{name}: source"
+    );
 
     let want_hub = golden["hub"].as_u64().unwrap();
     assert_eq!(
         graph.default_state.map(|v| v as u64),
-        if want_hub == 0xffff { None } else { Some(want_hub) },
+        if want_hub == 0xffff {
+            None
+        } else {
+            Some(want_hub)
+        },
         "{name}: default state"
     );
 
@@ -331,7 +346,11 @@ fn compare_graph(
     assert_eq!(graph.inputs.len(), inputs.len(), "{name}: input count");
     for (i, want) in inputs.iter().enumerate() {
         let got = &graph.inputs[i];
-        assert_eq!(got.name, want["name"].as_str().unwrap(), "{name}: input {i} name");
+        assert_eq!(
+            got.name,
+            want["name"].as_str().unwrap(),
+            "{name}: input {i} name"
+        );
         assert_eq!(
             got.kind as u64,
             want["kind"].as_u64().unwrap(),
@@ -352,9 +371,32 @@ fn compare_graph(
             want["default"].as_u64().unwrap(),
             "{name}: input {i} default"
         );
-        if got.kind != InputKind::Keyed {
-            assert_eq!(got.min as i64, want["min"].as_i64().unwrap(), "{name}: input {i} min");
-            assert_eq!(got.max as i64, want["max"].as_i64().unwrap(), "{name}: input {i} max");
+        if got.kind == InputKind::Keyed {
+            let keys = want["keys"].as_array().unwrap();
+            assert_eq!(got.keys.len(), keys.len(), "{name}: input {i} key count");
+            for (j, key) in keys.iter().enumerate() {
+                assert_eq!(
+                    got.keys[j].0,
+                    key[0].as_str().unwrap(),
+                    "{name}: input {i} key {j}"
+                );
+                assert_eq!(
+                    got.keys[j].1 as u64,
+                    key[1].as_u64().unwrap(),
+                    "{name}: input {i} key {j} index"
+                );
+            }
+        } else {
+            assert_eq!(
+                got.min as i64,
+                want["min"].as_i64().unwrap(),
+                "{name}: input {i} min"
+            );
+            assert_eq!(
+                got.max as i64,
+                want["max"].as_i64().unwrap(),
+                "{name}: input {i} max"
+            );
             if got.kind == InputKind::Float {
                 assert_eq!(
                     got.scale.to_bits(),
@@ -378,19 +420,11 @@ fn compare_graph(
                 .iter()
                 .map(|&(a, b)| (a as i64, b as i64))
                 .collect();
-            if !allowed_range_inputs.iter().any(|n| n.eq_ignore_ascii_case(&got.name)) {
+            if !allowed_range_inputs
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(&got.name))
+            {
                 assert_eq!(got_ranges, want_ranges, "{name}: input {i} ranges");
-            }
-        } else {
-            let keys = want["keys"].as_array().unwrap();
-            assert_eq!(got.keys.len(), keys.len(), "{name}: input {i} key count");
-            for (j, key) in keys.iter().enumerate() {
-                assert_eq!(got.keys[j].0, key[0].as_str().unwrap(), "{name}: input {i} key {j}");
-                assert_eq!(
-                    got.keys[j].1 as u64,
-                    key[1].as_u64().unwrap(),
-                    "{name}: input {i} key {j} index"
-                );
             }
         }
     }
@@ -400,7 +434,7 @@ fn compare_graph(
     for (i, want) in states.iter().enumerate() {
         let got = &graph.states[i];
         let want_name = want["name"].as_str().unwrap();
-        if exact_names {
+        if names_exact {
             assert_eq!(got.name, want_name, "{name}: state {i} name");
         } else {
             assert!(
@@ -420,44 +454,71 @@ fn compare_graph(
             want["cost_minus1"].as_u64().unwrap(),
             "{name}: state {i} cost"
         );
+        if !check_guards {
+            continue;
+        }
         let guards: Vec<u64> = want["guards"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v.as_u64().unwrap())
             .collect();
-        if exact_guards {
-            let got_guards: Vec<u64> = got.guards.iter().map(|&v| v as u64).collect();
-            assert_eq!(got_guards, guards, "{name}: state {i} guards");
-        }
+        let got_guards: Vec<u64> = got
+            .guards
+            .iter()
+            .map(|&v| {
+                if exact_guard_sentinels {
+                    v as u64
+                } else {
+                    (v & 0x7fff) as u64
+                }
+            })
+            .collect();
+        let want_guards: Vec<u64> = guards
+            .iter()
+            .map(|&v| if exact_guard_sentinels { v } else { v & 0x7fff })
+            .collect();
+        assert_eq!(got_guards, want_guards, "{name}: state {i} guards");
     }
 
     let transitions = golden["transitions"].as_array().expect("transitions");
-    if !exact_transitions {
-        return;
-    }
-    assert_eq!(graph.transitions.len(), transitions.len(), "{name}: transition count");
+    assert_eq!(
+        graph.transitions.len(),
+        transitions.len(),
+        "{name}: transition count"
+    );
     for (i, want) in transitions.iter().enumerate() {
         let got = &graph.transitions[i];
-        let from = want[0].as_u64().unwrap();
-        let to = want[1].as_u64().unwrap();
-        let force = want[2].as_u64().unwrap();
-        let weight = want[3].as_u64().unwrap();
-        let time_bits = (want[4].as_u64().unwrap() as u32)
-            | ((want[5].as_u64().unwrap() as u32) << 16);
-        let target_cost = graph.states[got.to as usize].cost_minus1 as u64;
-        assert_eq!(got.from as u64, from, "{name}: transition {i} from");
-        assert_eq!(got.to as u64, to, "{name}: transition {i} to");
+        assert_eq!(
+            got.from as u64,
+            want[0].as_u64().unwrap(),
+            "{name}: transition {i} from"
+        );
+        assert_eq!(
+            got.to as u64,
+            want[1].as_u64().unwrap(),
+            "{name}: transition {i} to"
+        );
         assert_eq!(
             got.force_follow_chance as u64,
-            force,
+            want[2].as_u64().unwrap(),
             "{name}: transition {i} force"
         );
-        let ours = got.link_cost as u64 + target_cost;
-        assert!(
-            ours == weight || ours + 1 == weight,
-            "{name}: transition {i} weight {ours} != {weight}"
-        );
+        let want_weight = want[3].as_u64().unwrap();
+        if exact_weights {
+            assert_eq!(
+                got.weight as u64, want_weight,
+                "{name}: transition {i} weight"
+            );
+        } else {
+            assert!(
+                got.weight as u64 == want_weight || got.weight as u64 + 1 == want_weight,
+                "{name}: transition {i} weight {} != {want_weight}",
+                got.weight
+            );
+        }
+        let time_bits =
+            (want[4].as_u64().unwrap() as u32) | ((want[5].as_u64().unwrap() as u32) << 16);
         assert_eq!(
             got.transition_time.to_bits(),
             time_bits,
@@ -468,20 +529,85 @@ fn compare_graph(
 
 #[test]
 fn animation_graph_tables_match_live_goldens() {
-    // Graphs with a compiled `.ag` side copy are loaded from that side copy by the client;
-    // its data is one game revision older than the shipped XML for a handful of values. The
-    // exact XML-path oracle is `playerupperbody` (no `.ag` in the pak).
-    for (name, golden, exact_names, exact_guards, exact_transitions, allowed) in [
-        ("playerupperbody", "playerupperbody_xml", true, false, false, &[][..]),
-        ("horse_full_body", "horse_full_body", false, true, true, &[][..]),
-        ("player_full_body", "player_full_body_xml", false, false, false, &["PseudoSpeed", "RequestedTurnSpeedLZ"][..]),
-        ("monster_full_body", "monster_full_body_xml", false, false, true, &["PseudoSpeed"][..]),
-        ("npc_full_body", "npc_full_body_xml", false, false, true, &["PseudoSpeed"][..]),
-        ("monster_full_body_big", "monster_full_body_big_xml", false, false, true, &[][..]),
-        ("bird_full_body", "bird_full_body_xml", false, false, true, &[][..]),
-        ("dragon_full_body", "dragon_full_body_xml", false, false, true, &[][..]),
+    // The client resolves every graph with a compiled side copy to `.ag`
+    // (`FUN_306261f0`); `playerupperbody` has no `.ag` and is the XML oracle.
+    for (name, golden, exact_names, exact_sentinels, check_guards, exact_weights) in [
+        (
+            "player_full_body",
+            "player_full_body",
+            false,
+            true,
+            true,
+            true,
+        ),
+        (
+            "horse_full_body",
+            "horse_full_body",
+            false,
+            false,
+            true,
+            true,
+        ),
+        (
+            "monster_full_body",
+            "monster_full_body_xml",
+            false,
+            false,
+            true,
+            true,
+        ),
+        (
+            "npc_full_body",
+            "npc_full_body_xml",
+            false,
+            false,
+            true,
+            true,
+        ),
+        (
+            "monster_full_body_big",
+            "monster_full_body_big_xml",
+            false,
+            false,
+            true,
+            true,
+        ),
+        (
+            "bird_full_body",
+            "bird_full_body_xml",
+            false,
+            false,
+            true,
+            true,
+        ),
+        (
+            "dragon_full_body",
+            "dragon_full_body_xml",
+            false,
+            false,
+            true,
+            true,
+        ),
+        // The XML-only upper-body graph has no compiled side copy; the transition
+        // expansion is the oracle here. Its template `<Guard>` words are still open.
+        (
+            "playerupperbody",
+            "playerupperbody_xml",
+            true,
+            true,
+            false,
+            false,
+        ),
     ] {
-        compare_graph(name, golden, exact_names, exact_guards, exact_transitions, allowed);
+        compare_graph(
+            name,
+            golden,
+            exact_names,
+            exact_sentinels,
+            check_guards,
+            exact_weights,
+            &[],
+        );
     }
 }
 
@@ -520,5 +646,114 @@ fn entry_side_seat_override() {
     );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Live animation-graph state machine. `live_state_machine.json` is captured by
+// `rust/tools/capture_anim_state.py` in the `test/anim-golden` lane from the hidden 1.2 client:
+// the local player's original full-body state and the summoned horse's state are driven through
+// `SetInput` and `Update_SteadyState`; each step records the encoded 32-input bank, the
+// `BasicQuery` candidate list and the state selected by the original `PerformQuery` (`+0x28`).
+// ---------------------------------------------------------------------------------------------
 
+fn live_machine() -> Value {
+    serde_json::from_str(include_str!("goldens/live_state_machine.json"))
+        .expect("live state-machine golden parses")
+}
 
+fn reproduce_live_sequence(graph_name: &str, section: &Value) {
+    let graph = load_graph_from_pak(graph_name).expect("live graph in the pak");
+    assert_eq!(graph.source, GraphSource::Ag, "{graph_name}: source");
+    let steps = section["steps"].as_array().expect("steps");
+    for (i, step) in steps.iter().enumerate() {
+        let label = step["label"].as_str().unwrap_or("");
+        let current = step["current_before"].as_u64().unwrap() as u16;
+        let current_name = step["current_before_name"].as_str().expect("current name");
+        assert!(
+            graph.states[current as usize]
+                .name
+                .eq_ignore_ascii_case(current_name),
+            "{graph_name} step {i} ({label}): current {:?} != {current_name:?}",
+            graph.states[current as usize].name
+        );
+
+        let mut state = GraphState::new(&graph);
+        state.current = Some(current);
+        state.update_kind = UpdateKind::Steady;
+        state.time = 0.0;
+        let encoded: Vec<u16> = step["encoded"]
+            .as_array()
+            .expect("encoded")
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u16)
+            .collect();
+        assert!(
+            encoded.len() >= graph.inputs.len(),
+            "{graph_name} step {i}: input count {} < {}",
+            encoded.len(),
+            graph.inputs.len()
+        );
+        for (j, input) in state.inputs.iter_mut().enumerate() {
+            input.encoded = [encoded[j], encoded[j]];
+        }
+        state.bank = 0;
+
+        let mut got: Vec<u16> = state.basic_query(&graph);
+        got.sort_unstable();
+        let mut want: Vec<u16> = step["candidates"]
+            .as_array()
+            .expect("candidates")
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u16)
+            .collect();
+        want.sort_unstable();
+        assert_eq!(
+            got, want,
+            "{graph_name} step {i} ({label}): CStateIndex candidates"
+        );
+
+        let target = step["target"].as_u64().unwrap() as u16;
+        let target_name = step["target_name"].as_str().expect("target name");
+        let picked = state.perform_query(&graph).expect("query target");
+        assert_eq!(
+            picked, target,
+            "{graph_name} step {i} ({label}): target {:?} != {target_name:?}",
+            graph.states[picked as usize].name
+        );
+    }
+}
+
+#[test]
+fn live_state_machine_sequence_reproduces() {
+    let doc = live_machine();
+    reproduce_live_sequence("player_full_body", &doc["player"]);
+    reproduce_live_sequence("horse_full_body", &doc["horse"]);
+}
+
+#[test]
+fn compiled_ag_graphs_load() {
+    let pak = aa_pak::Pak::global();
+    let mut seen = 0;
+    for path in pak.list("game/animations/graphs/") {
+        if !path.to_ascii_lowercase().ends_with(".ag") {
+            continue;
+        }
+        let name = path
+            .trim_start_matches("game/animations/graphs/")
+            .trim_end_matches(".ag");
+        if name.starts_with("htft/") {
+            let err = load_graph_ag_from_pak(name).expect_err("htft graphs are 0x2f");
+            assert!(
+                err.contains("unsupported .ag version 0x2f"),
+                "{path}: {err}"
+            );
+            continue;
+        }
+        let graph = load_graph_ag_from_pak(name).unwrap_or_else(|e| panic!("{path}: {e}"));
+        assert_eq!(graph.source, GraphSource::Ag, "{path}");
+        assert!(!graph.states.is_empty(), "{path}: no states");
+        seen += 1;
+    }
+    assert!(
+        seen >= 17,
+        "expected all shipped 0.31 .ag graphs, got {seen}"
+    );
+}

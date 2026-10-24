@@ -101,6 +101,17 @@ input-pair array; `FUN_3065ba50` accumulates matches; `FUN_3065da00` walks the r
 transitions, bit 2 = has a nonzero-weight transition, bit 0x40 = target unreachable, then builds
 the weighted random table and the per-state transition counts.
 
+The compiled `.ag` serializes the index with `FUN_3065bc10`: u32 entry count, then each entry as
+`FUN_30658930`'s 17 bytes `{u16 input, u16 value, u16 count, u16 unk6, u8 priority, u32 start,
+u32 end}`, a u32 pair count, that many u16 state ids (the first `state_count` are the no-match
+fallback), u16 input count, u16 state count, u32 result count and 17 bytes per result. In memory
+the entry is 20 bytes (padding after `priority`); `+0x90` entries, `+0xb0` pairs, `+0xc0` input
+count, `+0xc2` state count, `+0xc8` results. `Query FUN_3065e050` binary-searches one entry per
+non-`0xffff` encoded input, intersects the state-id ranges (`0x3065da00`) and then
+`FUN_3065b6f0` scores each survivor by the sum of the matched entries' `priority` bytes, keeping
+the best score. This is why a broad state such as `Dead` is not selected even with no stored
+guard. The port lives in `anim/graph.rs` (`StateIndex::query`).
+
 ### 1.4 Input value objects
 
 `LoadInputs FUN_30611d30` creates one object per `<Input>` (type strings `KeyState`, `Float`,
@@ -481,8 +492,11 @@ machine are in `crates/aa-client/src/port/anim/` and tested against live goldens
    precision: `(offset + value) / scale`, clamp to the int range, truncate (`cvttss2si`), then
    return the range-bucket index (`0xffff` if none). The integer and keyed encoders and the
    string `sscanf` paths are captured in `goldens/inputs.json`.
-5. **`Update_SteadyState` / `Update_EphemeralState` branch details** (the high-level flow is
-   mapped; the exact leave/enter order for equal-cost links and `forceFollowChance` is [?]).
+5. **`Update_SteadyState` / `Update_EphemeralState` branch details.** Steady is now
+   live-verified: `SetInput` + `Update_SteadyState` was driven on the local player and the
+   summoned horse and the selected targets match the Rust machine (idle/walk/run/stop, turns,
+   jump, swim, mount/dismount, horse gaits). The ephemeral multi-hop leave/enter order and
+   `forceFollowChance` are still synthetic-only.
 6. **Upper-body bone masking** (cryanimation consumer, not the graph state).
 7. ~~**Template-generated transitions.**~~ **resolved.** There is no separate template link
    table: a `<Link>` is instantiated once per **shared parameter combination** of its two
@@ -504,22 +518,31 @@ machine are in `crates/aa-client/src/port/anim/` and tested against live goldens
    any graph name to the compiled `.ag` side copy when present, and those `.ag` files were built
    from a slightly older XML (e.g. monster `swim_run` is `0.2..10` in the shipped XML but the
    live range ends at 3.0). `playerupperbody.xml` has no `.ag` and is the exact XML oracle.
-11. **`.ag` side copies.** The live manager loads the compiled `game/animations/graphs/*.ag`
-    instead of the shipped XML whenever both exist (proved by loading `horse_full_body.XML` and
-    receiving the same graph object/name). The `.ag` binary format is `{counts, string table,
-    parsed tables}` and is not part of the XML-loader port; the XML loader is validated against
-    `playerupperbody.xml` (no `.ag`) and against the `.ag` tables except the documented older
-    data values. Horse transitions/guards/costs/order are identical; only three state spellings
-    differ in case (`Cancel action to move`, `Jump to idle`, `Jump to move`).
-12. **Graph state machine oracle.** `machine.rs` ports `SetInput`, `BasicQuery`, `PerformQuery`,
-    the four update functions and the pending ring. The synthetic graph sequence
-    idle -> walk -> run -> stop and forced-state/queue behaviour are tested; a live state
-    sequence from the original could not be captured because `CAnimationGraphState::Update`
-    needs a live `ICharacterInstance` and the lane's in-world actor chain did not expose the
-    graph-state wrapper at the documented offsets. The original `CStateIndex` also uses the full
-    criterion set (not only the stored guards), which is why an unguarded `Dead` state is not
-    selected; the Rust `BasicQuery` currently uses the stored guards and must be extended with
-    the index pairs before it can be used as a live sequence oracle.
+11. ~~**`.ag` side copies.**~~ **resolved.** `CAnimationGraph::Serialize` (`FUN_306152b0`,
+    graph vtable `0x30741dcc+0x20`) is the compiled reader (`"rb"`, version `0x31`); the manager
+    path is `FUN_306261f0` (strip the XML extension, append `.ag`, `DAT_307435ec`). The reader is
+    ported in `crates/aa-client/src/port/anim/ag.rs`: header, input table, 9 timing words, guard
+    map, `FUN_30606dc0` states, `{u16,u16,u16,u16,f32}` transitions, state-name map, the
+    `CStateIndex` (`FUN_3065bc10`/`FUN_30658930`), hub and the trailing maps. All 0.31 `.ag`
+    files load and their tables equal the live dumps (player_full_body 7999 transitions/range
+    vectors included); `htft/*.ag` are version `0x2f` and the original rejects them too. The
+    factory-node prefix is skipped by seeking the input table and validating the whole-file
+    parse; its per-class payloads are not needed for state selection (open below).
+12. ~~**Graph state machine oracle.**~~ **resolved for the player and horse.** The live
+    `CAnimationGraphState` objects are found by scanning for the manager graph at `+0x20`; the
+    local player is the state whose character instance name (`char+0x1c`) is
+    `X2Unit:UnitName('player')`. `capture_anim_state.py` drives `SetInput`
+    (`+0x04/+0x08/+0x0c`) and `Update_SteadyState FUN_306357f0`, recording the encoded 32-input
+    bank, the `BasicQuery FUN_30630c20` candidates and the original target (`+0x28`). The
+    recorded sequences (idle -> walk -> run -> stop, turn, jump, swim, mount/dismount, horse
+    gaits) are ported to `machine.rs` and reproduced by
+    `port::anim::tests::live_state_machine_sequence_reproduces`.
+    Full `CStateIndex` criteria are used: entries (`input,value,count,start,priority`), the
+    state-id pair array, the raw range intersection and the `FUN_3065b6f0` priority scoring.
+    **Open:** the final tie-break of `FUN_3065b6f0` when several surviving states have the same
+    priority sum; the port keeps the larger state id, which matches every captured step. The XML
+    `playerupperbody` graph has no compiled side copy: its 13,753 transitions now match, but its
+    template `<Guard>` words and one CachePass weight flag are still open.
 
 9. **CAnimationGraphManager registry layout** — the manager is `[gEnv+0x4cc]`; its map at
    `+0x28` has the sentinel at `[manager+0x2c]`, node key pointer at `+0xc`, graph pointer at
