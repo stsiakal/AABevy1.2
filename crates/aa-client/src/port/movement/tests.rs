@@ -1320,3 +1320,95 @@ fn inverse3x3_matches_goldens() {
     }
     assert!(checked >= 20, "only {checked} inverse goldens");
 }
+
+#[test]
+fn quad_ground_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/ground.json")).expect("ground JSON");
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let after = hex_bytes(case["after"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.input = [
+            f32_of(&case["input"][0]),
+            f32_of(&case["input"][1]),
+            f32_of(&case["input"][2]),
+        ];
+        ctl.jump_button = case["jump_button"].as_u64().unwrap() as u8;
+        ctl.airborne = case["airborne"].as_u64().unwrap() as u8;
+        ctl.jumped = 0;
+        ctl.quat = [
+            f32_of(&case["quat"][0]),
+            f32_of(&case["quat"][1]),
+            f32_of(&case["quat"][2]),
+            f32_of(&case["quat"][3]),
+        ];
+        let block = QuadBlock {
+            field_04: f32_of(&case["field_04"]),
+            jump_scalar: f32_of(&case["jump_scalar"]),
+            jump_dir: [
+                f32_of(&case["jump_dir"][0]),
+                f32_of(&case["jump_dir"][1]),
+                f32_of(&case["jump_dir"][2]),
+            ],
+            jump_extra: [
+                f32_of(&case["jump_extra"][0]),
+                f32_of(&case["jump_extra"][1]),
+                f32_of(&case["jump_extra"][2]),
+            ],
+            ..QuadBlock::default()
+        };
+        let ext = QuadExternals {
+            entity_present: true,
+            controlled_unit: case["unit_present"].as_bool().unwrap(),
+            mounted_unit: case["mounted_stance"].as_u64().unwrap() != 0,
+            unit_gate: case["unit_gate"].as_u64().unwrap() != 0,
+            unit_kind: case["unit_kind"].as_u64().unwrap() as i32,
+            jump_height: f32_of(&case["jump_height"]),
+            walk: case["walk"].as_u64().unwrap() != 0,
+            params: movement_params(&case["params"]),
+            speed_multiplier: f32_of(&case["speed_multiplier"]),
+            swimming: case["swim"].as_u64().unwrap() != 0,
+            swim_gate: case["game_96"].as_u64().unwrap() == 0,
+            anim_present: !case["anim"].is_null(),
+            jump_in_place: case["anim"]
+                .as_str()
+                .map(|s| s.contains("jump_in_place"))
+                .unwrap_or(false),
+            graph_push: false,
+            cfg_swim_scale: f32_of(&case["swim_scale"]),
+            ..QuadExternals::default()
+        };
+        let mut graph = Vec::new();
+        let out = ground(&mut ctl, &block, &QuadActor::default(), &ext, &mut graph);
+        assert_eq!(
+            ctl.mode,
+            u32::from_le_bytes(after[0x60..0x64].try_into().unwrap()),
+            "{name} mode"
+        );
+        for (i, off) in [0x64usize, 0x68, 0x6c, 0x8c, 0x90, 0x94].iter().enumerate() {
+            let got = if i < 3 {
+                ctl.velocity[i]
+            } else {
+                ctl.spare_velocity[i - 3]
+            };
+            assert_eq!(
+                got.to_bits(),
+                f_at(&after, *off).to_bits(),
+                "{name} velocity[{i}]: got {got:?}, want {:?}",
+                f_at(&after, *off)
+            );
+        }
+        assert_eq!(ctl.airborne, after[0x98], "{name} airborne");
+        assert_eq!(ctl.jumped, after[0x99], "{name} jumped");
+        let ev = case["unit_event"].as_u64().unwrap() as u32;
+        let want_ev = if ev == 0xFFFF_FFFF {
+            None
+        } else {
+            Some(ev != 0)
+        };
+        assert_eq!(out.unit_event, want_ev, "{name} unit_event");
+        assert!(graph.is_empty(), "{name} graph");
+    }
+}
