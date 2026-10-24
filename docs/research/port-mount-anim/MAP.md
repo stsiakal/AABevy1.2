@@ -348,7 +348,10 @@ state race is introduced.
    per-blend-space weight functions (the main unknown).
 5. **CAnimatedCharacter speed inputs + rider copy.** `FUN_30665830` (profiles 0/9),
    `FUN_390dcc80`, `FUN_390dd080`; compare graph input values frame by frame for walking, turning,
-   jumping, swimming, and riding.
+   jumping, swimming, and riding. **Status:** the unit-parent rider copy
+   (`FUN_390dcc80`, invoked by `FUN_390dd080`) is ported in `anim/rider.rs` and gated by 35 live
+   mounted-player/horse cases (`goldens/rider_copy.json`). `FUN_30665830` is not ported yet; its
+   motion/quaternion math and the camera half of `FUN_390dd080` remain open.
 6. **Mount flow.** Controllers (`FUN_390a5f00/390a6110`), approach/send, attach/detach, seat
    binding, side clips, camera observation. Test with packet capture plus actor transforms; the
    controller functions are stateful but their inputs/outputs are explicit.
@@ -382,10 +385,13 @@ Inferred / unresolved: see section 6.
 
 ## 6. Unknowns (ranked)
 
-1. **LMG weight formulas per blend type** — the dispatcher `FUN_315714b0` and the per-type
-   functions are identified, but the exact weights for `XL14` (horse/rider run), `S8_1` (walk),
-   `M2I8` (idle<->run), `TSTP` (turn), `ISTP` (idle steps), `S8SW` (swim) are not decoded. This is
-   the largest remaining line-by-line gap for D.
+1. **LMG weight formulas per blend type** — **partial (step 4).** `TSTP FUN_3156bf40` is ported
+   and gated by 24 live cases. The shared `S8_1`/`M2I8`/`MI01`/`MI02`/`S8SW` body
+   `FUN_31574e70` is ported and gated by 24 positioned and 24 fallback (real LMG) cases; its
+   8-way helper uses the star sector order `(p0,p1),(p1,p3),(p3,p5),(p5,p4),(p4,p6),(p6,p7),
+   (p7,p2),(p2,p0)`. `XL14`, `XL15` and `ISTP` are not ported yet (the libm `atan2` operand
+   pairs need the disassembly). The per-layer body `FUN_31558550` is ported and gated by
+   48 caps x 13 layers; `GetAnimationDesc`'s reset and the command writer are still open.
 2. ~~**`CAnimationGraph::PreprocessParameterization`**~~ **resolved (port step 2)** — the body is
    `cryaction+0x3061bd50` (the profiler string at its entry misled the first map). A copy is
    generated per `<Parameter>` value combination in document-parameter order, the template

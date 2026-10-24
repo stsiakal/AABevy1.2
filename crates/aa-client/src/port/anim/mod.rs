@@ -1,4 +1,5 @@
-//! Animation-graph port, steps 1-3: pure leaves, the static graph loader and the graph state machine.
+//! Animation-graph port, steps 1-4 (partial): pure leaves, the static graph loader, the graph
+//! state machine, the LMG capabilities/per-layer bodies and the unit-parent rider copy.
 //!
 //! Step 1 is a line-by-line port of the pure functions used by the 1.2 animation graph:
 //! `CAnimationGraph::SStateInfo::EvaluateGuards` (`cryaction+0x5f7a80`), the integer/float/key
@@ -20,7 +21,9 @@ mod fourcc;
 mod graph;
 mod guards;
 mod inputs;
+mod lmg;
 mod machine;
+mod rider;
 mod side;
 
 #[cfg(test)]
@@ -37,6 +40,8 @@ pub use inputs::{
     encode_float, encode_float_str, encode_int, encode_int_str, encode_key, encode_key_index,
     parse_float, parse_int,
 };
+pub use lmg::{fun_31558550, fun_3156bf40, fun_31574e70, AnimRow, AnimSet, Caps, Desc, Layer, Lmg};
+pub use rider::{actor_unit_model_update, RiderInputs};
 pub use machine::{GraphEvent, GraphState, InputValues, UpdateKind};
 pub use side::{Placement, Vec3, approach_side, entry_side, side_placement};
 

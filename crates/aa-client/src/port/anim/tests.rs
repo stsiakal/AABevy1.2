@@ -757,3 +757,153 @@ fn compiled_ag_graphs_load() {
         "expected all shipped 0.31 .ag graphs, got {seen}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// LMG capabilities. `goldens/lmg_weights.json` is captured from the live 1.2 client by calling
+// the original per-type body directly (`FUN_31574e70` through `FUN_3156d760`,
+// `FUN_3156bf40`) with a synthetic animation set whose rows are the live `0xdc` animation data
+// rows. The Rust port consumes the same rows, descriptor and LMG example bytes.
+// ---------------------------------------------------------------------------------------------
+
+fn hex_bytes(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex"))
+        .collect()
+}
+
+fn lmg_golden() -> Value {
+    serde_json::from_str(include_str!("goldens/lmg_weights.json")).expect("lmg golden parses")
+}
+
+#[test]
+fn lmg_shared_blend_and_tstp_match_goldens() {
+    let doc = lmg_golden();
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let ids: Vec<i16> = case["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as i16)
+            .collect();
+        let rows: Vec<AnimRow> = case["set_rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| {
+                let bytes = hex_bytes(v.as_str().unwrap());
+                let mut row = [0u8; 0xdc];
+                row.copy_from_slice(&bytes);
+                row
+            })
+            .collect();
+        let mut entries = vec![[0u8; 0x10]; 256];
+        for (i, id) in ids.iter().enumerate() {
+            entries[*id as usize][8..12].copy_from_slice(&(i as u32).to_le_bytes());
+        }
+        let set = AnimSet { entries, rows };
+        let desc = hex_bytes(case["desc"].as_str().unwrap());
+        let examples: Vec<u8> = case["lmg"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|v| hex_bytes(v.as_str().unwrap()))
+            .collect();
+        let lmg = Lmg { examples };
+        let mut caps = Caps::init_lmg();
+        match case["kind"].as_str().unwrap() {
+            "s8" | "s8fb" => fun_31574e70(&set, &desc, 0.0, &lmg, &mut caps),
+            "tstp" => fun_3156bf40(&set, &desc, &lmg, &mut caps),
+            other => panic!("unknown kind {other}"),
+        }
+        let want = hex_bytes(case["caps"].as_str().unwrap());
+        assert_eq!(
+            caps.0.as_slice(),
+            want.as_slice(),
+            "lmg case {n} ({})",
+            case["kind"].as_str().unwrap()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rider copy. Captured live from the mounted player + summoned horse: the horse graph inputs
+// were set through the original `SetInput`, then the next frame's `FUN_390dcc80`/`FUN_390dd080`
+// copied them into the local player graph.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn rider_copy_matches_live_mount() {
+    let doc: Value = serde_json::from_str(include_str!("goldens/rider_copy.json"))
+        .expect("rider golden parses");
+    for (i, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let stance = case["stance"].as_str().expect("stance");
+        let inputs = RiderInputs {
+            pseudo_speed: case["mount_speed"].as_f64().expect("mount speed") as f32,
+            turn_speed: case["mount_turn"].as_f64().expect("mount turn") as f32,
+            swim: stance.eq_ignore_ascii_case("swim"),
+        };
+        let (speed, turn) = actor_unit_model_update(inputs);
+        assert_eq!(
+            speed.to_bits(),
+            (case["rider_speed"].as_f64().unwrap() as f32).to_bits(),
+            "rider case {i} PseudoSpeed"
+        );
+        assert_eq!(
+            turn.to_bits(),
+            (case["rider_turn"].as_f64().unwrap() as f32).to_bits(),
+            "rider case {i} RequestedTurnSpeedLZ"
+        );
+    }
+}
+
+#[test]
+fn lmg_s8_fallback_matches_goldens() {
+    let doc: Value = serde_json::from_str(include_str!("goldens/lmg_s8_fallback.json"))
+        .expect("fallback golden parses");
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let ids: Vec<i16> = case["ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap() as i16).collect();
+        let rows: Vec<AnimRow> = case["set_rows"].as_array().unwrap().iter().map(|v| {
+            let bytes = hex_bytes(v.as_str().unwrap());
+            let mut row = [0u8; 0xdc];
+            row.copy_from_slice(&bytes);
+            row
+        }).collect();
+        let mut entries = vec![[0u8; 0x10]; 256];
+        for (i, id) in ids.iter().enumerate() {
+            entries[*id as usize][8..12].copy_from_slice(&(i as u32).to_le_bytes());
+        }
+        let set = AnimSet { entries, rows };
+        let desc = hex_bytes(case["desc"].as_str().unwrap());
+        let examples: Vec<u8> = case["lmg"].as_array().unwrap().iter().flat_map(|v| hex_bytes(v.as_str().unwrap())).collect();
+        let lmg = Lmg { examples };
+        let mut caps = Caps::init_lmg();
+        fun_31574e70(&set, &desc, 0.0, &lmg, &mut caps);
+        assert_eq!(caps.0.as_slice(), hex_bytes(case["caps"].as_str().unwrap()).as_slice(), "fallback case {n}");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Per-layer desc data. `FUN_31558550` is called for all 13 character layers with the caps
+// blocks captured in `lmg_weights.json` and the live animation-set scale.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn lmg_layers_match_live_caps() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/lmg_layers.json")).expect("layer golden");
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let mut caps = Caps::init_lmg();
+        caps.0.copy_from_slice(&hex_bytes(case["caps"].as_str().unwrap()));
+        let scale = case["scale"].as_f64().unwrap() as f32;
+        for (i, want) in case["layers"].as_array().unwrap().iter().enumerate() {
+            let mut layer = Layer::default();
+            fun_31558550(i as u32, &caps, scale, &mut layer);
+            assert_eq!(
+                layer.0.as_slice(),
+                hex_bytes(want.as_str().unwrap()).as_slice(),
+                "layer case {n} layer {i}"
+            );
+        }
+    }
+}
