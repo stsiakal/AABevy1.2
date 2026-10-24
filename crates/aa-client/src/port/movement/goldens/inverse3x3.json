@@ -1,0 +1,1837 @@
+{
+ "function": "FUN_39093ef0",
+ "base": "0x38ff0000",
+ "captured": "2026-10-24 07:53:31",
+ "cases": [
+  {
+   "name": "inv_0",
+   "in": [
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3f800000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3f800000"
+    }
+   ]
+  },
+  {
+   "name": "inv_1",
+   "in": [
+    {
+     "bits": "0x40000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x40800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x41000000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3f000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3e800000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3e000000"
+    }
+   ]
+  },
+  {
+   "name": "inv_2",
+   "in": [
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x40000000"
+    },
+    {
+     "bits": "0x40400000"
+    },
+    {
+     "bits": "0x40800000"
+    },
+    {
+     "bits": "0x40a00000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0x40e00000"
+    },
+    {
+     "bits": "0x41000000"
+    },
+    {
+     "bits": "0x41200000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf2aaaab"
+    },
+    {
+     "bits": "0xbfaaaaab"
+    },
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0xbf2aaaab"
+    },
+    {
+     "bits": "0x406aaaab"
+    },
+    {
+     "bits": "0xc0000000"
+    },
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0xc0000000"
+    },
+    {
+     "bits": "0x3f800000"
+    }
+   ]
+  },
+  {
+   "name": "inv_3",
+   "in": [
+    {
+     "bits": "0x3f800000"
+    },
+    {
+     "bits": "0x40000000"
+    },
+    {
+     "bits": "0x40400000"
+    },
+    {
+     "bits": "0x40800000"
+    },
+    {
+     "bits": "0x40a00000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0x40e00000"
+    },
+    {
+     "bits": "0x41000000"
+    },
+    {
+     "bits": "0x41100000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xc0400000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0xc0400000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0xc1400000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0xc0400000"
+    },
+    {
+     "bits": "0x40c00000"
+    },
+    {
+     "bits": "0xc0400000"
+    }
+   ]
+  },
+  {
+   "name": "inv_4",
+   "in": [
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    }
+   ]
+  },
+  {
+   "name": "inv_5",
+   "in": [
+    {
+     "bits": "0x322bcc77"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x322bcc77"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x322bcc77"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x24e69595"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x24e69595"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x24e69595"
+    }
+   ]
+  },
+  {
+   "name": "inv_6",
+   "in": [
+    {
+     "bits": "0x4cbebc20"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x4cbebc20"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x4cbebc20"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x322bcc78"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x322bcc78"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x322bcc78"
+    }
+   ]
+  },
+  {
+   "name": "inv_7",
+   "in": [
+    {
+     "bits": "0xbf800000"
+    },
+    {
+     "bits": "0x3f000000"
+    },
+    {
+     "bits": "0x3e800000"
+    },
+    {
+     "bits": "0x3e000000"
+    },
+    {
+     "bits": "0xc0000000"
+    },
+    {
+     "bits": "0x3f400000"
+    },
+    {
+     "bits": "0x3f000000"
+    },
+    {
+     "bits": "0xbe800000"
+    },
+    {
+     "bits": "0x40400000"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf75c290"
+    },
+    {
+     "bits": "0xbe842109"
+    },
+    {
+     "bits": "0x3e13fc0a"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0xbf042109"
+    },
+    {
+     "bits": "0x3e042109"
+    },
+    {
+     "bits": "0x3e23d70b"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3ea3d70b"
+    }
+   ]
+  },
+  {
+   "name": "inv_8",
+   "in": [
+    {
+     "bits": "0x3dcccccd"
+    },
+    {
+     "bits": "0xbe4ccccd"
+    },
+    {
+     "bits": "0x3e99999a"
+    },
+    {
+     "bits": "0x3ecccccd"
+    },
+    {
+     "bits": "0x3f000000"
+    },
+    {
+     "bits": "0xbf19999a"
+    },
+    {
+     "bits": "0xbf333333"
+    },
+    {
+     "bits": "0x3f4ccccd"
+    },
+    {
+     "bits": "0x3f666666"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x40531057"
+    },
+    {
+     "bits": "0x3fbea368"
+    },
+    {
+     "bits": "0xbdd9df52"
+    },
+    {
+     "bits": "0x3e59df59"
+    },
+    {
+     "bits": "0x3f882b93"
+    },
+    {
+     "bits": "0x3f23677d"
+    },
+    {
+     "bits": "0x40180e86"
+    },
+    {
+     "bits": "0x3e59df50"
+    },
+    {
+     "bits": "0x3eec0744"
+    }
+   ]
+  },
+  {
+   "name": "inv_9",
+   "in": [
+    {
+     "bits": "0x40400000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x40400000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x2b8cbccc"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3eaaaaaa"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x3eaaaaaa"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x00000000"
+    },
+    {
+     "bits": "0x5368d4a4"
+    }
+   ]
+  },
+  {
+   "name": "inv_10",
+   "in": [
+    {
+     "bits": "0xc034969d"
+    },
+    {
+     "bits": "0x3f9f752c"
+    },
+    {
+     "bits": "0xbfd79293"
+    },
+    {
+     "bits": "0x4012e0ec"
+    },
+    {
+     "bits": "0x401fbb46"
+    },
+    {
+     "bits": "0x3fc75b10"
+    },
+    {
+     "bits": "0x40170b0f"
+    },
+    {
+     "bits": "0xbeb4556d"
+    },
+    {
+     "bits": "0x406559c3"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbee593f2"
+    },
+    {
+     "bits": "0x3e3b3f62"
+    },
+    {
+     "bits": "0xbe949535"
+    },
+    {
+     "bits": "0x3e5c042b"
+    },
+    {
+     "bits": "0x3e946d4b"
+    },
+    {
+     "bits": "0xbccced56"
+    },
+    {
+     "bits": "0x3ea20148"
+    },
+    {
+     "bits": "0xbdbc4742"
+    },
+    {
+     "bits": "0x3eef7755"
+    }
+   ]
+  },
+  {
+   "name": "inv_11",
+   "in": [
+    {
+     "bits": "0xbf801741"
+    },
+    {
+     "bits": "0xc0139195"
+    },
+    {
+     "bits": "0x3fddc871"
+    },
+    {
+     "bits": "0x3ee63905"
+    },
+    {
+     "bits": "0x40574a12"
+    },
+    {
+     "bits": "0x3f047e19"
+    },
+    {
+     "bits": "0xc023921a"
+    },
+    {
+     "bits": "0xc072ede2"
+    },
+    {
+     "bits": "0xbfe02273"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbe6b0f48"
+    },
+    {
+     "bits": "0xbf1ee20b"
+    },
+    {
+     "bits": "0xbed23797"
+    },
+    {
+     "bits": "0xbd003928"
+    },
+    {
+     "bits": "0x3eb90866"
+    },
+    {
+     "bits": "0x3d9b5158"
+    },
+    {
+     "bits": "0x3ece49a0"
+    },
+    {
+     "bits": "0x3dfad340"
+    },
+    {
+     "bits": "0xbe0b7a42"
+    }
+   ]
+  },
+  {
+   "name": "inv_12",
+   "in": [
+    {
+     "bits": "0x403e11ee"
+    },
+    {
+     "bits": "0xbff2495c"
+    },
+    {
+     "bits": "0x3fe497fc"
+    },
+    {
+     "bits": "0xbfa8c758"
+    },
+    {
+     "bits": "0x3f1b71f2"
+    },
+    {
+     "bits": "0x3fbf7e3b"
+    },
+    {
+     "bits": "0xc0358d10"
+    },
+    {
+     "bits": "0x4054dfd0"
+    },
+    {
+     "bits": "0x40146534"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3e8b60ff"
+    },
+    {
+     "bits": "0xbf49bcb8"
+    },
+    {
+     "bits": "0x3e98f97c"
+    },
+    {
+     "bits": "0x3db96346"
+    },
+    {
+     "bits": "0xbf697029"
+    },
+    {
+     "bits": "0x3f04c4c2"
+    },
+    {
+     "bits": "0x3e5011ec"
+    },
+    {
+     "bits": "0x3eb01d9f"
+    },
+    {
+     "bits": "0x3d586e37"
+    }
+   ]
+  },
+  {
+   "name": "inv_13",
+   "in": [
+    {
+     "bits": "0xbf90d6c1"
+    },
+    {
+     "bits": "0x3faf8b89"
+    },
+    {
+     "bits": "0x403face0"
+    },
+    {
+     "bits": "0xbe506e1d"
+    },
+    {
+     "bits": "0x40754f0d"
+    },
+    {
+     "bits": "0x3f197ff2"
+    },
+    {
+     "bits": "0xc000950f"
+    },
+    {
+     "bits": "0xc02715a5"
+    },
+    {
+     "bits": "0xbff0eee4"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbe48615e"
+    },
+    {
+     "bits": "0xbe39c4cd"
+    },
+    {
+     "bits": "0xbebd007c"
+    },
+    {
+     "bits": "0xbd6146a7"
+    },
+    {
+     "bits": "0x3e907c7e"
+    },
+    {
+     "bits": "0x3b1c60af"
+    },
+    {
+     "bits": "0x3e91ff19"
+    },
+    {
+     "bits": "0xbe4a83d8"
+    },
+    {
+     "bits": "0xbe0ff008"
+    }
+   ]
+  },
+  {
+   "name": "inv_14",
+   "in": [
+    {
+     "bits": "0x3f905cf4"
+    },
+    {
+     "bits": "0x407ac3a6"
+    },
+    {
+     "bits": "0x405327df"
+    },
+    {
+     "bits": "0x400a11fc"
+    },
+    {
+     "bits": "0x3f93deae"
+    },
+    {
+     "bits": "0x4038a9c0"
+    },
+    {
+     "bits": "0xbe195ab9"
+    },
+    {
+     "bits": "0x3f288f5a"
+    },
+    {
+     "bits": "0xc0043334"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbe878a05"
+    },
+    {
+     "bits": "0x3f22519c"
+    },
+    {
+     "bits": "0x3eecfac8"
+    },
+    {
+     "bits": "0x3e7e82da"
+    },
+    {
+     "bits": "0xbde82f90"
+    },
+    {
+     "bits": "0x3e745a45"
+    },
+    {
+     "bits": "0x3dc99005"
+    },
+    {
+     "bits": "0xbda82862"
+    },
+    {
+     "bits": "0xbee21a6f"
+    }
+   ]
+  },
+  {
+   "name": "inv_15",
+   "in": [
+    {
+     "bits": "0x4018076a"
+    },
+    {
+     "bits": "0xc02eff6f"
+    },
+    {
+     "bits": "0x40147f66"
+    },
+    {
+     "bits": "0x4011e717"
+    },
+    {
+     "bits": "0x3ff94858"
+    },
+    {
+     "bits": "0xc0777279"
+    },
+    {
+     "bits": "0x40597dd8"
+    },
+    {
+     "bits": "0xc0401a16"
+    },
+    {
+     "bits": "0x40760b86"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbe5f6810"
+    },
+    {
+     "bits": "0x3e407401"
+    },
+    {
+     "bits": "0x3ea43131"
+    },
+    {
+     "bits": "0xbf94884c"
+    },
+    {
+     "bits": "0x3d875548"
+    },
+    {
+     "bits": "0x3f444d99"
+    },
+    {
+     "bits": "0xbf3690e8"
+    },
+    {
+     "bits": "0xbdea934e"
+    },
+    {
+     "bits": "0x3f13493a"
+    }
+   ]
+  },
+  {
+   "name": "inv_16",
+   "in": [
+    {
+     "bits": "0x3ea3a1a3"
+    },
+    {
+     "bits": "0xc06e4cb5"
+    },
+    {
+     "bits": "0xc03e0a43"
+    },
+    {
+     "bits": "0xbfc57b48"
+    },
+    {
+     "bits": "0xbe346bef"
+    },
+    {
+     "bits": "0x3f0ac773"
+    },
+    {
+     "bits": "0xbffcaed7"
+    },
+    {
+     "bits": "0xbf4cfd24"
+    },
+    {
+     "bits": "0x3ee0547a"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbead6688"
+    },
+    {
+     "bits": "0xc0737cbd"
+    },
+    {
+     "bits": "0x401a5d9a"
+    },
+    {
+     "bits": "0x3ebf8595"
+    },
+    {
+     "bits": "0x40adc0a3"
+    },
+    {
+     "bits": "0xc085db3f"
+    },
+    {
+     "bits": "0xbf579fae"
+    },
+    {
+     "bits": "0xc0e6faa6"
+    },
+    {
+     "bits": "0x40b027d7"
+    }
+   ]
+  },
+  {
+   "name": "inv_17",
+   "in": [
+    {
+     "bits": "0xc02767fd"
+    },
+    {
+     "bits": "0x3e7901be"
+    },
+    {
+     "bits": "0xbf3007d9"
+    },
+    {
+     "bits": "0x4038914a"
+    },
+    {
+     "bits": "0x40742da2"
+    },
+    {
+     "bits": "0xbf859d7a"
+    },
+    {
+     "bits": "0x3f545f44"
+    },
+    {
+     "bits": "0x403bef2d"
+    },
+    {
+     "bits": "0xc040f360"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbed4863a"
+    },
+    {
+     "bits": "0xbd8193a6"
+    },
+    {
+     "bits": "0x3deec0b5"
+    },
+    {
+     "bits": "0x3ec530b0"
+    },
+    {
+     "bits": "0x3ed50226"
+    },
+    {
+     "bits": "0xbe6d7438"
+    },
+    {
+     "bits": "0x3e8595a5"
+    },
+    {
+     "bits": "0x3ec68e8c"
+    },
+    {
+     "bits": "0xbf068561"
+    }
+   ]
+  },
+  {
+   "name": "inv_18",
+   "in": [
+    {
+     "bits": "0xc0062892"
+    },
+    {
+     "bits": "0xc00bd66f"
+    },
+    {
+     "bits": "0xc02cc26c"
+    },
+    {
+     "bits": "0xbfd95c6a"
+    },
+    {
+     "bits": "0xbfb1bdb7"
+    },
+    {
+     "bits": "0xc0224f9e"
+    },
+    {
+     "bits": "0xbfe2aad6"
+    },
+    {
+     "bits": "0x40192718"
+    },
+    {
+     "bits": "0x3feb73f2"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf0c9f31"
+    },
+    {
+     "bits": "0x3ec348de"
+    },
+    {
+     "bits": "0xbe8f7948"
+    },
+    {
+     "bits": "0xbf985568"
+    },
+    {
+     "bits": "0x3facc440"
+    },
+    {
+     "bits": "0x3dea6bbf"
+    },
+    {
+     "bits": "0x3f827c8c"
+    },
+    {
+     "bits": "0xbfb1c18f"
+    },
+    {
+     "bits": "0x3dffeaa6"
+    }
+   ]
+  },
+  {
+   "name": "inv_19",
+   "in": [
+    {
+     "bits": "0xbfabd49e"
+    },
+    {
+     "bits": "0x40730fc6"
+    },
+    {
+     "bits": "0x4033d0ef"
+    },
+    {
+     "bits": "0xc029241a"
+    },
+    {
+     "bits": "0xbf8ff820"
+    },
+    {
+     "bits": "0x402bc557"
+    },
+    {
+     "bits": "0x3f53baba"
+    },
+    {
+     "bits": "0xbe872fab"
+    },
+    {
+     "bits": "0xbfe6c9b7"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbe9fd5fa"
+    },
+    {
+     "bits": "0xbf324eb8"
+    },
+    {
+     "bits": "0xbfc2fa5c"
+    },
+    {
+     "bits": "0x3e94a987"
+    },
+    {
+     "bits": "0xbc34b346"
+    },
+    {
+     "bits": "0x3edf406d"
+    },
+    {
+     "bits": "0xbe3e2d3c"
+    },
+    {
+     "bits": "0xbea2c180"
+    },
+    {
+     "bits": "0xbfa89a66"
+    }
+   ]
+  },
+  {
+   "name": "inv_20",
+   "in": [
+    {
+     "bits": "0x4064fa59"
+    },
+    {
+     "bits": "0x4069ffae"
+    },
+    {
+     "bits": "0xbfbe84ee"
+    },
+    {
+     "bits": "0x3eb3de77"
+    },
+    {
+     "bits": "0xc046a32f"
+    },
+    {
+     "bits": "0x40536bc7"
+    },
+    {
+     "bits": "0xbf89a9df"
+    },
+    {
+     "bits": "0x4055cb6f"
+    },
+    {
+     "bits": "0x3c93641f"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3e6590cb"
+    },
+    {
+     "bits": "0x3dd08d37"
+    },
+    {
+     "bits": "0xbe1a6083"
+    },
+    {
+     "bits": "0x3d935601"
+    },
+    {
+     "bits": "0x3cfe68c1"
+    },
+    {
+     "bits": "0x3e7f7432"
+    },
+    {
+     "bits": "0x3d3333a4"
+    },
+    {
+     "bits": "0x3ea46244"
+    },
+    {
+     "bits": "0x3e80366b"
+    }
+   ]
+  },
+  {
+   "name": "inv_21",
+   "in": [
+    {
+     "bits": "0x3fe0e6df"
+    },
+    {
+     "bits": "0xc0134534"
+    },
+    {
+     "bits": "0xc04fb215"
+    },
+    {
+     "bits": "0xc01a9fbe"
+    },
+    {
+     "bits": "0xc015531f"
+    },
+    {
+     "bits": "0x3e98423b"
+    },
+    {
+     "bits": "0xbfdcdb7b"
+    },
+    {
+     "bits": "0xc01974ca"
+    },
+    {
+     "bits": "0xbfacc9d0"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3ecb197e"
+    },
+    {
+     "bits": "0x3ef5d07c"
+    },
+    {
+     "bits": "0xbf590def"
+    },
+    {
+     "bits": "0xbec676dd"
+    },
+    {
+     "bits": "0xbf51917f"
+    },
+    {
+     "bits": "0x3f40643f"
+    },
+    {
+     "bits": "0x3e39d5f9"
+    },
+    {
+     "bits": "0x3f572490"
+    },
+    {
+     "bits": "0xbf7defcc"
+    }
+   ]
+  },
+  {
+   "name": "inv_22",
+   "in": [
+    {
+     "bits": "0x3fbc4012"
+    },
+    {
+     "bits": "0xbfdcd6af"
+    },
+    {
+     "bits": "0x3f21d3a4"
+    },
+    {
+     "bits": "0xbfd4cff8"
+    },
+    {
+     "bits": "0xc052cb6f"
+    },
+    {
+     "bits": "0xc0629f6f"
+    },
+    {
+     "bits": "0xc028aed5"
+    },
+    {
+     "bits": "0xc00261cf"
+    },
+    {
+     "bits": "0xc04d93b1"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf23117f"
+    },
+    {
+     "bits": "0x3fa56fe8"
+    },
+    {
+     "bits": "0xbfc66b58"
+    },
+    {
+     "bits": "0xbf416a64"
+    },
+    {
+     "bits": "0x3f142637"
+    },
+    {
+     "bits": "0xbf49611f"
+    },
+    {
+     "bits": "0x3f803c73"
+    },
+    {
+     "bits": "0xbfb6ba14"
+    },
+    {
+     "bits": "0x3fbad22b"
+    }
+   ]
+  },
+  {
+   "name": "inv_23",
+   "in": [
+    {
+     "bits": "0xbf4799ce"
+    },
+    {
+     "bits": "0x401e9805"
+    },
+    {
+     "bits": "0x404cf059"
+    },
+    {
+     "bits": "0x3f6110ef"
+    },
+    {
+     "bits": "0x4059caac"
+    },
+    {
+     "bits": "0x40099f9e"
+    },
+    {
+     "bits": "0xbdb0898b"
+    },
+    {
+     "bits": "0x3ed5b0eb"
+    },
+    {
+     "bits": "0xc01c28f1"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf268632"
+    },
+    {
+     "bits": "0x3f059f24"
+    },
+    {
+     "bits": "0xbec98f5f"
+    },
+    {
+     "bits": "0x3e0de17d"
+    },
+    {
+     "bits": "0x3e1db630"
+    },
+    {
+     "bits": "0x3ea29863"
+    },
+    {
+     "bits": "0x3d3f33e4"
+    },
+    {
+     "bits": "0x3c018357"
+    },
+    {
+     "bits": "0xbeaee741"
+    }
+   ]
+  },
+  {
+   "name": "inv_24",
+   "in": [
+    {
+     "bits": "0x40553229"
+    },
+    {
+     "bits": "0xc05a0a6e"
+    },
+    {
+     "bits": "0x3f6bafdc"
+    },
+    {
+     "bits": "0xbed105db"
+    },
+    {
+     "bits": "0xbf846c3e"
+    },
+    {
+     "bits": "0xc03bcd79"
+    },
+    {
+     "bits": "0xc07abe7f"
+    },
+    {
+     "bits": "0xbeea50db"
+    },
+    {
+     "bits": "0x3ff22998"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3d6fe047"
+    },
+    {
+     "bits": "0xbddaeef1"
+    },
+    {
+     "bits": "0xbe46f87c"
+    },
+    {
+     "bits": "0xbe5ef1f4"
+    },
+    {
+     "bits": "0xbe341087"
+    },
+    {
+     "bits": "0xbe2acbfa"
+    },
+    {
+     "bits": "0x3d8c8421"
+    },
+    {
+     "bits": "0xbe871feb"
+    },
+    {
+     "bits": "0x3dafcb7f"
+    }
+   ]
+  },
+  {
+   "name": "inv_25",
+   "in": [
+    {
+     "bits": "0x3f771adf"
+    },
+    {
+     "bits": "0x3f0a3da3"
+    },
+    {
+     "bits": "0x3fabb369"
+    },
+    {
+     "bits": "0x4020a985"
+    },
+    {
+     "bits": "0xbffd66de"
+    },
+    {
+     "bits": "0xc004f254"
+    },
+    {
+     "bits": "0xbd2b0060"
+    },
+    {
+     "bits": "0x3cce5d9d"
+    },
+    {
+     "bits": "0xbf8c0eb1"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3f1bcaa1"
+    },
+    {
+     "bits": "0x3e2f769e"
+    },
+    {
+     "bits": "0x3ed76cb3"
+    },
+    {
+     "bits": "0x3f46fb09"
+    },
+    {
+     "bits": "0xbe8c78b6"
+    },
+    {
+     "bits": "0x3fbca361"
+    },
+    {
+     "bits": "0xbbae7a13"
+    },
+    {
+     "bits": "0xbc529a5a"
+    },
+    {
+     "bits": "0xbf656296"
+    }
+   ]
+  },
+  {
+   "name": "inv_26",
+   "in": [
+    {
+     "bits": "0xc01cb99b"
+    },
+    {
+     "bits": "0x40134ed4"
+    },
+    {
+     "bits": "0x3eb6c862"
+    },
+    {
+     "bits": "0x40410fc5"
+    },
+    {
+     "bits": "0xbf5a688b"
+    },
+    {
+     "bits": "0x3edadc13"
+    },
+    {
+     "bits": "0xc063a1b2"
+    },
+    {
+     "bits": "0xbde106cd"
+    },
+    {
+     "bits": "0x3e86f626"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3cef1d68"
+    },
+    {
+     "bits": "0x3dd90696"
+    },
+    {
+     "bits": "0xbe58730f"
+    },
+    {
+     "bits": "0x3ec27ea1"
+    },
+    {
+     "bits": "0xbdd1bc69"
+    },
+    {
+     "bits": "0xbeb2618c"
+    },
+    {
+     "bits": "0x3f0d5c7e"
+    },
+    {
+     "bits": "0x3fb18ee3"
+    },
+    {
+     "bits": "0x3f4bdb97"
+    }
+   ]
+  },
+  {
+   "name": "inv_27",
+   "in": [
+    {
+     "bits": "0xbf9c92c5"
+    },
+    {
+     "bits": "0x3e71c82f"
+    },
+    {
+     "bits": "0xbf67c131"
+    },
+    {
+     "bits": "0x3fcff1ee"
+    },
+    {
+     "bits": "0x402b655d"
+    },
+    {
+     "bits": "0x3e9787c9"
+    },
+    {
+     "bits": "0xbf622e1e"
+    },
+    {
+     "bits": "0x3faf3395"
+    },
+    {
+     "bits": "0x4067282e"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbf0c1088"
+    },
+    {
+     "bits": "0x3dfcedee"
+    },
+    {
+     "bits": "0xbe16ca18"
+    },
+    {
+     "bits": "0x3eb9439f"
+    },
+    {
+     "bits": "0x3e9db891"
+    },
+    {
+     "bits": "0x3d860c39"
+    },
+    {
+     "bits": "0xbe8abbc0"
+    },
+    {
+     "bits": "0xbdb1367f"
+    },
+    {
+     "bits": "0x3e5d3a3a"
+    }
+   ]
+  },
+  {
+   "name": "inv_28",
+   "in": [
+    {
+     "bits": "0xbf607bcd"
+    },
+    {
+     "bits": "0xc03b4219"
+    },
+    {
+     "bits": "0x4025b233"
+    },
+    {
+     "bits": "0x401aa471"
+    },
+    {
+     "bits": "0xc02a06e5"
+    },
+    {
+     "bits": "0xbfce7e94"
+    },
+    {
+     "bits": "0x40282705"
+    },
+    {
+     "bits": "0x404c4fa3"
+    },
+    {
+     "bits": "0x4032dab0"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0xbd01080a"
+    },
+    {
+     "bits": "0x3e693487"
+    },
+    {
+     "bits": "0x3e2481cf"
+    },
+    {
+     "bits": "0xbe1be526"
+    },
+    {
+     "bits": "0xbe033d5b"
+    },
+    {
+     "bits": "0x3d8954a2"
+    },
+    {
+     "bits": "0x3e50696c"
+    },
+    {
+     "bits": "0xbd8aa9ea"
+    },
+    {
+     "bits": "0x3e0551a4"
+    }
+   ]
+  },
+  {
+   "name": "inv_29",
+   "in": [
+    {
+     "bits": "0x4022c80f"
+    },
+    {
+     "bits": "0xbff43b7e"
+    },
+    {
+     "bits": "0x3f4f878e"
+    },
+    {
+     "bits": "0x3d8f2cf1"
+    },
+    {
+     "bits": "0xc011df09"
+    },
+    {
+     "bits": "0x3ffe8786"
+    },
+    {
+     "bits": "0x3e442ebf"
+    },
+    {
+     "bits": "0x4050b581"
+    },
+    {
+     "bits": "0x3f307f30"
+    }
+   ],
+   "out": [
+    {
+     "bits": "0x3ec85c47"
+    },
+    {
+     "bits": "0xbe44eebf"
+    },
+    {
+     "bits": "0x3dc1a516"
+    },
+    {
+     "bits": "0xbc846b51"
+    },
+    {
+     "bits": "0xbd9effb1"
+    },
+    {
+     "bits": "0x3e78c205"
+    },
+    {
+     "bits": "0xbd043dfd"
+    },
+    {
+     "bits": "0x3ed76131"
+    },
+    {
+     "bits": "0x3e8cdc91"
+    }
+   ]
+  }
+ ]
+}

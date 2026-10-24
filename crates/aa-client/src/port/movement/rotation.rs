@@ -327,7 +327,7 @@ impl CRotation {
         let v0 = pz * ma - mc * px;
         let v1 = mb * px - py * ma;
         let v2 = py * mc - pz * mb;
-        let len = v0 * v0 + v1 * v1 + v2 * v2 + f32::MIN_POSITIVE;
+        let len = ((v0 * v0 + v2 * v2) + v1 * v1) + f32::MIN_POSITIVE;
         let n = rsqrt_newton(len);
         let v0 = v0 * n;
         let v1 = v1 * n;
@@ -376,7 +376,7 @@ impl CRotation {
             }
         }
         if params.yaw_wrap != 0.0 {
-            let angle = (-out0).atan2(out1) as f32;
+            let angle = super::libm_sse2_atan2(-out0 as f64, out1 as f64) as f32;
             let v = angle + self.move_rot[2];
             let excess = params.yaw_wrap - v.abs();
             if excess < 0.0 {
@@ -409,7 +409,7 @@ fn quat_cross_plus(aa: [f32; 4], bb: [f32; 4]) -> [f32; 4] {
 
 /// `FUN_39093ef0`: in-place inverse of the 9-float matrix layout used by
 /// `ClampAngles`, with the original's determinant guard and scale.
-fn inverse3x3(m: &mut [f32; 9]) {
+pub fn inverse3x3(m: &mut [f32; 9]) {
     let a = m[0];
     let b = m[1];
     let c = m[2];

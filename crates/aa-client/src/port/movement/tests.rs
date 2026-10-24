@@ -726,9 +726,15 @@ fn phase_c_rotation_clamp_matches_goldens() {
         let mut rot = rotation_from(&before);
         rot.clamp_angles(&actor, &mut params);
         for (i, what) in ["pitch", "mid", "yaw"].iter().enumerate() {
-            // The original tail uses __libm_sse2_asinf; the last bit of the
-            // inverse/asin chain is 1 ulp off in a few cases (U15).
-            assert_near(name, what, rot.move_rot[i], f_at(&want, 0x14 + i * 4));
+            let got = rot.move_rot[i];
+            let want_v = f_at(&want, 0x14 + i * 4);
+            assert_eq!(
+                got.to_bits(),
+                want_v.to_bits(),
+                "{name} {what}: got {got:?} ({:#010x}) want {want_v:?} ({:#010x})",
+                got.to_bits(),
+                want_v.to_bits()
+            );
         }
     }
 
@@ -1293,4 +1299,24 @@ fn atan2_matches_crt_goldens() {
 fn f64_bits_of(hex: &str) -> f64 {
     let bits = u64::from_str_radix(hex.trim_start_matches("0x"), 16).expect("hex bits");
     f64::from_bits(bits)
+}
+
+#[test]
+fn inverse3x3_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/inverse3x3.json")).expect("inverse JSON");
+    let mut checked = 0usize;
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let mut m = [0.0f32; 9];
+        for (i, v) in case["in"].as_array().unwrap().iter().enumerate() {
+            m[i] = f32_of(v);
+        }
+        inverse3x3(&mut m);
+        for (i, v) in case["out"].as_array().unwrap().iter().enumerate() {
+            assert_bits(i, name, m[i], v);
+        }
+        checked += 1;
+    }
+    assert!(checked >= 20, "only {checked} inverse goldens");
 }
