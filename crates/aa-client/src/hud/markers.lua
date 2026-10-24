@@ -161,14 +161,12 @@ X2.SetRoadmapOptionUiData = function(self, data)
 end
 
 -- The places ---------------------------------------------------------------------------------------------------
--- The place on a road map image: the roadmap window (926 x 556) is the map rectangle, the image sits in it at its
--- own frame (see ingame.lua, AAUI.RoadMap).
+-- The place on a road map image: the current Map extent is the map rectangle, the selected art frame
+-- (`HUD_ROAD_FRAMES[level][id][size]`, road_projection.lua) sits in it at its own offset and size (see
+-- ingame.lua, AAUI.RoadMap).
 local function onRoadImage(level, id, formKey, uw, vw)
-  local f = HUD_ROAD_FRAMES[level] and HUD_ROAD_FRAMES[level][id]
-  local form = FORM_ROAD_MAP_LIST and FORM_ROAD_MAP_LIST[formKey]
-  if f == nil and form ~= nil then f = { form[1], form[2], form[5], form[6] } end
-  if f == nil then return uw, vw end
-  return (uw * 926 - f[1]) / f[3], (vw * 556 - f[2]) / f[4]
+  local f, w, h = HUD.road_layout(level, id, formKey)
+  return HUD.road_image_point(f, w, h, uw, vw)
 end
 
 -- the tooltip of an icon: the unit's or doodad's name, else the symbol's text (the filter window's label)
@@ -244,7 +242,7 @@ local function roadAreas(out, r)
     local index = decalOf(a.qtype)
     if index ~= nil and index >= 1 and index <= 9 then
       if r.level == 3 then
-        local cr = a.city and a.city == r.zone and cities[a.city]
+        local cr = a.city and a.city == r.zone and (cities[a.city] or s.sub_map_rect)
         if cr and cr[3] > 0 then
           local u, v = onRoadImage(3, r.zone, "", (a.x - cr[1]) / cr[3], 1 - (a.y - cr[2]) / cr[4])
           if inside(u, v) then addArea(out, 3, a.city, a, cr, u, v, index) end
@@ -252,8 +250,7 @@ local function roadAreas(out, r)
       elseif a.zone == r.zone then
         local zr = zones[a.zone]
         if zr ~= nil and zr[3] > 0 then
-          local key = string.upper(s.zone_key_name) .. "_100"
-          local u, v = onRoadImage(2, r.zone, key, (a.x - zr[1]) / zr[3], 1 - (a.y - zr[2]) / zr[4])
+          local u, v = onRoadImage(2, r.zone, string.upper(s.zone_key_name), (a.x - zr[1]) / zr[3], 1 - (a.y - zr[2]) / zr[4])
           if inside(u, v) then addArea(out, 2, a.zone, a, zr, u, v, index) end
         end
       end
@@ -263,25 +260,37 @@ end
 
 local function roadMarkers(r)
   local s = HUD.state
-  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, r.level, r.zone, s.zone_group, decalKey() }, ":")
+  local formKey = r.level == 2 and string.upper(s.zone_key_name) or ""
+  local f, w, h, size = HUD.road_layout(r.level, r.zone, formKey)
+  -- Preserve the existing large-art admission heuristic independently of centre
+  -- projection. Native visibility/category/exploration admission is a separate audit.
+  local admission = HUD.road_frame(r.level, r.zone, formKey, 100)
+  local key = table.concat({ HUD.map_icons_version or -1, filterVersion, r.level, r.zone, s.zone_group, decalKey(),
+    size, w, h, f and f[1] or 0, f and f[2] or 0, f and f[3] or 0, f and f[4] or 0,
+    admission and admission[1] or 0, admission and admission[2] or 0,
+    admission and admission[3] or 0, admission and admission[4] or 0 }, ":")
   if road.key == key then return road.list, road.version end
   road.key, road.version, road.list = key, road.version + 1, {}
   local zones, cities = HUD.map_zone_rects or {}, HUD.map_city_rects or {}
   for _, ic in ipairs(HUD.map_icons or {}) do
     if shown(ic.kind) then
-      local u, v
+      local u, v, au, av
       if r.level == 3 then
-        local cr = ic.city and ic.city == r.zone and cities[ic.city]
+        local cr = ic.city and ic.city == r.zone and (cities[ic.city] or s.sub_map_rect)
         if cr and cr[3] > 0 then
-          u, v = onRoadImage(3, r.zone, "", (ic.x - cr[1]) / cr[3], 1 - (ic.y - cr[2]) / cr[4])
+          local uw, vw = (ic.x - cr[1]) / cr[3], 1 - (ic.y - cr[2]) / cr[4]
+          u, v = HUD.road_image_point(f, w, h, uw, vw)
+          au, av = HUD.road_image_point(admission, 926, 556, uw, vw)
         end
-      elseif ic.zone == r.zone then
-        local zr = zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect)
+      elseif ic.zone == nil or ic.zone == r.zone then
+        local zr = ic.zone == nil and s.zone_rect or (zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect))
         if zr ~= nil and zr[3] > 0 then
-          u, v = onRoadImage(2, r.zone, string.upper(s.zone_key_name) .. "_100", (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4])
+          local uw, vw = (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4]
+          u, v = HUD.road_image_point(f, w, h, uw, vw)
+          au, av = HUD.road_image_point(admission, 926, 556, uw, vw)
         end
       end
-      if u ~= nil and inside(u, v) then
+      if u ~= nil and inside(au, av) then
         road.list[#road.list + 1] = { u = u, v = v, kind = ic.kind, tooltip = tipOf(ic) }
       end
     end
@@ -299,7 +308,7 @@ local function worldMarkers()
   for _, ic in ipairs(HUD.map_icons or {}) do
     if shown(ic.kind) then
       -- the whole map image covers the map rectangle: the place is the plain fraction of it
-      local zr = zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect)
+      local zr = ic.zone == nil and s.zone_rect or (zones[ic.zone] or (s.zone_group == ic.zone and s.zone_rect))
       if zr ~= nil and zr[3] > 0 then
         local u, v = (ic.x - zr[1]) / zr[3], 1 - (ic.y - zr[2]) / zr[4]
         if inside(u, v) then

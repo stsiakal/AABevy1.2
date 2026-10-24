@@ -50,6 +50,9 @@ pub(crate) mod enter;
 mod flow;
 pub mod helm;
 pub(crate) mod glide;
+mod gear_refresh;
+#[allow(dead_code)]
+pub(crate) fn gear_refresh_fixture() { gear_refresh::fixture::run(); }
 pub(crate) mod ground_target;
 pub(crate) mod houses;
 pub(crate) mod housing;
@@ -62,6 +65,7 @@ mod prepare;
 pub(crate) mod prewarm;
 mod remote;
 mod ship;
+pub(crate) mod seating;
 mod skill_motion;
 mod sounds;
 mod stealth;
@@ -156,6 +160,8 @@ impl Plugin for InGamePlugin {
             .add_plugins(doodad_visual::plugin)
             .add_plugins(world_switch::plugin)
             .add_plugins(attachments::plugin)
+            .add_plugins(gear_refresh::plugin)
+            .add_plugins(seating::plugin)
             .add_plugins(bench::plugin)
             .add_plugins(trace::plugin)
             .add_plugins(teleport::plugin)
@@ -196,7 +202,7 @@ impl Plugin for InGamePlugin {
                     glide::drive_glide.after(anim::drive_locomotion),
                     glide::show_glider,
                     player::dev_hide_part,
-                    weapons::attach_carried,
+                    weapons::attach_carried.in_set(weapons::InGameCarried),
                     warm::update,
                     sync_clock,
                     log_chat,
@@ -275,6 +281,8 @@ fn leave_game(
     // a logout mid-Dash or mid-jump must not carry its state (the end-of-Dash FOV fade) into the next world
     commands.insert_resource(sprint::Sprint::default());
     commands.insert_resource(glide::Gliding::default());
+    commands.insert_resource(mount::MountFlow::default());
+    commands.insert_resource(player::PlayerInput::default());
     commands.insert_resource(cam_fov::CamFov::default());
     commands.insert_resource(anim::LocalJump::default());
     // the HUD made the UI cameras agree with the world camera (HDR, no MSAA, `hud::cameras`): the login stage camera
@@ -395,6 +403,11 @@ mod tests {
         .init_asset::<SkinnedMeshInverseBindposes>()
         .insert_state(Screen::InGame)
         .add_plugins(InGamePlugin)
+        .add_plugins(crate::hud::HudPlugin)
+        .init_resource::<crate::login::UiBuilt>()
+        // Normal startup also registers attach_carried for character select.
+        // Ordering by its system type would be ambiguous despite run conditions.
+        .add_plugins(crate::login::character_select::plugin)
         // the renderless headless group does not add the light/camera fallbacks `setup_sky` writes,
         // and the HUD stage owns the pointer/key state the in-game input systems read
         .insert_resource(GlobalAmbientLight::default())

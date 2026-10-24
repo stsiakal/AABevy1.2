@@ -8695,3 +8695,202 @@ live-lane tests ignored. The single
 its warnings are in existing code, with none in the added API, damage tests or
 retained lane writer. Logs are under `data/extract/aa-net/unit-damage-audit/`.
 No server, process, aa-client, manifest or lockfile changes are part of this work.
+
+## Appearance conversion requests (2026-10-23)
+
+`look_conversion::{ItemLookOperation, ItemLookRequest}` adds the approved separate
+transport surface for the original appearance UI. `ItemEffectMode` and its
+Grade/Socket/Gem variants are unchanged. Constructors are
+`convert(base, image)`, `cleanup(skill_id, source, target)` and
+`skinize(skill_id, source, target)`, using the existing
+`item_effect::CapturedBagItem { slot, item }`. IDs/templates must be nonzero and
+skill requests require an explicit nonzero catalog-resolved use skill. The
+transport does not choose powder quantities, infer permission or combination
+rules, replace ordinary planner admission, or modify inventory on submission.
+
+Accessors are `operation()`, `skill_id()`, `source()`, `target()`, `captures()`
+and `recheck_native(&NativeItemRecords)`. For conversion, target is the base and
+source is the image; its skill ID is None. For skills, source is the powder and
+target is the recipient. `recheck_native` compares both complete captured Items
+at their exact physical BAG slots, including normalized detail and retained
+detail prefix. Unknown, changed, disabled or out-of-bounds records refuse.
+There is no legacy Inventory fallback. This full-record equality is a stronger
+application stale-input boundary: original converter39047650 instead rereads
+the selected physical slots' current IDs when invoked.
+
+Send `Command::ItemLook { character_id, request }`. Session checks the same
+active received character and socket conditions as ItemEffect: InWorld,
+nonzero selected persistent character matching the captured character,
+matching received selected-state identity, nonzero24-bit self object,
+matching NativeItemRecords owner, and both exact current captures. Then
+`ClientMsg::ItemLook { self_obj_id, request }` uses this wire contract:
+
+| Operation | Level/opcode | Body, in order |
+|---|---|---|
+| Convert | 1 / CSConvertItemLook0x049 | baseID:u64, imageID:u64 |
+| Cleanup/Skinize | 1 / CSStartSkill0x052 | skill:u32, caster kind2:u8, self:bc24, sourceID:u64, sourceTemplate:u32, sourceGrade:u8, sourceMadeUnit:u32, target kind3:u8, self:bc24, targetID:u64, targetTemplate:u32, targetGrade:u8, skillObjectFlag0:u8 |
+
+All multibyte values are LE. Body lengths are16 and43 bytes. Skills reuse the
+existing private `write_item_effect_start` with no support or AA object. Current
+read-only catalog joins map cleanup23457/source29704 to special13681/type103,
+and Skinize23741/source29880 to special14162/type108. Root still owns catalog,
+ordinary planner, permission and UI mode gates. No source item, target or u64
+identity is recovered from a later legacy slot or a Lua floating-point number.
+
+`Event::ItemLookRequested { character_id, request }` reports a completed local
+send only. `ItemLookRejected { character_id, request, message }` reports local
+guard/write failure. These events do not grant success, change records, lock or
+unlock slots, create skill/timeline events or automatically retry. Received
+SC090 `ItemsChanged`, existing skill events and server errors remain the inputs
+to the caller's state machine. No new success packet or receipt projection was
+introduced.
+
+Current lane and original C# agree: applying an image consumes configured
+reagents as reason40, writes the image item's own template onto base equipment,
+emits reason111/UpdateDetail9, then removes the image as reason40. Cleanup sets
+image template0 through reason111/UpdateDetail9. Skinize ORs Skinized0x08 through
+reason113/SetFlagsBits10. Both skill effects separately consume powder under
+their reason, while the generic skill pipeline can attempt another source
+consumption under reason40. Clients neither compensate for this nor assume a
+fixed receipt count. Source and query provenance are committed with fixtures.
+
+All existing native projection bounds remain: Update9 needs the actual128-byte
+received block, supported tag0/1/3/8 and matching reparsed detail/prefix. Its
+physical PRE-row lookup ignores the packet ID, replaces details, then copies
+output. Flags10 ORs bits on that physical record. Reserved raw tail remains on
+the receipt; it is not invented as normalized Item metadata. Equipment extent28
+and BAG/BANK safe bounds130 plus known configured/enabled extent, unknown-versus-
+missing distinctions, decode-gap history loss and forced-ID certainty retirement
+are unchanged. SC093's BAG-only/full-ID guards are not transplanted onto Update9.
+
+Evidence is retained in `crates/aa-net/tests/fixtures/look-conversion/`.
+`native_oracle.py` asserts pinned x2game SHA256
+`851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e` and executes
+three CS049 constructor/serializer read+write cases, four selected-slot caller
+cases and two cursor-input/serializer cases in isolated Unicorn. Native
+390474a0 emits header0x49 and397b0950 serializes base/image IDs. For skills,
+3942fb50 constructs full target and empty object and hands them to protected
+39396e20; the oracle explicitly intercepts that ordinary planner and separately
+executes397cad20/397c85b0/397bfa90/397bfd50 on captured inputs. This establishes
+input/wire mapping, not execution of protected admission or live success.
+Converter validation, archive/BC/memset and send endpoints and all runtime
+fixtures are explicitly qualified in `native-goldens.json`; exact instruction
+bytes, immutable C# and lane source hashes and88 read-only catalog rows remain
+alongside it. Normal Rust tests use committed bytes without the PE, DB or Python.
+
+Regressions cover literal frames/high-bit u64 IDs, all codec and receipt
+truncation prefixes, received detail/flag projection, loopback writes, both full
+captures' metadata, native-versus-legacy divergence, every inactive phase,
+selected/header/owner/actor/socket guards, physical BAG versus BANK and slot129,
+explicit recapture after received changes, targeted snapshot repair, Init,
+decode gaps, malformed snapshots, actor loss, duplicate receipts and absence of
+optimistic success or retries.
+
+Validation: all9 isolated native cases and10 focused Bevy regressions passed.
+`cargo test --locked -p aa-net --features bevy` passed746 tests (741 unit,
+2 scripted login and3 recovered-packet), with9 live-lane tests ignored.
+The single final `cargo clippy --locked -p aa-net --features bevy --all-targets`
+completed successfully; its warnings concern existing code, with none in the
+added API or tests. Logs are under the ignored
+`data/extract/aa-net/look-conversion-20261023/` directory. No server, live client,
+foreign process, aa-client, manifest, dependency or lockfile was modified.
+
+### Original in-game shop menu transport (2026-10-24)
+
+`aa_net::cash_shop::NativeInGameShopMenu` preserves one complete SCICSMenuList
+receipt as `result:u8`, `main_tabs:[u8;6]`, `sub_tabs:[[u8;7];6]`. Opcode0x1cf
+now emits exactly one `CashShopEvent::NativeMenuList(menu)` through the existing
+ServerMsg::CashShop / Event::CashShop envelopes. The legacy
+`MenuList { enabled, tabs }` literal and log name remain available for migration,
+but decoding no longer emits that lossy variant. Exhaustive CashShopEvent matches
+must handle the added variant; no damage/look/bond API or other cash-shop decoder
+is changed.
+
+The original archive397b8390 ->397b22f0 reads result:u8 followed by six groups of
+main:u8 and seven sub:u8, exactly49 mandatory body bytes, even for status0.
+Receiver391e10d0 uses **result!=0**, not the wire Reader::bool's exactly1 rule.
+All raw IDs are retained, including0,255, repeated/nonidentity IDs and nonzero
+sub IDs under main0. Lua tab indices are positions, not these request IDs.
+Native memory holds six contiguous mains followed by42 subs, while the body
+interleaves one main and its seven subs. The decoder does not install an active
+menu cache, grant admission or synthesize a second legacy event.
+
+`Command::RequestInGameShopMenu { character_id }` carries a captured persistent
+identity used only for local validation. The session requires InWorld, matching
+nonzero selected and captured identity, matching received selected_state header,
+nonzero24-bit own object ID, and an existing game socket. Successful local
+`send_game` writes emit `Event::InGameShopMenuRequested { character_id }`;
+validation/write failures emit `InGameShopMenuRequestRejected { character_id,
+message }`. A failed write also follows the existing connection-loss event path.
+These outcomes describe transport only, not a received menu, remote acceptance,
+storefront availability or a financial result. Client::send merely enqueues and
+is not the Requested outcome.
+
+Low-level `game::ClientMsg::RequestInGameShopMenu` is CSICSMenuListPacket0x11b,
+level1, with an **empty body**. Native producer391876d0 selects vtable399b2f64;
+its body archive3901c170 is just ret4. No character/object/account ID or
+correlation token is serialized. No goods, cart, wallet, purchase, gift, charge,
+browser or modelview request API is introduced.
+
+Feature admission is independent of menu status. GetFeatureSet39496b20 sets
+its feature base to game+14, then emits ingamecashshop from base+4 bit40;
+IsInGameShopEnable39062360 and hotkey393f91f0 read the same game+18 bit40.
+The actual native menu receiver/apply/reset does not write that bit. Existing
+GameConfig.received retains the separate received fset bytes: no config or
+fewer than five bytes means unknown; byte4 mask40 clear/set distinguishes the
+received disabled/enabled values. A new short snapshot must not inherit an old
+byte4. Menu result0/nonzero cannot replace that input or fallback true.
+The protected original InitialConfig391d1d69..391d1f5a packet-to-runtime copy
+remains unexecuted/unverified; this change adds neither hydration nor a new
+feature authority. Native shared-bit reads and menu non-authority are proved
+separately from that remaining producer boundary.
+
+Root owns feature unknown/short/clear/set policy, single-flight/native waiting,
+active cache versus raw receipt, and UI admission. Native status0 preserves
+the old active tab cache and emits checkTime then waiting(false). Nonzero
+replaces it, emits maintab then waiting(false), and may select a sub/page,
+request uncached goods and return to waiting(true). Native CheckTime marks
+refresh pending and clears internal waiting, emits checkTime without a waiting
+event, and delays the menu request until subsequent selection. CheckWaitingServer
+only re-emits the current bool; SyncGood is not a menu acknowledgement. The
+transport deliberately performs none of these root-owned UI/cache transitions
+or automatic requests. No response produces no fake receipt, retry or success;
+no native timeout/recovery policy is claimed.
+
+Replies have no owner/request token. On leaving, character change/re-entry or
+connection replacement, root must retire its menu/wait/queued state and fence
+old events. Clearing A's pending owner, sending B and assigning the next reply
+to B is unsafe on the same connection: retain a retired outstanding tombstone
+until drained, or use a proven connection/receive fence. Same-character re-entry
+also needs an owner generation. Session rejects stale captured commands but
+forwards raw untagged receipts without inventing correlation. Connection-scoped
+GameConfig lifetime remains distinct from character-owned menu state.
+
+Committed `tests/fixtures/ingame-shop-menu/native.tsv` contains exact original
+archive outputs from retained x86 instructions under bounded Unicorn, with
+provenance/endpoints in source.txt. Module SHA256 is
+851ae243d161c1ac7e6242982d12698ec35163a7913f16292a312df9e85eb27e.
+Inputs are synthetic instruction fixtures, **not actual server menu snapshots
+or storefront/admission availability**. No native process, service or device
+was used. The full prior UI/menu audit evidence remains immutable under
+data/extract/aa-ui/ingame-shop-audit-20261024 and
+data/extract/aa-net/ingame-shop-menu-audit-20261024.
+
+Regressions cover all256 raw status values, four original archive goldens,
+all196 strict prefixes, suffix cursor position49, normal/DD04 following-packet
+alignment (including header-looking IDs), all256 empty-request frame counters,
+every inactive phase, selected/header/identity/object/socket guards, successful
+and failed local writes, no-response/no-auto-retry behavior, one raw event,
+truncated receipt recovery, feature snapshot non-mutation and stale captured
+commands/untagged late receipts. DD04 bodies have no per-entry lengths; no
+impossible arbitrary truncated-body-plus-next-packet boundary is inferred.
+
+Validation: all10 focused menu regressions passed. The full
+`cargo test --locked -p aa-net --features bevy` passed756 tests (751 unit,
+2 scripted-login and3 recovered-packet), with9 live-lane tests ignored.
+The single final `cargo clippy --locked -p aa-net --features bevy --all-targets`
+exited0; warnings concern existing code, with none in the new menu API/decoder,
+command handling or tests. Prior UI/menu evidence and all other frozen aa-net
+sources were hash-verified unchanged, including manifests and Cargo.lock.
+Logs and the exact owned freeze are recorded under
+data/extract/aa-net/ingame-shop-menu-implementation-20261024.

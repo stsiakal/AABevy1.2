@@ -32,6 +32,10 @@ mod music_compose_tests;
 mod doodad_bond_tests;
 #[cfg(test)]
 mod damage_tests;
+#[cfg(test)]
+mod look_conversion_tests;
+#[cfg(test)]
+mod ingame_shop_menu_tests;
 use crate::model::{
     ChatMessage, Character, CharacterState, CreateCharacter, Doodad, Item, MoveSupport, Movement, Unit, UnitKind,
     actor_flags, move_flags, stance,
@@ -329,10 +333,15 @@ pub enum Command {
     /// ([`crate::interaction::Interact`]); the answers are quest events and `Interaction`.
     Interact(crate::interaction::Interact),
     Shop(crate::shop::ShopCommand),
+    /// Captured persistent identity is local-only; CS0x11b has an empty body.
+    /// Feature admission, single-flight waiting and late-reply ownership are app-owned.
+    RequestInGameShopMenu { character_id: u32 },
     Bank(crate::bank::BankCommand),
     /// Request only; getter changes on the received action 18 item task.
     SetAutoUseAaPoint(bool),
     ItemEffect { character_id:u32, request:crate::item_effect::ItemEffectRequest },
+    /// Captured native BAG records; catalog/planner and mode gates remain caller-owned.
+    ItemLook { character_id: u32, request: crate::look_conversion::ItemLookRequest },
     UnpackItem(crate::unpack::UnpackItemRequest),
     /// Item security lock / unlock. `lock` selects `CSItemSecure` or `CSItemUnsecure`.
     ItemSecurity { request: crate::secure::ItemSecurityRequest, lock: bool },
@@ -686,6 +695,9 @@ pub enum Event {
     UnitFx(crate::UnitFxEvent),
     Account(crate::AccountEvent),
     CashShop(crate::CashShopEvent),
+    /// Local successful socket write only; not feature admission or a received menu.
+    InGameShopMenuRequested { character_id: u32 },
+    InGameShopMenuRequestRejected { character_id: u32, message: String },
     ChatSpamDelay(crate::ChatSpamDelay),
     /// Received proxy level descriptor; it does not acknowledge a loaded world.
     GameType(crate::proxy::GameType),
@@ -779,6 +791,9 @@ pub enum Event {
     ItemUccDataChanged { ucc_id:u64, player_id:u32, target_item_id:u64 },
     ItemEffectRequested { character_id:u32, request:crate::item_effect::ItemEffectRequest },
     ItemEffectRejected { character_id:u32, request:crate::item_effect::ItemEffectRequest, message:String },
+    /// Local send only. Received item/skill events determine subsequent state.
+    ItemLookRequested { character_id: u32, request: crate::look_conversion::ItemLookRequest },
+    ItemLookRejected { character_id: u32, request: crate::look_conversion::ItemLookRequest, message: String },
     GradeEnchantResult(crate::item_effect::GradeEnchantResult),
     GradeEnchantBroadcast(crate::item_effect::GradeEnchantBroadcast),
     LunagemSocketingResult { raw_result:u8, item_id:u64, template_id:u32, raw_install:u8 },
@@ -1266,6 +1281,25 @@ impl Session {
                     self.send_game(game::ClientMsg::Shop(m)).await;
                 }
             }
+            Command::RequestInGameShopMenu { character_id } => {
+                let invalid = if self.phase != Phase::InWorld || character_id == 0
+                    || self.selected != character_id || self.self_obj == 0 || self.self_obj > 0xff_ffff
+                    || self.selected_state.as_ref().is_none_or(|s| s.character.id != character_id)
+                {
+                    Some("in-game shop menu request requires the same active captured character")
+                } else if self.game.is_none() {
+                    Some("in-game shop menu request requires a game connection")
+                } else {
+                    None
+                };
+                if let Some(message) = invalid {
+                    self.emit(Event::InGameShopMenuRequestRejected { character_id, message: message.into() });
+                } else if self.send_game(game::ClientMsg::RequestInGameShopMenu).await {
+                    self.emit(Event::InGameShopMenuRequested { character_id });
+                } else {
+                    self.emit(Event::InGameShopMenuRequestRejected { character_id, message: "in-game shop menu request was not sent".into() });
+                }
+            }
             Command::UiData(command) => {
                 use crate::ui_data::{UiDataCommand, UiDataEvent};
                 let invalid = command.validate().err().or_else(|| match &command {
@@ -1465,6 +1499,26 @@ impl Session {
                 if let Some(message)=invalid {self.emit(Event::ItemEffectRejected{character_id,request,message:message.into()});}
                 else if self.send_game(game::ClientMsg::ItemEffect{self_obj_id:self.self_obj,request:request.clone()}).await {self.emit(Event::ItemEffectRequested{character_id,request});}
                 else {self.emit(Event::ItemEffectRejected{character_id,request,message:"item effect request was not sent".into()});}
+            }
+            Command::ItemLook { character_id, request } => {
+                let invalid = if self.phase != Phase::InWorld
+                    || character_id == 0 || self.selected != character_id
+                    || self.self_obj == 0 || self.self_obj > 0xff_ffff
+                    || self.selected_state.as_ref().is_none_or(|s| s.character.id != character_id)
+                {
+                    Some("item look requires the same active received character")
+                } else if self.received_native_records.borrow().owner() != Some(character_id) {
+                    Some("item look native record owner is unknown or changed")
+                } else {
+                    request.recheck_native(&self.received_native_records.borrow()).err()
+                };
+                if let Some(message) = invalid {
+                    self.emit(Event::ItemLookRejected { character_id, request, message: message.into() });
+                } else if self.send_game(game::ClientMsg::ItemLook { self_obj_id: self.self_obj, request: request.clone() }).await {
+                    self.emit(Event::ItemLookRequested { character_id, request });
+                } else {
+                    self.emit(Event::ItemLookRejected { character_id, request, message: "item look request was not sent".into() });
+                }
             }
             Command::UnpackItem(request) => {
                 let invalid=if self.phase!=Phase::InWorld || self.selected==0 {Some("unpack requires an active selected character")}

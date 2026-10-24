@@ -45,7 +45,8 @@ This is an offline prior-contract control. It does not establish live seating or
 ![Live mode actions](docs/screenshots/music_modes_live.png)
 
 The original Play/Stop/Close buttons in a windowed session on the isolated server, after receiving the score buff.
-Placed-instrument seating and animation remain unfinished.
+Placed-instrument base seating now follows authored helpers and original CAL clips;
+live seated interaction and full performance-animation parity remain open.
 
 Original instrument prefab geometry, at the same camera:
 
@@ -54,8 +55,20 @@ Original instrument prefab geometry, at the same camera:
 | ![Instrument parts missing](docs/screenshots/instrument_prefab_before.png) Brush-only prefabs omitted | ![Instrument and chair parts](docs/screenshots/instrument_prefab_after.png) Piano/drum bodies and authored chairs |
 
 The same final binary supplies both controls. Native helper transforms and current source/phase
-tracking are retained; seated poses, detach and live interaction remain open. See
+tracking are retained. The offline seating control also covers guarded local detach; live interaction remains open. See
 [seating notes](docs/aa-client-seating.md).
+
+Original piano and drum assets with synthetic bond receipts, using production seating:
+
+| Bond omitted in the same binary | Helper attachment and base sitting loop |
+|---|---|
+| ![Piano standing control](docs/screenshots/piano_seat_before.png) Piano control | ![Piano seated](docs/screenshots/piano_seat_after.png) Authored chair helper |
+| ![Drum standing control](docs/screenshots/drum_seat_before.png) Drum control | ![Drum seated](docs/screenshots/drum_seat_after.png) Base sitting pose |
+
+These are offline application controls, not native scene or live server captures. Controller-driven
+exit preserves cast-stop, loot-close and captured unbond ordering; parented Blink translation is
+declined without inventing an exit. Native Blink rotation, parented impulse physics, graph transitions
+and seated camera behavior remain unverified.
 
 Ground-effect diagnostic, before and after adaptive terrain draping (synthetic rolling ground):
 
@@ -132,10 +145,12 @@ Authored Illum alpha and glow on the same original bow:
 |---|---|
 | ![Bow control](docs/screenshots/illum_alpha_control.png) Private material data disabled | ![Bow native glow](docs/screenshots/illum_alpha_after.png) Original alpha and ambient glow composition |
 
-Both images use the final renderer and the same camera. This isolates the recovered flags rather than
-comparing different builds. The supported set includes 169 authored submaterials, 15 with alpha testing;
-unsupported permutations are listed in [`docs/aa-cry.md`](docs/aa-cry.md). The client also checks the
-production nested LOD material against the direct material in color, depth and normal prepasses.
+Both images use the same diagnostic build and camera to isolate the recovered flags. Its screened set
+contains 169 authored submaterials, including 15 with alpha testing. A later native routing audit found
+that those masked materials need different forward, Z and motion coverage; the existing shared discard
+does not reproduce that routing. Nested LOD color/depth/normal comparisons check wrapper consistency,
+not native pass correctness. Pass scheduling and authored sampler integration remain open; see
+[`docs/aa-cry.md`](docs/aa-cry.md).
 
 The pond surface seen from below, at the same camera:
 
@@ -196,6 +211,18 @@ limits are in [`docs/aa-world.md`](docs/aa-world.md).
 - Quests, the world map and minimap, chat, skills, crafting, achievements, rankings, battlefields, pets.
 - ArcheAge-Classic-compatible local Lua addons, sandboxed with `ADDON_API` and `/addons` commands ([docs](docs/aa-client-addons.md)).
 
+Appearance conversion uses the original fusion and Skinize dialogs, with separate item targeting and
+receipt-driven updates. Existing actors refresh equipment, image items, received dyes and costume attachments
+without resetting their animation or facial state. The supplied-receipt fixture receives the same three updates
+in both controls. A separate isolated-server run passes Skinize, fusion and cleanup through the original dialogs,
+with no Lua or server errors, while preserving the base item's identity and grade on the same actor.
+The [appearance integration notes](docs/aa-client-appearance.md) record the NPC entry,
+input lifetime, actor-refresh checks and remaining native boundaries. [Live fusion confirmation](docs/screenshots/appearance_live_fusion_20261024.png).
+
+| Refresh disabled | Refresh enabled |
+|---|---|
+| ![Same receipts, refresh disabled](docs/screenshots/appearance_gear_before_20261024.png) | ![Hood, image weapon, dye and costume refresh](docs/screenshots/appearance_gear_after_20261024.png) |
+
 Roadmap preferences share the character's original server UI-data tree. The large
 translucent default and the original NPC getter quirk are retained; see
 [`docs/aa-client-minimap.md`](docs/aa-client-minimap.md).
@@ -215,7 +242,7 @@ pass ordering and FFT limits are recorded in [`docs/aa-world.md`](docs/aa-world.
 
 This list is what works, not a parity claim: see [`docs/aa-client-parity.md`](docs/aa-client-parity.md) for the unfinished systems and their evidence.
 
-Recovery checkpoint, 2026-10-23: the integrated client suite passes **613 tests with no failures**;
+Recovery checkpoint, 2026-10-23: the integrated client suite passes **664 tests with no failures**;
 25 focused music checks also pass with optional original-asset/device checks enabled. The nested Illum
 caller passes 27 GPU captures and 18 exact image comparisons, including active mesh LOD dissolve.
 Housing preview/quote/cancel has a fresh live check; salon physical payment and re-entry pass on an
@@ -226,11 +253,11 @@ Server [PR44](https://github.com/NickMesser/AAEmu/pull/44) fixes uncached score 
 rollout to the existing bevy server and broader original-client parity remain open; mounts are deferred.
 Exact evidence and limits are in the parity ledger.
 
-The latest integration adds the original buff-driven mode action bar, including piano notes
+The original buff-driven mode action bar includes piano notes
 and memorized-score Play/Stop/Close, with native chronological input-mode priority. The client
-suite passes 635 default checks; nine focused mode checks include original Lua slots, hotkeys,
+suite passes 702 default tests (67 existing tests ignored); nine focused mode checks include original Lua slots, hotkeys,
 cooldown/usability refresh, suspended-HUD recovery and reentrant callbacks. See the
-[music integration notes](docs/aa-client-music.md) for exact scope and remaining seat presentation work.
+[music integration notes](docs/aa-client-music.md) and [seating notes](docs/aa-client-seating.md) for exact scope and limits.
 Fresh-sheet composition, two plays, Stop and Close pass on an isolated server with the documented
 original-script error allowance; [draft server PR45](https://github.com/NickMesser/AAEmu/pull/45)
 contains the required callbacks. A fresh normal-entry capture shows the textured character and original HUD
@@ -241,12 +268,17 @@ the diagnostic evidence and its limits.
 
 - **Transport:** owning and riding mounts, ships (drawn from their prefab brushes, summoned onto the water plane) and vehicles. Gliders fly for the local player and are drawn on other players (`docs/aa-client-movement.md`, "Gliders").
 - **Housing:** placement previews, the original build and management windows and the decoration builder are connected; completed construction settlement and farms still need end-to-end verification.
-- **In-game shop, territory, siege and nation:** no client side yet.
+- **In-game shop:** the original local Lua catalog still needs native data and model-view integration.
+  The separate legacy web market also lacks its browser integration.
+- **Territory, siege and nation:** no client side yet.
 - **Doodads:** gathering interactions, phase-model changes, planting previews and coffers are connected. Farming
   settlement and wider live lifecycle checks remain open.
 - **Teleports:** the player-placed Navi signs are only unit-tested, and world gate 304 (the White Dress Portrait in
   Haranya) is missing from the server's data.
 - **World rendering:**
+  - Illum masked coverage needs native successful-Z tracking, depth-equal forward draws and separate motion
+    coverage. Raw texture-level attributes are preserved; authored opacity sampler state still needs integration.
+    [477 original-instruction controls](docs/research/illum-pass-inputs.md) pin the distinct alpha inputs and motion gates.
   - Mesh LOD pairing and mesh/sprite dissolve are implemented. Native sprite lighting remains approximate;
     normal-mapped leaf-only vegetation retains meshes until its atlas preserves leaf lighting.
   - Vegetation wind has no wind areas (the data has four, in the world select scene).
@@ -256,8 +288,9 @@ the diagnostic evidence and its limits.
     dual passes, Custom perturbation and vertex deformation remain open.
 - **Characters:** faces are flatter than the real client in character create. Heeled shoes and costumes now lift
   the model by their authored heel height; full character-lighting parity remains open.
-- **Skills:** native particle receiver projection, wind/gravity force areas and indirect Target producers remain
-  open. Authored compound geometry pieces and direct Target ancestors are supported. Missile Rain's arrow
+- **Skills:** native particle receiver projection, Gravity areas, unsupported Wind producer shapes/clocks and indirect Target producers remain
+  open. Bounded spherical Wind bursts affect other FX roots, with same-root exclusion and a client cap of 64 fields.
+  Vegetation reception awaits the native wind-cache invalidation boundary. Authored compound geometry pieces and direct Target ancestors are supported. Missile Rain's arrow
   rain is missing from the game data itself.
 - **Options:** the graphics page applies resolution, screen mode, vsync, gamma, object/vegetation distance, shadows, clouds, effect quality, HDR and anti-aliasing. Distance changes refresh already-loaded object ranges. Texture, terrain detail, character and water quality, depth of field, native global far clipping and key-binding sync remain open.
 - **Performance:** big towns (Marianople, about 38 fps).

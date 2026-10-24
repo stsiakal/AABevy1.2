@@ -94,6 +94,12 @@ impl RemoteUnit {
         RemoteUnit { obj_id, model_id: 0, track: Track::new(Vec3::ZERO, 0.0), pos: Vec3::ZERO, facing: 0.0, scale: 1.0, character: true, combat: false, casting: false }
     }
 
+    pub(super) fn casts_shadow(&self) -> bool { self.casting }
+    #[cfg(test)]
+    pub(super) fn fixture(obj_id: u32, pos: Vec3) -> Self {
+        Self { obj_id, model_id: 0, track: Track::new(pos, 0.0), pos, facing: 0.0, scale: 1.0, character: true, combat: false, casting: false }
+    }
+
     pub(super) fn scale(&self) -> f32 {
         self.scale
     }
@@ -117,6 +123,15 @@ impl RemoteUnit {
 #[derive(Component)]
 pub struct RemoteDoodad {
     pub obj_id: u32,
+}
+/// Apply the current remote distance policy to newly created render trees.
+/// The cached actor policy can stay false across a visual replacement.
+pub(super) fn no_shadows(world: &mut World, root: Entity) {
+    let mut stack = vec![root];
+    while let Some(entity) = stack.pop() {
+        if let Some(children) = world.get::<Children>(entity) { stack.extend(children.iter()); }
+        if world.get::<Mesh3d>(entity).is_some() { world.entity_mut(entity).insert(NotShadowCaster); }
+    }
 }
 
 /// Which server objects have entities. `None` = known but not drawn (too far, or no model).
@@ -149,7 +164,7 @@ impl Default for Views {
 /// What a worker delivers.
 enum Built {
     /// A spawn (`None`), or a rebuild of a drawn character from this look snapshot.
-    Unit(u32, Box<UnitBuild>, Option<Box<appearance::LookSource>>),
+    Unit(u32, u64, Box<UnitBuild>, Option<Box<appearance::LookSource>>),
     Doodad(u32, u64, DoodadBuild),
 }
 
@@ -166,6 +181,7 @@ struct View {
     announced_at: f32,
     source_generation: u64,
     doodad_source: Option<aa_net::model::Doodad>,
+    unit_identity: Option<(aa_net::model::UnitKind, u32)>,
 }
 
 impl Views {
@@ -173,6 +189,22 @@ impl Views {
     #[cfg(test)]
     pub(super) fn insert_unit_for_test(&mut self, obj_id: u32, entity: Entity) {
         self.units.insert(obj_id, View { entity: Some(entity), ..default() });
+    }
+
+    fn announce_unit(&mut self, commands: &mut Commands, unit: &Unit) {
+        let identity = (unit.kind.clone(), unit.model_id);
+        if self.units.get(&unit.obj_id).and_then(|view| view.unit_identity.as_ref()) == Some(&identity) { return; }
+        if let Some(entity) = self.units.remove(&unit.obj_id).and_then(|view| view.entity) {
+            commands.entity(entity).try_despawn();
+        }
+        self.source_generation += 1;
+        self.units.insert(unit.obj_id, View { source_generation: self.source_generation, unit_identity: Some(identity), ..default() });
+    }
+
+    fn finish_unit(&mut self, id: u32, generation: u64) -> Option<&mut View> {
+        let view = self.units.get_mut(&id).filter(|view| view.source_generation == generation)?;
+        view.preparing = false;
+        Some(view)
     }
 
     fn announce_doodad(&mut self, commands: &mut Commands, doodad: &aa_net::model::Doodad, now: f32) {
@@ -218,6 +250,22 @@ impl Views {
     /// The entity drawing the doodad `obj_id`, when it is drawn.
     pub fn doodad_entity(&self, obj_id: u32) -> Option<Entity> {
         self.doodads.get(&obj_id).and_then(|v| v.entity)
+    }
+
+    /// Source lifetime of the currently rendered doodad root.
+    pub(super) fn doodad_generation(&self, obj_id: u32) -> Option<u64> {
+        self.doodads.get(&obj_id).map(|view| view.source_generation)
+    }
+
+    #[cfg(test)]
+    pub(super) fn fixture_unit(&mut self, obj_id: u32, entity: Entity) {
+        self.units.insert(obj_id, View { entity: Some(entity), ..default() });
+    }
+
+    #[cfg(test)]
+    pub(super) fn fixture_doodad(&mut self, obj_id: u32, entity: Entity) {
+        self.source_generation += 1;
+        self.doodads.insert(obj_id, View { entity: Some(entity), source_generation: self.source_generation, ..default() });
     }
 
     /// Lets the doodad `obj_id` be built again: a phase change may give it a model it did not have.
@@ -277,9 +325,13 @@ fn same_doodad_source(a: &aa_net::model::Doodad, b: &aa_net::model::Doodad) -> b
     source(a)==source(b)
 }
 
-fn track_doodad_sources(mut commands: Commands, mut events: MessageReader<NetEvent>, mut views: ResMut<Views>, time: Res<Time>) {
+fn track_sources(mut commands: Commands, mut events: MessageReader<NetEvent>, mut views: ResMut<Views>, time: Res<Time>) {
     for NetEvent(event) in events.read() {
         match event {
+            Event::UnitsRemoved(ids) => for id in ids {
+                if let Some(entity) = views.units.remove(id).and_then(|view| view.entity) { commands.entity(entity).try_despawn(); }
+            },
+            Event::UnitSpawned(unit) => views.announce_unit(&mut commands,unit),
             Event::DoodadsRemoved(ids) => for id in ids {
                 if let Some(entity)=views.doodads.remove(id).and_then(|view|view.entity) { commands.entity(entity).try_despawn(); }
             },
@@ -376,7 +428,8 @@ pub fn sync_views(
         }
         let pos = Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z);
         let d = flat_distance(pos, me);
-        let view = views.units.entry(*id).or_default();
+        if !views.units.contains_key(id) { views.announce_unit(&mut commands, unit); }
+        let view = views.units.get_mut(id).expect("announced unit source");
         match view.entity {
             Some(e) => {
                 if d > UNIT_RADIUS * 1.25 {
@@ -423,7 +476,9 @@ pub fn sync_views(
         let Some(entity) = views.units.get(&id).and_then(|view| view.entity) else { continue };
         let Ok(source) = looks.get(entity) else { continue };
         let snapshot = source.clone();
-        views.units.entry(id).or_default().preparing = true;
+        let view = views.units.get_mut(&id).expect("drawn unit source");
+        let generation = view.source_generation;
+        view.preparing = true;
         views.jobs += 1;
         let mut job = unit.clone();
         job.equipment = snapshot.equipment.clone();
@@ -432,7 +487,7 @@ pub fn sync_views(
         Workers::global().spawn(priority, move || {
             let build = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare_unit(&db, &loader, &clips, &job)))
                 .unwrap_or_else(|_| UnitBuild::None("the preparation panicked".into()));
-            let _ = tx.send(Built::Unit(id, Box::new(build), Some(Box::new(snapshot))));
+            let _ = tx.send(Built::Unit(id, generation, Box::new(build), Some(Box::new(snapshot))));
         });
     }
 
@@ -443,14 +498,16 @@ pub fn sync_views(
         }
         let Some(unit) = units.by_id.get(&id) else { continue };
         waiting -= 1;
-        views.units.entry(id).or_default().preparing = true;
+        let view = views.units.get_mut(&id).expect("wanted unit source");
+        view.preparing = true;
+        let generation = view.source_generation;
         views.jobs += 1;
         let (unit, db, loader, clips, tx) = (unit.clone(), db.clone(), loader.clone(), clips.clone(), views.tx.clone());
         Workers::global().spawn(priority, move || {
             // a panic must not leave the unit "preparing" for ever
             let build = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare_unit(&db, &loader, &clips, &unit)))
                 .unwrap_or_else(|_| UnitBuild::None("the preparation panicked".into()));
-            let _ = tx.send(Built::Unit(unit.obj_id, Box::new(build), None));
+            let _ = tx.send(Built::Unit(unit.obj_id, generation, Box::new(build), None));
         });
     }
 
@@ -497,7 +554,7 @@ pub fn sync_views(
     // spawn what is ready, nearest first, while the frame can take it
     let mut ready = std::mem::take(&mut views.ready);
     let distance = |b: &Built| match b {
-        Built::Unit(id, _, _) => units.by_id.get(id).map_or(f32::MAX, |u| flat_distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z), me)),
+        Built::Unit(id, _, _, _) => units.by_id.get(id).map_or(f32::MAX, |u| flat_distance(Vec3::new(u.pos.x, u.pos.y, u.pos.z), me)),
         Built::Doodad(id, _, _) => doodads.by_id.get(id).map_or(f32::MAX, |d| flat_distance(Vec3::new(d.pos.x, d.pos.y, d.pos.z), me)),
     };
     ready.sort_by(|a, b| distance(a).total_cmp(&distance(b)));
@@ -508,10 +565,9 @@ pub fn sync_views(
             continue;
         }
         match built {
-            Built::Unit(id, build, rebuild) => {
+            Built::Unit(id, generation, build, rebuild) => {
                 let build = *build;
-                let view = views.units.entry(id).or_default();
-                view.preparing = false;
+                let Some(view) = views.finish_unit(id, generation) else { continue };
                 let Some(unit) = units.by_id.get(&id) else { continue };
                 if let Some(expected) = rebuild {
                     // a rebuild keeps the root (transform, controller, animation state): only the
@@ -632,13 +688,13 @@ pub fn sync_views(
 }
 
 /// Builds the entity of one unit from what the worker prepared. `None` when there is nothing we can draw.
-fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary, unit: &Unit, build: UnitBuild) -> Result<Entity, String> {
+pub(super) fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary, unit: &Unit, build: UnitBuild) -> Result<Entity, String> {
     let scale = if unit.scale > 0.0 { unit.scale } else { 1.0 };
     let pos = Vec3::new(unit.pos.x, unit.pos.y, unit.pos.z);
     let transform = placement(pos, unit.yaw(), scale);
     debug!("unit {} {:?} {:?} model {} at ({:.1}, {:.1}, {:.1}) scale {:.2}", unit.obj_id, unit.name, unit.kind, unit.model_id, pos.x, pos.y, pos.z, scale);
     let entity = match build {
-        UnitBuild::Character { assets, models, carried, clips: set, pose, tools } => {
+        UnitBuild::Character { assets, models, carried, applied, wield, clips: set, pose, tools } => {
             for m in models {
                 cry.finish_model(m);
             }
@@ -652,6 +708,8 @@ fn spawn_unit(commands: &mut Commands, cry: &mut CryAssets, clips: &ClipLibrary,
                 Motion::default(),
                 appearance::LookSource::new(&unit.equipment, &unit.model_params),
                 weapons::LookCarried(carried.clone()),
+                applied,
+                wield,
             ));
             if !carried.is_empty() {
                 entity.insert(weapons::Carried(carried));
@@ -758,8 +816,8 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<super::mount::AttachReasons>().init_resource::<super::mount::MountFlow>().add_systems(
         Update,
         (
-            track_doodad_sources.before(sync_views),
-            receive_moves.before(move_units),
+            track_sources.before(sync_views),
+            receive_moves.after(super::seating::track).before(move_units),
             (
                 follow_slave_parents,
                 super::transfer::transfer_seat,
@@ -820,9 +878,9 @@ fn report_of(m: &Movement) -> Report {
 
 /// Feeds the movement packets to the tracks of the units that are drawn (the others take their position from the server's
 /// state when they are built).
-pub fn receive_moves(mut events: MessageReader<NetEvent>, views: Res<Views>, mut units: Query<&mut RemoteUnit>, time: Res<Time>) {
+pub fn receive_moves(mut events: MessageReader<NetEvent>, views: Res<Views>, mut units: Query<&mut RemoteUnit>, time: Res<Time>, mut seats: Option<ResMut<super::seating::Seats>>) {
     let now = time.elapsed_secs();
-    for NetEvent(event) in events.read() {
+    for (NetEvent(event), message_id) in events.read_with_id() {
         let obj_id = match event {
             Event::UnitMoved { obj_id, .. } | Event::UnitDeath { obj_id } | Event::Resurrected { obj_id, .. } => obj_id,
             _ => continue,
@@ -831,7 +889,13 @@ pub fn receive_moves(mut events: MessageReader<NetEvent>, views: Res<Views>, mut
         if let Ok(mut unit) = units.get_mut(entity) {
             match event {
                 // A ship request has no position.
-                Event::UnitMoved { movement, .. } if movement.move_type != 4 => unit.track.push(now, report_of(movement)),
+                Event::UnitMoved { movement, .. } if movement.move_type != 4 => {
+                    let report = report_of(movement);
+                    if seats.as_mut().is_some_and(|seats| seats.remote_report_after_release(*obj_id, message_id.id)) {
+                        unit.reset_track(report.pos, report.yaw);
+                    }
+                    unit.track.push(now, report);
+                }
                 Event::UnitDeath { .. } => unit.track = Track::new(unit.pos, unit.facing),
                 Event::Resurrected { pos, yaw, .. } => {
                     unit.pos = Vec3::new(pos.x, pos.y, pos.z);
@@ -903,7 +967,7 @@ pub fn move_units(
     terrain: Res<TerrainQuery>,
     water: Option<Res<aa_world::WaterQuery>>,
     db: Option<Res<Db>>,
-    mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>, Without<super::vehicle::DrivenSlave>)>,
+    mut query: Query<(&mut RemoteUnit, &mut Transform, Option<&mut Motion>), (Without<Rider>, Without<super::mount::DrivenMount>, Without<super::vehicle::DrivenSlave>, Without<super::seating::Seated>)>,
     timers: Option<Res<aa_world::profile::Timers>>,
     mut smoothness: Local<Smoothness>,
 ) {
@@ -974,7 +1038,7 @@ mod lifecycle_tests {
             time_left:5000,plant_time:0,quest_glow:0,family:0,puzzle_group:0,owner_type:0,owner_db_id:0,data:0,
         };
         let mut app = App::new();
-        app.init_resource::<Time>().init_resource::<Views>().add_message::<NetEvent>().add_systems(Update,track_doodad_sources);
+        app.init_resource::<Time>().init_resource::<Views>().add_message::<NetEvent>().add_systems(Update,track_sources);
         app.world_mut().write_message(NetEvent(Event::DoodadsSpawned(vec![source.clone()])));
         app.update();
         let generation=app.world().resource::<Views>().doodads[&7].source_generation;
@@ -1021,6 +1085,41 @@ mod lifecycle_tests {
         assert_ne!(views.doodads[&7].source_generation,next);
         assert!(views.finish_doodad(7,next).is_none());
         assert_eq!(views.doodads[&7].doodad_source.as_ref().unwrap().template_id,8065);
+    }
+
+    #[test]
+    fn unit_replacement_rejects_old_workers_before_clearing_current_preparation() {
+        let mut app = App::new();
+        app.init_resource::<Time>().init_resource::<Views>().add_message::<NetEvent>().add_systems(Update, track_sources);
+        let unit = super::super::seating::fixture_unit(7, 42, None);
+        app.world_mut().write_message(NetEvent(Event::UnitSpawned(Box::new(unit.clone()))));
+        app.update();
+        let original = app.world().resource::<Views>().units[&7].source_generation;
+        let entity = app.world_mut().spawn_empty().id();
+        app.world_mut().resource_mut::<Views>().units.get_mut(&7).unwrap().entity = Some(entity);
+        // Repeated same-actor snapshots do not recreate a model solely for changing health/position.
+        let mut refresh = unit.clone(); refresh.hp -= 1; refresh.pos.x += 2.0;
+        app.world_mut().write_message(NetEvent(Event::UnitSpawned(Box::new(refresh))));
+        app.update();
+        assert!(app.world().get_entity(entity).is_ok());
+        assert_eq!(app.world().resource::<Views>().units[&7].source_generation, original);
+        let mut replacement = unit.clone(); replacement.kind = aa_net::model::UnitKind::Character { char_id: 99 };
+        app.world_mut().write_message(NetEvent(Event::UnitSpawned(Box::new(replacement))));
+        app.update();
+        assert!(app.world().get_entity(entity).is_err());
+        let next = app.world().resource::<Views>().units[&7].source_generation;
+        assert_ne!(original, next);
+        {
+            let mut views = app.world_mut().resource_mut::<Views>();
+            views.units.get_mut(&7).unwrap().preparing = true;
+            assert!(views.finish_unit(7, original).is_none());
+            assert!(views.units[&7].preparing);
+        }
+        app.world_mut().write_message(NetEvent(Event::UnitsRemoved(vec![7])));
+        app.world_mut().write_message(NetEvent(Event::UnitSpawned(Box::new(unit))));
+        app.update();
+        assert_ne!(app.world().resource::<Views>().units[&7].source_generation, next);
+        assert!(app.world_mut().resource_mut::<Views>().finish_unit(7, next).is_none());
     }
 
     #[test]
@@ -1100,6 +1199,7 @@ impl Asleep {
     /// The facial setup needs an awake `Animator`; the parked one is lent out and wrapped again.
     pub(crate) fn into_animator(self) -> Animator { self.0 }
     pub(crate) fn from_animator(animator: Animator) -> Asleep { Asleep(animator) }
+    pub(super) fn parked(animator: Animator) -> Self { Self(animator) }
 }
 
 /// Hides the units outside the view or far away and stops animating the ones nobody looks at.

@@ -678,6 +678,7 @@ mod tests {
         )
         .exec()
         .unwrap();
+        lua.load(include_str!("road_projection.lua")).set_name("@road_projection.lua").exec().unwrap();
         lua.load(include_str!("markers.lua")).set_name("@markers.lua").exec().unwrap();
         let markers: Table = lua.load("return AAUI.RoadMap().markers").eval().unwrap();
         assert_eq!(markers.raw_len(), 0, "an icon of city 3 is not on the map of city 5");
@@ -711,6 +712,7 @@ mod tests {
         )
         .exec()
         .unwrap();
+        lua.load(include_str!("road_projection.lua")).set_name("@road_projection.lua").exec().unwrap();
         lua.load(include_str!("markers.lua")).set_name("@markers.lua").exec().unwrap();
         let markers: Table = lua.load("return AAUI.RoadMap().markers").eval().unwrap();
         assert_eq!(markers.raw_len(), 0, "an area of city 3 is not on the map of city 5");

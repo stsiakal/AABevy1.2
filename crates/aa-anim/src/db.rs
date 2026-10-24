@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::cdf::norm;
 use crate::{Error, Result};
@@ -369,6 +369,105 @@ impl GameDb {
         Ok(out)
     }
 
+    /// Catalog reference heel (metres) for the original modelview shop-camera correction.
+    /// Uses the first race/gender row in the original characters query order, including
+    /// non-creatable rows, and that row's model and preview cloth pack. A present costume
+    /// asset wins even at zero, otherwise shoes, otherwise zero. Database errors propagate.
+    /// This does not resolve a preview or change its existing model-root heel lift.
+    pub fn modelview_reference_heel(&self, race: Race, gender: Gender) -> Result<f32> {
+        let race_id = match race {
+            Race::Nuian => 1,
+            Race::Elf => 4,
+            Race::Hariharan => 5,
+            Race::Ferre => 6,
+        };
+        let gender_id = match gender { Gender::Male => 1, Gender::Female => 2 };
+        // Original 396d4280 projection: scan in its return order, then 397a7360's first
+        // match. Adding WHERE/ORDER BY (or reusing playable/login_costume) changes this.
+        let mut statement = self.conn.prepare(
+            "SELECT id, char_gender_id, char_race_id, creatable, default_fx_voice_sound_pack_id, \
+             default_resurrection_district_id, default_return_district_id, default_system_voice_sound_pack_id, \
+             faction_id, model_id, preview_body_pack_id, preview_cloth_pack_id, starting_zone_id FROM characters",
+        ).map_err(db_err)?;
+        let mut rows = statement.query([]).map_err(db_err)?;
+        while let Some(row) = rows.next().map_err(db_err)? {
+            let row_gender = row.get::<_, Option<u32>>(1).map_err(db_err)?.unwrap_or(0);
+            let row_race = row.get::<_, Option<u32>>(2).map_err(db_err)?.unwrap_or(0);
+            if (row_race, row_gender) != (race_id, gender_id) { continue; }
+            let model = row.get::<_, Option<u32>>(9).map_err(db_err)?.unwrap_or(0);
+            let pack = row.get::<_, Option<u32>>(11).map_err(db_err)?.unwrap_or(0);
+            let items = self.conn.query_row(
+                "SELECT cosplay_id, shoes_id FROM equip_pack_cloths WHERE id = ?1",
+                params![pack],
+                |row| Ok((row.get::<_, Option<u32>>(0)?.unwrap_or(0), row.get::<_, Option<u32>>(1)?.unwrap_or(0))),
+            ).optional().map_err(db_err)?;
+            let Some((costume, feet)) = items else { return Ok(0.0); };
+            // Original 39311310 tests asset presence, not whether its heel is nonzero.
+            for item in [costume, feet] {
+                if let Some(heel) = self.modelview_item_heel(item, model)? { return Ok(heel); }
+            }
+            return Ok(0.0);
+        }
+        Ok(0.0)
+    }
+
+    // Armor branch of original 394e5630. Keep separate from item_visuals: that API
+    // returns all model visuals sorted by asset ID and has no default-asset precedence.
+    fn modelview_item_heel(&self, item: u32, model: u32) -> Result<Option<f32>> {
+        if item == 0 { return Ok(None); }
+        let group = self.conn.query_row(
+            "SELECT asset_id FROM item_armors WHERE item_id = ?1", params![item],
+            |row| Ok(row.get::<_, Option<u32>>(0)?.unwrap_or(0)),
+        ).optional().map_err(db_err)?;
+        let Some(group) = group else { return Ok(None); };
+        let default = self.conn.query_row(
+            "SELECT default_asset_id FROM armor_assets WHERE id = ?1", params![group],
+            |row| Ok(row.get::<_, Option<u32>>(0)?.unwrap_or(0)),
+        ).optional().map_err(db_err)?;
+        let Some(default) = default else { return Ok(None); };
+        if default != 0 {
+            // Native returns this lookup directly, including absence, without checking model.
+            return self.conn.query_row(
+                "SELECT heel_offset_height FROM item_assets WHERE id = ?1", params![default],
+                |row| Ok(row.get::<_, Option<f64>>(0)?.unwrap_or(0.0) as f32),
+            ).optional().map_err(db_err);
+        }
+        // Original 396bd580 loads these records in SQL return order; 396c8f25..87
+        // appends their pointers to each group in that same order via 3969f200.
+        // Do not sort by link/asset ID or let a filtered join choose another scan order.
+        let mut statement = self.conn.prepare(
+            "SELECT id, armor_asset_id, asset_id FROM item_armor_assets",
+        ).map_err(db_err)?;
+        let mut rows = statement.query([]).map_err(db_err)?;
+        while let Some(row) = rows.next().map_err(db_err)? {
+            if row.get::<_, Option<u32>>(1).map_err(db_err)?.unwrap_or(0) != group { continue; }
+            let asset = row.get::<_, Option<u32>>(2).map_err(db_err)?.unwrap_or(0);
+            let visual = self.conn.query_row(
+                "SELECT model_id, heel_offset_height FROM item_assets WHERE id = ?1", params![asset],
+                |row| Ok((row.get::<_, Option<u32>>(0)?.unwrap_or(0), row.get::<_, Option<f64>>(1)?.unwrap_or(0.0) as f32)),
+            ).optional().map_err(db_err)?;
+            if let Some((asset_model, heel)) = visual
+                && asset_model == model
+            { return Ok(Some(heel)); }
+        }
+        Ok(None)
+    }
+
+    /// Colour of a received dye item: `item_dyeings.item_id` ->
+    /// `dyeing_colors.color_rgb`, decoded with [`crate::dye::dye_rgb`].
+    /// Unknown/unresolved mappings return None. Duplicate rows are accepted only
+    /// when they agree on one RGB value; conflicting mappings are not selected.
+    pub fn dye_color(&self, dye_item_id: u32) -> Option<[u8; 3]> {
+        let mut statement = self.conn.prepare(
+            "SELECT DISTINCT dc.color_rgb FROM item_dyeings idy \
+             LEFT JOIN dyeing_colors dc ON dc.id = idy.dyeing_color_id WHERE idy.item_id = ?1",
+        ).ok()?;
+        let mut colors = statement.query_map(params![dye_item_id], |row| row.get::<_, u32>(0)).ok()?;
+        let color = colors.next()?.ok()?;
+        if colors.next().is_some() { return None; }
+        Some(crate::dye::dye_rgb(color))
+    }
+
     /// The colour a dyeable item is sold / worn with by default:
     /// `dyeable_items.default_dyeing_item_id` -> `item_dyeings` -> `dyeing_colors.color_rgb` (sRGB bytes).
     pub fn default_dye(&self, item_id: u32) -> Option<[u8; 3]> {
@@ -657,6 +756,9 @@ fn db_err(e: rusqlite::Error) -> Error {
     Error::Db(e.to_string())
 }
 
+#[cfg(test)]
+mod modelview_tests;
+
 /// `0xAARRGGBB` to `[r, g, b]`.
 pub fn argb_rgb(c: u32) -> Rgb {
     [(c >> 16) as u8, (c >> 8) as u8, c as u8]
@@ -665,6 +767,59 @@ pub fn argb_rgb(c: u32) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_db_received_dye_color_and_default_regression() {
+        if !GameDb::available() { return; }
+        let db = GameDb::open().unwrap();
+        assert_eq!(db.dye_color(29382), Some([54, 2, 1]));
+        assert_eq!(db.dye_color(0), None);
+        assert_eq!(db.dye_color(u32::MAX), None);
+        let duplicates: u32 = db.conn.query_row(
+            "SELECT COUNT(*) FROM (SELECT item_id FROM item_dyeings GROUP BY item_id HAVING COUNT(*) > 1)",
+            [], |r| r.get(0),
+        ).unwrap();
+        let unresolved: u32 = db.conn.query_row(
+            "SELECT COUNT(*) FROM item_dyeings idy LEFT JOIN dyeing_colors dc ON dc.id = idy.dyeing_color_id WHERE dc.color_rgb IS NULL",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!((duplicates, unresolved), (0, 0), "original dye catalog must be unambiguous and resolved");
+        assert_eq!(db.default_dye(14359), Some([181, 0, 0]));
+        assert_eq!(db.default_dye(24583), Some([244, 37, 0]));
+        assert_eq!(db.default_dye(14441), Some([54, 2, 1]));
+        assert_eq!(db.default_dye(0), None);
+        assert_eq!(db.default_dye(u32::MAX), None);
+        let mut statement = db.conn.prepare("SELECT item_id, default_dyeing_item_id FROM dyeable_items").unwrap();
+        for row in statement.query_map([], |r| Ok((r.get::<_, u32>(0)?, r.get::<_, u32>(1)?))).unwrap() {
+            let (item, dye) = row.unwrap();
+            assert_eq!(db.default_dye(item), db.dye_color(dye), "default item {item}, dye {dye}");
+        }
+    }
+
+    #[test]
+    fn received_dye_color_duplicate_and_unresolved_policy() {
+        // Synthetic in-memory data only; the original DB remains read-only.
+        let db = GameDb { conn: Connection::open_in_memory().unwrap() };
+        db.conn.execute_batch(
+            "CREATE TABLE item_dyeings (id INT PRIMARY KEY, item_id INT, dyeing_color_id INT);
+             CREATE TABLE dyeing_colors (id INT PRIMARY KEY, color_rgb INT);
+             INSERT INTO dyeing_colors VALUES (10, 66102), (11, 0), (12, 66102), (13, NULL);
+             INSERT INTO item_dyeings VALUES (1, 7, 10), (2, 7, 10), (3, 8, 11);",
+        ).unwrap();
+        assert_eq!(db.dye_color(7), Some([54, 2, 1]), "identical rows agree");
+        assert_eq!(db.dye_color(8), Some([0, 0, 0]), "black is a valid dye");
+        assert_eq!(db.dye_color(9), None);
+        db.conn.execute("INSERT INTO item_dyeings VALUES (4, 7, 12)", []).unwrap();
+        assert_eq!(db.dye_color(7), Some([54, 2, 1]), "equal RGB values agree across color IDs");
+        db.conn.execute("INSERT INTO item_dyeings VALUES (5, 7, 11)", []).unwrap();
+        assert_eq!(db.dye_color(7), None, "conflicting colors are ambiguous");
+        db.conn.execute("DELETE FROM item_dyeings WHERE id = 5", []).unwrap();
+        db.conn.execute("INSERT INTO item_dyeings VALUES (5, 7, 999)", []).unwrap();
+        assert_eq!(db.dye_color(7), None, "one unresolved duplicate invalidates the mapping");
+        db.conn.execute("DELETE FROM item_dyeings WHERE id = 5", []).unwrap();
+        db.conn.execute("INSERT INTO item_dyeings VALUES (5, 7, 13)", []).unwrap();
+        assert_eq!(db.dye_color(7), None, "null RGB is unresolved");
+    }
 
     #[test]
     fn model_ids() {

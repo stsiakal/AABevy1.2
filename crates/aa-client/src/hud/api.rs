@@ -69,6 +69,7 @@ pub enum Request {
     /// `/target Name`: select the unit of this name in view.
     TargetByName { name: String },
     ItemEffect { character_id: u32, request: aa_net::item_effect::ItemEffectRequest },
+    ItemLook { character_id: u32, request: aa_net::look_conversion::ItemLookRequest },
     /// `HUD.secure_item(slot, lock)`: lock or start unlocking the bag item in real slot `slot` (1 based).
     SecureItem { request: aa_net::secure::ItemSecurityRequest, lock: bool },
     /// `X2Equipment:SecurityLock` / `SecurityUnlock`: the equipment-wide request.
@@ -193,6 +194,7 @@ pub struct HudData {
     pub(super) buff_cancel: super::buffs::cancel::View,
     pub(super) item_effects: super::item_effects::View,
     pub(super) enchant: super::enchant::View,
+    pub(super) look_conversion: super::look_conversion::View,
     pub party_pushed: Option<aa_net::Party>,
     pub character_id: u32,
     /// The login account id (the house `SameAccount` / `ZoneResidents` bench permission).
@@ -277,6 +279,7 @@ impl Default for HudData {
             buff_cancel: Default::default(),
             item_effects: Default::default(),
             enchant: Default::default(),
+            look_conversion: Default::default(),
             party_pushed: None,
             character_id: 0,
             account_id: 0,
@@ -368,6 +371,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     panels::push(lua, &hud, &bridge.borrow().panels, None)?;
     let frames: Table = lua.load(ROAD_FRAMES_LUA).set_name("@road_frames.lua").eval()?;
     lua.globals().raw_set("HUD_ROAD_FRAMES", frames)?;
+    lua.load(include_str!("road_projection.lua")).set_name("@road_projection.lua").exec()?;
     lua.load(INGAME_LUA).set_name("@ingame.lua").exec()?;
     super::secure::install(lua, &hud, bridge)?;
     crate::login::name_policy::install(lua)?;
@@ -387,6 +391,7 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::itemlinks::install(lua, bridge)?;
     super::item_effects::install(lua, bridge)?;
     super::enchant::install(lua, bridge)?;
+    super::look_conversion::install(lua, bridge)?;
     super::loot_roll::install(lua)?;
     super::trade::install(lua, bridge)?;
     super::pvp::install(lua, bridge)?;
@@ -667,8 +672,12 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                     }
                     let mut extra = super::tips::ItemExtra::of(slot.as_ref());
                     extra.music_note = None;
-                    super::tips::item_tip_with(lua, g, &d.tips, id, grade, count,
-                        super::tips::Instance::of(slot.as_ref()), &extra)
+                    let result = super::tips::item_tip_with(lua, g, &d.tips, id, grade, count,
+                        super::tips::Instance::of(slot.as_ref()), &extra)?;
+                    if let Some(info) = &result {
+                        info.raw_set("useAsSkin", g.tips.items.extra.use_as_skin(id, None, 0))?;
+                    }
+                    Ok(result)
                 }
                 None => Ok(None),
             }
@@ -1046,7 +1055,7 @@ pub fn handle_requests(
     target: Res<aa_net::state::Target>,
     skills: Res<aa_net::state::Skills>,
     buffs: Res<aa_net::state::Buffs>,
-    flight: Res<super::usable::InFlight>,
+    mut flight: ResMut<super::usable::InFlight>,
     (
         mut failed,
         mut pressed,
@@ -1163,6 +1172,33 @@ pub fn handle_requests(
                 if super::enchant::request_current(&bridge.0, character_id, &request) {
                     net.write(NetCommand(Command::ItemEffect { character_id, request }));
                 }
+            }
+            Request::ItemLook { character_id, request } => {
+                // Full received captures are checked again by Session at write time.
+                {
+                    let data = bridge.0.borrow();
+                    if data.disconnected || data.character_id != character_id
+                        || super::enchant::records(&data).owner() != Some(character_id)
+                    {
+                        continue;
+                    }
+                }
+                if let Some(skill) = request.skill_id() {
+                    let data = bridge.0.borrow();
+                    let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
+                    match super::look_conversion::admit_request(&data, &env, &flight, &request) {
+                        super::look_conversion::Admission::Ready => {}
+                        super::look_conversion::Admission::Failed(fail) => {
+                            failed.write(super::alerts::UseFailed { skill, result: fail.result, value: fail.value, server: false });
+                            continue;
+                        }
+                        _ => continue,
+                    }
+                    if env.uses_gcd(skill) {
+                        flight.sent(Instant::now());
+                    }
+                }
+                net.write(NetCommand(Command::ItemLook { character_id, request }));
             }
             Request::ChatChannel { name, password, create } => {
                 // `FUN_393c3810`: a channel already in the joined list refuses with 0x10f.
