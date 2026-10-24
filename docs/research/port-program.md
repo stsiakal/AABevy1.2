@@ -53,7 +53,7 @@ Foundations first, because most systems sit on them (`remaining.md` section 2):
 | F5 | Tick rate and movement send cadence (remaining.md 2.2) | movement U5, vehicles send pump | open |
 | F6 | `aaemu-physics` as the client mover and query service (2.3) | - | open |
 | F7 | Remote-unit smoothing (interpolation/extrapolation of other units) | movement section 6 + [`port-vehicles/`](port-vehicles/MAP.md) D | mapped |
-| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **ported, bit-exact** (~760 goldens, `5ddc8a6`); step 2 **ported** (cast queries, StartSkill/Fire/End, StopCasting, CastingStopped/Delayed: 1-8 live goldens each; StopSkill, combo add/update and client-only skills only synthetic tests from the decompile because the harness faulted in their UI/animation paths; movement/jump cancel U9 and queue margin U7 open; `b188e40`) |
+| S1 | Client combat: cast/queue, GCD and cooldown producers, targeting, tab target, target-of-target, force mode | [`port-combat/`](port-combat/MAP.md), 151 fn / 83 KB | step 1 **bit-exact** (~760 goldens); step 2-3 **ported with 20 live cases per function** (StopSkill, combo add/update, client-only skills, Start/Fire/End, CastingStopped, StopCasting, `6e67277d`); CastingDelayed and Fire's 0x15 event keep decompile behaviour (write not observable in the harness); skill-use front end UseSkill + gate + refusal: 18 live cases, CSStartSkill 13-byte body exact; requirement evaluators (U3) without per-kind goldens |
 | S2 | Doodad and NPC interaction rules: range gates, interaction selection, gathering/farming, coffers, phases, loot | [`port-interaction/`](port-interaction/MAP.md), 220 fn / 57 KB | mapped |
 | S3 | Vehicles and ships: wagon/cart driving, helm, boarding, cannons, transfers | [`port-vehicles/`](port-vehicles/MAP.md), 191 fn / 115 KB | mapped |
 | S4 | Housing and decoration placement, construction display, seeds | [`port-housing/`](port-housing/MAP.md), 197 fn / 84 KB | mapped |
@@ -90,6 +90,9 @@ client confirms it.
 | Interaction bar | F/G/H/J = actions 31-34, up to 10 shown, 2.1 m doodad / 3-3.5 m NPC, LOS | [`port-interaction/`](port-interaction/MAP.md) |
 | NPC talk | 500 ms rate limit, 3 m gate + auto-walk, 17 service tags | [`port-interaction/`](port-interaction/MAP.md) |
 | Local cast start | only on `SCSkillStarted`, never predicted | [`port-combat/`](port-combat/MAP.md) |
+| Client skill prechecks | the 1.2 client checks **no** range, LOS, facing, resources, mount or swim before sending `CSStartSkill`; those are server-side | combat step 3, `FUN_393989e0` path, 18 live cases |
+| Cast cancel by movement | server-driven (`SCCastingStopped`); no input-layer caller of `FUN_39395b50`; no queue margin, 1000 ms client-only grace | combat step 3 (U7, U9) |
+| Combo entries | keyed by the **next** skill id; expiry inserts the next skill's cooldown (18 s seen live) | combat step 3 |
 | Remote smoothing | 5 s timeout, snap beyond 400 m^2 | `FUN_390b2420`; [`port-vehicles/`](port-vehicles/MAP.md) D |
 | Ships | no client buoyancy; pose from server type-3 movement | [`port-vehicles/`](port-vehicles/MAP.md) |
 | Summon | no spawn animation or fade; idle pose when the model stream completes; whistle fx only | [`port-mount-anim/`](port-mount-anim/MAP.md) A |
