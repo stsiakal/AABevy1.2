@@ -814,15 +814,17 @@ in the driver; `__thiscall` on MSVC x86 is `__fastcall` with an unused EDX.
     so the Rust port follows the instruction lane order. `fsincos` is evaluated in f64 and
     rounded once to f32. All three captured `rot_normal_*` cases are now bit-exact
     (`phase_c_rotation_normal_matches_goldens`).
-15. **U15 - `ClampAngles` ported (1-ulp residual).** `0x3913e8d0` is ported as
+15. **U15 - `ClampAngles` ported (asinf now exact).** `0x3913e8d0` is ported as
     `CRotation::clamp_angles`, including the stance/ladder limits, the ground blend, the
     cross/3x3 inverse (`FUN_39093ef0`, `inverse3x3`) and the post-inverse tail. The key is
     that the tail reads the **inverted** matrix slots 1/4/7 (not the original direction):
     `out = (m1,m4,m7)*c2 + b2*(m0,m3,m6) + a2*(m2,m5,m8)`, then
     `yaw = atan2(-out0,out1)+yaw` and `pitch = pitch + sign*(limit-|pitch+asin(out2)|)`.
     Twenty live `rot_clamp_*` cases now cover stance 0/2/4/7, ladder on/off, ground on/off
-    and edge limits. All pass with a documented 1-ulp tolerance in the final asin/atan2
-    chain (`__libm_sse2_asinf` vs Rust `asin`); the quaternion inputs are bit-exact.
+    and edge limits. `__libm_sse2_asinf` is now ported instruction by instruction from
+    MSVCR100 (`asinf.rs`, 145 live bit-exact goldens), so the remaining <=2 ulp is in the
+    `inverse3x3` / `__libm_sse2_atan2` part of the chain, not asin; the quaternion inputs
+    are bit-exact.
 16. **U16 - `UpdateMovementRequest` not ported.** `0x39118650` is mostly an orchestration of
     direct `thunk_FUN_3a979a34`/`3a982448`/`3a66f782` calls and virtual actor methods; the
     only self-contained math is the ground-normal cache at `0x39118c58` (quaternion from
@@ -894,3 +896,27 @@ walk bit, the ladder kinds, and the 18 m classic camera distance; it sharpens th
   it is not the same object as the packet body (0x128 bytes copied by 0x39024610).
 * `CSMoveUnit` is built in x2game, not in crynetwork: `FUN_394046f0` (opcode 0x89) and
   `FUN_394045f0` (mounted).
+
+### 9.3 Port/movement-e status (this branch)
+
+| item | state | live cases |
+|---|---|---|
+| `__libm_sse2_asinf` (MSVCR100 `0x78b36580`) | **done, bit-exact** (145 goldens) | 145 |
+| `FUN_3912dd40` dispatch | done for stances 1/4/5 (zero, glide, straight glide) | 15 |
+| `FUN_3912ac50` apply (field-copy path) | done, bit-exact | 20 |
+| `FUN_3912b280` straight glide | done, bit-exact | 20 |
+| `FUN_3912d860` glide (startup/smoothing branch) | done, bit-exact | 20 |
+| `FUN_3912b330` ground/jump | formula transcribed; not yet golden-tested | 0 |
+| `FUN_3912c770` mounted | formula transcribed; not yet golden-tested | 0 |
+| `FUN_3912bfb0` final pass | formula transcribed; not yet golden-tested | 0 |
+| `FUN_3912ce00` swim control | not ported | 0 |
+| `FUN_39120300` swim stats | not ported | 0 |
+| `FUN_3912f600` scope C | not ported | 0 |
+| `CActor::UpdateMovementRequest` `0x39118650` | not ported | 0 |
+| frame wrappers `0x39135fe0` / `0x39135ed0` | interfaces only; no live wrapper case | 0 |
+
+Capture: `rust/tools/capture_movement_asinf.py` and `rust/tools/capture_movement_quad.py` in the
+move-golden lane. The glide goldens pin the startup/smoothing branch (startup time 1000 s and
+`smoothed_v` pre-set so the timer-dependent filter is not exercised); the timer itself is read
+live because freezing it through the shared `gEnv+0x14` vtable crashes the client (other vtable
+slots are used during the call).
