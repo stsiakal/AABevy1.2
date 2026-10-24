@@ -367,7 +367,7 @@ impl CRotation {
             let excess = params.pitch_wrap - v.abs();
             if excess < 0.0 {
                 let sign = if v > 0.0 { 1.0 } else { -1.0 };
-                self.move_rot[0] = sign * excess + self.move_rot[0];
+                self.move_rot[0] += sign * excess;
             }
         }
         if params.pitch_low != 0.0 || params.pitch_high != 0.0 {
@@ -386,7 +386,7 @@ impl CRotation {
             let excess = params.yaw_wrap - v.abs();
             if excess < 0.0 {
                 let sign = if v > 0.0 { 1.0 } else { -1.0 };
-                self.move_rot[2] = sign * excess + self.move_rot[2];
+                self.move_rot[2] += sign * excess;
             }
         }
     }
@@ -446,7 +446,9 @@ pub fn inverse3x3(m: &mut [f32; 9]) {
     m[5] = u;
 
     let det = q * d + p * a + r * g;
-    if det.abs() < 9.999_999_7e-21 {
+    #[allow(clippy::excessive_precision)]
+    let det_eps = 9.999_999_7e-21f32;
+    if det.abs() < det_eps {
         return;
     }
     let scale = 1.0 / det;

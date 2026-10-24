@@ -830,7 +830,7 @@ pub fn ground(
         let dot = up[0] * v[0] + up[1] * v[1] + up[2] * v[2];
         v = [v[0], v[1], v[2] - dot];
         let len2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-        if !(K_SQRT_EPS > len2) {
+        if len2 >= K_SQRT_EPS || len2.is_nan() {
             let rs = rsqrt_raw(len2);
             let t = ((rs * len2) * rs) * K_HALF;
             let scale = ((K_ONE_POINT_FIVE - t) * rs) * len0;
@@ -930,9 +930,9 @@ pub fn mounted(
         decay(ctl.spare_velocity[2], rate),
     ];
     let add = ctl.dt / cfg.accel_time;
-    ctl.spare_velocity[0] = add * out[0] + ctl.spare_velocity[0];
-    ctl.spare_velocity[1] = ctl.spare_velocity[1] + out[1] * add;
-    ctl.spare_velocity[2] = ctl.spare_velocity[2] + out[2] * add;
+    ctl.spare_velocity[0] += add * out[0];
+    ctl.spare_velocity[1] += out[1] * add;
+    ctl.spare_velocity[2] += out[2] * add;
     ctl.velocity = ctl.spare_velocity;
     ctl.mode = 2;
 }

@@ -399,7 +399,7 @@ fn phase_b_reset_matches_goldens() {
 #[test]
 fn phase_b_smoothing_matches_goldens() {
     let doc = load("phase_b");
-    for (i, case) in doc["smoothing"].as_array().expect("smoothing").iter().enumerate() {
+    for case in doc["smoothing"].as_array().expect("smoothing").iter() {
         let mut state = InputState {
             accel: f32_of(&case["accel"]),
             ..InputState::default()
@@ -415,7 +415,7 @@ fn phase_b_smoothing_matches_goldens() {
                 0 => state.smoothed_vel = v,
                 1 => smooth_velocity(&mut state, v, f32_of(&case["dt"])),
                 _ => {
-                    for (j, want) in v.iter().enumerate() {
+                    for (j, _want) in v.iter().enumerate() {
                         assert_bits(j, "smoothing", state.smoothed_vel[j], &values[j]);
                     }
                 }
@@ -1035,8 +1035,10 @@ fn quad_glide_straight_matches_goldens() {
             continue;
         }
         let mut ctl = ctl_from(&hex_bytes(case["before"].as_str().unwrap()));
-        let mut block = QuadBlock::default();
-        block.speed_normal = f32_of(&case["speed"]);
+        let block = QuadBlock {
+            speed_normal: f32_of(&case["speed"]),
+            ..QuadBlock::default()
+        };
         ctl.quat = quats[idx % quats.len()];
         idx += 1;
         glide_straight(&mut ctl, &block);
@@ -1097,8 +1099,10 @@ fn quad_dispatch_matches_goldens() {
         });
         block.stance_171 = stance as u8;
         block.block_101 = 1;
-        let mut actor = QuadActor::default();
-        actor.ground_align_off = 1;
+        let mut actor = QuadActor {
+            ground_align_off: 1,
+            ..QuadActor::default()
+        };
         ctl.quat = q_at(&actor_before, 0x2d0);
         let ext = QuadExternals::default();
         let mut graph = Vec::new();
@@ -1499,9 +1503,9 @@ fn wrapper_frame_rotation_matches_goldens() {
         assert_eq!(path, crate::port::movement::RotationPath::Ladder);
         let after = hex_bytes(case["after"].as_str().unwrap());
         let check = |off: usize, want: [f32; 4]| {
-            for j in 0..4 {
+            for (j, value) in want.iter().enumerate() {
                 assert_eq!(
-                    want[j].to_bits(),
+                    value.to_bits(),
                     f_at(&after, off + j * 4).to_bits(),
                     "rotation wrapper {i} +{off:#x}[{j}]"
                 );

@@ -132,7 +132,7 @@ pub fn libm_sse2_asinf(x: f32) -> f32 {
         xm4 -= low * low;
         let mut xm2 = s * C_1_6;
         xm5 += xm6;
-        xm6 = xm5 * xm6;
+        xm6 *= xm5;
         xm4 += xm6;
         xm4 /= s + s;
         let xm7 = s * C_0_075;
