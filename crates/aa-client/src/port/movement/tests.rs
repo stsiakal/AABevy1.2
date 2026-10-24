@@ -881,3 +881,226 @@ fn phase_c_rotation_bind_matches_goldens() {
         }
     }
 }
+
+// ---- Quadruped / glider -----------------------------------------------------
+
+fn quad() -> Value {
+    serde_json::from_str(include_str!("goldens/quad.json")).expect("quad JSON")
+}
+
+fn ctl_from(bytes: &[u8]) -> QuadController {
+    QuadController {
+        dt: f_at(bytes, 0x00),
+        input: [f_at(bytes, 0x0c), f_at(bytes, 0x10), f_at(bytes, 0x14)],
+        jump_button: bytes[0x31],
+        flags_5c: u32::from_le_bytes(bytes[0x5c..0x60].try_into().unwrap()),
+        mode: u32::from_le_bytes(bytes[0x60..0x64].try_into().unwrap()),
+        velocity: [f_at(bytes, 0x64), f_at(bytes, 0x68), f_at(bytes, 0x6c)],
+        spare_velocity: [f_at(bytes, 0x8c), f_at(bytes, 0x90), f_at(bytes, 0x94)],
+        airborne: bytes[0x98],
+        jumped: bytes[0x99],
+        quat: q_at(bytes, 0x48),
+        movement_extra_70: f_at(bytes, 0x70),
+        movement_extra_74: f_at(bytes, 0x74),
+        movement_extra_78: f_at(bytes, 0x78),
+        movement_extra_7c: f_at(bytes, 0x7c),
+        val_a4: u32::from_le_bytes(bytes[0xa4..0xa8].try_into().unwrap()),
+        flag_a8: bytes[0xa8],
+    }
+}
+
+fn block_from(bytes: &[u8]) -> QuadBlock {
+    QuadBlock {
+        jump_scalar: f_at(bytes, 0x0c),
+        jump_dir: [f_at(bytes, 0x9c), f_at(bytes, 0xa0), f_at(bytes, 0xa4)],
+        jump_extra: [f_at(bytes, 0xd4), f_at(bytes, 0xd8), f_at(bytes, 0xdc)],
+        speed_slow: f_at(bytes, 0x118),
+        speed_normal: f_at(bytes, 0x11c),
+        speed_fast: f_at(bytes, 0x120),
+        startup_time: f_at(bytes, 0x128),
+        fall_startup: f_at(bytes, 0x12c),
+        fall_slow: f_at(bytes, 0x130),
+        fall_normal: f_at(bytes, 0x134),
+        fall_fast: f_at(bytes, 0x138),
+        smooth_time: f_at(bytes, 0x13c),
+        lift_count: i32::from_le_bytes(bytes[0x140..0x144].try_into().unwrap()),
+        lift_height: f_at(bytes, 0x144),
+        lift_valid: f_at(bytes, 0x148),
+        lift_duration: f_at(bytes, 0x14c),
+        lift_speed: f_at(bytes, 0x150),
+        elapsed: f_at(bytes, 0x15c),
+        lift_time: f_at(bytes, 0x160),
+        smoothed_v: f_at(bytes, 0x168),
+        smoothed_dv: f_at(bytes, 0x16c),
+        block_101: bytes[0x101],
+        fixed_flight: bytes[0x180],
+        flag_188: bytes[0x188],
+        flag_18a: bytes[0x18a],
+        mounted: bytes[0xa8],
+        stance_171: bytes[0x171],
+        state_1c1: bytes[0x1c1],
+        flag_1d0: bytes[0x1d0],
+        flag_1d8: bytes[0x1d8],
+        flag_1da: bytes[0x1da],
+        flag_1d9: bytes[0x1d9],
+        fixed_speed: f_at(bytes, 0x1d4),
+    }
+}
+
+fn quad_actor_from(bytes: &[u8]) -> QuadActor {
+    QuadActor {
+        quat: q_at(bytes, 0x2d0),
+        velocity: [f_at(bytes, 0x2e0), f_at(bytes, 0x2e4), f_at(bytes, 0x2e8)],
+        movement_scalar: f_at(bytes, 0x2e8),
+        swim_a: [f_at(bytes, 0x96c), f_at(bytes, 0x970)],
+        swim_b: [f_at(bytes, 0x974), f_at(bytes, 0x978)],
+        val_9dc: f_at(bytes, 0x9dc),
+        val_284: f_at(bytes, 0x284),
+        stride: f_at(bytes, 0x40),
+        falling: bytes[0x161],
+        flag_78: bytes[0x78],
+        flag_79: bytes[0x79],
+        airborne: bytes[0x98],
+        jumped: bytes[0x99],
+        slide: bytes[0x1d9],
+        ground_align_off: bytes[0x1c7],
+        swim_flag: bytes[0x111],
+        fixed_speed: f_at(bytes, 0x1d4),
+        unit_stance: 0,
+        flag_161: 0,
+        val_5c: 0.0,
+        movement_extra: [0.0; 3],
+        val_918: 0,
+    }
+}
+
+#[test]
+fn quad_glide_matches_goldens() {
+    let quats = [
+        [0.0, 0.0, 0.0, 1.0],
+        [0.1, 0.2, 0.3, 0.9],
+        [0.5, -0.1, 0.2, 0.8],
+        [0.0, 0.6, 0.0, 0.8],
+        [-0.4, 0.0, 0.0, 0.9],
+    ];
+    let mut idx = 0usize;
+    for case in quad()["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("glide_") || name.starts_with("glide_straight") {
+            continue;
+        }
+        let mut ctl = ctl_from(&hex_bytes(case["before"].as_str().unwrap()));
+        let before_block = hex_bytes(case["before_block"].as_str().unwrap());
+        let after_block = hex_bytes(case["after_block"].as_str().unwrap());
+        let mut block = block_from(&after_block);
+        block.elapsed = f_at(&before_block, 0x15c);
+        block.lift_time = f_at(&before_block, 0x160);
+        block.smoothed_v = f_at(&before_block, 0x168);
+        block.smoothed_dv = f_at(&before_block, 0x16c);
+        ctl.quat = quats[idx % quats.len()];
+        idx += 1;
+        let dt = f_at(&after_block, 0x15c) - f_at(&before_block, 0x15c);
+        ctl.dt = dt;
+        let ext = QuadExternals::default();
+        glide(&mut ctl, &mut block, &ext, dt);
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
+        for (j, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
+            assert_near(name, "velocity", ctl.velocity[j], f_at(&want, *off));
+        }
+        assert_near(name, "elapsed", block.elapsed, f_at(&after_block, 0x15c));
+        assert_near(name, "smoothed_v", block.smoothed_v, f_at(&after_block, 0x168));
+    }
+}
+
+#[test]
+fn quad_glide_straight_matches_goldens() {
+    let quats = [
+        [0.0, 0.0, 0.0, 1.0],
+        [0.1, 0.2, 0.3, 0.9],
+        [0.5, -0.1, 0.2, 0.8],
+        [0.0, 0.6, 0.0, 0.8],
+        [-0.4, 0.0, 0.0, 0.9],
+    ];
+    let mut idx = 0usize;
+    for case in quad()["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("glide_straight") {
+            continue;
+        }
+        let mut ctl = ctl_from(&hex_bytes(case["before"].as_str().unwrap()));
+        let mut block = QuadBlock::default();
+        block.speed_normal = f32_of(&case["speed"]);
+        ctl.quat = quats[idx % quats.len()];
+        idx += 1;
+        glide_straight(&mut ctl, &block);
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
+        for (j, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
+            assert_bits(j, name, ctl.velocity[j], &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}));
+        }
+    }
+}
+
+#[test]
+fn quad_apply_matches_goldens() {
+    for case in quad()["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("apply_") {
+            continue;
+        }
+        let ctl_before = hex_bytes(case["before"].as_str().unwrap());
+        let actor_before = hex_bytes(case["before_actor"].as_str().unwrap());
+        let ctl = ctl_from(&ctl_before);
+        let mut actor = quad_actor_from(&[0u8; 0x1000]);
+        actor.flag_161 = actor_before[0x161];
+        actor.falling = actor_before[0x161];
+        actor.val_5c = f_at(&actor_before, 0x5c);
+        apply(&ctl, &mut actor);
+        let want = hex_bytes(case["after_actor"].as_str().unwrap());
+        assert_eq!(actor.flag_161, want[0x161], "{name} flag_161");
+        for (j, off) in [0x2e0usize, 0x2e4, 0x2e8].iter().enumerate() {
+            assert_bits(j, name, actor.velocity[j], &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}));
+        }
+    }
+}
+
+#[test]
+fn quad_dispatch_matches_goldens() {
+    for case in quad()["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        if !name.starts_with("dispatch_") {
+            continue;
+        }
+        let stance = case["stance"].as_u64().unwrap();
+        if stance == 0 || case["mounted"].as_u64().unwrap() != 0 {
+            continue;
+        }
+        let mut ctl = ctl_from(&hex_bytes(case["before"].as_str().unwrap()));
+        // The captured block is the controller's `+0x08`; reconstruct it from the actor
+        // snapshot, which has the block pointer at +0x50.
+        let actor_before = hex_bytes(case["before_actor"].as_str().unwrap());
+        // The block fields are deterministic in the capture; rebuild them here.
+        let mut block = block_from(&{
+            let mut b = [0u8; 0x400];
+            for (off, val) in [(0x118usize, 8.0f32), (0x11c, 8.0), (0x120, 8.0), (0x128, 5.0),
+                               (0x12c, 0.0), (0x15c, 1.0)] {
+                b[off..off + 4].copy_from_slice(&val.to_le_bytes());
+            }
+            b
+        });
+        block.stance_171 = stance as u8;
+        block.block_101 = 1;
+        let mut actor = QuadActor::default();
+        actor.ground_align_off = 1;
+        ctl.quat = q_at(&actor_before, 0x2d0);
+        let ext = QuadExternals::default();
+        let mut graph = Vec::new();
+        let _ = dispatch(&mut ctl, &mut block, &mut actor, &ext, &mut graph);
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
+        for (j, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
+            assert_near(name, "velocity", ctl.velocity[j], f_at(&want, *off));
+        }
+    }
+}

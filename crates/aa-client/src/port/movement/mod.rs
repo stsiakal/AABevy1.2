@@ -16,6 +16,7 @@ mod input;
 mod input_state;
 mod mouse;
 mod mover;
+mod quadruped;
 mod rotation;
 mod request;
 mod turn;
@@ -36,6 +37,7 @@ pub use input_state::{
     external_target, is_local_unit, movement_type, reset, smooth_velocity, start_gate,
 };
 pub use mover::*;
+pub use quadruped::*;
 pub use request::{DEFAULT_REQUEST_PTR, MovementRequest, REQUEST_SIZE};
 pub use rotation::*;
 pub use update::{ControlledUnit, GateOutputs, MovementContext, pushed_flags, update_movement};
