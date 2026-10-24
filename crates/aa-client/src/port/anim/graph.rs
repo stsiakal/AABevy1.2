@@ -199,8 +199,11 @@ impl StateIndex {
     /// match the original returns `pairs[0..state_count]`.
     pub fn query(&self, encoded: &[u16; 32]) -> Vec<u16> {
         let mut ranges: Vec<&StateIndexEntry> = Vec::new();
-        for i in 0..(self.input_count as usize).min(32) {
-            let value = encoded[i];
+        for (i, &value) in encoded
+            .iter()
+            .enumerate()
+            .take((self.input_count as usize).min(32))
+        {
             if value == 0xffff {
                 continue;
             }
@@ -741,15 +744,15 @@ fn substitute_named(text: &str, marks: &[String], values: &[String]) -> String {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'[' {
-            if let Some(close) = text[i..].find(']') {
-                let name = &text[i + 1..i + close];
-                if let Some(pos) = marks.iter().position(|m| m.eq_ignore_ascii_case(name)) {
-                    out.push_str(&values[pos]);
-                }
-                i += close + 1;
-                continue;
+        if bytes[i] == b'['
+            && let Some(close) = text[i..].find(']')
+        {
+            let name = &text[i + 1..i + close];
+            if let Some(pos) = marks.iter().position(|m| m.eq_ignore_ascii_case(name)) {
+                out.push_str(&values[pos]);
             }
+            i += close + 1;
+            continue;
         }
         out.push(bytes[i] as char);
         i += 1;
@@ -1026,7 +1029,7 @@ fn order_states<'a>(states: &[ExpandedState<'a>]) -> Vec<ExpandedState<'a>> {
         }
         if next.is_empty() && !copies_left.is_empty() {
             // Unresolvable parents (cycles): keep the remaining copies in generation order.
-            ordered.extend(copies_left.drain(..));
+            ordered.append(&mut copies_left);
             break;
         }
         remaining = next;
@@ -1352,8 +1355,8 @@ fn build_transitions(
             let weight =
                 cost as u32 + target.cost_minus1 as u32 + ((target.flags8 >> 6) & 1) as u32;
             transitions.push(TransitionInfo {
-                from: fr as u16,
-                to: to_id as u16,
+                from: fr,
+                to: to_id,
                 force_follow_chance: force,
                 weight: weight.min(0xffff) as u16,
                 cost_minus1: cost.saturating_sub(1),
@@ -1451,7 +1454,7 @@ impl RangeMap {
                 let mid = (end + next_start) / 2;
                 self.nodes[i] = (start, mid);
                 self.nodes.remove(i + 1);
-                if mid + 1 <= next_end {
+                if mid < next_end {
                     self.insert(mid + 1, next_end, false);
                 }
             }

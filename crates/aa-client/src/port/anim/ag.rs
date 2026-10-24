@@ -356,7 +356,7 @@ fn parse_state(r: &mut Reader<'_>, id: u16) -> Option<StateInfo> {
     for i in 0..16 {
         let input = r.u16()?;
         let value = r.u16()?;
-        let packed = ((value & 0x3ff) << 5) as u16 | (input & 0x1f) | 0x8000;
+        let packed = ((value & 0x3ff) << 5) | (input & 0x1f) | 0x8000;
         guards.push(packed);
         if value != 0x300 {
             count = (i + 1) as u8;

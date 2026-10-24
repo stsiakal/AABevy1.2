@@ -250,11 +250,11 @@ impl GraphState {
         if candidates.is_empty() {
             return graph.default_state;
         }
-        if let Some(current) = self.current {
-            if let Some(pos) = candidates.iter().position(|&s| s == current) {
-                candidates.swap(0, pos);
-                return Some(current);
-            }
+        if let Some(current) = self.current
+            && let Some(pos) = candidates.iter().position(|&s| s == current)
+        {
+            candidates.swap(0, pos);
+            return Some(current);
         }
         if candidates.len() > 1 {
             let pick = (self.time * 1000.0) as usize % candidates.len();
