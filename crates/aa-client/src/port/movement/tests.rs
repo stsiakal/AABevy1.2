@@ -1096,11 +1096,93 @@ fn quad_dispatch_matches_goldens() {
         ctl.quat = q_at(&actor_before, 0x2d0);
         let ext = QuadExternals::default();
         let mut graph = Vec::new();
-        let _ = dispatch(&mut ctl, &mut block, &mut actor, &ext, &mut graph);
+        let _ = dispatch(
+            &mut ctl,
+            &mut block,
+            &mut actor,
+            &ext,
+            &QuadConfig::default(),
+            0.0,
+            &mut graph,
+        );
         let want = hex_bytes(case["after"].as_str().unwrap());
         assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
         for (j, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
             assert_near(name, "velocity", ctl.velocity[j], f_at(&want, *off));
+        }
+    }
+}
+
+fn mounted_goldens() -> Value {
+    serde_json::from_str(include_str!("goldens/mounted.json")).expect("mounted JSON")
+}
+
+fn f32_json(v: &Value) -> f32 {
+    f32_of(v)
+}
+
+#[test]
+fn quad_mounted_matches_goldens() {
+    let doc = mounted_goldens();
+    let cfg_of = |v: &Value| QuadConfig {
+        speed_scale: f32_json(&v["404"]),
+        vertical_scale: f32_json(&v["412"]),
+        movement_scale: f32_json(&v["416"]),
+        accel_time: f32_json(&v["440"]),
+        friction_time: f32_json(&v["444"]),
+        swim_scale: 0.0,
+    };
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.input = [f32_json(&case["input"][0]), f32_json(&case["input"][1]), 0.0];
+        ctl.dt = f32_json(&case["dt"]);
+        ctl.flags_5c = case["stride_bit0"].as_u64().unwrap() as u32;
+        ctl.quat = [
+            f32_json(&case["quat"][0]),
+            f32_json(&case["quat"][1]),
+            f32_json(&case["quat"][2]),
+            f32_json(&case["quat"][3]),
+        ];
+        ctl.spare_velocity = [
+            f32_json(&case["spare"][0]),
+            f32_json(&case["spare"][1]),
+            f32_json(&case["spare"][2]),
+        ];
+        let ext = QuadExternals {
+            mounted_unit: case["mounted"].as_bool().unwrap(),
+            phys_velocity: if case["phys_ok"].as_bool().unwrap() {
+                Some([
+                    f32_json(&case["phys_velocity"][0]),
+                    f32_json(&case["phys_velocity"][1]),
+                    f32_json(&case["phys_velocity"][2]),
+                ])
+            } else {
+                None
+            },
+            move_ray: if case["ray"].is_null() {
+                None
+            } else {
+                Some([
+                    f32_json(&case["ray"][0]),
+                    f32_json(&case["ray"][1]),
+                    f32_json(&case["ray"][2]),
+                ])
+            },
+            ..QuadExternals::default()
+        };
+        let cfg = cfg_of(&case["config"]);
+        mounted(&mut ctl, &ext, &cfg, f32_json(&case["back_scale"]));
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
+        for (j, off) in [0x64usize, 0x68, 0x6c, 0x8c, 0x90, 0x94].iter().enumerate() {
+            assert_bits(
+                j,
+                name,
+                if j < 3 { ctl.velocity[j] } else { ctl.spare_velocity[j - 3] },
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
         }
     }
 }

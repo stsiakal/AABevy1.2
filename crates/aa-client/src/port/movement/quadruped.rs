@@ -144,6 +144,24 @@ pub struct QuadActor {
     pub unit_stance: u32,
 }
 
+/// Game parameters the movement functions read from `DAT_39aefb98` (the cvar/game-params
+/// object).  Offsets are the original `+0x194..+0x1bc` reads.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QuadConfig {
+    /// `+0x194`: horizontal speed scale.
+    pub speed_scale: f32,
+    /// `+0x19c`: vertical speed scale (`FUN_3912c770`).
+    pub vertical_scale: f32,
+    /// `+0x1a0`: global movement scale (`FUN_3912c770`).
+    pub movement_scale: f32,
+    /// `+0x1b8`: movement acceleration time (`FUN_3912c770`).
+    pub accel_time: f32,
+    /// `+0x1bc`: idle friction time (`FUN_3912c770`).
+    pub friction_time: f32,
+    /// `+0xe8`: swim speed scale (`FUN_3912b330`).
+    pub swim_scale: f32,
+}
+
 /// Controller object fields.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QuadController {
@@ -193,6 +211,9 @@ pub struct QuadExternals {
     pub controlled_unit: bool,
     /// `FUN_391136c0` (mounted / special vehicle).
     pub mounted_unit: bool,
+    /// Physics status velocity (`GetStatus` -> `+0x0c..0x14`); `None` when the entity has
+    /// no physical entity or the status query fails.
+    pub phys_velocity: Option<[f32; 3]>,
     /// `FUN_39113800` (speed multiplier, 0 when a UI flag blocks it).
     pub speed_multiplier: f32,
     /// `FUN_39111f40` (above support).
@@ -376,6 +397,8 @@ pub fn dispatch(
     block: &mut QuadBlock,
     actor: &mut QuadActor,
     ext: &QuadExternals,
+    cfg: &QuadConfig,
+    back_scale: f32,
     graph: &mut Vec<(&'static str, [f32; 3])>,
 ) -> DispatchPath {
     if block.fixed_flight != 0 {
@@ -385,7 +408,7 @@ pub fn dispatch(
         return DispatchPath::InputFlight;
     }
     let path = if block.mounted != 0 {
-        mounted(ctl, block, ext);
+        mounted(ctl, ext, cfg, back_scale);
         DispatchPath::Mounted
     } else {
         match block.stance_171 {
@@ -606,42 +629,96 @@ pub fn ground(
 }
 
 /// `FUN_3912c770` (0x3912c770): mounted / vehicle movement.
-pub fn mounted(ctl: &mut QuadController, block: &mut QuadBlock, ext: &QuadExternals) {
-    let mut dir = [0.0f32; 3];
-    let mut speed = 0.0f32;
-    if ctl.input[0] != 0.0 || ctl.input[1] != 0.0 {
-        let mut v = [ctl.input[0], ctl.input[1], 0.0];
-        if ctl.flags_5c & 1 != 0 {
-            v = [ctl.input[0], 0.0, 0.0];
-        }
-        let l = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-        let n = if l <= K_ZERO { 0.0 } else { rsqrt(l) };
-        v = [v[0] * n, v[1] * n, v[2] * n];
-        if !ext.mounted_unit {
-            if v[1] <= 0.0 && v[1] != 0.0 {
-                v[1] *= block.jump_scalar;
-            }
-            v[0] *= 0.9;
-        }
-        let q = ctl.quat;
-        dir = rot(q, v);
-        speed = 1.0;
-        if ext.move_ray.is_some() {
-            speed = block.speed_normal;
-        }
+///
+/// `back_scale` is the actor movement block's `+0x5c` (`actor+0x448`, the backward
+/// speed factor).  The controller quaternion at `ctl+0x44` is `actor+0x2b0`; the caller
+/// keeps it in `ctl.quat` together with the actor's `+0x2b0` value.
+pub fn mounted(
+    ctl: &mut QuadController,
+    ext: &QuadExternals,
+    cfg: &QuadConfig,
+    back_scale: f32,
+) {
+    if let Some(v) = ext.phys_velocity {
+        ctl.spare_velocity = v;
     }
-    ctl.mode = 1;
+    let mut x = ctl.input[0];
+    let mut y = ctl.input[1];
+    let mut z = if ctl.flags_5c & 1 != 0 { K_ONE } else { K_ZERO };
+    let len = y * y + x * x + z * z;
+    if len > 1.192_092_9e-7 {
+        let n = rsqrt(len);
+        x *= n;
+        y *= n;
+        z *= n;
+    } else {
+        x = 0.0;
+        y = 0.0;
+        z = 0.0;
+    }
+    if !ext.mounted_unit {
+        let scale = if 0.0 <= y { K_ONE } else { back_scale };
+        x *= 0.9;
+        y *= scale;
+    }
+    let s = cfg.movement_scale * cfg.speed_scale;
+    let xv = s * x;
+    let yv = s * y;
+    let zv = s * (cfg.vertical_scale * z);
+
     let q = ctl.quat;
-    let mut vel = [
-        (q[0] * q[1] - q[2] * q[3]) * K_TWO * speed,
-        ((q[3] * q[3] + q[1] * q[1]) * K_TWO - K_ONE) * speed,
-        (q[3] * q[1] + q[2] * q[0]) * K_TWO * speed,
+    let (qx, qy, qz, qw) = (q[0], q[1], q[2], q[3]);
+    let r00 = (qx * qx + qw * qw) * K_TWO - K_ONE;
+    let r01 = (qx * qy - qz * qw) * K_TWO;
+    let r02 = (qx * qz + qy * qw) * K_TWO;
+    let r10 = (qy * qx + qz * qw) * K_TWO;
+    let r11 = (qw * qw + qy * qy) * K_TWO - K_ONE;
+    let r12 = (qz * qy - qx * qw) * K_TWO;
+    let r20 = (qz * qx - qy * qw) * K_TWO;
+    let r21 = (qw * qx + qz * qy) * K_TWO;
+    let r22 = (qz * qz + qw * qw) * K_TWO - K_ONE;
+    let d0 = r02 * zv + (r01 * yv + r00 * xv);
+    let d1 = r12 * zv + (r11 * yv + r10 * xv);
+    let d2 = r22 * zv + (r21 * yv + r20 * xv);
+
+    let mut out = [d0, d1, d2];
+    if let Some(hit) = ext.move_ray {
+        out[0] += hit[0];
+        out[1] += hit[1];
+        out[2] += hit[2];
+    }
+
+    let friction = if f32::from_bits(d0.to_bits() & 0x7fff_ffff) > 0.0
+        || f32::from_bits(d1.to_bits() & 0x7fff_ffff) > 0.0
+        || f32::from_bits(d2.to_bits() & 0x7fff_ffff) > 0.0
+    {
+        cfg.accel_time
+    } else {
+        cfg.friction_time
+    };
+    let rate = ctl.dt / friction;
+    let decay = |v: f32, rate: f32| {
+        let abs = f32::from_bits(v.to_bits() & 0x7fff_ffff);
+        let scaled = rate * abs;
+        let bits = v.to_bits() as i32;
+        let sign = (((bits - 1) >> 31) + 1 + (bits >> 31)) as f32;
+        if abs <= scaled {
+            0.0
+        } else {
+            v - sign * scaled
+        }
+    };
+    ctl.spare_velocity = [
+        decay(ctl.spare_velocity[0], rate),
+        decay(ctl.spare_velocity[1], rate),
+        decay(ctl.spare_velocity[2], rate),
     ];
-    vel[0] += dir[0];
-    vel[1] += dir[1];
-    vel[2] += dir[2];
-    ctl.velocity = vel;
-    ctl.spare_velocity = [0.0; 3];
+    let add = ctl.dt / cfg.accel_time;
+    ctl.spare_velocity[0] = add * out[0] + ctl.spare_velocity[0];
+    ctl.spare_velocity[1] = ctl.spare_velocity[1] + out[1] * add;
+    ctl.spare_velocity[2] = ctl.spare_velocity[2] + out[2] * add;
+    ctl.velocity = ctl.spare_velocity;
+    ctl.mode = 2;
 }
 
 /// Straight glide helper used by tests and the dispatcher (`FUN_3912b280`).
