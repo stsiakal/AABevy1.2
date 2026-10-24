@@ -472,12 +472,26 @@ for `XL14`, `S8_1`, `M2I8`, `TSTP`, `ISTP`, `S8SW`, `XL15`, `XLV5`, `MI01`, `MI0
 
 ## 7. Unknowns specific to D
 
-Port status (steps 1-3, `port/anim-b`): the pure leaves, the static loader and the graph state
-machine are in `crates/aa-client/src/port/anim/` and tested against live goldens.
+Port status (steps 1-4, `port/anim-d`): the pure leaves, the static loader, the graph state
+machine and the LMG capabilities scaffold are in `crates/aa-client/src/port/anim/` and tested
+against live goldens.
 
-1. **Per-blend-space weight formulas** (all cases in `GetLMGCapabilities`, especially XL14,
-   S8_1, M2I8, TSTP, ISTP, S8SW). The dispatcher/caps/command writer are mapped; the case bodies
-   are the remaining line-by-line work. [highest priority, step 4]
+1. **Per-blend-space weight formulas** — **partial (step 4).**
+   * `TSTP FUN_3156bf40` is ported line by line and gated by 12 live captures
+     (`goldens/lmg_weights.json`): speed spans, `+0x48/+0x4c`, flags and the `+0x54` slot.
+   * The shared `S8_1`/`M2I8`/`MI01`/`MI02`/`S8SW` body `FUN_31574e70` and its 8-way helper
+     `FUN_31569a20` are ported, and live cases for the three player LMGs are captured, but the
+     **fallback point order** used when the LMG has no example positions still differs from the
+     original; those cases are kept in the golden and the test currently gates only TSTP.
+   * `XL14 FUN_3156e950`/`FUN_3156b020`, `XL15 FUN_3156ef10`/`FUN_31574380` and
+     `ISTP FUN_3156cfd0`/`FUN_31569f80` are not ported yet: their angle helpers call libm
+     `atan2` with two float vectors and the decompiled argument order is ambiguous; the
+     disassembly is required for the exact operands.
+   * `GetAnimationDesc FUN_31558f80`, the per-layer body `FUN_31558550` and the command writer
+     `FUN_31556e90` are the next step-4 functions; the live animation-set manager is
+     `*(*(CCharInstance+0x180)+0x5d4)`, the CSkeletonAnim vtable is `cryanimation+0x1779dc`, and
+     the animation data base is `*(*(cryanimation+0x1c2254)+0xb4)` (the missing dereference was
+     the first capture bug).
 2. ~~**Parameterization expansion**~~ **resolved.** The parser body is `FUN_3061bd50`; copies are
    generated per `<Parameter>` value combination in document-parameter order, the template is
    dropped, `includeInGame=0` states are dropped, copies are appended after the originals, and

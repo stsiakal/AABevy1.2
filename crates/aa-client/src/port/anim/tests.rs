@@ -827,3 +827,34 @@ fn lmg_shared_blend_and_tstp_match_goldens() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Rider copy. Captured live from the mounted player + summoned horse: the horse graph inputs
+// were set through the original `SetInput`, then the next frame's `FUN_390dcc80`/`FUN_390dd080`
+// copied them into the local player graph.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn rider_copy_matches_live_mount() {
+    let doc: Value = serde_json::from_str(include_str!("goldens/rider_copy.json"))
+        .expect("rider golden parses");
+    for (i, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let stance = case["stance"].as_str().expect("stance");
+        let inputs = RiderInputs {
+            pseudo_speed: case["mount_speed"].as_f64().expect("mount speed") as f32,
+            turn_speed: case["mount_turn"].as_f64().expect("mount turn") as f32,
+            swim: stance.eq_ignore_ascii_case("swim"),
+        };
+        let (speed, turn) = actor_unit_model_update(inputs);
+        assert_eq!(
+            speed.to_bits(),
+            (case["rider_speed"].as_f64().unwrap() as f32).to_bits(),
+            "rider case {i} PseudoSpeed"
+        );
+        assert_eq!(
+            turn.to_bits(),
+            (case["rider_turn"].as_f64().unwrap() as f32).to_bits(),
+            "rider case {i} RequestedTurnSpeedLZ"
+        );
+    }
+}
