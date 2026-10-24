@@ -39,7 +39,7 @@ pub use inputs::{
     encode_float, encode_float_str, encode_int, encode_int_str, encode_key, encode_key_index,
     parse_float, parse_int,
 };
-pub use lmg::{fun_3156bf40, fun_31574e70, AnimRow, AnimSet, Caps, Desc, Lmg};
+pub use lmg::{fun_31558550, fun_3156bf40, fun_31574e70, AnimRow, AnimSet, Caps, Desc, Layer, Lmg};
 pub use rider::{actor_unit_model_update, RiderInputs};
 pub use machine::{GraphEvent, GraphState, InputValues, UpdateKind};
 pub use side::{Placement, Vec3, approach_side, entry_side, side_placement};

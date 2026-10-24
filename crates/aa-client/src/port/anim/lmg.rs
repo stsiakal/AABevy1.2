@@ -303,6 +303,188 @@ impl Lmg {
     }
 }
 
+/// One `FUN_31558550` per-layer output block (0x3c bytes; seven dwords and the inactive flag).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Layer(pub [u8; 0x3c]);
+
+impl Default for Layer {
+    fn default() -> Self {
+        Self([0; 0x3c])
+    }
+}
+
+impl Layer {
+    pub fn dword(&self, index: usize) -> u32 {
+        u32_le(&self.0, index * 4)
+    }
+    pub fn f32_at(&self, index: usize) -> f32 {
+        f32_le(&self.0, index * 4)
+    }
+    pub fn inactive(&self) -> u8 {
+        self.0[0x1c]
+    }
+    fn set_i32(&mut self, index: usize, value: i32) {
+        self.0[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    fn set_f32(&mut self, index: usize, value: f32) {
+        self.0[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// `FUN_31558550`: compute one layer's command parameters from the LMG caps.
+///
+/// `scale` is `CAnimationSet+0x4e0`; the shipped player/horse sets expose 0.0, which makes the
+/// original's `1/scale` infinite for layer 2 and is reproduced bit-for-bit. The original
+/// switches on the layer index 0..0xc and leaves the block zeroed for unused layers.
+pub fn fun_31558550(layer_index: u32, caps: &Caps, scale: f32, out: &mut Layer) {
+    let c = |off: usize| caps.f32_at(off);
+    match layer_index {
+        0 => {
+            if caps.u8_at(2) as i8 > 0 {
+                out.set_i32(0, 2);
+                out.set_f32(1, -3.141_592_7);
+                out.set_f32(2, 3.141_592_7);
+                out.set_f32(3, -3.141_592_7);
+                out.set_f32(4, 3.141_592_7);
+                out.set_f32(5, c(0x10));
+                out.set_f32(6, 0.0);
+            } else {
+                return;
+            }
+        }
+        1 => {
+            if caps.u8_at(2) as i8 > 0 {
+                out.set_i32(0, 1);
+                out.set_f32(3, 0.0);
+                out.set_f32(4, 1.0);
+                out.set_f32(1, 0.0);
+                out.set_f32(2, 1.0);
+                out.set_f32(5, if c(0x10) == 0.0 { 0.0 } else { -1.0 });
+                out.set_f32(6, 0.0);
+            } else {
+                return;
+            }
+        }
+        2 => {
+            if caps.u8_at(6) as i8 > 0 {
+                out.set_i32(0, 1);
+                let a = (c(0x28) * c(0x28) + c(0x2c) * c(0x2c) + c(0x30) * c(0x30)).sqrt();
+                let b = (c(0x34) * c(0x34) + c(0x38) * c(0x38) + c(0x3c) * c(0x3c)).sqrt();
+                out.set_f32(3, a);
+                out.set_f32(4, b);
+                out.set_f32(1, 0.5 * a * (1.0 / scale));
+                out.set_f32(2, 2.0 * b * (1.0 / scale));
+                out.set_f32(5, c(0x14));
+                out.set_f32(6, 0.0);
+            } else {
+                return;
+            }
+        }
+        3 => {
+            if caps.u8_at(7) as i8 > 0 {
+                out.set_i32(0, 1);
+                let a = (c(0x2c) * c(0x2c) + c(0x28) * c(0x28) + c(0x30) * c(0x30)).sqrt();
+                let b = (c(0x38) * c(0x38) + c(0x34) * c(0x34) + c(0x3c) * c(0x3c)).sqrt();
+                out.set_f32(3, c(0x20) * a);
+                out.set_f32(1, out.f32_at(3));
+                out.set_f32(4, c(0x24) * b);
+                out.set_f32(2, out.f32_at(4));
+                out.set_f32(5, 0.0);
+                out.set_f32(6, 0.0);
+            } else {
+                return;
+            }
+        }
+        4 => {
+            out.set_f32(3, -21.0);
+            out.set_f32(1, -21.0);
+            out.set_f32(5, 40.0);
+            out.set_i32(0, 1);
+            out.set_f32(4, 21.0);
+            out.set_f32(2, 21.0);
+            out.set_f32(6, 0.0);
+        }
+        6 => {
+            if caps.u8_at(3) as i8 > 0 || c(0x50) > 0.0 {
+                out.set_i32(0, 1);
+                let a = c(0x48);
+                let b = c(0x4c);
+                let lo = a.min(b);
+                let hi = a.max(b);
+                out.set_f32(3, lo);
+                out.set_f32(4, hi);
+                let mut lo_value = lo;
+                let blended = (lo + (-9.424_778 - lo) * c(0x50)).min(lo);
+                if blended < lo {
+                    lo_value = blended;
+                }
+                out.set_f32(1, lo_value);
+                let mut hi_value = hi;
+                let blended = hi + (9.424_778 - hi) * c(0x50);
+                if hi < blended {
+                    hi_value = blended;
+                }
+                out.set_f32(2, hi_value);
+                out.set_f32(5, c(0x18));
+                out.set_f32(6, c(0x50));
+            } else {
+                return;
+            }
+        }
+        7 => {
+            if caps.u8_at(4) as i8 > 0 {
+                out.set_i32(0, 1);
+                let a = c(0x48);
+                let b = c(0x4c);
+                let lo = a.min(b);
+                let hi = a.max(b);
+                out.set_f32(3, lo);
+                out.set_f32(4, hi);
+                let mut lo_value = lo;
+                let blended = (lo + (-4.712_389 - lo) * c(0x50)).min(lo);
+                if blended < lo {
+                    lo_value = blended;
+                }
+                out.set_f32(1, lo_value);
+                let mut hi_value = hi;
+                let blended = hi + (4.712_389 - hi) * c(0x50);
+                if hi < blended {
+                    hi_value = blended;
+                }
+                out.set_f32(2, hi_value);
+                out.set_f32(5, 0.0);
+                out.set_f32(6, c(0x50));
+            } else {
+                return;
+            }
+        }
+        9 => {
+            if caps.u8_at(8) as i8 > 0 {
+                out.set_i32(0, 1);
+                out.set_f32(3, 0.0);
+                out.set_f32(4, 1.0);
+                out.set_f32(1, 0.0);
+                out.set_f32(2, 1.0);
+                out.set_f32(5, c(0x1c));
+                out.set_f32(6, 0.0);
+            } else {
+                return;
+            }
+        }
+        0xc => {
+            out.set_f32(4, 1.0);
+            out.set_f32(2, 1.0);
+            out.set_i32(0, 1);
+            out.set_f32(3, 0.0);
+            out.set_f32(1, 0.0);
+            out.set_f32(5, 10.0);
+            out.set_f32(6, 0.0);
+        }
+        _ => return,
+    }
+    out.0[0x1c] = if out.f32_at(5) != 0.0 { 0 } else { 1 };
+}
+
 // The XL14/XL15/ISTP bodies are intentionally not present yet: their angle helpers call
 // libm `atan2` with two float vectors and the surviving goldens for them still need the
 // original capability calls. See `D-graph-runtime.md` §7 for the open list.

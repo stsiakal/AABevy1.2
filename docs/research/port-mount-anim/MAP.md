@@ -390,8 +390,8 @@ Inferred / unresolved: see section 6.
    `FUN_31574e70` is ported and gated by 24 positioned and 24 fallback (real LMG) cases; its
    8-way helper uses the star sector order `(p0,p1),(p1,p3),(p3,p5),(p5,p4),(p4,p6),(p6,p7),
    (p7,p2),(p2,p0)`. `XL14`, `XL15` and `ISTP` are not ported yet (the libm `atan2` operand
-   pairs need the disassembly). The per-layer body and command writer are mapped but not
-   ported.
+   pairs need the disassembly). The per-layer body `FUN_31558550` is ported and gated by
+   48 caps x 13 layers; `GetAnimationDesc`'s reset and the command writer are still open.
 2. ~~**`CAnimationGraph::PreprocessParameterization`**~~ **resolved (port step 2)** — the body is
    `cryaction+0x3061bd50` (the profiler string at its entry misled the first map). A copy is
    generated per `<Parameter>` value combination in document-parameter order, the template

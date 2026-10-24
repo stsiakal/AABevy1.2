@@ -882,3 +882,28 @@ fn lmg_s8_fallback_matches_goldens() {
         assert_eq!(caps.0.as_slice(), hex_bytes(case["caps"].as_str().unwrap()).as_slice(), "fallback case {n}");
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Per-layer desc data. `FUN_31558550` is called for all 13 character layers with the caps
+// blocks captured in `lmg_weights.json` and the live animation-set scale.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn lmg_layers_match_live_caps() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/lmg_layers.json")).expect("layer golden");
+    for (n, case) in doc.as_array().expect("cases").iter().enumerate() {
+        let mut caps = Caps::init_lmg();
+        caps.0.copy_from_slice(&hex_bytes(case["caps"].as_str().unwrap()));
+        let scale = case["scale"].as_f64().unwrap() as f32;
+        for (i, want) in case["layers"].as_array().unwrap().iter().enumerate() {
+            let mut layer = Layer::default();
+            fun_31558550(i as u32, &caps, scale, &mut layer);
+            assert_eq!(
+                layer.0.as_slice(),
+                hex_bytes(want.as_str().unwrap()).as_slice(),
+                "layer case {n} layer {i}"
+            );
+        }
+    }
+}

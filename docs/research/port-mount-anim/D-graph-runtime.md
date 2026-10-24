@@ -488,11 +488,15 @@ against live goldens.
      `ISTP FUN_3156cfd0`/`FUN_31569f80` are not ported yet: their angle helpers call libm
      `atan2` with two float vectors and the decompiled argument order is ambiguous; the
      disassembly is required for the exact operands.
-   * `GetAnimationDesc FUN_31558f80`, the per-layer body `FUN_31558550` and the command writer
-     `FUN_31556e90` are the next step-4 functions; the live animation-set manager is
-     `*(*(CCharInstance+0x180)+0x5d4)`, the CSkeletonAnim vtable is `cryanimation+0x1779dc`, and
-     the animation data base is `*(*(cryanimation+0x1c2254)+0xb4)` (the missing dereference was
-     the first capture bug).
+   * The per-layer body `FUN_31558550` is ported and gated by all 48 captured caps blocks x 13
+     layers (`goldens/lmg_layers.json`). The layer values are float bits; the original stores
+     `(int)fVar` in the decompile but the live bytes are the float, and `AAnimationSet+0x4e0`
+     is 0.0 on the shipped sets, so layer 2's `1/scale` is infinite and is reproduced.
+   * `GetAnimationDesc FUN_31558f80` still needs `FUN_31558eb0` (the per-layer reset, driven
+     by `this+0x84+i` and `this+0x94+i*4`) and the command writer `FUN_31556e90`. The live
+     animation-set object is `*(CCharInstance+0x180)+0x5d4`, the CSkeletonAnim vtable is
+     `cryanimation+0x1779dc`, and the animation data base is
+     `*(*(cryanimation+0x1c2254)+0xb4)` (the missing dereference was the first capture bug).
 2. ~~**Parameterization expansion**~~ **resolved.** The parser body is `FUN_3061bd50`; copies are
    generated per `<Parameter>` value combination in document-parameter order, the template is
    dropped, `includeInGame=0` states are dropped, copies are appended after the originals, and
