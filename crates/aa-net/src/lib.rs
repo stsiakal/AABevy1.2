@@ -24,6 +24,8 @@ pub mod emote;
 pub mod salon;
 pub mod notice;
 pub use notice::{NoticeEvent, SoundCue, TowerDefInfo, TowerDefKey, UserNote};
+pub mod doodad_bond;
+pub use doodad_bond::{DoodadBond, DoodadBondEvent, DoodadBonds, UnbondDoodadRequest};
 pub mod music;
 pub use music::{MusicCommand, MusicComposeRequest};
 pub mod unit_fx;
@@ -65,6 +67,9 @@ pub mod item_effect;
 pub mod item_task_projection;
 pub mod native_item_records;
 pub use native_item_records::{NativeItemRecords, NativeItemRowOutput};
+
+#[cfg(test)]
+mod music_sheet_tests;
 pub mod login;
 pub mod loot_roll;
 pub mod mail;

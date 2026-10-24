@@ -260,8 +260,10 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         "GetModeActionsCount",
         lua.create_function(move |_, _: Value| {
             let data = state.borrow();
-            let Some(current) = &data.vehicles.current else { return Ok(0) };
-            Ok(data.game.get().map_or(0, |g| displayed(g, current).count()))
+            if let Some(current) = &data.vehicles.current {
+                return Ok(data.game.get().map_or(0, |g| displayed(g, current).count()));
+            }
+            Ok(super::mode_actions::count(&data))
         })?,
     )?;
     let state = bridge.clone();
@@ -363,7 +365,9 @@ pub(super) fn install(lua: &Lua, bridge: &Shared) -> mlua::Result<()> {
         "mode_slot",
         lua.create_function(move |lua, index: usize| {
             let data = state.borrow();
-            let Some(current) = &data.vehicles.current else { return Ok(None) };
+            let Some(current) = &data.vehicles.current else {
+                return super::mode_actions::slot(lua, &data, index);
+            };
             let Some(game) = data.game.get() else { return Ok(None) };
             let Some((_, skill)) = displayed(game, current).nth(index.checked_sub(1).unwrap_or(usize::MAX)) else { return Ok(None) };
             let Some(info) = game.skills.get(&skill.combat) else { return Ok(None) };

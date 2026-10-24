@@ -777,6 +777,10 @@ pub fn action_keys(
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
             use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut net, &mut plant, &mut house, &mut deco, &mut failed);
         }
+    if !button && action == "mode_action_bar_button" && (1..=15).contains(&slot) {
+            // the same request as a click, so the vehicle bar's mount skills take the slot too
+            bridge.0.borrow_mut().requests.push(crate::hud::api::Request::UseModeAction { slot: slot as usize });
+        }
     }
 }
 

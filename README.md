@@ -34,6 +34,29 @@ Material diagnostic scenes, before and after the native Illum recovery:
 
 These compare renderer implementations on the same models; original-client lighting parity remains open.
 
+The original buff-driven mode bar, using the same received piano/score fixtures:
+
+| Before control | After |
+|---|---|
+| ![Former zero-count getter](docs/screenshots/music_modes_before.png) Former zero-count getter | ![Original mode bar](docs/screenshots/music_modes_after.png) Eight piano notes and Play/Stop/Close |
+
+This is an offline prior-contract control. It does not establish live seating or instrument animation parity.
+
+![Live mode actions](docs/screenshots/music_modes_live.png)
+
+The original Play/Stop/Close buttons in a windowed session on the isolated server, after receiving the score buff.
+Placed-instrument seating and animation remain unfinished.
+
+Original instrument prefab geometry, at the same camera:
+
+| Previous lookup control | Full prefab assembly |
+|---|---|
+| ![Instrument parts missing](docs/screenshots/instrument_prefab_before.png) Brush-only prefabs omitted | ![Instrument and chair parts](docs/screenshots/instrument_prefab_after.png) Piano/drum bodies and authored chairs |
+
+The same final binary supplies both controls. Native helper transforms and current source/phase
+tracking are retained; seated poses, detach and live interaction remain open. See
+[seating notes](docs/aa-client-seating.md).
+
 Ground-effect diagnostic, before and after adaptive terrain draping (synthetic rolling ground):
 
 | Before | After |
@@ -72,6 +95,9 @@ The editor and local preview use the original Lua, MML and DLS assets. Saving up
 the matching received skill fires. Stored scores now persist by world and native note key, appear on rehover,
 and feed received play/pause callbacks. Piano and drum overrides follow the received native buff lists;
 live settlement and placed-instrument interaction remain open. See [`docs/aa-client-music.md`](docs/aa-client-music.md).
+Blank-paper opening now follows the native musical-buff guard, and a complete own-unit snapshot can
+restore buff certainty after decode loss without rebuilding the player or stopping playback. The original
+buff mode-action bar and doodad seat presentation remain integration work.
 
 Stored-score metadata through the original bag tooltip, before receipt and after rehover:
 
@@ -170,6 +196,10 @@ limits are in [`docs/aa-world.md`](docs/aa-world.md).
 - Quests, the world map and minimap, chat, skills, crafting, achievements, rankings, battlefields, pets.
 - ArcheAge-Classic-compatible local Lua addons, sandboxed with `ADDON_API` and `/addons` commands ([docs](docs/aa-client-addons.md)).
 
+Roadmap preferences share the character's original server UI-data tree. The large
+translucent default and the original NPC getter quirk are retained; see
+[`docs/aa-client-minimap.md`](docs/aa-client-minimap.md).
+
 The supported ocean underside also exposes the refracted surface window:
 
 | Before | After |
@@ -179,7 +209,7 @@ The supported ocean underside also exposes the refracted surface window:
 Native pixel controls pass; the inherited foam/reflection and colour remain visibly approximate. The source gate,
 pass ordering and FFT limits are recorded in [`docs/aa-world.md`](docs/aa-world.md).
 
-**Audio:** FMOD sound banks are decoded and played, including ambience (long beds streamed), zone and combat music with the original's mood mixes, skill sounds, authored 3D pan / pitch / low-pass curves, the five supported authored high-pass roots, doppler and reverb. Player-score preview and received performances follow their dedicated player-music volume and master controls independently of BGM/SFX; see the native gain limits in [`docs/aa-client-music.md`](docs/aa-client-music.md).
+**Audio:** FMOD sound banks are decoded and played, including ambience (long beds streamed), zone and combat music with the original's mood mixes, skill sounds, authored 3D pan / pitch / low-pass curves, the five supported authored high-pass roots, doppler and reverb. The legacy CELT sword bank is supported by a pinned static decoder; the full bank survey decodes all 11,517 subsounds. Received impact context now supplies the original critical/miss/twohand/pierce gates; exact native impact timing and chest-material selection remain open. Player-score preview and received performances follow their dedicated player-music volume and master controls independently of BGM/SFX; see the native gain limits in [`docs/aa-client-music.md`](docs/aa-client-music.md).
 
 **Performance:** about 70–95 fps at 1920x1080 in the open world on an RX 9070 XT, and lower in big towns.
 
@@ -195,6 +225,17 @@ bound callbacks are integrated. Quietest audio policies and brush LOD pairing ha
 Server [PR44](https://github.com/NickMesser/AAEmu/pull/44) fixes uncached score requests. Construction settlement,
 rollout to the existing bevy server and broader original-client parity remain open; mounts are deferred.
 Exact evidence and limits are in the parity ledger.
+
+The latest integration adds the original buff-driven mode action bar, including piano notes
+and memorized-score Play/Stop/Close, with native chronological input-mode priority. The client
+suite passes 635 default checks; nine focused mode checks include original Lua slots, hotkeys,
+cooldown/usability refresh, suspended-HUD recovery and reentrant callbacks. See the
+[music integration notes](docs/aa-client-music.md) for exact scope and remaining seat presentation work.
+Fresh-sheet composition, two plays, Stop and Close pass on an isolated server with the documented
+original-script error allowance; [draft server PR45](https://github.com/NickMesser/AAEmu/pull/45)
+contains the required callbacks. A fresh normal-entry capture shows the textured character and original HUD
+after the loading curtain. Direct-entry scripts can capture incomplete pipelines; the loading notes record
+the diagnostic evidence and its limits.
 
 ## What's missing
 

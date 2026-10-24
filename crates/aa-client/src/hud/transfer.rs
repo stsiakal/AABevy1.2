@@ -133,6 +133,7 @@ mod tests {
             anim_action: 0,
             house_posture: None,
             state_attachments: None,
+            doodad_bond: None,
             attached_to: None,
         }
     }

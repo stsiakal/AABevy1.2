@@ -179,6 +179,7 @@ pub enum ClientMsg {
     Slave(crate::slave_control::SlaveCommand),
     /// `CSBoardingTransfer`: board a carriage / ferry / airship at a passenger point, or leave it.
     Transfer(crate::transfer::TransferCommand),
+    UnbondDoodad(crate::UnbondDoodadRequest),
     Auction(crate::auction::AuctionCommand),
     Trade(crate::trade::TradeCommand),
     Mail(crate::mail::MailCommand),
@@ -282,6 +283,7 @@ impl ClientMsg {
             Self::CreateSkillController { .. } => cs::CSCreateSkillControllerPacket,
             Self::Slave(m) => m.opcode(),
             Self::Transfer(m) => m.opcode(),
+            Self::UnbondDoodad(_) => cs::CSUnbondDoodadPacket,
             Self::Auction(m) => m.opcode(),
             Self::Trade(m) => m.opcode(),
             Self::Mail(m) => m.opcode(),
@@ -425,6 +427,7 @@ impl ClientMsg {
             }
             Self::Slave(m) => m.write(&mut w),
             Self::Transfer(m) => m.write(&mut w),
+            Self::UnbondDoodad(request) => { w.bc(request.actor_obj_id).bc(request.bond.owner_obj_id); }
             Self::Auction(m) => m.write(&mut w),
             Self::Trade(m) => m.write(&mut w),
             Self::Mail(m) => m.write(&mut w),
@@ -747,6 +750,7 @@ pub enum ServerMsg {
     CraftItemUnlocked(crate::craft::CraftItemUnlock),
     Mate(crate::mate::MateEvent),
     Slave(crate::slave::SlaveEvent),
+    DoodadBond(crate::DoodadBondEvent),
     Auction(crate::auction::AuctionEvent),
     Trade(crate::trade::TradeEvent),
     Mail(crate::mail::MailEvent),
@@ -925,6 +929,7 @@ impl ServerMsg {
             Self::CraftItemUnlocked(_) => "SCCraftItemUnlock",
             Self::Mate(e) => e.name(),
             Self::Slave(e) => e.name(),
+            Self::DoodadBond(e) => e.name(),
             Self::Auction(e) => e.name(),
             Self::Trade(e) => e.name(),
             Self::Mail(e) => e.name(),
@@ -946,7 +951,7 @@ impl ServerMsg {
             LEVEL_GAME => {
                 r.skip(2)?; // hash, count
                 let opcode = r.u16()?;
-                Self::decode_game(opcode, &mut r)
+                Self::decode_game(opcode, &mut r, false)
             }
             LEVEL_PROXY => {
                 let opcode = r.u16()?;
@@ -1011,7 +1016,7 @@ impl ServerMsg {
         let decoded = (|| {
             r.skip(2)?;
             let opcode = r.u16()?;
-            Self::decode_game(opcode, &mut r)
+            Self::decode_game(opcode, &mut r, true)
         })();
         (decoded, at + r.pos())
     }
@@ -1076,7 +1081,7 @@ impl ServerMsg {
         })
     }
 
-    fn decode_game(opcode: u16, r: &mut Reader) -> Result<Self> {
+    fn decode_game(opcode: u16, r: &mut Reader, in_batch: bool) -> Result<Self> {
         Ok(match opcode {
             sc::X2EnterWorldResponsePacket => Self::EnterWorldResponse {
                 reason: r.i16()?,
@@ -1134,7 +1139,7 @@ impl ServerMsg {
                 name: r.string()?,
             },
             sc::SCCharacterStatePacket => Self::CharacterState(Box::new(CharacterState::read(r)?)),
-            sc::SCUnitStatePacket => Self::UnitState(Box::new(Unit::read(r)?)),
+            sc::SCUnitStatePacket => Self::UnitState(Box::new(if in_batch { Unit::read_in_batch(r)? } else { Unit::read(r)? })),
             sc::SCUnitsRemovedPacket => {
                 let n = r.u16()?;
                 let mut ids = Vec::with_capacity(n as usize);
@@ -1490,6 +1495,7 @@ impl ServerMsg {
             sc::SCScheduledEventStartedPacket => Self::ScheduledEventStarted(crate::scheduled::ScheduledEventStarted::read_native(r)?),
             opcode if crate::battlefield::BattlefieldEvent::handles(opcode) => Self::Battlefield(crate::battlefield::BattlefieldEvent::read(opcode, r)?),
             opcode if crate::actability::ActabilityEvent::handles(opcode) => Self::Actability(crate::actability::ActabilityEvent::read(opcode, r)?),
+            opcode if crate::DoodadBondEvent::handles(opcode) => Self::DoodadBond(crate::DoodadBondEvent::read(opcode, r)?),
             opcode if crate::slave::SlaveEvent::handles(opcode) => Self::Slave(crate::slave::SlaveEvent::read(opcode, r)?),
             opcode if crate::mate::MateEvent::handles(opcode) => Self::Mate(crate::mate::MateEvent::read(opcode, r)?),
             opcode if crate::auction::AuctionEvent::handles(opcode) => Self::Auction(crate::auction::AuctionEvent::read(opcode, r)?),
@@ -2489,6 +2495,7 @@ mod tests {
         let ServerMsg::UnitDamaged(d) = &list[1] else { panic!("not a hit: {:?}", list[1]) };
         assert_eq!((d.caster_obj_id, d.target_obj_id, d.damage, d.action.tl), (0x10, 0x20, 24, 1291));
         assert_eq!(d.hit_type, crate::skill::hit_type::RANGED_HIT);
+        assert_eq!((d.holdable_id, d.raw_hit, d.pierce_selector()), (0, 0x0129, 0));
         assert!(matches!(&list[2], ServerMsg::UnitDeath { obj_id: 0x20, killer: Some((0x10, name)), .. } if name == "Bevytest"));
         assert_eq!(list[3], ServerMsg::SkillEnded { tl: 1291 });
     }

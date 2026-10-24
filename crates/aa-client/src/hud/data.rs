@@ -374,6 +374,7 @@ pub struct GameData {
     pub(super) repair: super::repair::Tables,
     pub(super) crafting: super::crafting::Tables,
     pub(super) user_music: super::user_music::Tables,
+    pub(super) mode_actions: super::mode_actions::Tables,
     pub(super) pets: super::pets::Tables,
     pub(super) vehicles: super::vehicles::Tables,
     /// Item templates whose summon slave is a `ShipModel` (the water-placement cast).
@@ -859,6 +860,7 @@ impl GameData {
         data.repair = super::repair::Tables::load(&conn)?;
         data.crafting = super::crafting::Tables::load(&conn)?;
         data.user_music = super::user_music::Tables::load(&conn)?;
+        data.mode_actions = super::mode_actions::Tables::load(&conn)?;
         data.pets = super::pets::Tables::load(&conn)?;
         data.vehicles = super::vehicles::Tables::load(&conn)?;
         data.ship_summon_items = {
