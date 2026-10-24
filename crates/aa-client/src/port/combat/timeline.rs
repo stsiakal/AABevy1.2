@@ -52,6 +52,8 @@ pub struct TimelineDesc {
     pub cast_time: i32,
     /// `+0x6c`: channel time (ms); `> 0` starts the channel/ticks.
     pub channel_time: i32,
+    /// `+0x88`: cooldown time (ms) inserted by `FUN_39368f90`.
+    pub cooldown_ms: u32,
     /// `+0x84`: cooldown tag id (`0` = skill list).
     pub cooldown_tag_id: u32,
     /// `+0xdc`: ignore the global cooldown in cooldown queries.
@@ -155,6 +157,21 @@ pub struct ClientSkill {
     pub damaged: bool,
     /// `+0x2da`: apply local damage at `end_time`.
     pub local_damage: bool,
+    /// `+0x198`: the hit record pointer is non-zero (only then is local damage applied).
+    pub has_hit_record: bool,
+}
+
+/// One `FUN_3939b010` call made by `UpdateClientOnlySkills` (`FUN_3939bfd0`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientFireCall {
+    pub skill_id: u32,
+    pub target_key: u32,
+    /// `param_6`: the client skill's `+0x138` value (normal total).
+    pub time7: u32,
+    /// `param_8`: the client skill's `+0x13c` value.
+    pub time9: u32,
+    /// `param_9`: the client skill's `+0x140` value.
+    pub time12: u32,
 }
 
 /// Why `StartSkill` did or did not create an instance (the original only logs the failures).
@@ -366,6 +383,14 @@ impl TimelineWorld {
             if let Some(unit) = self.units.get_mut(&unit_id) {
                 unit.auto_attack = false;
             }
+            // FUN_39368f90(desc) → FUN_39368440: insert the skill's own cooldown (`desc+0x88`).
+            if let Some(desc) = self.descs.get(&skill_id).cloned()
+                && let Some(unit) = self.units.get_mut(&unit_id)
+                && desc.cooldown_ms != 0
+            {
+                unit.cooldowns
+                    .insert(false, &desc.cooldown_desc(), desc.cooldown_ms);
+            }
             self.push_event(EVENT_AUTO_ATTACK_STOPPED);
         }
     }
@@ -434,8 +459,9 @@ impl TimelineWorld {
     /// `FUN_3939ce90 SkillComboMan::Add`.
     ///
     /// The current skill's controller kind `0x18`, sub-kind `0x30` supplies
-    /// `values[1]` (next skill id) and `values[2]` (margin).  The next skill must have a desc;
-    /// otherwise the original returns without changing the vector.
+    /// `values[1]` (next skill id) and `values[2]` (margin).  Entries are keyed by the **next**
+    /// skill id (`entry+0x08`), which is the skill the player is currently starting.  The next
+    /// skill must have a desc; otherwise the original returns without changing the vector.
     pub fn combo_add(&mut self, unit_id: u32, desc: &TimelineDesc, duration_ms: u32) -> bool {
         let Some(values) = desc
             .controllers
@@ -449,13 +475,30 @@ impl TimelineWorld {
         else {
             return false;
         };
-        let Some(next_desc) = self.descs.get(&(next_skill as u32)).cloned() else {
+        let next_skill = next_skill as u32;
+        let Some(next_desc) = self.descs.get(&next_skill).cloned() else {
+            // Existing entry for this current skill: drop it and clear the action skill's
+            // cooldown (the original queries the action bar here).
+            if let Some(index) = self
+                .combo
+                .iter()
+                .position(|entry| entry.next_skill_id == desc.id)
+            {
+                let entry = self.combo.remove(index);
+                if let Some(unit) = self.units.get_mut(&unit_id) {
+                    unit.cooldowns.clear_skill(entry.next_skill_id);
+                }
+            }
             return false;
         };
         let now = self.now;
-        if let Some(entry) = self.combo.iter_mut().find(|entry| entry.key == desc.id) {
+        if let Some(entry) = self
+            .combo
+            .iter_mut()
+            .find(|entry| entry.next_skill_id == desc.id)
+        {
             entry.current_skill_id = desc.id;
-            entry.next_skill_id = next_skill as u32;
+            entry.next_skill_id = next_skill;
             entry.start = now;
             entry.duration = duration_ms;
             entry.margin = margin as u32;
@@ -463,64 +506,102 @@ impl TimelineWorld {
             self.combo.push(ComboEntry {
                 key: desc.id,
                 current_skill_id: desc.id,
-                next_skill_id: next_skill as u32,
+                next_skill_id: next_skill,
                 start: now,
                 duration: duration_ms,
                 margin: margin as u32,
             });
         }
         if let Some(unit) = self.units.get_mut(&unit_id) {
-            unit.cooldowns.clear_skill(next_skill as u32);
+            unit.cooldowns.clear_skill(next_skill);
             unit.cooldowns.insert(false, &next_desc.cooldown_desc(), duration_ms);
         }
         true
     }
 
     /// `FUN_3939cb80 SkillComboMan::Update`: drop entries whose
-    /// `start + duration + margin` has passed and clear the next skill's cooldown.
+    /// `start + duration + margin` has passed, clear the next skill's cooldown and start its
+    /// own cooldown through `FUN_39368f90` → `FUN_39368440` (`desc+0x88`).
     pub fn combo_update(&mut self) {
         let now = self.now;
+        let local_id = self.local_player_id();
         let mut cleared = Vec::new();
         self.combo.retain(|entry| {
             if now >= entry.start.wrapping_add(entry.duration).wrapping_add(entry.margin) {
-                cleared.push(entry.next_skill_id);
+                cleared.push((entry.next_skill_id, entry.current_skill_id));
                 false
             } else {
                 true
             }
         });
-        if let Some(unit) = self.units.values_mut().next() {
-            for skill_id in cleared {
-                unit.cooldowns.clear_skill(skill_id);
+        for (next_skill, _) in cleared {
+            let desc = self.descs.get(&next_skill).cloned();
+            let cooldown_ms = desc.as_ref().map(|desc| desc.cooldown_ms).unwrap_or(0);
+            if let Some(unit) = self.units.get_mut(&local_id) {
+                unit.cooldowns.clear_skill(next_skill);
+                if cooldown_ms != 0
+                    && let Some(desc) = desc
+                {
+                    unit.cooldowns.insert(false, &desc.cooldown_desc(), cooldown_ms);
+                }
             }
         }
     }
 
     /// `FUN_3939bfd0 UpdateClientOnlySkills`: fire at `+0x2d0`, mark the local damage at
     /// `+0x2d4`, and end/remove after `+0x2d4 + 1000 ms`.
-    pub fn update_client_only(&mut self) {
+    ///
+    /// The original calls `FireSkill` (`FUN_3939b010`) with the client skill's stored blocks and
+    /// timings.  The caller supplies the sink so tests can record the call arguments instead of
+    /// running the whole animation path.
+    pub fn update_client_only_with<F>(&mut self, mut fire: F)
+    where
+        F: FnMut(&mut TimelineWorld, &ClientFireCall),
+    {
         let now = self.now;
-        let local_id = self.local_player_id();
-        let mut fire = Vec::new();
-        let mut remove = Vec::new();
+        let mut fire_calls = Vec::new();
+        let mut ends = Vec::new();
         for (index, skill) in self.client_only.iter_mut().enumerate() {
             if !skill.fired {
                 if skill.fire_time < now {
                     skill.fired = true;
-                    fire.push((index, skill.skill_id, skill.target_key, skill.normal_total));
-                    if skill.fire_time == skill.end_time {
-                        continue;
+                    if self.descs.contains_key(&skill.skill_id) {
+                        fire_calls.push(ClientFireCall {
+                            skill_id: skill.skill_id,
+                            target_key: skill.target_key,
+                            time7: skill.normal_total,
+                            time9: skill.computed_delay,
+                            time12: skill.channel_total,
+                        });
                     }
                 }
             } else if !skill.damaged {
                 if skill.end_time < now {
                     skill.damaged = true;
+                    if !skill.local_damage {
+                        ends.push((index, skill.target_key));
+                    } else if !skill.has_hit_record {
+                        // Local damage needs the hit record; without one the original leaves
+                        // the entry for the next frame.
+                    }
                 }
             } else if now > skill.end_time.wrapping_add(1000) {
-                remove.push(index);
+                ends.push((index, skill.target_key));
             }
         }
-        for (index, skill_id, target_key, normal_total) in fire {
+        for call in &fire_calls {
+            fire(self, call);
+        }
+        for (index, target_key) in ends.into_iter().rev() {
+            self.client_only.remove(index);
+            self.end_skill(target_key);
+        }
+    }
+
+    /// `FUN_3939bfd0` with the production `FireSkill` path.
+    pub fn update_client_only(&mut self) {
+        self.update_client_only_with(|world, call| {
+            let local_id = world.local_player_id();
             let caster = SkillCaster {
                 kind: 0,
                 pad: 0,
@@ -529,30 +610,32 @@ impl TimelineWorld {
             let target = SkillCastTarget {
                 kind: 0,
                 pad: 0,
-                words: [target_key, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                words: [
+                    call.target_key,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
             };
-            if !self.instances.contains_key(&target_key) {
-                self.start_skill(
-                    &caster,
-                    &target,
-                    skill_id,
-                    target_key,
-                    normal_total,
-                    false,
-                    None,
-                );
-            }
-            if let Some(inst) = self.instances.get_mut(&target_key) {
-                inst.computed_delay = self.client_only[index].computed_delay;
-                inst.channel_total = self.client_only[index].channel_total;
-                inst.channel_start = now;
-            }
-            self.push_event(EVENT_SKILL_FIRED);
-        }
-        for index in remove.into_iter().rev() {
-            let skill = self.client_only.remove(index);
-            self.end_skill(skill.target_key);
-        }
+            world.fire_skill(
+                &caster,
+                &target,
+                call.skill_id,
+                call.target_key,
+                call.time7,
+                call.time9,
+                false,
+                None,
+            );
+        });
     }
 
     fn local_player_id(&self) -> u32 {

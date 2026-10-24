@@ -1,0 +1,607 @@
+{
+  "function": "UseSkill FUN_393989e0 front",
+  "cases": [
+    {
+      "label": "valid_npc",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        15880,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 28 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "valid_instant",
+      "skill_id": 10001,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [
+        20,
+        21,
+        22
+      ],
+      "packet": {
+        "body": "00 01 e8 e8 52 00 11 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10001, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          213,
+          1000
+        ],
+        "tags": [],
+        "skills": [
+          [
+            10001,
+            29075,
+            30000
+          ]
+        ]
+      }
+    },
+    {
+      "label": "valid_channel",
+      "skill_id": 10372,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        30,
+        0,
+        10372,
+        1767388
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "valid_autoattack",
+      "skill_id": 2,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        47,
+        101,
+        2,
+        0
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "no_target",
+      "skill_id": 10024,
+      "target_id": 0,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 e8 e8 52 00 28 27 00 00 00 33 a3 00 00 00 00 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(0), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "invalid_skill",
+      "skill_id": 999999,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "on_cooldown",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        8,
+        1,
+        10024,
+        1767388
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": [
+          [
+            10024,
+            3535,
+            5000
+          ]
+        ]
+      }
+    },
+    {
+      "label": "in_gcd",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 28 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          1000
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "while_casting",
+      "skill_id": 10201,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        30,
+        0,
+        10201,
+        1767388
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 41779,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          1000
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "while_moving",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 28 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_00",
+      "skill_id": 10001,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10001,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 11 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10001, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_01",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 28 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_02",
+      "skill_id": 10201,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        30,
+        0,
+        10201,
+        1767388
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_03",
+      "skill_id": 2,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        47,
+        101,
+        2,
+        0
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_04",
+      "skill_id": 10001,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "events": [
+        20,
+        21,
+        22
+      ],
+      "packet": {
+        "body": "00 01 e8 e8 52 00 11 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10001, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          260,
+          1000
+        ],
+        "tags": [],
+        "skills": [
+          [
+            10001,
+            29120,
+            30000
+          ]
+        ]
+      }
+    },
+    {
+      "label": "repeat_05",
+      "skill_id": 10024,
+      "target_id": 38444,
+      "eax": 1,
+      "refusal": [
+        8,
+        0,
+        10024,
+        848803420
+      ],
+      "events": [],
+      "packet": {
+        "body": "00 01 ff ff 52 00 28 27 00 00 00 33 a3 00 00 2c 96 00 00",
+        "fields": "CSStartSkillPacket { skill_id: 10024, caster: Unit(41779), target: Unit(38444), flag: 0, skill_object: None }"
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_06",
+      "skill_id": 10201,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        30,
+        0,
+        10201,
+        1767388
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    },
+    {
+      "label": "repeat_07",
+      "skill_id": 2,
+      "target_id": 38444,
+      "eax": 0,
+      "refusal": [
+        47,
+        101,
+        2,
+        0
+      ],
+      "events": [],
+      "packet": {
+        "body": null,
+        "fields": null
+      },
+      "slots": {
+        "cast": 0,
+        "cast_delay": 0,
+        "channel": 0,
+        "channel_delay": 0,
+        "auto_attack": 0
+      },
+      "cooldowns": {
+        "gcd": [
+          0,
+          0
+        ],
+        "tags": [],
+        "skills": []
+      }
+    }
+  ]
+}
