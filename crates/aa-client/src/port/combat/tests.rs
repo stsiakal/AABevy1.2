@@ -41,6 +41,7 @@ fn load(name: &str) -> Value {
         "force_attack" => include_str!("goldens/force_attack.json"),
         "engage" => include_str!("goldens/engage.json"),
         "buff_append" => include_str!("goldens/buff_append.json"),
+        "front_forms" => include_str!("goldens/front_forms.json"),
         other => panic!("unknown golden file {other}"),
     };
     serde_json::from_str(text).expect("golden JSON parses")
@@ -1883,4 +1884,131 @@ fn buff_append_matches_goldens() {
         assert_eq!(u32_of(&counts[1]), u32::from(lists.debuffs.len() == 1), "debuffs {index}");
         assert_eq!(u32_of(&counts[2]), u32::from(lists.hidden.len() == 1), "hidden {index}");
     }
+}
+
+
+#[test]
+fn cs_start_skill_forms_match_goldens() {
+    let doc = load("front_forms");
+    let cases = doc["cases"].as_array().expect("cases");
+    assert!(cases.len() >= 20, "20 live request-form cases");
+    for (index, case) in cases.iter().enumerate() {
+        let caster = case["caster_block"].as_array().expect("caster");
+        let target = case["target_block"].as_array().expect("target");
+        let word = |array: &Vec<Value>, slot: usize| u32_of(&array[slot]);
+        let float = |slot: usize| f32::from_bits(word(target, slot));
+        let request = StartSkillRequest {
+            skill_id: u32_of(&case["skill_id"]),
+            caster_kind: word(caster, 0) as u8,
+            caster_id: word(caster, 2),
+            target_kind: word(target, 0) as u8,
+            target_id: word(target, 2),
+            target_position: [float(4), float(5), float(6)],
+            flag: 0,
+        };
+        let want: Vec<u8> = case["body"]
+            .as_str()
+            .expect("body")
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).expect("hex"))
+            .collect();
+        assert_eq!(request.body(), want, "front form {index} {}", case["label"]);
+    }
+}
+
+#[test]
+fn damage_dispatch_decisions_cover_all_source_kinds() {
+    let mut cases = 0;
+    for source_kind in 0..=4 {
+        for damage in [0, 1, 100] {
+            for engage in [false, true] {
+                let record = DamageRecord {
+                    source_kind,
+                    source_type: 1,
+                    key: 2,
+                    caster_kind: 0,
+                    source_unit: 7,
+                    source_unit2: 0,
+                    target_id: 9,
+                    aux: 2,
+                    hit_type: 5,
+                    absorbed: 0,
+                    damage,
+                    mana_burn: 0,
+                    engage,
+                    text_flag: false,
+                    desc_big_hit: 0,
+                    client_mode: 0,
+                    critical: false,
+                    weapon: false,
+                };
+                let source = SourceResolution {
+                    skill_instance: true,
+                    desc_present: true,
+                    template_present: true,
+                    buff_row: true,
+                    item_present: true,
+                    source_unit: true,
+                    target_unit: true,
+                    target_is_local: false,
+                };
+                let out = damage_presentation(&record, &source);
+                assert_eq!(out.outcome, Some(DispatchOutcome::Presented));
+                assert!(out.kind_handled);
+                if source_kind == 0 {
+                    assert!(out.record_copied);
+                }
+                cases += 1;
+            }
+        }
+    }
+    assert_eq!(cases, 30);
+}
+
+#[test]
+fn heal_dispatch_decisions_cover_all_source_kinds() {
+    for source_kind in 0..=4 {
+        let record = HealRecord {
+            source_kind,
+            source_type: 1,
+            key: 2,
+            caster_kind: 0,
+            source_unit: 7,
+            source_unit2: 0,
+            item_id: 3,
+            target_id: 9,
+            amount: 100,
+            aux: 100,
+        };
+        let source = SourceResolution {
+            skill_instance: true,
+            desc_present: true,
+            template_present: true,
+            buff_row: true,
+            item_present: true,
+            source_unit: true,
+            target_unit: true,
+            target_is_local: false,
+        };
+        let out = heal_presentation(&record, &source);
+        assert_eq!(out.outcome, Some(DispatchOutcome::Presented));
+        assert!(out.heal_text && out.applied);
+    }
+}
+
+#[test]
+fn aggro_and_party_tracker_match_the_client_rules() {
+    let target = CombatUnit { id: 7, kind: 5, owner: 1, in_combat: true, ..CombatUnit::default() };
+    assert_eq!(aggro_link(5, Some(&target), 9, 1).add_source, Some(5));
+    assert_eq!(aggro_link(5, Some(&target), 9, 2).add_source, None);
+    assert_eq!(aggro_link(9, Some(&target), 9, 1).add_source, None);
+    let mut parties = [Party { id: 3, members: 2, ..Party::default() }];
+    party_last_hitter(9, 7, 9, &mut parties);
+    assert_eq!(parties[0].first, 7);
+    let mut parties = [Party { id: 9, members: 2, ..Party::default() }];
+    party_last_hitter(5, 9, 9, &mut parties);
+    assert_eq!(parties[0].last, 5);
+    assert!(can_toggle_force_attack(false, false, true));
+    assert!(can_toggle_force_attack(true, true, true));
+    assert!(!can_toggle_force_attack(true, false, true));
 }

@@ -929,3 +929,49 @@ Sharpened or corrected:
 * `re-combat`'s "pending cooldown-tag estimate" at StartSkill is the GCD estimate, not a skill
   cooldown estimate.
 * The first-hit fields are `unit+0x5fe8/+0x5fec` (not `+0x...` as guessed).
+
+### Resolved by the Stage D port (`port/combat-d`, 2026-10-24)
+
+* **U3 — requirement evaluators.** `FUN_393a0510` and every evaluator kind are ported in
+  `requirement.rs`.  Each row passes the `FUN_3936c500` owner/target filter (recorded live as
+  `applies`), `impl+4` selects the evaluator and `impl+8` the value array.  `requirements.json`
+  has **620 live cases** covering kinds `0x0, 0x6, 0x9, 0xc, 0xd, 0x18, 0x19, 0x1a, 0x1b,
+  0x1c, 0x1d, 0x22, 0x26` and the `0x18` sub-kinds `0xf, 0x19, 0x1b, 0x1e, 0x31, 0x38, 0x39,
+  0x40, 0x59, 0x5c, 0x5f, 0x60, 0x61, 0x62, 0x67, 0x6a, 0x6b, 0x6c, 0x6e, 0x6f, 0x70,
+  0x71, 0x72, 0x4f` (20+ per kind where the live client does not fault).  The filter result
+  (including the AL-only return of `FUN_3936c500`), item counts (`FUN_395720e0`/`FUN_3961faf0`),
+  broken inventory rows, stat-margin ranges (`FUN_39744620`) and the temporal gate
+  (`FUN_392f3530`) are caller data because they live in other modules; the evaluator control
+  flow and arithmetic are ported.
+* **U2 (extended) — request forms.** `front_forms.json` has 25 live `CSStartSkillPacket`
+  bodies: unit caster, `Unk1` caster, doodad caster, unit target, doodad target and position
+  target.  A position body is the 40-byte form
+  `skill, caster_kind, write_bc(caster), 0x01, write_bc(obj), 0x00, 4×0, x/y/z f32, 11×0`
+  (the trailing block contains the flag byte).  Item (`2`) and mount (`3`) caster forms are
+  rejected by the 1.2 request body for the skills probed and remain unverified.
+* **U4 — tab targeting.** The loop is `FUN_39368630` (byte 0 = state `0x3a169a4c`, byte 1 =
+  state `0x39ac74ac`) → `FUN_39368520` (history expiry at `cfg+0x2c0`) → `FUN_393672c0`
+  (candidate collection) → `FUN_39364be0`/`FUN_393548a0` (ascending distance).  The relation
+  test uses **bit 8** (`0x100`) of `FUN_39028240`'s result, not bit 0.  The round catch is the
+  `distance < cfg+0x2d0` branch, the fan is the half-angle `cfg+0x2cc*π/360` outside it, and
+  the z limit is `cfg+0x2c4`.  The `std::set` at `state+0x18` is **not** seeded with the local
+  id by `FUN_39368520` in a way that excludes self (the node ctor key is not the unit id);
+  the entry separately never selects the local player.  `tab_targeting_history_max` (`+0x2bc`)
+  caps the separate previous-target list (`FUN_393642a0`/`FUN_39363ec0`/`FUN_39363f60`), not
+  the tab set.  Goldens: `targeting_collect.json`, `targeting_select.json`,
+  `targeting_tab.json` (20 each), `target_set.json` and `click_select.json` (20 each).
+* **U5 — force attack.** `FUN_39390ec0` is the `CSSetForceAttackPacket` (0x4f) sender: the
+  body is one bool equal to `!(unit+0x3bbc)` (the client sends the inverse of the current
+  byte).  `FUN_39390f20` is the eligibility gate (self target + special state + moving).
+  `FUN_391d3c60` is the server→client setter and fires UI event `0xe8`.  `force_attack.json`
+  has 20 handler cases and 20 sender cases (byte/body).
+* **First hit / combat state.** `FUN_390b36f0`/`FUN_390b3710` only change `+0x3bba` on the
+  0→1 / 1→0 edge and notify the unit vtable `+0x50`; `FUN_39354780` writes `+0x5fe8/+0x5fec`;
+  `FUN_394bd9f0` is `hitter != none && ((team == 0 && hitter == local) || team == my-team)`.
+  `combat_state.json`, `first_hit.json` and `engage.json` have 20 live cases each.
+* **Hit presentation.** `FUN_39398c80`/`FUN_393992d0` dispatch on the record source kind and
+  are ported in `presentation.rs`, together with `FUN_39391670`, `FUN_393968b0`,
+  `FUN_39393f30` and `FUN_3938a3c0`/`FUN_39386e00`.  `engage.json` (20) and
+  `buff_append.json` (20) are live; the damage/heal dispatch heads are covered by synthetic
+  tests over all five source kinds, because a crafted record drives the engine/UI presentation
+  paths and crashes the hidden client before a clean differential case can be recorded.
