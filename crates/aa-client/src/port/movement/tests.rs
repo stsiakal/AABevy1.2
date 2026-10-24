@@ -1412,3 +1412,118 @@ fn quad_ground_matches_goldens() {
         assert!(graph.is_empty(), "{name} graph");
     }
 }
+
+#[test]
+fn wrapper_frame_movement_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/wrappers.json")).expect("wrapper JSON");
+    for (i, case) in doc["cases"].as_array().unwrap().iter().enumerate() {
+        let eff = &case["effective"];
+        let bits = |v: &Value| -> u32 { (v.as_f64().expect("number") as f32).to_bits() };
+        let one = bits(&eff["one_80"]);
+        let sync = FrameSync {
+            velocity: [
+                bits(&eff["velocity"][0]),
+                bits(&eff["velocity"][1]),
+                bits(&eff["velocity"][2]),
+            ],
+            q70: [
+                bits(&eff["q70"][0]),
+                bits(&eff["q70"][1]),
+                bits(&eff["q70"][2]),
+                bits(&eff["q70"][3]),
+            ],
+            one_80: one,
+            flag_84: eff["flag_84"].as_u64().unwrap() as u8,
+            word_88: bits(&eff["word_88"]),
+            flag_8c: eff["flag_8c"].as_u64().unwrap() as u8,
+        };
+        let (_, actor) = process_frame_movement(&MoverInput::default(), &sync);
+        let out = hex_bytes(case["out"].as_str().unwrap());
+        let mut got = Vec::new();
+        for v in actor.field_308 {
+            got.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in actor.field_314 {
+            got.extend_from_slice(&v.to_le_bytes());
+        }
+        got.push(actor.field_328);
+        got.extend_from_slice(&actor.field_32c.to_le_bytes());
+        got.push(actor.field_330);
+        let mut want = Vec::new();
+        want.extend_from_slice(&out[8..0x14]);
+        want.extend_from_slice(&out[0x14..0x28]);
+        want.extend_from_slice(&out[0x28..0x29]);
+        want.extend_from_slice(&out[0x2c..0x30]);
+        want.extend_from_slice(&out[0x30..0x31]);
+        assert_eq!(got, want, "wrapper movement case {i}");
+    }
+}
+
+#[test]
+fn wrapper_frame_rotation_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/wrappers.json")).expect("wrapper JSON");
+    for (i, case) in doc["rotation_cases"].as_array().unwrap().iter().enumerate() {
+        let q = |v: &Value| -> [f32; 4] {
+            [
+                f32_of(&v[0]),
+                f32_of(&v[1]),
+                f32_of(&v[2]),
+                f32_of(&v[3]),
+            ]
+        };
+        let vec3 = |v: &Value| -> [f32; 3] { [f32_of(&v[0]), f32_of(&v[1]), f32_of(&v[2])] };
+        let actor = RotationActor {
+            quats: [q(&case["q20"]), q(&case["q30"]), q(&case["q40"]), [0.0; 4]],
+            support: [q(&case["q60"]), q(&case["q70"]), [0.0; 4], [0.0; 4]],
+            swim: vec3(&case["swim"]),
+            view_limit: vec3(&case["view"]),
+            stride: 1.0,
+            desired: [0.0; 3],
+            anim_4: 0.0,
+            anim_a8: 0,
+            actor_171: 0,
+            actor_18b: 1,
+            ground_align: false,
+            on_ladder: false,
+            stance: 0,
+            ground_factor: 0.0,
+            ground_cvar: [0.0; 2],
+        };
+        let (_, bound, path) = process_frame_rotation(
+            &actor,
+            vec3(&case["request_move"]),
+            f32_of(&case["scale"]),
+        );
+        assert_eq!(path, crate::port::movement::RotationPath::Ladder);
+        let after = hex_bytes(case["after"].as_str().unwrap());
+        let check = |off: usize, want: [f32; 4]| {
+            for j in 0..4 {
+                assert_eq!(
+                    want[j].to_bits(),
+                    f_at(&after, off + j * 4).to_bits(),
+                    "rotation wrapper {i} +{off:#x}[{j}]"
+                );
+            }
+        };
+        check(0x2B0, bound.move_quats[0]);
+        check(0x2C0, bound.move_quats[1]);
+        check(0x2D0, bound.move_quats[2]);
+        check(0x33C, bound.support_quats[0]);
+        check(0x34C, bound.support_quats[1]);
+        check(0x950, bound.out_pos);
+        for j in 0..3 {
+            assert_eq!(
+                bound.swim[j].to_bits(),
+                f_at(&after, 0x960 + j * 4).to_bits(),
+                "rotation wrapper {i} swim[{j}]"
+            );
+            assert_eq!(
+                bound.view_limit[j].to_bits(),
+                f_at(&after, 0x154 + j * 4).to_bits(),
+                "rotation wrapper {i} view[{j}]"
+            );
+        }
+    }
+}
