@@ -1,9 +1,7 @@
 //! Golden tests against the original functions captured from the running 1.2 client.
 //!
 //! Every `goldens/*.json` file stores the original input and output as raw `f32` bits
-//! (`bits`) plus the decimal value for readability. The tests require bit-exact equality
-//! except for the direction factor, whose `atan2` is a different libm implementation; that
-//! test allows a documented 1e-6 relative error.
+//! (`bits`) plus the decimal value for readability. The tests require bit-exact equality.
 
 use super::*;
 use serde_json::Value;
@@ -98,7 +96,7 @@ fn direction_factor_matches_goldens() {
         let params = movement_params(&case["params"]);
         let dir = [f32_of(&case["dir"][0]), f32_of(&case["dir"][1])];
         let got = direction_factor(&params, bool_of(case, "walk"), dir);
-        assert_close(i, "direction_factor", got, &case["out"]);
+        assert_bits(i, "direction_factor", got, &case["out"]);
     }
 }
 
@@ -728,9 +726,15 @@ fn phase_c_rotation_clamp_matches_goldens() {
         let mut rot = rotation_from(&before);
         rot.clamp_angles(&actor, &mut params);
         for (i, what) in ["pitch", "mid", "yaw"].iter().enumerate() {
-            // The original tail uses __libm_sse2_asinf; the last bit of the
-            // inverse/asin chain is 1 ulp off in a few cases (U15).
-            assert_near(name, what, rot.move_rot[i], f_at(&want, 0x14 + i * 4));
+            let got = rot.move_rot[i];
+            let want_v = f_at(&want, 0x14 + i * 4);
+            assert_eq!(
+                got.to_bits(),
+                want_v.to_bits(),
+                "{name} {what}: got {got:?} ({:#010x}) want {want_v:?} ({:#010x})",
+                got.to_bits(),
+                want_v.to_bits()
+            );
         }
     }
 
@@ -906,11 +910,13 @@ fn ctl_from(bytes: &[u8]) -> QuadController {
         movement_extra_7c: f_at(bytes, 0x7c),
         val_a4: u32::from_le_bytes(bytes[0xa4..0xa8].try_into().unwrap()),
         flag_a8: bytes[0xa8],
+        val_84: f_at(bytes, 0x84),
     }
 }
 
 fn block_from(bytes: &[u8]) -> QuadBlock {
     QuadBlock {
+        field_04: f_at(bytes, 0x04),
         jump_scalar: f_at(bytes, 0x0c),
         jump_dir: [f_at(bytes, 0x9c), f_at(bytes, 0xa0), f_at(bytes, 0xa4)],
         jump_extra: [f_at(bytes, 0xd4), f_at(bytes, 0xd8), f_at(bytes, 0xdc)],
@@ -1096,11 +1102,221 @@ fn quad_dispatch_matches_goldens() {
         ctl.quat = q_at(&actor_before, 0x2d0);
         let ext = QuadExternals::default();
         let mut graph = Vec::new();
-        let _ = dispatch(&mut ctl, &mut block, &mut actor, &ext, &mut graph);
+        let _ = dispatch(
+            &mut ctl,
+            &mut block,
+            &mut actor,
+            &ext,
+            &QuadConfig::default(),
+            0.0,
+            &mut graph,
+        );
         let want = hex_bytes(case["after"].as_str().unwrap());
         assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
         for (j, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
             assert_near(name, "velocity", ctl.velocity[j], f_at(&want, *off));
         }
     }
+}
+
+fn mounted_goldens() -> Value {
+    serde_json::from_str(include_str!("goldens/mounted.json")).expect("mounted JSON")
+}
+
+fn f32_json(v: &Value) -> f32 {
+    f32_of(v)
+}
+
+#[test]
+fn quad_mounted_matches_goldens() {
+    let doc = mounted_goldens();
+    let cfg_of = |v: &Value| QuadConfig {
+        speed_scale: f32_json(&v["404"]),
+        vertical_scale: f32_json(&v["412"]),
+        movement_scale: f32_json(&v["416"]),
+        accel_time: f32_json(&v["440"]),
+        friction_time: f32_json(&v["444"]),
+        swim_scale: 0.0,
+        final_scale: 0.0,
+        final_cut: 0.0,
+    };
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.input = [f32_json(&case["input"][0]), f32_json(&case["input"][1]), 0.0];
+        ctl.dt = f32_json(&case["dt"]);
+        ctl.flags_5c = case["stride_bit0"].as_u64().unwrap() as u32;
+        ctl.quat = [
+            f32_json(&case["quat"][0]),
+            f32_json(&case["quat"][1]),
+            f32_json(&case["quat"][2]),
+            f32_json(&case["quat"][3]),
+        ];
+        ctl.spare_velocity = [
+            f32_json(&case["spare"][0]),
+            f32_json(&case["spare"][1]),
+            f32_json(&case["spare"][2]),
+        ];
+        let ext = QuadExternals {
+            mounted_unit: case["mounted"].as_bool().unwrap(),
+            phys_velocity: if case["phys_ok"].as_bool().unwrap() {
+                Some([
+                    f32_json(&case["phys_velocity"][0]),
+                    f32_json(&case["phys_velocity"][1]),
+                    f32_json(&case["phys_velocity"][2]),
+                ])
+            } else {
+                None
+            },
+            move_ray: if case["ray"].is_null() {
+                None
+            } else {
+                Some([
+                    f32_json(&case["ray"][0]),
+                    f32_json(&case["ray"][1]),
+                    f32_json(&case["ray"][2]),
+                ])
+            },
+            ..QuadExternals::default()
+        };
+        let cfg = cfg_of(&case["config"]);
+        mounted(&mut ctl, &ext, &cfg, f32_json(&case["back_scale"]));
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        assert_eq!(ctl.mode, u32::from_le_bytes(want[0x60..0x64].try_into().unwrap()), "{name} mode");
+        for (j, off) in [0x64usize, 0x68, 0x6c, 0x8c, 0x90, 0x94].iter().enumerate() {
+            assert_bits(
+                j,
+                name,
+                if j < 3 { ctl.velocity[j] } else { ctl.spare_velocity[j - 3] },
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
+        }
+    }
+}
+
+#[test]
+fn quad_final_pass_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/final_pass.json")).expect("final JSON");
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let before = hex_bytes(case["before"].as_str().unwrap());
+        let mut ctl = ctl_from(&before);
+        ctl.dt = f32_of(&case["dt"]);
+        ctl.quat = [
+            f32_of(&case["move_quat"][0]),
+            f32_of(&case["move_quat"][1]),
+            f32_of(&case["move_quat"][2]),
+            f32_of(&case["move_quat"][3]),
+        ];
+        ctl.velocity = [
+            f32_of(&case["velocity"][0]),
+            f32_of(&case["velocity"][1]),
+            f32_of(&case["velocity"][2]),
+        ];
+        let block = QuadBlock {
+            field_04: f32_of(&case["block_jump"]),
+            mounted: case["block_mounted"].as_bool().unwrap() as u8,
+            block_101: case["block_101"].as_bool().unwrap() as u8,
+            ..QuadBlock::default()
+        };
+        let actor = QuadActor {
+            ground_align_off: case["ground_align_off"].as_bool().unwrap() as u8,
+            ..QuadActor::default()
+        };
+        let ext = QuadExternals {
+            entity_quat: [
+                f32_of(&case["entity_quat"][0]),
+                f32_of(&case["entity_quat"][1]),
+                f32_of(&case["entity_quat"][2]),
+                f32_of(&case["entity_quat"][3]),
+            ],
+            is_swim_stance: case["swim"].as_bool().unwrap(),
+            final_scale_flag: case["cfg_flag"].as_u64().unwrap() != 0,
+            ..QuadExternals::default()
+        };
+        let cfg = QuadConfig {
+            final_scale: f32_of(&case["cfg_5c"]),
+            final_cut: f32_of(&case["cfg_60"]),
+            ..QuadConfig::default()
+        };
+        final_pass(&mut ctl, &block, &actor, &ext, &cfg);
+        let want = hex_bytes(case["after"].as_str().unwrap());
+        for (i, off) in [0x64usize, 0x68, 0x6c].iter().enumerate() {
+            assert_bits(
+                i,
+                name,
+                ctl.velocity[i],
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
+        }
+        for (i, off) in [0x70usize, 0x74, 0x78, 0x7c].iter().enumerate() {
+            let got = [
+                ctl.movement_extra_70,
+                ctl.movement_extra_74,
+                ctl.movement_extra_78,
+                ctl.movement_extra_7c,
+            ][i];
+            assert_bits(
+                i,
+                name,
+                got,
+                &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, *off).to_bits())}),
+            );
+        }
+        assert_bits(
+            0,
+            name,
+            ctl.val_84,
+            &serde_json::json!({"bits": format!("0x{:08x}", f_at(&want, 0x84).to_bits())}),
+        );
+    }
+}
+
+#[test]
+fn atan2_matches_crt_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/atan2.json")).expect("atan2 JSON");
+    let mut checked = 0usize;
+    for case in doc["cases"].as_array().unwrap() {
+        let y = f64_bits_of(case["y"].as_str().unwrap());
+        let x = f64_bits_of(case["x"].as_str().unwrap());
+        let want = hex_bytes(case["out"].as_str().unwrap());
+        let want = u64::from_le_bytes(want[..8].try_into().unwrap());
+        let got = libm_sse2_atan2(y, x).to_bits();
+        assert_eq!(
+            got, want,
+            "atan2(y={:#018x}, x={:#018x}): got {got:#018x} want {want:#018x}",
+            y.to_bits(),
+            x.to_bits()
+        );
+        checked += 1;
+    }
+    assert!(checked >= 900, "only {checked} atan2 goldens");
+}
+
+fn f64_bits_of(hex: &str) -> f64 {
+    let bits = u64::from_str_radix(hex.trim_start_matches("0x"), 16).expect("hex bits");
+    f64::from_bits(bits)
+}
+
+#[test]
+fn inverse3x3_matches_goldens() {
+    let doc: Value =
+        serde_json::from_str(include_str!("goldens/inverse3x3.json")).expect("inverse JSON");
+    let mut checked = 0usize;
+    for case in doc["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let mut m = [0.0f32; 9];
+        for (i, v) in case["in"].as_array().unwrap().iter().enumerate() {
+            m[i] = f32_of(v);
+        }
+        inverse3x3(&mut m);
+        for (i, v) in case["out"].as_array().unwrap().iter().enumerate() {
+            assert_bits(i, name, m[i], v);
+        }
+        checked += 1;
+    }
+    assert!(checked >= 20, "only {checked} inverse goldens");
 }
