@@ -1,0 +1,104 @@
+// FUN_3a6ab5f3 - live linearised listing (W3 recon)
+// module x2game.dll live VA 0x3A6AB5F3 (image VA 0x3A6AB5F3), RVA 0x16BB5F3
+// classification: (b) - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time; live bytes equal x2game_unpacked.dll at this RVA; no table-indexed dispatch loop/handler table; real-operation ratio 0.86 (78/91); 1 block(s) use push-continuation / push-ret dispatch
+// blocks=3 instructions=91 jmp=3 jcc=0 call=0 ret=0 push_ret_blocks=1 vm_dispatch=0 truncated=False
+
+; --- block 0x39123657 (17 insns) ---
+39123657: f30f7e00             movq     xmm0, qword ptr [eax]
+3912365B: 8b4dfc               mov      ecx, dword ptr [ebp - 4]
+3912365E: 660fd64150           movq     qword ptr [ecx + 0x50], xmm0
+39123663: 8b4008               mov      eax, dword ptr [eax + 8]
+39123666: 8d642404             lea      esp, [esp + 4]
+3912366A: 8b7c24fc             mov      edi, dword ptr [esp - 4]
+3912366E: 894158               mov      dword ptr [ecx + 0x58], eax
+39123671: 51                   push     ecx
+39123672: 58                   pop      eax
+39123673: 8d642404             lea      esp, [esp + 4]
+39123677: 8b7424fc             mov      esi, dword ptr [esp - 4]
+3912367B: 55                   push     ebp
+3912367C: 5c                   pop      esp
+3912367D: 8b2c24               mov      ebp, dword ptr [esp]
+39123680: 8d642404             lea      esp, [esp + 4]
+39123684: 8d642410             lea      esp, [esp + 0x10]
+39123688: ff6424f0             jmp      dword ptr [esp - 0x10]
+
+; --- block 0x3913A753 (1 insns) ---
+3913A753: e9ff8efeff           jmp      0x39123657
+;   edge jmp -> 0x39123657 (inside)
+
+; --- block 0x3A6AB5F3 (73 insns) ---
+3A6AB5F3: 8d6424fc             lea      esp, [esp - 4]
+3A6AB5F7: 892c24               mov      dword ptr [esp], ebp
+3A6AB5FA: 54                   push     esp
+3A6AB5FB: 5d                   pop      ebp
+3A6AB5FC: 8d6424fc             lea      esp, [esp - 4]
+3A6AB600: 890c24               mov      dword ptr [esp], ecx
+3A6AB603: 897424fc             mov      dword ptr [esp - 4], esi
+3A6AB607: 8d6424fc             lea      esp, [esp - 4]
+3A6AB60B: 897c24fc             mov      dword ptr [esp - 4], edi
+3A6AB60F: 8d6424fc             lea      esp, [esp - 4]
+3A6AB613: 8bc1                 mov      eax, ecx
+3A6AB615: 8945fc               mov      dword ptr [ebp - 4], eax
+3A6AB618: 8b5508               mov      edx, dword ptr [ebp + 8]
+3A6AB61B: f30f104510           movss    xmm0, dword ptr [ebp + 0x10]
+3A6AB620: f30f1100             movss    dword ptr [eax], xmm0
+3A6AB624: 0f57c0               xorps    xmm0, xmm0
+3A6AB627: f30f100d88c49939     movss    xmm1, dword ptr [0x3999c488]
+3A6AB62F: 8d8aec030000         lea      ecx, [edx + 0x3ec]
+3A6AB635: 894804               mov      dword ptr [eax + 4], ecx
+3A6AB638: 8d4a50               lea      ecx, [edx + 0x50]
+3A6AB63B: 894808               mov      dword ptr [eax + 8], ecx
+3A6AB63E: 8b750c               mov      esi, dword ptr [ebp + 0xc]
+3A6AB641: 8d780c               lea      edi, [eax + 0xc]
+3A6AB644: b90d000000           mov      ecx, 0xd
+3A6AB649: f3a5                 rep movsd dword ptr es:[edi], dword ptr [esi]
+3A6AB64B: 895040               mov      dword ptr [eax + 0x40], edx
+3A6AB64E: 8d8ab0020000         lea      ecx, [edx + 0x2b0]
+3A6AB654: 894844               mov      dword ptr [eax + 0x44], ecx
+3A6AB657: 8d8ad0020000         lea      ecx, [edx + 0x2d0]
+3A6AB65D: 894848               mov      dword ptr [eax + 0x48], ecx
+3A6AB660: 8d8a60090000         lea      ecx, [edx + 0x960]
+3A6AB666: 89484c               mov      dword ptr [eax + 0x4c], ecx
+3A6AB669: 8b4a40               mov      ecx, dword ptr [edx + 0x40]
+3A6AB66C: 89485c               mov      dword ptr [eax + 0x5c], ecx
+3A6AB66F: 33c9                 xor      ecx, ecx
+3A6AB671: 894864               mov      dword ptr [eax + 0x64], ecx
+3A6AB674: f30f114068           movss    dword ptr [eax + 0x68], xmm0
+3A6AB679: f30f11406c           movss    dword ptr [eax + 0x6c], xmm0
+3A6AB67E: f30f114070           movss    dword ptr [eax + 0x70], xmm0
+3A6AB683: f30f114074           movss    dword ptr [eax + 0x74], xmm0
+3A6AB688: f30f114078           movss    dword ptr [eax + 0x78], xmm0
+3A6AB68D: f30f11407c           movss    dword ptr [eax + 0x7c], xmm0
+3A6AB692: f30f118880000000     movss    dword ptr [eax + 0x80], xmm1
+3A6AB69A: 888884000000         mov      byte ptr [eax + 0x84], cl
+3A6AB6A0: 88888c000000         mov      byte ptr [eax + 0x8c], cl
+3A6AB6A6: f30f118088000000     movss    dword ptr [eax + 0x88], xmm0
+3A6AB6AE: f30f7e82e0020000     movq     xmm0, qword ptr [edx + 0x2e0]
+3A6AB6B6: 660fd68090000000     movq     qword ptr [eax + 0x90], xmm0
+3A6AB6BE: 8b8ae8020000         mov      ecx, dword ptr [edx + 0x2e8]
+3A6AB6C4: 898898000000         mov      dword ptr [eax + 0x98], ecx
+3A6AB6CA: 0fb68a61010000       movzx    ecx, byte ptr [edx + 0x161]
+3A6AB6D1: 88889c000000         mov      byte ptr [eax + 0x9c], cl
+3A6AB6D7: f30f7e826c090000     movq     xmm0, qword ptr [edx + 0x96c]
+3A6AB6DF: 660fd680a0000000     movq     qword ptr [eax + 0xa0], xmm0
+3A6AB6E7: f30f7e8274090000     movq     xmm0, qword ptr [edx + 0x974]
+3A6AB6EF: 660fd680a8000000     movq     qword ptr [eax + 0xa8], xmm0
+3A6AB6F7: c680b000000000       mov      byte ptr [eax + 0xb0], 0
+3A6AB6FE: d982dc090000         fld      dword ptr [edx + 0x9dc]
+3A6AB704: d998b4000000         fstp     dword ptr [eax + 0xb4]
+3A6AB70A: 0fb64a79             movzx    ecx, byte ptr [edx + 0x79]
+3A6AB70E: 8888b8000000         mov      byte ptr [eax + 0xb8], cl
+3A6AB714: 0fb64a78             movzx    ecx, byte ptr [edx + 0x78]
+3A6AB718: 8888b9000000         mov      byte ptr [eax + 0xb9], cl
+3A6AB71E: c680ba00000000       mov      byte ptr [eax + 0xba], 0
+3A6AB725: d98284020000         fld      dword ptr [edx + 0x284]
+3A6AB72B: d998bc000000         fstp     dword ptr [eax + 0xbc]
+3A6AB731: 8b520c               mov      edx, dword ptr [edx + 0xc]
+3A6AB734: 8b02                 mov      eax, dword ptr [edx]
+3A6AB736: 52                   push     edx
+3A6AB737: 59                   pop      ecx
+3A6AB738: 8b9098000000         mov      edx, dword ptr [eax + 0x98]
+3A6AB73E: 6853a71339           push     0x3913a753
+3A6AB743: ffe2                 jmp      edx
+;   edge push-cont -> 0x3913A753 (inside)
+

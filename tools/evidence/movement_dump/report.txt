@@ -1,0 +1,224 @@
+Movement core dump from the live 1.2 client (W3 recon)
+======================================================
+
+date: 2026-10-27T05:21:58
+argv: tools/movement_dump_probe.py --slot wp3 --lane move-golden --runs 2 --tag movement-dump-20261027-r5
+slot: wp3 on lane move-golden
+run 1: pid 27260 account wp3a / MgWp3a
+run 2: pid 58404 account wp3a / MgWp3a
+
+Builds:
+  client: D:\AA1.2\bin32\archeage.exe
+    sha256=a6fbd9ff58bf749fd995489f34acb01e1bc84d4d5a533721b0c017562766fc2a stamp=0x543CB762 size_of_image=0x3E3C00 bytes=4059144
+  x2game_shipped: D:\AA1.2\bin32\x2game.dll
+    sha256=3821c34366ff8b6f7aed95ba53d12216a5c31cb7c3407703d28eea639a621205 stamp=0x543CB835 size_of_image=0x1CB0A00 bytes=18483712
+  x2game_unpacked: D:\aa-re\client12\x2game_unpacked.dll
+    sha256=5ae3cad0dd4b40ee3da09fdb573bd8d58f4d8a3a3776ef87b456eecbed02ef1d stamp=0x543CB835 size_of_image=0x1CB0A00 bytes=30072320
+  cryaction: D:\AA1.2\bin32\cryaction.dll
+    sha256=1c0ca9a7f7aab883029b64adb6af4bdc76043fe2cf173f7fc9b0d1d7f62b0399 stamp=0x543CB85B size_of_image=0x548A00 bytes=5345280
+  clientdriver: D:\aaemu-target\move-golden\live\aaemu-clientdriver.exe
+    sha256=181e15ea19c115613b30c146d40a29cef0b6e907bd16708da7b10cb1a854fa2f stamp=0x6ADFE4F2 size_of_image=0x10D000 bytes=1086464
+  driver_dll: D:\aaemu-target\move-golden\aadriver-onfoot\aadriver.dll
+    sha256=a6ba1835b302961d082b878a1d3a574762b813a25e63cc5ea499598db798d9e7 stamp=0x6ADFFFF1 size_of_image=0x69000 bytes=392192
+  live x2game.dll: base=0x38FF0000 size=0x1CB0A00 D:\AA1.2\bin32\x2game.dll
+  live cryaction.dll: base=0x304F0000 size=0x548A00 D:\AA1.2\bin32\cryaction.dll
+  live x2game.dll: base=0x38FF0000 size=0x1CB0A00 D:\AA1.2\bin32\x2game.dll
+  live cryaction.dll: base=0x304F0000 size=0x548A00 D:\AA1.2\bin32\cryaction.dll
+  run 1 anti-cheat scan: {'modules': 157, 'bad': []}
+  run 2 anti-cheat scan: {'modules': 157, 'bad': []}
+  code cave x2game.dll: .reloc RVA 0x1652000-0x1CB0A00 (6679040 bytes, file-executable=False)
+  code cave cryaction.dll: .reloc RVA 0x2B8000-0x548A00 (2689536 bytes, file-executable=False)
+  live executable pages x2game.dll: 2 region(s), source=live
+    0x38FF0000-0x38FF1000 protect=0x80
+    0x38FF1000-0x3ACA0A00 protect=0x40
+  live executable pages cryaction.dll: 2 region(s), source=live
+    0x304F0000-0x304F1000 protect=0x80
+    0x304F1000-0x30A38A00 protect=0x40
+
+Decompile source: D:/aa-re/client12/out-x2game/x2game.dll.c, image base 0x38FF0000.
+funcs.csv rows: 3a979a34,3a979ab4,129; 3a6ab5f3,3a6ab744,338;
+3a98bb00,3a98bb60,97; 3a9918bb,3a9918c3,9. Those starts/sizes
+match x2game_unpacked.dll; the shipped x2game.dll has encrypted
+bytes at the same RVAs (entropy 7.1-7.5), so the decompile came
+from the unpacked image that the live process matches.
+
+Scenario state at the dump (standing in world):
+  run 1: frame=66057 time=16.697983 pos=4365.03125,4389.68359,231.20627 angles=0.00000,0.00000,0.49474 vel=0.00000,0.00000,0.00000 anim=fist_relaxed_idle+fist_ba_relaxed_idle
+  run 2: frame=65934 time=20.416595 pos=4365.03125,4389.68359,231.20627 angles=0.00000,0.00000,0.49474 vel=0.00000,0.00000,0.00000 anim=fist_relaxed_idle+fist_ba_relaxed_idle
+
+Per-target evidence (live bytes at the function start):
+target                           module        image VA    live VA     size  live==pack  live==unpack  live==mem  entropy live/packed  class
+FUN_3a979a34                     x2game.dll    0x3A979A34  0x3A979A34    256  False       True          True       5.92/7.16  (b)
+FUN_3a6ab5f3                     x2game.dll    0x3A6AB5F3  0x3A6AB5F3    338  False       True          True       5.19/7.35  (b)
+FUN_3a98bb00                     x2game.dll    0x3A98BB00  0x3A98BB00    256  False       True          True       6.00/7.14  (b)
+FUN_3a9918bb                     x2game.dll    0x3A9918BB  0x3A9918BB    256  False       True          True       7.06/7.13  (b)
+thunk_FUN_3a979a34               x2game.dll    0x391250A0  0x391250A0    256  False       True          True       6.00/7.16  (b)
+thunk_FUN_3a6ab5f3               x2game.dll    0x3913A620  0x3913A620    256  False       True          True       5.63/5.67  (b)
+thunk_FUN_3a98bb00               x2game.dll    0x3913DA40  0x3913DA40    256  False       True          True       5.97/7.22  (b)
+thunk_FUN_3a9918bb               x2game.dll    0x39139470  0x39139470    256  False       True          True       5.99/7.14  (b)
+CActor::UpdateMovementRequest    x2game.dll    0x39118650  0x39118650    512  False       True          True       5.99/7.51  (b)
+CPlayer::ProcessFrameMovement    x2game.dll    0x39135FE0  0x39135FE0    512  False       True          True       5.75/7.50  (b)
+CPlayer::ProcessFrameMovementRotation x2game.dll    0x39135ED0  0x39135ED0    512  False       True          True       5.59/7.45  (b)
+FUN_307c70b0                     cryaction.dll 0x307C70B0  0x307C70B0   1024  True        True          n/a        6.07/6.07  (b)
+FUN_306713f0                     cryaction.dll 0x306713F0  0x306713F0    512  True        True          n/a        5.88/5.88  (b)
+FUN_30665500                     cryaction.dll 0x30665500  0x30665500    512  True        True          n/a        5.29/5.29  (b)
+
+Block-follower result (live bytes, direct jmp/jcc, call edges and
+push-continuation / push-ret dispatchers followed):
+target                           blocks  insns  real  sse  jmp  jcc  call  ret  push-ret  vm-dispatch  truncated
+FUN_3a979a34                         20    100    63    4   17    1    0    2         3            0  False
+FUN_3a6ab5f3                          3     91    78   21    3    0    0    0         1            0  False
+FUN_3a98bb00                        160    617   318  154  142   10    0    8        11            0  True
+FUN_3a9918bb                         11     32    12    0   10    0    0    1         1            0  False
+thunk_FUN_3a979a34                   21    101    63    4   18    1    0    2         3            0  False
+thunk_FUN_3a6ab5f3                    4     92    78   21    4    0    0    0         1            0  False
+thunk_FUN_3a98bb00                  160    616   318  154  142   10    0    8        11            0  True
+thunk_FUN_3a9918bb                   12     33    12    0   11    0    0    1         1            0  False
+CActor::UpdateMovementRequest        64    613   434  177    8   53   40    3         4            0  False
+CPlayer::ProcessFrameMovement         7    140   100   36    0    5    9    2         1            0  False
+CPlayer::ProcessFrameMovementRotation      7     98    60   12    0    5    9    2         1            0  False
+FUN_307c70b0                         35    151    86    4   30    1    0    4         5            0  False
+FUN_306713f0                         21    228   166   62    7   12   12    2         4            6  False
+FUN_30665500                         15    153   111   39    3   10    4    2         1            2  False
+
+Classification:
+  FUN_3a979a34: (b) real_ratio=0.63
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.63 (63/100)
+    - 3 block(s) use push-continuation / push-ret dispatch
+    - 20 blocks reached; control flow is flattened, not a single linear function
+  FUN_3a6ab5f3: (b) real_ratio=0.86
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.86 (78/91)
+    - 1 block(s) use push-continuation / push-ret dispatch
+  FUN_3a98bb00: (b) real_ratio=0.52
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.52 (318/617)
+    - 11 block(s) use push-continuation / push-ret dispatch
+    - 160 blocks reached; control flow is flattened, not a single linear function
+  FUN_3a9918bb: (b) real_ratio=0.38
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.38 (12/32)
+    - 1 block(s) use push-continuation / push-ret dispatch
+    - 11 blocks reached; control flow is flattened, not a single linear function
+  thunk_FUN_3a979a34: (b) real_ratio=0.62
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.62 (63/101)
+    - 3 block(s) use push-continuation / push-ret dispatch
+    - 21 blocks reached; control flow is flattened, not a single linear function
+  thunk_FUN_3a6ab5f3: (b) real_ratio=0.85
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.85 (78/92)
+    - 1 block(s) use push-continuation / push-ret dispatch
+  thunk_FUN_3a98bb00: (b) real_ratio=0.52
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.52 (318/616)
+    - 11 block(s) use push-continuation / push-ret dispatch
+    - 160 blocks reached; control flow is flattened, not a single linear function
+  thunk_FUN_3a9918bb: (b) real_ratio=0.36
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.36 (12/33)
+    - 1 block(s) use push-continuation / push-ret dispatch
+    - 12 blocks reached; control flow is flattened, not a single linear function
+  CActor::UpdateMovementRequest: (b) real_ratio=0.71
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.71 (434/613)
+    - 4 block(s) use push-continuation / push-ret dispatch
+    - 64 blocks reached; control flow is flattened, not a single linear function
+  CPlayer::ProcessFrameMovement: (b) real_ratio=0.71
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.71 (100/140)
+    - 1 block(s) use push-continuation / push-ret dispatch
+  CPlayer::ProcessFrameMovementRotation: (b) real_ratio=0.61
+    - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time
+    - live bytes equal x2game_unpacked.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.61 (60/98)
+    - 1 block(s) use push-continuation / push-ret dispatch
+  FUN_307c70b0: (b) real_ratio=0.57
+    - live bytes equal the shipped cryaction.dll at this RVA
+    - no table-indexed dispatch loop/handler table
+    - real-operation ratio 0.57 (86/151)
+    - 5 block(s) use push-continuation / push-ret dispatch
+    - 35 blocks reached; control flow is flattened, not a single linear function
+  FUN_306713f0: (b) real_ratio=0.73
+    - live bytes equal the shipped cryaction.dll at this RVA
+    - 6 table-indexed indirect dispatch site(s)
+    - real-operation ratio 0.73 (166/228)
+    - 4 block(s) use push-continuation / push-ret dispatch
+    - 21 blocks reached; control flow is flattened, not a single linear function
+  FUN_30665500: (b) real_ratio=0.73
+    - live bytes equal the shipped cryaction.dll at this RVA
+    - 2 table-indexed indirect dispatch site(s)
+    - real-operation ratio 0.73 (111/153)
+    - 1 block(s) use push-continuation / push-ret dispatch
+    - 15 blocks reached; control flow is flattened, not a single linear function
+
+What the evidence means:
+  - x2game runtime pages are decrypted: True
+  - cryaction code-cave bytes already match the shipped file: True
+  - fresh processes had identical target bytes: True
+      FUN_3a979a34: identical=True
+      FUN_3a6ab5f3: identical=True
+      FUN_3a98bb00: identical=True
+      FUN_3a9918bb: identical=True
+      thunk_FUN_3a979a34: identical=True
+      thunk_FUN_3a6ab5f3: identical=True
+      thunk_FUN_3a98bb00: identical=True
+      thunk_FUN_3a9918bb: identical=True
+      CActor::UpdateMovementRequest: identical=True
+      CPlayer::ProcessFrameMovement: identical=True
+      CPlayer::ProcessFrameMovementRotation: identical=True
+      FUN_307c70b0: identical=True
+      FUN_306713f0: identical=True
+      FUN_30665500: identical=True
+  - overall classification for the four named functions: (b)
+  (a) plain x86 after runtime decryption; (b) mutated/obfuscated x86
+  that a block follower can linearise; (c) a virtual machine.
+
+Checks:
+  [PASS] no anti-cheat module: [{'modules': 157, 'bad': []}, {'modules': 157, 'bad': []}]
+  [PASS] x2game and cryaction live modules found: [['x2game.dll', 'cryaction.dll'], ['x2game.dll', 'cryaction.dll']]
+  [PASS] x2game targets equal the unpacked file: live == x2game_unpacked.dll and live != shipped x2game.dll
+  [PASS] x2game targets differ from the shipped packed file: runtime decryption observed
+  [PASS] cryaction target equals its file: the shipped cryaction.dll already contains the code-cave bytes
+  [PASS] live bytes identical across fresh processes: {'FUN_3a979a34': ['fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f', 'fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f'], 'FUN_3a6ab5f3': ['8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde', '8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde'], 'FUN_3a98bb00': ['8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde', '8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde'], 'FUN_3a9918bb': ['d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6', 'd99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6'], 'thunk_FUN_3a979a34': ['61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52', '61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52'], 'thunk_FUN_3a6ab5f3': ['ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4', 'ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4'], 'thunk_FUN_3a98bb00': ['00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723', '00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723'], 'thunk_FUN_3a9918bb': ['663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a', '663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a'], 'CActor::UpdateMovementRequest': ['7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511', '7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511'], 'CPlayer::ProcessFrameMovement': ['3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388', '3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388'], 'CPlayer::ProcessFrameMovementRotation': ['9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c', '9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c'], 'FUN_307c70b0': ['fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138', 'fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138'], 'FUN_306713f0': ['2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c', '2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c'], 'FUN_30665500': ['4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f', '4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f']}
+  [PASS] FUN_3a979a34 disassembles: 100 instructions
+  [PASS] FUN_3a6ab5f3 disassembles: 91 instructions
+  [PASS] FUN_3a98bb00 disassembles: 617 instructions
+  [PASS] FUN_3a9918bb disassembles: 32 instructions
+  [PASS] FUN_307c70b0 disassembles: 151 instructions
+  [PASS] no virtual-machine dispatch table observed: {'FUN_3a979a34': 0, 'FUN_3a6ab5f3': 0, 'FUN_3a98bb00': 0, 'FUN_3a9918bb': 0, 'FUN_307c70b0': 0}
+
+passed=12 failed=0
+
+The decompiled file D:/aa-re/client12/out-x2game/x2game.dll.c has
+image base 0x38FF0000. Its funcs.csv entries for the four named
+functions are the same starts/sizes as D:/aa-re/client12/x2game_unpacked.dll,
+and the stub text at 3a979a34 matches that file's bytes. The shipped
+D:/AA1.2/bin32/x2game.dll has the same PE headers but encrypted bytes
+at those RVAs. The live process is decrypted to the unpacked image.
+
+Small listings are committed next to this report; raw live windows and
+the command lines are in the git-ignored run directory named in
+ACTUAL_RUN_REPORT.md.

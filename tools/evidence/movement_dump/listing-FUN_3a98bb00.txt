@@ -1,0 +1,1111 @@
+// FUN_3a98bb00 - live linearised listing (W3 recon)
+// module x2game.dll live VA 0x3A98BB00 (image VA 0x3A98BB00), RVA 0x199BB00
+// classification: (b) - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time; live bytes equal x2game_unpacked.dll at this RVA; no table-indexed dispatch loop/handler table; real-operation ratio 0.52 (318/617); 11 block(s) use push-continuation / push-ret dispatch; 160 blocks reached; control flow is flattened, not a single linear function
+// blocks=160 instructions=617 jmp=142 jcc=10 call=0 ret=8 push_ret_blocks=11 vm_dispatch=0 truncated=True
+
+; --- block 0x38FFE02F (2 insns) ---
+38FFE02F: 80b88801000000       cmp      byte ptr [eax + 0x188], 0
+38FFE036: 0f856bfb1300         jne      0x3913dba7
+;   edge jcc -> 0x3913DBA7 (inside)
+;   edge fall -> 0x38FFE03C (inside)
+
+; --- block 0x38FFE03C (1 insns) ---
+38FFE03C: e9cbfa1300           jmp      0x3913db0c
+;   edge jmp -> 0x3913DB0C (inside)
+
+; --- block 0x38FFF74A (3 insns) ---
+38FFF74A: 8d642404             lea      esp, [esp + 4]
+38FFF74E: 8d642408             lea      esp, [esp + 8]
+38FFF752: ff6424f8             jmp      dword ptr [esp - 8]
+
+; --- block 0x38FFFCFD (3 insns) ---
+38FFFCFD: 8bce                 mov      ecx, esi
+38FFFCFF: 68fada1339           push     0x3913dafa
+38FFFD04: e997a71300           jmp      0x3913a4a0
+;   edge jmp -> 0x3913A4A0 (inside)
+
+; --- block 0x38FFFD66 (10 insns) ---
+38FFFD66: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+38FFFD6B: 660f57c0             xorpd    xmm0, xmm0
+38FFFD6F: 33c9                 xor      ecx, ecx
+38FFFD71: 660f1345ac           movlpd   qword ptr [ebp - 0x54], xmm0
+38FFFD76: 660f57c0             xorpd    xmm0, xmm0
+38FFFD7A: 660f1345b4           movlpd   qword ptr [ebp - 0x4c], xmm0
+38FFFD7F: 894dbc               mov      dword ptr [ebp - 0x44], ecx
+38FFFD82: 894dc0               mov      dword ptr [ebp - 0x40], ecx
+38FFFD85: 388897000000         cmp      byte ptr [eax + 0x97], cl
+38FFFD8B: 0f8447dd1300         je       0x3913dad8
+;   edge jcc -> 0x3913DAD8 (inside)
+;   edge fall -> 0x38FFFD91 (inside)
+
+; --- block 0x38FFFD91 (1 insns) ---
+38FFFD91: e92cdd1300           jmp      0x3913dac2
+;   edge jmp -> 0x3913DAC2 (inside)
+
+; --- block 0x3900031B (5 insns) ---
+3900031B: 896c24fc             mov      dword ptr [esp - 4], ebp
+3900031F: 8d6424fc             lea      esp, [esp - 4]
+39000323: 8bec                 mov      ebp, esp
+39000325: 83ec40               sub      esp, 0x40
+39000328: e9ddbcb601           jmp      0x3ab6c00a
+;   edge jmp -> 0x3AB6C00A (inside)
+
+; --- block 0x390007FF (3 insns) ---
+390007FF: 0f14c4               unpcklps xmm0, xmm4
+39000802: 0f14d0               unpcklps xmm2, xmm0
+39000805: e98b09ac00           jmp      0x39ac1195
+;   edge jmp -> 0x39AC1195 (inside)
+
+; --- block 0x39000F1A (3 insns) ---
+39000F1A: 8bce                 mov      ecx, esi
+39000F1C: 68cadb1339           push     0x3913dbca
+39000F21: e99a8a1300           jmp      0x391399c0
+;   edge jmp -> 0x391399C0 (inside)
+
+; --- block 0x39123A94 (5 insns) ---
+39123A94: f30f5845ec           addss    xmm0, dword ptr [ebp - 0x14]
+39123A99: 0f57db               xorps    xmm3, xmm3
+39123A9C: f30f584de4           addss    xmm1, dword ptr [ebp - 0x1c]
+39123AA1: f30f5855e8           addss    xmm2, dword ptr [ebp - 0x18]
+39123AA6: e98ece9900           jmp      0x39ac0939
+;   edge jmp -> 0x39AC0939 (inside)
+
+; --- block 0x39139620 (1 insns) ---
+39139620: e90e748501           jmp      0x3a990a33
+;   edge jmp -> 0x3A990A33 (inside)
+
+; --- block 0x3913977A (1 insns) ---
+3913977A: e905077d01           jmp      0x3a909e84
+;   edge jmp -> 0x3A909E84 (inside)
+
+; --- block 0x3913978D (1 insns) ---
+3913978D: e919469101           jmp      0x3aa4ddab
+;   edge jmp -> 0x3AA4DDAB (inside)
+
+; --- block 0x391399C0 (1 insns) ---
+391399C0: e95669ecff           jmp      0x3900031b
+;   edge jmp -> 0x3900031B (inside)
+
+; --- block 0x391399D9 (1 insns) ---
+391399D9: e922905301           jmp      0x3a672a00
+;   edge jmp -> 0x3A672A00 (inside)
+
+; --- block 0x3913A48D (1 insns) ---
+3913A48D: e9e6ef8301           jmp      0x3a979478
+;   edge jmp -> 0x3A979478 (inside)
+
+; --- block 0x3913A4A0 (1 insns) ---
+3913A4A0: e9ccdb7c01           jmp      0x3a908071
+;   edge jmp -> 0x3A908071 (inside)
+
+; --- block 0x3913A4A5 (2 insns) ---
+3913A4A5: 0f14c8               unpcklps xmm1, xmm0
+3913A4A8: e90f000000           jmp      0x3913a4bc
+;   edge jmp -> 0x3913A4BC (inside)
+
+; --- block 0x3913A4BC (3 insns) ---
+3913A4BC: f30f105914           movss    xmm3, dword ptr [ecx + 0x14]
+3913A4C1: f30f104110           movss    xmm0, dword ptr [ecx + 0x10]
+3913A4C6: e9afa4a301           jmp      0x3ab7497a
+;   edge jmp -> 0x3AB7497A (inside)
+
+; --- block 0x3913D130 (2 insns) ---
+3913D130: 50                   push     eax
+3913D131: e99a5aa601           jmp      0x3aba2bd0
+;   edge jmp -> 0x3ABA2BD0 (inside)
+
+; --- block 0x3913DA57 (1 insns) ---
+3913DA57: e92a8f8a01           jmp      0x3a9e6986
+;   edge jmp -> 0x3A9E6986 (inside)
+
+; --- block 0x3913DA6F (1 insns) ---
+3913DA6F: e982bd8401           jmp      0x3a9897f6
+;   edge jmp -> 0x3A9897F6 (inside)
+
+; --- block 0x3913DA94 (1 insns) ---
+3913DA94: e91e94a201           jmp      0x3ab66eb7
+;   edge jmp -> 0x3AB66EB7 (inside)
+
+; --- block 0x3913DA9B (1 insns) ---
+3913DA9B: e9c622ecff           jmp      0x38fffd66
+;   edge jmp -> 0x38FFFD66 (inside)
+
+; --- block 0x3913DAAF (1 insns) ---
+3913DAAF: e9bd3e5601           jmp      0x3a6a1971
+;   edge jmp -> 0x3A6A1971 (inside)
+
+; --- block 0x3913DAC2 (1 insns) ---
+3913DAC2: e9cccda601           jmp      0x3abaa893
+;   edge jmp -> 0x3ABAA893 (inside)
+
+; --- block 0x3913DAD5 (1 insns) ---
+3913DAD5: eb80                 jmp      0x3913da57
+;   edge jmp -> 0x3913DA57 (inside)
+
+; --- block 0x3913DAD8 (1 insns) ---
+3913DAD8: e91f3ca501           jmp      0x3ab916fc
+;   edge jmp -> 0x3AB916FC (inside)
+
+; --- block 0x3913DAF3 (1 insns) ---
+3913DAF3: e90522ecff           jmp      0x38fffcfd
+;   edge jmp -> 0x38FFFCFD (inside)
+
+; --- block 0x3913DAFF (1 insns) ---
+3913DAFF: e92b05ecff           jmp      0x38ffe02f
+;   edge jmp -> 0x38FFE02F (inside)
+
+; --- block 0x3913DB0C (1 insns) ---
+3913DB0C: e93efba201           jmp      0x3ab6d64f
+;   edge jmp -> 0x3AB6D64F (inside)
+
+; --- block 0x3913DB19 (1 insns) ---
+3913DB19: e918535601           jmp      0x3a6a2e36
+;   edge jmp -> 0x3A6A2E36 (inside)
+
+; --- block 0x3913DB22 (1 insns) ---
+3913DB22: e9a1cd8301           jmp      0x3a97a8c8
+;   edge jmp -> 0x3A97A8C8 (inside)
+
+; --- block 0x3913DB2D (1 insns) ---
+3913DB2D: eb80                 jmp      0x3913daaf
+;   edge jmp -> 0x3913DAAF (inside)
+
+; --- block 0x3913DBA7 (1 insns) ---
+3913DBA7: e9a046a301           jmp      0x3ab7224c
+;   edge jmp -> 0x3AB7224C (inside)
+
+; --- block 0x3913DBAE (1 insns) ---
+3913DBAE: e940ee8401           jmp      0x3a98c9f3
+;   edge jmp -> 0x3A98C9F3 (inside)
+
+; --- block 0x3913DBBA (1 insns) ---
+3913DBBA: e9ad878a01           jmp      0x3a9e636c
+;   edge jmp -> 0x3A9E636C (inside)
+
+; --- block 0x3913DBC3 (1 insns) ---
+3913DBC3: e95233ecff           jmp      0x39000f1a
+;   edge jmp -> 0x39000F1A (inside)
+
+; --- block 0x3913DBCA (1 insns) ---
+3913DBCA: e9f1d75601           jmp      0x3a6ab3c0
+;   edge jmp -> 0x3A6AB3C0 (inside)
+
+; --- block 0x3913DBD7 (1 insns) ---
+3913DBD7: e9f2978401           jmp      0x3a9873ce
+;   edge jmp -> 0x3A9873CE (inside)
+
+; --- block 0x3913DBF4 (1 insns) ---
+3913DBF4: e935628401           jmp      0x3a983e2e
+;   edge jmp -> 0x3A983E2E (inside)
+
+; --- block 0x3913DC01 (1 insns) ---
+3913DC01: e957178401           jmp      0x3a97f35d
+;   edge jmp -> 0x3A97F35D (inside)
+
+; --- block 0x3913DC12 (1 insns) ---
+3913DC12: e93684a301           jmp      0x3ab7604d
+;   edge jmp -> 0x3AB7604D (inside)
+
+; --- block 0x3913DC57 (1 insns) ---
+3913DC57: e922faa201           jmp      0x3ab6d67e
+;   edge jmp -> 0x3AB6D67E (inside)
+
+; --- block 0x3913DCA2 (1 insns) ---
+3913DCA2: e9ce4fa501           jmp      0x3ab92c75
+;   edge jmp -> 0x3AB92C75 (inside)
+
+; --- block 0x3913DCB8 (1 insns) ---
+3913DCB8: e9e034a501           jmp      0x3ab9119d
+;   edge jmp -> 0x3AB9119D (inside)
+
+; --- block 0x3913DCC2 (1 insns) ---
+3913DCC2: e946b65301           jmp      0x3a67930d
+;   edge jmp -> 0x3A67930D (inside)
+
+; --- block 0x3913DE99 (1 insns) ---
+3913DE99: e9f29aa201           jmp      0x3ab67990
+;   edge jmp -> 0x3AB67990 (inside)
+
+; --- block 0x3913DE9E (1 insns) ---
+3913DE9E: e982dc5301           jmp      0x3a67bb25
+;   edge jmp -> 0x3A67BB25 (inside)
+
+; --- block 0x3913DEA8 (1 insns) ---
+3913DEA8: e913208501           jmp      0x3a98fec0
+;   edge jmp -> 0x3A98FEC0 (inside)
+
+; --- block 0x3913DEBA (1 insns) ---
+3913DEBA: ebe2                 jmp      0x3913de9e
+;   edge jmp -> 0x3913DE9E (inside)
+
+; --- block 0x3913DEBD (1 insns) ---
+3913DEBD: e9c5ad5301           jmp      0x3a678c87
+;   edge jmp -> 0x3A678C87 (inside)
+
+; --- block 0x393C4DA8 (4 insns) ---
+393C4DA8: c7416402000000       mov      dword ptr [ecx + 0x64], 2
+393C4DAF: 660fd64168           movq     qword ptr [ecx + 0x68], xmm0
+393C4DB4: 895170               mov      dword ptr [ecx + 0x70], edx
+393C4DB7: e95cac2a01           jmp      0x3a66fa18
+;   edge jmp -> 0x3A66FA18 (inside)
+
+; --- block 0x39AC0939 (2 insns) ---
+39AC0939: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+39AC093E: e99d34ec00           jmp      0x3a983de0
+;   edge jmp -> 0x3A983DE0 (inside)
+
+; --- block 0x39AC1164 (2 insns) ---
+39AC1164: 0fc6e112             shufps   xmm4, xmm1, 0x12
+39AC1168: e9bc370a01           jmp      0x3ab64929
+;   edge jmp -> 0x3AB64929 (inside)
+
+; --- block 0x39AC1195 (2 insns) ---
+39AC1195: 0f28e1               movaps   xmm4, xmm1
+39AC1198: e9c7ffffff           jmp      0x39ac1164
+;   edge jmp -> 0x39AC1164 (inside)
+
+; --- block 0x3A66FA18 (3 insns) ---
+3A66FA18: 8be5                 mov      esp, ebp
+3A66FA1A: 8d642404             lea      esp, [esp + 4]
+3A66FA1E: e96c1d4f00           jmp      0x3ab6178f
+;   edge jmp -> 0x3AB6178F (inside)
+
+; --- block 0x3A672A00 (2 insns) ---
+3A672A00: 8b4e40               mov      ecx, dword ptr [esi + 0x40]
+3A672A03: e9dff44e00           jmp      0x3ab61ee7
+;   edge jmp -> 0x3AB61EE7 (inside)
+
+; --- block 0x3A672C61 (2 insns) ---
+3A672C61: 53                   push     ebx
+3A672C62: e9678d0300           jmp      0x3a6ab9ce
+;   edge jmp -> 0x3A6AB9CE (inside)
+
+; --- block 0x3A677941 (5 insns) ---
+3A677941: f30f1065f4           movss    xmm4, dword ptr [ebp - 0xc]
+3A677946: f30f1045f0           movss    xmm0, dword ptr [ebp - 0x10]
+3A67794B: f30f106df8           movss    xmm5, dword ptr [ebp - 8]
+3A677950: f30f59c0             mulss    xmm0, xmm0
+3A677954: e915c65200           jmp      0x3aba3f6e
+;   edge jmp -> 0x3ABA3F6E (inside)
+
+; --- block 0x3A67841A (4 insns) ---
+3A67841A: f30f59cc             mulss    xmm1, xmm4
+3A67841E: f30f59d3             mulss    xmm2, xmm3
+3A678422: f30f59c3             mulss    xmm0, xmm3
+3A678426: e96213acfe           jmp      0x3913978d
+;   edge jmp -> 0x3913978D (inside)
+
+; --- block 0x3A6785E8 (4 insns) ---
+3A6785E8: 83e4f0               and      esp, 0xfffffff0
+3A6785EB: 83c404               add      esp, 4
+3A6785EE: 8d6424fc             lea      esp, [esp - 4]
+3A6785F2: e9a33e3100           jmp      0x3a98c49a
+;   edge jmp -> 0x3A98C49A (inside)
+
+; --- block 0x3A678C87 (2 insns) ---
+3A678C87: 8b4df4               mov      ecx, dword ptr [ebp - 0xc]
+3A678C8A: e9cb063100           jmp      0x3a98935a
+;   edge jmp -> 0x3A98935A (inside)
+
+; --- block 0x3A6791CC (5 insns) ---
+3A6791CC: 5d                   pop      ebp
+3A6791CD: 83ec10               sub      esp, 0x10
+3A6791D0: 8b4148               mov      eax, dword ptr [ecx + 0x48]
+3A6791D3: f30f10580c           movss    xmm3, dword ptr [eax + 0xc]
+3A6791D8: e9af4e0500           jmp      0x3a6ce08c
+;   edge jmp -> 0x3A6CE08C (inside)
+
+; --- block 0x3A67930D (4 insns) ---
+3A67930D: f30f104008           movss    xmm0, dword ptr [eax + 8]
+3A679312: f30f1008             movss    xmm1, dword ptr [eax]
+3A679316: f30f105004           movss    xmm2, dword ptr [eax + 4]
+3A67931B: e974a7aafe           jmp      0x39123a94
+;   edge jmp -> 0x39123A94 (inside)
+
+; --- block 0x3A67B8E8 (3 insns) ---
+3A67B8E8: 0f58c8               addps    xmm1, xmm0
+3A67B8EB: 0f58c9               addps    xmm1, xmm1
+3A67B8EE: e9efd15200           jmp      0x3aba8ae2
+;   edge jmp -> 0x3ABA8AE2 (inside)
+
+; --- block 0x3A67BB25 (2 insns) ---
+3A67BB25: 83c404               add      esp, 4
+3A67BB28: e99023acfe           jmp      0x3913debd
+;   edge jmp -> 0x3913DEBD (inside)
+
+; --- block 0x3A67BFAF (2 insns) ---
+3A67BFAF: 0f28d1               movaps   xmm2, xmm1
+3A67BFB2: e952c33000           jmp      0x3a988309
+;   edge jmp -> 0x3A988309 (inside)
+
+; --- block 0x3A69FB6E (5 insns) ---
+3A69FB6E: 0f28c8               movaps   xmm1, xmm0
+3A69FB71: 0fc6c8c9             shufps   xmm1, xmm0, 0xc9
+3A69FB75: 0f59cc               mulps    xmm1, xmm4
+3A69FB78: 0f570d60afaf39       xorps    xmm1, xmmword ptr [0x39afaf60]
+3A69FB7F: e924140000           jmp      0x3a6a0fa8
+;   edge jmp -> 0x3A6A0FA8 (inside)
+
+; --- block 0x3A6A0029 (4 insns) ---
+3A6A0029: 8b4108               mov      eax, dword ptr [ecx + 8]
+3A6A002C: 0f14ca               unpcklps xmm1, xmm2
+3A6A002F: f30f10510c           movss    xmm2, dword ptr [ecx + 0xc]
+3A6A0034: e934812600           jmp      0x3a90816d
+;   edge jmp -> 0x3A90816D (inside)
+
+; --- block 0x3A6A0FA8 (3 insns) ---
+3A6A0FA8: 0fc6c0d2             shufps   xmm0, xmm0, 0xd2
+3A6A0FAC: 0f59c3               mulps    xmm0, xmm3
+3A6A0FAF: e934a9fdff           jmp      0x3a67b8e8
+;   edge jmp -> 0x3A67B8E8 (inside)
+
+; --- block 0x3A6A1971 (2 insns) ---
+3A6A1971: 68aedb1339           push     0x3913dbae
+3A6A1976: c3                   ret
+;   edge push-cont -> 0x3913DBAE (inside)
+
+; --- block 0x3A6A2E36 (11 insns) ---
+3A6A2E36: 80b88b01000000       cmp      byte ptr [eax + 0x18b], 0
+3A6A2E3D: 6822db1339           push     0x3913db22
+3A6A2E42: 52                   push     edx
+3A6A2E43: 53                   push     ebx
+3A6A2E44: 8b542408             mov      edx, dword ptr [esp + 8]
+3A6A2E48: bb2fdb1339           mov      ebx, 0x3913db2f
+3A6A2E4D: 0f44d3               cmove    edx, ebx
+3A6A2E50: 89542408             mov      dword ptr [esp + 8], edx
+3A6A2E54: 5b                   pop      ebx
+3A6A2E55: 5a                   pop      edx
+3A6A2E56: c3                   ret
+;   edge push-cont -> 0x3913DB22 (inside)
+
+; --- block 0x3A6A3260 (3 insns) ---
+3A6A3260: f30f1145e0           movss    dword ptr [ebp - 0x20], xmm0
+3A6A3265: f30f5805fccf9939     addss    xmm0, dword ptr [0x3999cffc]
+3A6A326D: e9cf454c00           jmp      0x3ab67841
+;   edge jmp -> 0x3AB67841 (inside)
+
+; --- block 0x3A6AA214 (4 insns) ---
+3A6AA214: 0fc6c2c9             shufps   xmm0, xmm2, 0xc9
+3A6AA218: 0f59c4               mulps    xmm0, xmm4
+3A6AA21B: 0f570560afaf39       xorps    xmm0, xmmword ptr [0x39afaf60]
+3A6AA222: e9927a4c00           jmp      0x3ab71cb9
+;   edge jmp -> 0x3AB71CB9 (inside)
+
+; --- block 0x3A6AA47A (3 insns) ---
+3A6AA47A: 894c24fc             mov      dword ptr [esp - 4], ecx
+3A6AA47E: 8d6424fc             lea      esp, [esp - 4]
+3A6AA482: e959912d00           jmp      0x3a9835e0
+;   edge jmp -> 0x3A9835E0 (inside)
+
+; --- block 0x3A6AB3C0 (2 insns) ---
+3A6AB3C0: 80bfd901000000       cmp      byte ptr [edi + 0x1d9], 0
+3A6AB3C7: 0f84cc2aa9fe         je       0x3913de99
+;   edge jcc -> 0x3913DE99 (inside)
+;   edge fall -> 0x3A6AB3CD (inside)
+
+; --- block 0x3A6AB3CD (1 insns) ---
+3A6AB3CD: e90528a9fe           jmp      0x3913dbd7
+;   edge jmp -> 0x3913DBD7 (inside)
+
+; --- block 0x3A6AC6EB (2 insns) ---
+3A6AC6EB: f30f101d54279a39     movss    xmm3, dword ptr [0x399a2754]
+3A6AC6F3: e901562d00           jmp      0x3a981cf9
+;   edge jmp -> 0x3A981CF9 (inside)
+
+; --- block 0x3A6AC74D (3 insns) ---
+3A6AC74D: f30f59cd             mulss    xmm1, xmm5
+3A6AC751: f30f58c1             addss    xmm0, xmm1
+3A6AC755: e9dc352e00           jmp      0x3a98fd36
+;   edge jmp -> 0x3A98FD36 (inside)
+
+; --- block 0x3A6CE08C (3 insns) ---
+3A6CE08C: f30f105008           movss    xmm2, dword ptr [eax + 8]
+3A6CE091: f30f1008             movss    xmm1, dword ptr [eax]
+3A6CE095: e97e5c2b00           jmp      0x3a983d18
+;   edge jmp -> 0x3A983D18 (inside)
+
+; --- block 0x3A9079D7 (4 insns) ---
+3A9079D7: f30f59cc             mulss    xmm1, xmm4
+3A9079DB: f30f58c1             addss    xmm0, xmm1
+3A9079DF: 0f2f0580c49939       comiss   xmm0, dword ptr [0x3999c480]
+3A9079E6: 0f86b66283fe         jbe      0x3913dca2
+;   edge jcc -> 0x3913DCA2 (inside)
+;   edge fall -> 0x3A9079EC (inside)
+
+; --- block 0x3A9079EC (1 insns) ---
+3A9079EC: e9666283fe           jmp      0x3913dc57
+;   edge jmp -> 0x3913DC57 (inside)
+
+; --- block 0x3A908071 (2 insns) ---
+3A908071: 895c24fc             mov      dword ptr [esp - 4], ebx
+3A908075: e9b99b2600           jmp      0x3ab71c33
+;   edge jmp -> 0x3AB71C33 (inside)
+
+; --- block 0x3A90816D (2 insns) ---
+3A90816D: 0f14c3               unpcklps xmm0, xmm3
+3A908170: e9302383fe           jmp      0x3913a4a5
+;   edge jmp -> 0x3913A4A5 (inside)
+
+; --- block 0x3A909E84 (3 insns) ---
+3A909E84: f30f5edc             divss    xmm3, xmm4
+3A909E88: 0f28e3               movaps   xmm4, xmm3
+3A909E8B: e98ae5d6ff           jmp      0x3a67841a
+;   edge jmp -> 0x3A67841A (inside)
+
+; --- block 0x3A9793BC (3 insns) ---
+3A9793BC: 58                   pop      eax
+3A9793BD: 5b                   pop      ebx
+3A9793BE: c3                   ret
+
+; --- block 0x3A979478 (7 insns) ---
+3A979478: 8b3424               mov      esi, dword ptr [esp]
+3A97947B: 8d642404             lea      esp, [esp + 4]
+3A97947F: 8be5                 mov      esp, ebp
+3A979481: 8d642404             lea      esp, [esp + 4]
+3A979485: 8b6c24fc             mov      ebp, dword ptr [esp - 4]
+3A979489: 8d642404             lea      esp, [esp + 4]
+3A97948D: ff6424fc             jmp      dword ptr [esp - 4]
+
+; --- block 0x3A979B11 (4 insns) ---
+3A979B11: 894dec               mov      dword ptr [ebp - 0x14], ecx
+3A979B14: f30f1065ec           movss    xmm4, dword ptr [ebp - 0x14]
+3A979B19: 0f28cc               movaps   xmm1, xmm4
+3A979B1C: e9b6def8ff           jmp      0x3a9079d7
+;   edge jmp -> 0x3A9079D7 (inside)
+
+; --- block 0x3A97A65A (2 insns) ---
+3A97A65A: f30f59157cc49939     mulss    xmm2, dword ptr [0x3999c47c]
+3A97A662: e94a761e00           jmp      0x3ab61cb1
+;   edge jmp -> 0x3AB61CB1 (inside)
+
+; --- block 0x3A97A8C8 (7 insns) ---
+3A97A8C8: 8b4508               mov      eax, dword ptr [ebp + 8]
+3A97A8CB: 8d6424fc             lea      esp, [esp - 4]
+3A97A8CF: 890424               mov      dword ptr [esp], eax
+3A97A8D2: 56                   push     esi
+3A97A8D3: 59                   pop      ecx
+3A97A8D4: 682ddb1339           push     0x3913db2d
+3A97A8D9: e9420e7cfe           jmp      0x3913b720
+;   edge tail-call -> 0x3913B720 (inside)
+;   edge tail-cont -> 0x3913DB2D (inside)
+
+; --- block 0x3A97F35D (4 insns) ---
+3A97F35D: f30f104670           movss    xmm0, dword ptr [esi + 0x70]
+3A97F362: 0f54c1               andps    xmm0, xmm1
+3A97F365: 0f2fd0               comiss   xmm2, xmm0
+3A97F368: 0f832beb7bfe         jae      0x3913de99
+;   edge jcc -> 0x3913DE99 (inside)
+;   edge fall -> 0x3A97F36E (inside)
+
+; --- block 0x3A97F36E (1 insns) ---
+3A97F36E: e99fe87bfe           jmp      0x3913dc12
+;   edge jmp -> 0x3913DC12 (inside)
+
+; --- block 0x3A981A38 (3 insns) ---
+3A981A38: f30f1055e8           movss    xmm2, dword ptr [ebp - 0x18]
+3A981A3D: f30f105de4           movss    xmm3, dword ptr [ebp - 0x1c]
+3A981A42: e969fc2000           jmp      0x3ab916b0
+;   edge jmp -> 0x3AB916B0 (inside)
+
+; --- block 0x3A981CF9 (5 insns) ---
+3A981CF9: 6a00                 push     0
+3A981CFB: f30f114dd8           movss    dword ptr [ebp - 0x28], xmm1
+3A981D00: f30f1155dc           movss    dword ptr [ebp - 0x24], xmm2
+3A981D05: 8b7838               mov      edi, dword ptr [eax + 0x38]
+3A981D08: e96d87d2ff           jmp      0x3a6aa47a
+;   edge jmp -> 0x3A6AA47A (inside)
+
+; --- block 0x3A983D18 (3 insns) ---
+3A983D18: f30f104004           movss    xmm0, dword ptr [eax + 4]
+3A983D1D: 0f57e4               xorps    xmm4, xmm4
+3A983D20: e904c3d1ff           jmp      0x3a6a0029
+;   edge jmp -> 0x3A6A0029 (inside)
+
+; --- block 0x3A983DE0 (2 insns) ---
+3A983DE0: 6a40                 push     0x40
+3A983DE2: e979f4d1ff           jmp      0x3a6a3260
+;   edge jmp -> 0x3A6A3260 (inside)
+
+; --- block 0x3A983E2E (13 insns) ---
+3A983E2E: f30f10466c           movss    xmm0, dword ptr [esi + 0x6c]
+3A983E33: 0f54c1               andps    xmm0, xmm1
+3A983E36: 0f2fd0               comiss   xmm2, xmm0
+3A983E39: 6801dc1339           push     0x3913dc01
+3A983E3E: 51                   push     ecx
+3A983E3F: 52                   push     edx
+3A983E40: 8b4c2408             mov      ecx, dword ptr [esp + 8]
+3A983E44: ba12dc1339           mov      edx, 0x3913dc12
+3A983E49: 0f42ca               cmovb    ecx, edx
+3A983E4C: 894c2408             mov      dword ptr [esp + 8], ecx
+3A983E50: 5a                   pop      edx
+3A983E51: 59                   pop      ecx
+3A983E52: c3                   ret
+;   edge push-cont -> 0x3913DC01 (inside)
+
+; --- block 0x3A9873CE (2 insns) ---
+3A9873CE: f30f104668           movss    xmm0, dword ptr [esi + 0x68]
+3A9873D3: e97fa71d00           jmp      0x3ab61b57
+;   edge jmp -> 0x3AB61B57 (inside)
+
+; --- block 0x3A988309 (5 insns) ---
+3A988309: f30f59c5             mulss    xmm0, xmm5
+3A98830D: f30f59d3             mulss    xmm2, xmm3
+3A988311: f30f59c8             mulss    xmm1, xmm0
+3A988315: f30f1165f4           movss    dword ptr [ebp - 0xc], xmm4
+3A98831A: e9774a0c00           jmp      0x3aa4cd96
+;   edge jmp -> 0x3AA4CD96 (inside)
+
+; --- block 0x3A988E1B (3 insns) ---
+3A988E1B: 896c2404             mov      dword ptr [esp + 4], ebp
+3A988E1F: 54                   push     esp
+3A988E20: e9a703cfff           jmp      0x3a6791cc
+;   edge jmp -> 0x3A6791CC (inside)
+
+; --- block 0x3A98935A (2 insns) ---
+3A98935A: 64890d00000000       mov      dword ptr fs:[0], ecx
+3A989361: e9812c0000           jmp      0x3a98bfe7
+;   edge jmp -> 0x3A98BFE7 (inside)
+
+; --- block 0x3A9897F6 (12 insns) ---
+3A9897F6: 090d58afaf39         or       dword ptr [0x39afaf58], ecx
+3A9897FC: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+3A989801: 8b00                 mov      eax, dword ptr [eax]
+3A989803: 8d6424fc             lea      esp, [esp - 4]
+3A989807: 890c24               mov      dword ptr [esp], ecx
+3A98980A: 6860d69a39           push     0x399ad660
+3A98980F: 8d6424fc             lea      esp, [esp - 4]
+3A989813: 890424               mov      dword ptr [esp], eax
+3A989816: b9d8abaf39           mov      ecx, 0x39afabd8
+3A98981B: c745fc00000000       mov      dword ptr [ebp - 4], 0
+3A989822: 6894da1339           push     0x3913da94
+3A989827: e984b367fe           jmp      0x39004bb0
+;   edge tail-call -> 0x39004BB0 (inside)
+;   edge tail-cont -> 0x3913DA94 (inside)
+
+; --- block 0x3A98BB00 (28 insns) ---
+3A98BB00: 8d6424fc             lea      esp, [esp - 4]
+3A98BB04: 892c24               mov      dword ptr [esp], ebp
+3A98BB07: 54                   push     esp
+3A98BB08: 5d                   pop      ebp
+3A98BB09: 64a100000000         mov      eax, dword ptr fs:[0]
+3A98BB0F: 6aff                 push     -1
+3A98BB11: 68964e9339           push     0x39934e96
+3A98BB16: 894424fc             mov      dword ptr [esp - 4], eax
+3A98BB1A: 8d6424fc             lea      esp, [esp - 4]
+3A98BB1E: 64892500000000       mov      dword ptr fs:[0], esp
+3A98BB25: 81ecc8000000         sub      esp, 0xc8
+3A98BB2B: 897424fc             mov      dword ptr [esp - 4], esi
+3A98BB2F: 8d6424fc             lea      esp, [esp - 4]
+3A98BB33: 8bf1                 mov      esi, ecx
+3A98BB35: b901000000           mov      ecx, 1
+3A98BB3A: 8d6424fc             lea      esp, [esp - 4]
+3A98BB3E: 893c24               mov      dword ptr [esp], edi
+3A98BB41: 840d58afaf39         test     byte ptr [0x39afaf58], cl
+3A98BB47: 686fda1339           push     0x3913da6f
+3A98BB4C: 50                   push     eax
+3A98BB4D: 51                   push     ecx
+3A98BB4E: 8b442408             mov      eax, dword ptr [esp + 8]
+3A98BB52: b99bda1339           mov      ecx, 0x3913da9b
+3A98BB57: 0f45c1               cmovne   eax, ecx
+3A98BB5A: 89442408             mov      dword ptr [esp + 8], eax
+3A98BB5E: 59                   pop      ecx
+3A98BB5F: 58                   pop      eax
+3A98BB60: c3                   ret
+;   edge push-cont -> 0x3913DA6F (inside)
+
+; --- block 0x3A98BFE7 (3 insns) ---
+3A98BFE7: 8be5                 mov      esp, ebp
+3A98BFE9: 8b2c24               mov      ebp, dword ptr [esp]
+3A98BFEC: e9593767fe           jmp      0x38fff74a
+;   edge jmp -> 0x38FFF74A (inside)
+
+; --- block 0x3A98C49A (3 insns) ---
+3A98C49A: 892c24               mov      dword ptr [esp], ebp
+3A98C49D: 8b6b04               mov      ebp, dword ptr [ebx + 4]
+3A98C4A0: e976c9ffff           jmp      0x3a988e1b
+;   edge jmp -> 0x3A988E1B (inside)
+
+; --- block 0x3A98C9F3 (3 insns) ---
+3A98C9F3: 8b7d08               mov      edi, dword ptr [ebp + 8]
+3A98C9F6: 83bf3403000000       cmp      dword ptr [edi + 0x334], 0
+3A98C9FD: 0f84c0117bfe         je       0x3913dbc3
+;   edge jcc -> 0x3913DBC3 (inside)
+;   edge fall -> 0x3A98CA03 (inside)
+
+; --- block 0x3A98CA03 (1 insns) ---
+3A98CA03: e9b2117bfe           jmp      0x3913dbba
+;   edge jmp -> 0x3913DBBA (inside)
+
+; --- block 0x3A98CA7B (2 insns) ---
+3A98CA7B: f30f108884010000     movss    xmm1, dword ptr [eax + 0x184]
+3A98CA83: e9156c0300           jmp      0x3a9c369d
+;   edge jmp -> 0x3A9C369D (inside)
+
+; --- block 0x3A98FD36 (3 insns) ---
+3A98FD36: f30f580518cc9939     addss    xmm0, dword ptr [0x3999cc18]
+3A98FD3E: 0f57c9               xorps    xmm1, xmm1
+3A98FD41: e9dcf70200           jmp      0x3a9bf522
+;   edge jmp -> 0x3A9BF522 (inside)
+
+; --- block 0x3A98FEC0 (2 insns) ---
+3A98FEC0: 8b15d8b15b3a         mov      edx, dword ptr [0x3a5bb1d8]
+3A98FEC6: e9b4f10b00           jmp      0x3aa4f07f
+;   edge jmp -> 0x3AA4F07F (inside)
+
+; --- block 0x3A9902A8 (3 insns) ---
+3A9902A8: f30f59cb             mulss    xmm1, xmm3
+3A9902AC: f30f58c1             addss    xmm0, xmm1
+3A9902B0: e95c98feff           jmp      0x3a979b11
+;   edge jmp -> 0x3A979B11 (inside)
+
+; --- block 0x3A990A33 (103 insns) ---
+3A990A33: 8d6424fc             lea      esp, [esp - 4]
+3A990A37: 891c24               mov      dword ptr [esp], ebx
+3A990A3A: 8bdc                 mov      ebx, esp
+3A990A3C: 83ec08               sub      esp, 8
+3A990A3F: 83e4f0               and      esp, 0xfffffff0
+3A990A42: 83c404               add      esp, 4
+3A990A45: 896c24fc             mov      dword ptr [esp - 4], ebp
+3A990A49: 8d6424fc             lea      esp, [esp - 4]
+3A990A4D: 8b6b04               mov      ebp, dword ptr [ebx + 4]
+3A990A50: 896c2404             mov      dword ptr [esp + 4], ebp
+3A990A54: 8bec                 mov      ebp, esp
+3A990A56: 83ec10               sub      esp, 0x10
+3A990A59: 8b4144               mov      eax, dword ptr [ecx + 0x44]
+3A990A5C: f30f10580c           movss    xmm3, dword ptr [eax + 0xc]
+3A990A61: f30f105008           movss    xmm2, dword ptr [eax + 8]
+3A990A66: f30f1008             movss    xmm1, dword ptr [eax]
+3A990A6A: f30f104004           movss    xmm0, dword ptr [eax + 4]
+3A990A6F: 0f57ed               xorps    xmm5, xmm5
+3A990A72: 0f28e5               movaps   xmm4, xmm5
+3A990A75: 0f14ca               unpcklps xmm1, xmm2
+3A990A78: f30f10510c           movss    xmm2, dword ptr [ecx + 0xc]
+3A990A7D: 0f14c3               unpcklps xmm0, xmm3
+3A990A80: 0f14c8               unpcklps xmm1, xmm0
+3A990A83: f30f105914           movss    xmm3, dword ptr [ecx + 0x14]
+3A990A88: f30f104110           movss    xmm0, dword ptr [ecx + 0x10]
+3A990A8D: 0f14d3               unpcklps xmm2, xmm3
+3A990A90: 0f14c4               unpcklps xmm0, xmm4
+3A990A93: 0f14d0               unpcklps xmm2, xmm0
+3A990A96: 0f28e1               movaps   xmm4, xmm1
+3A990A99: 0fc6e112             shufps   xmm4, xmm1, 0x12
+3A990A9D: 0f28d9               movaps   xmm3, xmm1
+3A990AA0: 0fc6d9c9             shufps   xmm3, xmm1, 0xc9
+3A990AA4: 0fc6c9ff             shufps   xmm1, xmm1, 0xff
+3A990AA8: 0f59ca               mulps    xmm1, xmm2
+3A990AAB: 0f28c2               movaps   xmm0, xmm2
+3A990AAE: 0fc6c2c9             shufps   xmm0, xmm2, 0xc9
+3A990AB2: 0f59c4               mulps    xmm0, xmm4
+3A990AB5: 0f570560afaf39       xorps    xmm0, xmmword ptr [0x39afaf60]
+3A990ABC: 0f28fa               movaps   xmm7, xmm2
+3A990ABF: 0fc6fa12             shufps   xmm7, xmm2, 0x12
+3A990AC3: 0f59fb               mulps    xmm7, xmm3
+3A990AC6: 0f58c7               addps    xmm0, xmm7
+3A990AC9: 0f58c1               addps    xmm0, xmm1
+3A990ACC: f30f103dfccf9939     movss    xmm7, dword ptr [0x3999cffc]
+3A990AD4: 0f28c8               movaps   xmm1, xmm0
+3A990AD7: 0fc6c8c9             shufps   xmm1, xmm0, 0xc9
+3A990ADB: 0f59cc               mulps    xmm1, xmm4
+3A990ADE: 0f570d60afaf39       xorps    xmm1, xmmword ptr [0x39afaf60]
+3A990AE5: f30f1020             movss    xmm4, dword ptr [eax]
+3A990AE9: 0fc6c0d2             shufps   xmm0, xmm0, 0xd2
+3A990AED: 0f59c3               mulps    xmm0, xmm3
+3A990AF0: f30f10580c           movss    xmm3, dword ptr [eax + 0xc]
+3A990AF5: 0f58c8               addps    xmm1, xmm0
+3A990AF8: f30f104008           movss    xmm0, dword ptr [eax + 8]
+3A990AFD: 0f58c9               addps    xmm1, xmm1
+3A990B00: 0f58ca               addps    xmm1, xmm2
+3A990B03: f30f105004           movss    xmm2, dword ptr [eax + 4]
+3A990B08: 0f294df0             movaps   xmmword ptr [ebp - 0x10], xmm1
+3A990B0C: f30f59d3             mulss    xmm2, xmm3
+3A990B10: 0f28cc               movaps   xmm1, xmm4
+3A990B13: f30f59c8             mulss    xmm1, xmm0
+3A990B17: f30f58ca             addss    xmm1, xmm2
+3A990B1B: f30f59e3             mulss    xmm4, xmm3
+3A990B1F: 0f28d0               movaps   xmm2, xmm0
+3A990B22: f30f595004           mulss    xmm2, dword ptr [eax + 4]
+3A990B27: f30f5cd4             subss    xmm2, xmm4
+3A990B2B: f30f59c0             mulss    xmm0, xmm0
+3A990B2F: f30f59db             mulss    xmm3, xmm3
+3A990B33: f30f58c3             addss    xmm0, xmm3
+3A990B37: f30f101d88c49939     movss    xmm3, dword ptr [0x3999c488]
+3A990B3F: f30f59c7             mulss    xmm0, xmm7
+3A990B43: f30f59cf             mulss    xmm1, xmm7
+3A990B47: f30f59cd             mulss    xmm1, xmm5
+3A990B4B: f30f584df0           addss    xmm1, dword ptr [ebp - 0x10]
+3A990B50: f30f59d7             mulss    xmm2, xmm7
+3A990B54: f30f59d5             mulss    xmm2, xmm5
+3A990B58: f30f5855f4           addss    xmm2, dword ptr [ebp - 0xc]
+3A990B5D: f30f5cc3             subss    xmm0, xmm3
+3A990B61: f30f59c5             mulss    xmm0, xmm5
+3A990B65: f30f5845f8           addss    xmm0, dword ptr [ebp - 8]
+3A990B6A: 0f28e2               movaps   xmm4, xmm2
+3A990B6D: f30f59e2             mulss    xmm4, xmm2
+3A990B71: 0f28e9               movaps   xmm5, xmm1
+3A990B74: f30f59e9             mulss    xmm5, xmm1
+3A990B78: f30f58e5             addss    xmm4, xmm5
+3A990B7C: 0f28e8               movaps   xmm5, xmm0
+3A990B7F: f30f59e8             mulss    xmm5, xmm0
+3A990B83: f30f58e5             addss    xmm4, xmm5
+3A990B87: 0f57ed               xorps    xmm5, xmm5
+3A990B8A: f30f10ec             movss    xmm5, xmm4
+3A990B8E: f30f51ed             sqrtss   xmm5, xmm5
+3A990B92: 0f28e5               movaps   xmm4, xmm5
+3A990B95: 0f2fe3               comiss   xmm4, xmm3
+3A990B98: 687a971339           push     0x3913977a
+3A990B9D: 53                   push     ebx
+3A990B9E: 50                   push     eax
+3A990B9F: 8b5c2408             mov      ebx, dword ptr [esp + 8]
+3A990BA3: b88d971339           mov      eax, 0x3913978d
+3A990BA8: 0f46d8               cmovbe   ebx, eax
+3A990BAB: 895c2408             mov      dword ptr [esp + 8], ebx
+3A990BAF: 58                   pop      eax
+3A990BB0: 5b                   pop      ebx
+3A990BB1: c3                   ret
+;   edge push-cont -> 0x3913977A (inside)
+
+; --- block 0x3A9BF522 (5 insns) ---
+3A9BF522: f30f10c8             movss    xmm1, xmm0
+3A9BF526: f30f52c9             rsqrtss  xmm1, xmm1
+3A9BF52A: 0f28d1               movaps   xmm2, xmm1
+3A9BF52D: f30f59d0             mulss    xmm2, xmm0
+3A9BF531: e977651b00           jmp      0x3ab75aad
+;   edge jmp -> 0x3AB75AAD (inside)
+
+; --- block 0x3A9C007A (2 insns) ---
+3A9C007A: 68bade1339           push     0x3913deba
+3A9C007F: ffe0                 jmp      eax
+;   edge push-cont -> 0x3913DEBA (inside)
+
+; --- block 0x3A9C012D (1 insns) ---
+3A9C012D: 0f82dfda77fe         jb       0x3913dc12
+;   edge jcc -> 0x3913DC12 (inside)
+;   edge fall -> 0x3A9C0133 (inside)
+
+; --- block 0x3A9C0133 (1 insns) ---
+3A9C0133: e9bcda77fe           jmp      0x3913dbf4
+;   edge jmp -> 0x3913DBF4 (inside)
+
+; --- block 0x3A9C369D (4 insns) ---
+3A9C369D: f30f590d30cf9939     mulss    xmm1, dword ptr [0x3999cf30]
+3A9C36A5: 0f28d8               movaps   xmm3, xmm0
+3A9C36A8: 0f28d0               movaps   xmm2, xmm0
+3A9C36AB: e9f8b90800           jmp      0x3aa4f0a8
+;   edge jmp -> 0x3AA4F0A8 (inside)
+
+; --- block 0x3A9E636C (2 insns) ---
+3A9E636C: f6873803000001       test     byte ptr [edi + 0x338], 1
+3A9E6373: 0f84517875fe         je       0x3913dbca
+;   edge jcc -> 0x3913DBCA (inside)
+;   edge fall -> 0x3A9E6379 (inside)
+
+; --- block 0x3A9E6379 (1 insns) ---
+3A9E6379: e9457875fe           jmp      0x3913dbc3
+;   edge jmp -> 0x3913DBC3 (inside)
+
+; --- block 0x3A9E6986 (2 insns) ---
+3A9E6986: 83c404               add      esp, 4
+3A9E6989: e94a7175fe           jmp      0x3913dad8
+;   edge jmp -> 0x3913DAD8 (inside)
+
+; --- block 0x3A9E6DFC (2 insns) ---
+3A9E6DFC: 0f58c1               addps    xmm0, xmm1
+3A9E6DFF: e96a8dcbff           jmp      0x3a69fb6e
+;   edge jmp -> 0x3A69FB6E (inside)
+
+; --- block 0x3AA4CD96 (5 insns) ---
+3AA4CD96: f30f1155f8           movss    dword ptr [ebp - 8], xmm2
+3AA4CD9B: f30f7e45f4           movq     xmm0, qword ptr [ebp - 0xc]
+3AA4CDA0: f30f114dfc           movss    dword ptr [ebp - 4], xmm1
+3AA4CDA5: 8b55fc               mov      edx, dword ptr [ebp - 4]
+3AA4CDA8: e9fb7f97fe           jmp      0x393c4da8
+;   edge jmp -> 0x393C4DA8 (inside)
+
+; --- block 0x3AA4DDAB (23 insns) ---
+3AA4DDAB: 8b1598fbae39         mov      edx, dword ptr [0x39aefb98]
+3AA4DDB1: 8b4104               mov      eax, dword ptr [ecx + 4]
+3AA4DDB4: f30f105844           movss    xmm3, dword ptr [eax + 0x44]
+3AA4DDB9: f30f599adc010000     mulss    xmm3, dword ptr [edx + 0x1dc]
+3AA4DDC1: f30f59c3             mulss    xmm0, xmm3
+3AA4DDC5: f30f59cb             mulss    xmm1, xmm3
+3AA4DDC9: f30f59d3             mulss    xmm2, xmm3
+3AA4DDCD: f30f1145fc           movss    dword ptr [ebp - 4], xmm0
+3AA4DDD2: 8b45fc               mov      eax, dword ptr [ebp - 4]
+3AA4DDD5: f30f114df4           movss    dword ptr [ebp - 0xc], xmm1
+3AA4DDDA: f30f1155f8           movss    dword ptr [ebp - 8], xmm2
+3AA4DDDF: f30f7e45f4           movq     xmm0, qword ptr [ebp - 0xc]
+3AA4DDE4: 660fd64168           movq     qword ptr [ecx + 0x68], xmm0
+3AA4DDE9: c7416402000000       mov      dword ptr [ecx + 0x64], 2
+3AA4DDF0: 894170               mov      dword ptr [ecx + 0x70], eax
+3AA4DDF3: 8be5                 mov      esp, ebp
+3AA4DDF5: 8b2c24               mov      ebp, dword ptr [esp]
+3AA4DDF8: 8d642404             lea      esp, [esp + 4]
+3AA4DDFC: 8be3                 mov      esp, ebx
+3AA4DDFE: 8b1c24               mov      ebx, dword ptr [esp]
+3AA4DE01: 8d642404             lea      esp, [esp + 4]
+3AA4DE05: 8d642404             lea      esp, [esp + 4]
+3AA4DE09: ff6424fc             jmp      dword ptr [esp - 4]
+
+; --- block 0x3AA4F07F (5 insns) ---
+3AA4F07F: 8b829c000000         mov      eax, dword ptr [edx + 0x9c]
+3AA4F085: 8d4dac               lea      ecx, [ebp - 0x54]
+3AA4F088: 8d6424fc             lea      esp, [esp - 4]
+3AA4F08C: 890c24               mov      dword ptr [esp], ecx
+3AA4F08F: e9e60ff7ff           jmp      0x3a9c007a
+;   edge jmp -> 0x3A9C007A (inside)
+
+; --- block 0x3AA4F0A8 (5 insns) ---
+3AA4F0A8: f30f5955f0           mulss    xmm2, dword ptr [ebp - 0x10]
+3AA4F0AD: f30f59dc             mulss    xmm3, xmm4
+3AA4F0B1: 0f28e1               movaps   xmm4, xmm1
+3AA4F0B4: f30f59e2             mulss    xmm4, xmm2
+3AA4F0B8: e9f2cec2ff           jmp      0x3a67bfaf
+;   edge jmp -> 0x3A67BFAF (inside)
+
+; --- block 0x3AB6178F (2 insns) ---
+3AB6178F: 8b6c24fc             mov      ebp, dword ptr [esp - 4]
+3AB61793: e9c914b1ff           jmp      0x3a672c61
+;   edge jmp -> 0x3A672C61 (inside)
+
+; --- block 0x3AB61A33 (3 insns) ---
+3AB61A33: f30f115dc4           movss    dword ptr [ebp - 0x3c], xmm3
+3AB61A38: f30f115dc8           movss    dword ptr [ebp - 0x38], xmm3
+3AB61A3D: e9a9acb4ff           jmp      0x3a6ac6eb
+;   edge jmp -> 0x3A6AC6EB (inside)
+
+; --- block 0x3AB61B57 (5 insns) ---
+3AB61B57: f30f100d00d59939     movss    xmm1, dword ptr [0x3999d500]
+3AB61B5F: f30f101590cf9939     movss    xmm2, dword ptr [0x3999cf90]
+3AB61B67: 0f54c1               andps    xmm0, xmm1
+3AB61B6A: 0f2fd0               comiss   xmm2, xmm0
+3AB61B6D: e9bbe5e5ff           jmp      0x3a9c012d
+;   edge jmp -> 0x3A9C012D (inside)
+
+; --- block 0x3AB61CB1 (3 insns) ---
+3AB61CB1: f30f5cc2             subss    xmm0, xmm2
+3AB61CB5: f30f59c1             mulss    xmm0, xmm1
+3AB61CB9: e9bdade2ff           jmp      0x3a98ca7b
+;   edge jmp -> 0x3A98CA7B (inside)
+
+; --- block 0x3AB61EE7 (3 insns) ---
+3AB61EE7: 80b9c701000000       cmp      byte ptr [ecx + 0x1c7], 0
+3AB61EEE: 68e9991339           push     0x391399e9
+3AB61EF3: e90c640400           jmp      0x3aba8304
+;   edge jmp -> 0x3ABA8304 (inside)
+
+; --- block 0x3AB64929 (4 insns) ---
+3AB64929: 0f28d9               movaps   xmm3, xmm1
+3AB6492C: 0fc6d9c9             shufps   xmm3, xmm1, 0xc9
+3AB64930: 0fc6c9ff             shufps   xmm1, xmm1, 0xff
+3AB64934: e9153f0400           jmp      0x3aba884e
+;   edge jmp -> 0x3ABA884E (inside)
+
+; --- block 0x3AB66EB7 (2 insns) ---
+3AB66EB7: c745fcffffffff       mov      dword ptr [ebp - 4], 0xffffffff
+3AB66EBE: e9d86b5dfe           jmp      0x3913da9b
+;   edge jmp -> 0x3913DA9B (inside)
+
+; --- block 0x3AB67841 (2 insns) ---
+3AB67841: 8d8d6cffffff         lea      ecx, [ebp - 0x94]
+3AB67847: e9e7a1ffff           jmp      0x3ab61a33
+;   edge jmp -> 0x3AB61A33 (inside)
+
+; --- block 0x3AB67990 (5 insns) ---
+3AB67990: 837dbc00             cmp      dword ptr [ebp - 0x44], 0
+3AB67994: 8b3c24               mov      edi, dword ptr [esp]
+3AB67997: 8d642404             lea      esp, [esp + 4]
+3AB6799B: c745fcffffffff       mov      dword ptr [ebp - 4], 0xffffffff
+3AB679A2: e917b50300           jmp      0x3aba2ebe
+;   edge jmp -> 0x3ABA2EBE (inside)
+
+; --- block 0x3AB6C00A (5 insns) ---
+3AB6C00A: 897424fc             mov      dword ptr [esp - 4], esi
+3AB6C00E: 8d6424fc             lea      esp, [esp - 4]
+3AB6C012: 8bf1                 mov      esi, ecx
+3AB6C014: 8b4608               mov      eax, dword ptr [esi + 8]
+3AB6C017: e98d9a0200           jmp      0x3ab95aa9
+;   edge jmp -> 0x3AB95AA9 (inside)
+
+; --- block 0x3AB6D64F (11 insns) ---
+3AB6D64F: 80b88a01000000       cmp      byte ptr [eax + 0x18a], 0
+3AB6D656: 6819db1339           push     0x3913db19
+3AB6D65B: 52                   push     edx
+3AB6D65C: 53                   push     ebx
+3AB6D65D: 8b542408             mov      edx, dword ptr [esp + 8]
+3AB6D661: bba7db1339           mov      ebx, 0x3913dba7
+3AB6D666: 0f45d3               cmovne   edx, ebx
+3AB6D669: 89542408             mov      dword ptr [esp + 8], edx
+3AB6D66D: 5b                   pop      ebx
+3AB6D66E: 5a                   pop      edx
+3AB6D66F: c3                   ret
+;   edge push-cont -> 0x3913DB19 (inside)
+
+; --- block 0x3AB6D67E (18 insns) ---
+3AB6D67E: 0f57c9               xorps    xmm1, xmm1
+3AB6D681: f30f10c8             movss    xmm1, xmm0
+3AB6D685: f30f52c9             rsqrtss  xmm1, xmm1
+3AB6D689: 0f28e9               movaps   xmm5, xmm1
+3AB6D68C: f30f59e8             mulss    xmm5, xmm0
+3AB6D690: f30f100578c49939     movss    xmm0, dword ptr [0x3999c478]
+3AB6D698: f30f59e9             mulss    xmm5, xmm1
+3AB6D69C: f30f592d7cc49939     mulss    xmm5, dword ptr [0x3999c47c]
+3AB6D6A4: f30f5cc5             subss    xmm0, xmm5
+3AB6D6A8: f30f59c1             mulss    xmm0, xmm1
+3AB6D6AC: f30f59d8             mulss    xmm3, xmm0
+3AB6D6B0: f30f59d0             mulss    xmm2, xmm0
+3AB6D6B4: f30f59e0             mulss    xmm4, xmm0
+3AB6D6B8: f30f115de4           movss    dword ptr [ebp - 0x1c], xmm3
+3AB6D6BD: f30f1155e8           movss    dword ptr [ebp - 0x18], xmm2
+3AB6D6C2: f30f1165ec           movss    dword ptr [ebp - 0x14], xmm4
+3AB6D6C7: 68b8dc1339           push     0x3913dcb8
+3AB6D6CC: c3                   ret
+;   edge push-cont -> 0x3913DCB8 (inside)
+
+; --- block 0x3AB71C33 (5 insns) ---
+3AB71C33: 8d6424fc             lea      esp, [esp - 4]
+3AB71C37: 54                   push     esp
+3AB71C38: 5b                   pop      ebx
+3AB71C39: 83ec08               sub      esp, 8
+3AB71C3C: e9a769b0ff           jmp      0x3a6785e8
+;   edge jmp -> 0x3A6785E8 (inside)
+
+; --- block 0x3AB71CB9 (5 insns) ---
+3AB71CB9: 0f28f2               movaps   xmm6, xmm2
+3AB71CBC: 0fc6f212             shufps   xmm6, xmm2, 0x12
+3AB71CC0: 0f59f3               mulps    xmm6, xmm3
+3AB71CC3: 0f58c6               addps    xmm0, xmm6
+3AB71CC6: e93151e7ff           jmp      0x3a9e6dfc
+;   edge jmp -> 0x3A9E6DFC (inside)
+
+; --- block 0x3AB7224C (3 insns) ---
+3AB7224C: 8bce                 mov      ecx, esi
+3AB7224E: 68aedb1339           push     0x3913dbae
+3AB72253: e9c8735cfe           jmp      0x39139620
+;   edge jmp -> 0x39139620 (inside)
+
+; --- block 0x3AB74170 (3 insns) ---
+3AB74170: 80b88001000000       cmp      byte ptr [eax + 0x180], 0
+3AB74177: 894dfc               mov      dword ptr [ebp - 4], ecx
+3AB7417A: 0f847f995cfe         je       0x3913daff
+;   edge jcc -> 0x3913DAFF (inside)
+;   edge fall -> 0x3AB74180 (inside)
+
+; --- block 0x3AB74180 (1 insns) ---
+3AB74180: e96e995cfe           jmp      0x3913daf3
+;   edge jmp -> 0x3913DAF3 (inside)
+
+; --- block 0x3AB7458B (2 insns) ---
+3AB7458B: 0f28cb               movaps   xmm1, xmm3
+3AB7458E: e915bde1ff           jmp      0x3a9902a8
+;   edge jmp -> 0x3A9902A8 (inside)
+
+; --- block 0x3AB7497A (2 insns) ---
+3AB7497A: 0f14d3               unpcklps xmm2, xmm3
+3AB7497D: e97dbe48fe           jmp      0x390007ff
+;   edge jmp -> 0x390007FF (inside)
+
+; --- block 0x3AB75AAD (3 insns) ---
+3AB75AAD: f30f100578c49939     movss    xmm0, dword ptr [0x3999c478]
+3AB75AB5: f30f59d1             mulss    xmm2, xmm1
+3AB75AB9: e99c4be0ff           jmp      0x3a97a65a
+;   edge jmp -> 0x3A97A65A (inside)
+
+; --- block 0x3AB7604D (4 insns) ---
+3AB7604D: f30f7e4668           movq     xmm0, qword ptr [esi + 0x68]
+3AB76052: 8b4e70               mov      ecx, dword ptr [esi + 0x70]
+3AB76055: 660fd645e4           movq     qword ptr [ebp - 0x1c], xmm0
+3AB7605A: e9d9b9e0ff           jmp      0x3a981a38
+;   edge jmp -> 0x3A981A38 (inside)
+
+; --- block 0x3AB9119D (5 insns) ---
+3AB9119D: 8b4f0c               mov      ecx, dword ptr [edi + 0xc]
+3AB911A0: 8b01                 mov      eax, dword ptr [ecx]
+3AB911A2: 8b507c               mov      edx, dword ptr [eax + 0x7c]
+3AB911A5: 68c2dc1339           push     0x3913dcc2
+3AB911AA: ffe2                 jmp      edx
+;   edge push-cont -> 0x3913DCC2 (inside)
+
+; --- block 0x3AB916B0 (3 insns) ---
+3AB916B0: 0f28c2               movaps   xmm0, xmm2
+3AB916B3: f30f59c2             mulss    xmm0, xmm2
+3AB916B7: e9cf2efeff           jmp      0x3ab7458b
+;   edge jmp -> 0x3AB7458B (inside)
+
+; --- block 0x3AB916FC (5 insns) ---
+3AB916FC: 8b4608               mov      eax, dword ptr [esi + 8]
+3AB916FF: 0f57c0               xorps    xmm0, xmm0
+3AB91702: b901000000           mov      ecx, 1
+3AB91707: c6466000             mov      byte ptr [esi + 0x60], 0
+3AB9170B: e9602afeff           jmp      0x3ab74170
+;   edge jmp -> 0x3AB74170 (inside)
+
+; --- block 0x3AB92C75 (5 insns) ---
+3AB92C75: 8b155430ac39         mov      edx, dword ptr [0x39ac3054]
+3AB92C7B: f30f7e054c30ac39     movq     xmm0, qword ptr [0x39ac304c]
+3AB92C83: 660fd645e4           movq     qword ptr [ebp - 0x1c], xmm0
+3AB92C88: 8955ec               mov      dword ptr [ebp - 0x14], edx
+3AB92C8B: e928b05afe           jmp      0x3913dcb8
+;   edge jmp -> 0x3913DCB8 (inside)
+
+; --- block 0x3AB95AA9 (2 insns) ---
+3AB95AA9: 80b80101000000       cmp      byte ptr [eax + 0x101], 0
+3AB95AB0: 0f85d7495afe         jne      0x3913a48d
+;   edge jcc -> 0x3913A48D (inside)
+;   edge fall -> 0x3AB95AB6 (inside)
+
+; --- block 0x3AB95AB6 (1 insns) ---
+3AB95AB6: e91e3f5afe           jmp      0x391399d9
+;   edge jmp -> 0x391399D9 (inside)
+
+; --- block 0x3ABA2BD0 (5 insns) ---
+3ABA2BD0: 8b5c2408             mov      ebx, dword ptr [esp + 8]
+3ABA2BD4: b88da41339           mov      eax, 0x3913a48d
+3ABA2BD9: 0f45d8               cmovne   ebx, eax
+3ABA2BDC: 895c2408             mov      dword ptr [esp + 8], ebx
+3ABA2BE0: e9d767ddff           jmp      0x3a9793bc
+;   edge jmp -> 0x3A9793BC (inside)
+
+; --- block 0x3ABA2EBE (5 insns) ---
+3ABA2EBE: 8d642404             lea      esp, [esp + 4]
+3ABA2EC2: 8b7424fc             mov      esi, dword ptr [esp - 4]
+3ABA2EC6: 68a8de1339           push     0x3913dea8
+3ABA2ECB: 53                   push     ebx
+3ABA2ECC: e96703e2ff           jmp      0x3a9c3238
+;   edge tail-call -> 0x3A9C3238 (inside)
+;   edge tail-cont -> 0x3913DEA8 (inside)
+
+; --- block 0x3ABA3F6E (5 insns) ---
+3ABA3F6E: 0f28cc               movaps   xmm1, xmm4
+3ABA3F71: f30f59cc             mulss    xmm1, xmm4
+3ABA3F75: f30f58c1             addss    xmm0, xmm1
+3ABA3F79: 0f28cd               movaps   xmm1, xmm5
+3ABA3F7C: e9cc87b0ff           jmp      0x3a6ac74d
+;   edge jmp -> 0x3A6AC74D (inside)
+
+; --- block 0x3ABA8304 (2 insns) ---
+3ABA8304: 53                   push     ebx
+3ABA8305: e9264e59fe           jmp      0x3913d130
+;   edge jmp -> 0x3913D130 (inside)
+
+; --- block 0x3ABA884E (3 insns) ---
+3ABA884E: 0f59ca               mulps    xmm1, xmm2
+3ABA8851: 0f28c2               movaps   xmm0, xmm2
+3ABA8854: e9bb19b0ff           jmp      0x3a6aa214
+;   edge jmp -> 0x3A6AA214 (inside)
+
+; --- block 0x3ABA8AE2 (3 insns) ---
+3ABA8AE2: 0f58ca               addps    xmm1, xmm2
+3ABA8AE5: 0f294df0             movaps   xmmword ptr [ebp - 0x10], xmm1
+3ABA8AE9: e953eeacff           jmp      0x3a677941
+;   edge jmp -> 0x3A677941 (inside)
+
+; --- block 0x3ABAA893 (7 insns) ---
+3ABAA893: 8d4dac               lea      ecx, [ebp - 0x54]
+3ABAA896: c745bcd8abaf39       mov      dword ptr [ebp - 0x44], 0x39afabd8
+3ABAA89D: 8b9098000000         mov      edx, dword ptr [eax + 0x98]
+3ABAA8A3: 894c24fc             mov      dword ptr [esp - 4], ecx
+3ABAA8A7: 8d6424fc             lea      esp, [esp - 4]
+3ABAA8AB: 68d5da1339           push     0x3913dad5
+3ABAA8B0: ffe2                 jmp      edx
+;   edge push-cont -> 0x3913DAD5 (inside)
+

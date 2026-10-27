@@ -2,6 +2,45 @@
 
 Files: `crates/aa-client/src/ingame/player.rs` (controller, packets), `swim.rs` (swimming), `camera.rs` (orbit camera, wall clipping), `camera_pivot.rs` (1.2's pivot, pitch and far limit, plain Rust), `camera_log.rs` (`AA_CAMERA_LOG`), `quest_camera.rs` and `quest_framing.rs` (the quest talk's close-up; the rules in plain Rust).
 
+## W0 recon: the original per-frame chain (2026-10-27)
+
+Fresh trace of the 1.2 client (`tools/onfoot_update_probe.py`, evidence in
+`tools/evidence/onfoot_update/`, full table and marks in
+`docs/research/on-foot-update-chain.md`) proves the local CPlayer's update pass
+on foot: `CPlayer::PrePhysicsUpdate` (0x143280) -> `CActor::UpdateMovementRequest`
+(0x128650) -> `ProcessFrameMovementRotation` (0x145ED0) -> `ProcessFrameMovement`
+(0x145FE0) -> `FUN_39113f60` (0x123F60), then `FUN_391387c0` (CPlayer Update
+wrapper) -> `CActor::Update` (0x12FEB0) -> `CActor::UpdateStats` (0x12EFF0), once
+each per actor update pass. `FUN_3911c780` (0x12C780) and `FUN_39117590`
+(0x127590) run only in the `actor+0x14 == 3` state (falls; state-dependent while
+mounted), not during jumps. The Quadruped chain (`Quadruped::PrePhysicsUpdate`
+0x139800 -> `FUN_3912dd40` 0x13DD40 -> `FUN_3912b330` 0x13B330) never runs for
+the local player on foot; mounted, the rider keeps the CPlayer chain and the
+mount runs `0 -> 2 -> 5`, with the ground mover 3 conditional (0/59 passes in
+the final run, 3 frames during the mounted jump in earlier runs). One update
+pass equals one rendered present (rows/render 0.99-1.07); `System.GetFrameID` is
+not the frame unit.
+
+## W3 recon: is the protected on-foot core readable? (2026-10-27)
+
+Fresh read-only capture of the running original (`tools/movement_dump_probe.py`,
+evidence in `tools/evidence/movement_dump/`, two fresh processes, slot `wp3`,
+12/12 checks) answers the question: **yes, the core is native x86, but it is
+mutated/flattened, not plain compiled code**. The shipped `x2game.dll` is
+decrypted at run time to bytes identical to `D:/aa-re/client12/x2game_unpacked.dll`
+at all named functions; the shipped file is high-entropy garbage there. The
+decrypted code has rewritten prologues, SEH entry stubs, split blocks and
+push-ret continuations, so the decompiler's `FUN_3a979a34`/`3a98bb00` "SEH-only
+stubs" are false negatives. No VM or table-dispatch loop is present at the named
+targets; the real math (`movss`/`addss`/`mulss`/`fld`/`fstp`, state copies)
+executes directly on the original frame. cryaction `0x307C70B0` is already
+plain in the shipped file and has the same shape. Classification: (b) for all
+four named x2game functions and the cryaction target. Port line by line the
+linear pieces (`FUN_3a6ab5f3`, the readable callers, the small thunk); use
+measured behaviour for the large flattened `FUN_3a979a34`/`FUN_3a98bb00` until
+their blocks are linearised. Full marks, listings and the porting decision:
+`docs/research/movement-core-dump.md`.
+
 ## Keys (the client's `default_binding.g`)
 
 | key | action |

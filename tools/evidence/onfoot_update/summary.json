@@ -1,0 +1,1555 @@
+{
+ "functions": [
+  {
+   "id": 0,
+   "rva": 1284096,
+   "name": "Quadruped::PrePhysicsUpdate",
+   "decomp": 229029,
+   "role": "quadruped pre-physics"
+  },
+  {
+   "id": 1,
+   "rva": 1323648,
+   "name": "CPlayer::PrePhysicsUpdate",
+   "decomp": 233948,
+   "role": "player pre-physics"
+  },
+  {
+   "id": 2,
+   "rva": 1301824,
+   "name": "FUN_3912dd40",
+   "decomp": 231254,
+   "role": "quadruped movement dispatch"
+  },
+  {
+   "id": 3,
+   "rva": 1291056,
+   "name": "FUN_3912b330",
+   "decomp": 229974,
+   "role": "quadruped ground mover"
+  },
+  {
+   "id": 4,
+   "rva": 1214032,
+   "name": "CActor::UpdateMovementRequest",
+   "decomp": 219255,
+   "role": "movement request"
+  },
+  {
+   "id": 5,
+   "rva": 1195872,
+   "name": "FUN_39113f60",
+   "decomp": 216241,
+   "role": "actor post-physics"
+  },
+  {
+   "id": 6,
+   "rva": 1334992,
+   "name": "CPlayer::ProcessFrameMovementRotation",
+   "decomp": 235447,
+   "role": "rotation"
+  },
+  {
+   "id": 7,
+   "rva": 1335264,
+   "name": "CPlayer::ProcessFrameMovement",
+   "decomp": 235491,
+   "role": "movement"
+  },
+  {
+   "id": 8,
+   "rva": 1244848,
+   "name": "CActor::Update",
+   "decomp": 224683,
+   "role": "actor update"
+  },
+  {
+   "id": 9,
+   "rva": 1241072,
+   "name": "CActor::UpdateStats",
+   "decomp": 223817,
+   "role": "actor stats/state update"
+  },
+  {
+   "id": 10,
+   "rva": 1230720,
+   "name": "FUN_3911c780",
+   "decomp": 222108,
+   "role": "fall/landing update"
+  },
+  {
+   "id": 11,
+   "rva": 1209744,
+   "name": "FUN_39117590",
+   "decomp": 218718,
+   "role": "landing/water check"
+  },
+  {
+   "id": 12,
+   "rva": 1345472,
+   "name": "FUN_391387c0 (CPlayer::Update wrapper)",
+   "decomp": 236825,
+   "role": "player update wrapper"
+  }
+ ],
+ "phases": {
+  "stand": {
+   "frames": 63,
+   "frame_id_delta": 120,
+   "render_frames": 61,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 63
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 56,
+   "position": {
+    "player": {
+     "samples": 86,
+     "seconds": 2.668220281600952,
+     "start": [
+      4342.939453125,
+      4466.099609375,
+      98.5780029296875
+     ],
+     "end": [
+      4342.939453125,
+      4466.099609375,
+      98.27210998535156
+     ],
+     "dz": -0.3058929443359375,
+     "min_z": 98.27210998535156,
+     "max_z": 99.36192321777344,
+     "drop": 0.3058929443359375,
+     "peak": 0.7839202880859375,
+     "horizontal": 0.0
+    }
+   }
+  },
+  "forward": {
+   "frames": 73,
+   "frame_id_delta": 136,
+   "render_frames": 69,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 73
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 64,
+   "position": {
+    "player": {
+     "samples": 100,
+     "seconds": 3.106804847717285,
+     "start": [
+      4342.939453125,
+      4466.099609375,
+      98.20060729980469
+     ],
+     "end": [
+      4334.12744140625,
+      4465.115234375,
+      98.72571563720703
+     ],
+     "dz": 0.5251083374023438,
+     "min_z": 98.072998046875,
+     "max_z": 98.72571563720703,
+     "drop": 0.1276092529296875,
+     "peak": 0.5251083374023438,
+     "horizontal": 8.86682269316424
+    }
+   }
+  },
+  "strafe_q": {
+   "frames": 52,
+   "frame_id_delta": 100,
+   "render_frames": 51,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 52
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 46,
+   "position": {
+    "player": {
+     "samples": 74,
+     "seconds": 2.29620623588562,
+     "start": [
+      4333.9755859375,
+      4465.09814453125,
+      98.86380767822266
+     ],
+     "end": [
+      4334.634765625,
+      4459.19091796875,
+      98.2752456665039
+     ],
+     "dz": -0.58856201171875,
+     "min_z": 98.0345230102539,
+     "max_z": 98.96790313720703,
+     "drop": 0.82928466796875,
+     "peak": 0.104095458984375,
+     "horizontal": 5.943891277700002
+    }
+   }
+  },
+  "strafe_e": {
+   "frames": 54,
+   "frame_id_delta": 102,
+   "render_frames": 52,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 54
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 47,
+   "position": {
+    "player": {
+     "samples": 72,
+     "seconds": 2.232801675796509,
+     "start": [
+      4334.634765625,
+      4459.19091796875,
+      98.66438293457031
+     ],
+     "end": [
+      4333.9619140625,
+      4465.21484375,
+      98.72877502441406
+     ],
+     "dz": 0.06439208984375,
+     "min_z": 98.55360412597656,
+     "max_z": 98.8536605834961,
+     "drop": 0.11077880859375,
+     "peak": 0.18927764892578125,
+     "horizontal": 6.06138689106438
+    }
+   }
+  },
+  "turn_a": {
+   "frames": 47,
+   "frame_id_delta": 88,
+   "render_frames": 44,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 47
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 40,
+   "position": {
+    "player": {
+     "samples": 61,
+     "seconds": 1.883324384689331,
+     "start": [
+      4333.9619140625,
+      4465.21484375,
+      98.81868743896484
+     ],
+     "end": [
+      4333.9619140625,
+      4465.21484375,
+      98.33988952636719
+     ],
+     "dz": -0.47879791259765625,
+     "min_z": 98.33988952636719,
+     "max_z": 98.86549377441406,
+     "drop": 0.47879791259765625,
+     "peak": 0.04680633544921875,
+     "horizontal": 0.0
+    }
+   }
+  },
+  "turn_d": {
+   "frames": 46,
+   "frame_id_delta": 84,
+   "render_frames": 43,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 46
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 38,
+   "position": {
+    "player": {
+     "samples": 61,
+     "seconds": 1.880798578262329,
+     "start": [
+      4333.9619140625,
+      4465.21484375,
+      98.31471252441406
+     ],
+     "end": [
+      4333.9619140625,
+      4465.21484375,
+      98.49071502685547
+     ],
+     "dz": 0.17600250244140625,
+     "min_z": 98.31471252441406,
+     "max_z": 98.544189453125,
+     "drop": 0.0,
+     "peak": 0.2294769287109375,
+     "horizontal": 0.0
+    }
+   }
+  },
+  "jump_stand": {
+   "frames": 60,
+   "frame_id_delta": 110,
+   "render_frames": 56,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 60
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 51,
+   "position": {
+    "player": {
+     "samples": 79,
+     "seconds": 2.445359706878662,
+     "start": [
+      4333.9619140625,
+      4465.21484375,
+      98.64474487304688
+     ],
+     "end": [
+      4333.9619140625,
+      4465.21484375,
+      98.78196716308594
+     ],
+     "dz": 0.1372222900390625,
+     "min_z": 98.34518432617188,
+     "max_z": 98.78196716308594,
+     "drop": 0.299560546875,
+     "peak": 0.1372222900390625,
+     "horizontal": 0.0
+    }
+   }
+  },
+  "jump_run": {
+   "frames": 61,
+   "frame_id_delta": 116,
+   "render_frames": 59,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 61
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 54,
+   "position": {
+    "player": {
+     "samples": 86,
+     "seconds": 2.660703659057617,
+     "start": [
+      4333.9619140625,
+      4465.21484375,
+      98.86983489990234
+     ],
+     "end": [
+      4326.869140625,
+      4463.669921875,
+      98.175048828125
+     ],
+     "dz": -0.6947860717773438,
+     "min_z": 98.175048828125,
+     "max_z": 98.86983489990234,
+     "drop": 0.6947860717773438,
+     "peak": 0.0,
+     "horizontal": 7.259078359926905
+    }
+   }
+  },
+  "jump_run_b": {
+   "frames": 63,
+   "frame_id_delta": 120,
+   "render_frames": 61,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 63
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 56,
+   "position": {
+    "player": {
+     "samples": 92,
+     "seconds": 2.8575055599212646,
+     "start": [
+      4326.869140625,
+      4463.669921875,
+      98.0098648071289
+     ],
+     "end": [
+      4319.17431640625,
+      4461.9892578125,
+      98.8770523071289
+     ],
+     "dz": 0.8671875,
+     "min_z": 98.00627136230469,
+     "max_z": 98.93006134033203,
+     "drop": 0.00359344482421875,
+     "peak": 0.920196533203125,
+     "horizontal": 7.876226980505358
+    }
+   }
+  },
+  "fall": {
+   "frames": 98,
+   "frame_id_delta": 203,
+   "render_frames": 99,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9,
+      10,
+      11
+     ],
+     "frames": 72
+    },
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9
+     ],
+     "frames": 26
+    }
+   ],
+   "mount_patterns": [],
+   "samples": 91,
+   "position": {
+    "player": {
+     "samples": 148,
+     "seconds": 4.611469268798828,
+     "start": [
+      4319.17431640625,
+      4461.9892578125,
+      98.77549743652344
+     ],
+     "end": [
+      4319.169921875,
+      4461.990234375,
+      97.10069274902344
+     ],
+     "dz": -1.6748046875,
+     "min_z": 95.54932403564453,
+     "max_z": 123.79045104980469,
+     "drop": 3.2261734008789062,
+     "peak": 25.01495361328125,
+     "horizontal": 0.0045017306920375425
+    }
+   }
+  },
+  "mounted_stand": {
+   "frames": 60,
+   "frame_id_delta": 114,
+   "render_frames": 57,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9,
+      10,
+      11
+     ],
+     "frames": 60
+    }
+   ],
+   "mount_patterns": [
+    {
+     "order": [
+      0,
+      2,
+      5
+     ],
+     "frames": 60
+    }
+   ],
+   "samples": 53,
+   "position": {
+    "player": {
+     "samples": 80,
+     "seconds": 2.474825382232666,
+     "start": [
+      4319.16455078125,
+      4465.02685546875,
+      100.61811828613281
+     ],
+     "end": [
+      4319.158203125,
+      4465.07958984375,
+      100.59300231933594
+     ],
+     "dz": -0.025115966796875,
+     "min_z": 100.20474243164062,
+     "max_z": 100.6196517944336,
+     "drop": 0.4133758544921875,
+     "peak": 0.00153350830078125,
+     "horizontal": 0.05311503597390092
+    },
+    "mount": {
+     "samples": 80,
+     "seconds": 2.474825382232666,
+     "start": [
+      4319.169921875,
+      4464.990234375,
+      98.62938690185547
+     ],
+     "end": [
+      4319.169921875,
+      4464.990234375,
+      98.58212280273438
+     ],
+     "dz": -0.04726409912109375,
+     "min_z": 98.34732055664062,
+     "max_z": 98.62938690185547,
+     "drop": 0.28206634521484375,
+     "peak": 0.0,
+     "horizontal": 0.0
+    }
+   }
+  },
+  "mounted_forward": {
+   "frames": 73,
+   "frame_id_delta": 136,
+   "render_frames": 69,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9,
+      10,
+      11
+     ],
+     "frames": 73
+    }
+   ],
+   "mount_patterns": [
+    {
+     "order": [
+      0,
+      2,
+      5
+     ],
+     "frames": 73
+    }
+   ],
+   "samples": 64,
+   "position": {
+    "player": {
+     "samples": 100,
+     "seconds": 3.094510316848755,
+     "start": [
+      4319.16064453125,
+      4465.0546875,
+      100.66394805908203
+     ],
+     "end": [
+      4319.169921875,
+      4469.052734375,
+      100.42174530029297
+     ],
+     "dz": -0.2422027587890625,
+     "min_z": 100.15457153320312,
+     "max_z": 100.73998260498047,
+     "drop": 0.5093765258789062,
+     "peak": 0.0760345458984375,
+     "horizontal": 3.9980576388797
+    },
+    "mount": {
+     "samples": 100,
+     "seconds": 3.094510316848755,
+     "start": [
+      4319.169921875,
+      4464.990234375,
+      98.72421264648438
+     ],
+     "end": [
+      4319.169921875,
+      4469.07421875,
+      98.4837417602539
+     ],
+     "dz": -0.24047088623046875,
+     "min_z": 98.31802368164062,
+     "max_z": 98.87431335449219,
+     "drop": 0.40618896484375,
+     "peak": 0.1501007080078125,
+     "horizontal": 4.083984375
+    }
+   }
+  },
+  "mounted_turn": {
+   "frames": 47,
+   "frame_id_delta": 86,
+   "render_frames": 45,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9,
+      10,
+      11
+     ],
+     "frames": 47
+    }
+   ],
+   "mount_patterns": [
+    {
+     "order": [
+      0,
+      2,
+      5
+     ],
+     "frames": 47
+    }
+   ],
+   "samples": 39,
+   "position": {
+    "player": {
+     "samples": 61,
+     "seconds": 1.8778564929962158,
+     "start": [
+      4319.17919921875,
+      4469.34619140625,
+      100.36690521240234
+     ],
+     "end": [
+      4319.23828125,
+      4469.53759765625,
+      100.40756225585938
+     ],
+     "dz": 0.04065704345703125,
+     "min_z": 100.36690521240234,
+     "max_z": 100.76876831054688,
+     "drop": 0.0,
+     "peak": 0.40186309814453125,
+     "horizontal": 0.20031734561861705
+    },
+    "mount": {
+     "samples": 61,
+     "seconds": 1.8778564929962158,
+     "start": [
+      4319.169921875,
+      4469.4736328125,
+      98.52701568603516
+     ],
+     "end": [
+      4319.169921875,
+      4469.52880859375,
+      98.55769348144531
+     ],
+     "dz": 0.03067779541015625,
+     "min_z": 98.52701568603516,
+     "max_z": 98.77833557128906,
+     "drop": 0.0,
+     "peak": 0.25131988525390625,
+     "horizontal": 0.05517578125
+    }
+   }
+  },
+  "mounted_jump": {
+   "frames": 59,
+   "frame_id_delta": 114,
+   "render_frames": 57,
+   "local_patterns": [
+    {
+     "order": [
+      1,
+      4,
+      6,
+      7,
+      5,
+      12,
+      8,
+      9,
+      10,
+      11
+     ],
+     "frames": 59
+    }
+   ],
+   "mount_patterns": [
+    {
+     "order": [
+      0,
+      2,
+      5
+     ],
+     "frames": 59
+    }
+   ],
+   "samples": 53,
+   "position": {
+    "player": {
+     "samples": 79,
+     "seconds": 2.438751459121704,
+     "start": [
+      4319.2958984375,
+      4469.548828125,
+      100.26329803466797
+     ],
+     "end": [
+      4319.134765625,
+      4469.521484375,
+      100.42525482177734
+     ],
+     "dz": 0.161956787109375,
+     "min_z": 100.18195343017578,
+     "max_z": 100.81749725341797,
+     "drop": 0.0813446044921875,
+     "peak": 0.55419921875,
+     "horizontal": 0.1634364216697816
+    },
+    "mount": {
+     "samples": 79,
+     "seconds": 2.438751459121704,
+     "start": [
+      4319.169921875,
+      4469.52880859375,
+      98.4254150390625
+     ],
+     "end": [
+      4319.169921875,
+      4469.52880859375,
+      98.50028991699219
+     ],
+     "dz": 0.0748748779296875,
+     "min_z": 98.34716796875,
+     "max_z": 98.88067626953125,
+     "drop": 0.0782470703125,
+     "peak": 0.45526123046875,
+     "horizontal": 0.0
+    }
+   }
+  }
+ },
+ "sessions": {
+  "on_foot": {
+   "actor": "50f37ecc",
+   "actor_vtable": "399ad450",
+   "entity": "441247d4",
+   "player_entity": "441247d4",
+   "player_entity_id": 0,
+   "controller": "4647e33c",
+   "controller_vtable": "30746730",
+   "controller_vtable_module": {
+    "name": "cryaction.dll",
+    "base": 810483712,
+    "size": 5540352
+   },
+   "controller_vtable_entries": [
+    "30662b30",
+    "306616d0",
+    "30660fc0",
+    "30660fd0",
+    "306617d0",
+    "30662f70",
+    "30660fe0",
+    "30660ff0",
+    "30661000",
+    "306616b0",
+    "306637e0",
+    "30661210",
+    "30663ac0",
+    "306615c0",
+    "30661010",
+    "30661020",
+    "30661180",
+    "30661030",
+    "30661190",
+    "30661040",
+    "30660c10",
+    "30660c30",
+    "306639d0",
+    "30662810",
+    "30662490",
+    "30661050",
+    "306610d0",
+    "306610e0",
+    "30661060",
+    "30660c50",
+    "306611c0",
+    "306625b0",
+    "30660cf0",
+    "30660d00",
+    "30660d10",
+    "30660c90",
+    "30661520",
+    "306610c0",
+    "30660ba0",
+    "30660bb0",
+    "30660bf0",
+    "30670270",
+    "30670240",
+    "306702a0",
+    "306702b0",
+    "30670490",
+    "30661070",
+    "30661080",
+    "30660d20",
+    "30661090",
+    "30660d40",
+    "30662830",
+    "306610a0",
+    "306702c0",
+    "30661130",
+    "30661140",
+    "30661150",
+    "30661160",
+    "30661170",
+    "306610f0",
+    "30661120",
+    "306615b0",
+    "306610b0",
+    "3c888889"
+   ],
+   "vtable_slots": {
+    "cplayer_window": "39131f80",
+    "cplayer_prephysics": "39133280",
+    "process_rotation": "39135ed0",
+    "process_movement": "39135fe0",
+    "cplayer_update": "391387c0",
+    "quadruped": "39128a80",
+    "quad_prephysics": "39129800",
+    "cactor_update": "3911feb0"
+   }
+  },
+  "mounted": {
+   "actor": "46255b1c",
+   "actor_vtable": "399ad450",
+   "entity": "43d848d4",
+   "player_entity": "43d848d4",
+   "player_entity_id": 0,
+   "controller": "03a8bf1c",
+   "controller_vtable": "30746730",
+   "controller_vtable_module": {
+    "name": "cryaction.dll",
+    "base": 810483712,
+    "size": 5540352
+   },
+   "controller_vtable_entries": [
+    "30662b30",
+    "306616d0",
+    "30660fc0",
+    "30660fd0",
+    "306617d0",
+    "30662f70",
+    "30660fe0",
+    "30660ff0",
+    "30661000",
+    "306616b0",
+    "306637e0",
+    "30661210",
+    "30663ac0",
+    "306615c0",
+    "30661010",
+    "30661020",
+    "30661180",
+    "30661030",
+    "30661190",
+    "30661040",
+    "30660c10",
+    "30660c30",
+    "306639d0",
+    "30662810",
+    "30662490",
+    "30661050",
+    "306610d0",
+    "306610e0",
+    "30661060",
+    "30660c50",
+    "306611c0",
+    "306625b0",
+    "30660cf0",
+    "30660d00",
+    "30660d10",
+    "30660c90",
+    "30661520",
+    "306610c0",
+    "30660ba0",
+    "30660bb0",
+    "30660bf0",
+    "30670270",
+    "30670240",
+    "306702a0",
+    "306702b0",
+    "30670490",
+    "30661070",
+    "30661080",
+    "30660d20",
+    "30661090",
+    "30660d40",
+    "30662830",
+    "306610a0",
+    "306702c0",
+    "30661130",
+    "30661140",
+    "30661150",
+    "30661160",
+    "30661170",
+    "306610f0",
+    "30661120",
+    "306615b0",
+    "306610b0",
+    "3c888889"
+   ],
+   "vtable_slots": {
+    "cplayer_window": "39131f80",
+    "cplayer_prephysics": "39133280",
+    "process_rotation": "39135ed0",
+    "process_movement": "39135fe0",
+    "cplayer_update": "391387c0",
+    "quadruped": "39128a80",
+    "quad_prephysics": "39129800",
+    "cactor_update": "3911feb0"
+   },
+   "mount_actor": "5109f6f4",
+   "mount_actor_vtable": "399ac918",
+   "mount_entity": "43617eac"
+  }
+ },
+ "build": {
+  "started": "2026-10-27T04:18:48",
+  "argv": [
+   "tools/onfoot_update_probe.py",
+   "--slot",
+   "wp6",
+   "--lane",
+   "move-golden",
+   "--tag",
+   "onfoot-update-20261027-r9"
+  ],
+  "commands": [
+   "D:\\aaemu-target\\move-golden\\live\\aaemu-clientdriver.exe mcp --dll D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll --client D:\\AA1.2\\bin32\\archeage.exe --launcher D:\\aaemu-live-move-golden\\bin\\aaemu-launcher.exe --password-file D:\\aaemu-live-move-golden\\cap-pw.txt --login 127.0.0.1:28237 --user wp6a --artifact-dir C:\\AAEMU_DISK\\aaemu-client\\wt\\formulas\\data\\extract\\onfoot-update\\onfoot-update-20261027-r9\\mcp-on_foot",
+   "D:\\aaemu-target\\move-golden\\live\\aaemu-clientdriver.exe mcp --dll D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll --client D:\\AA1.2\\bin32\\archeage.exe --launcher D:\\aaemu-live-move-golden\\bin\\aaemu-launcher.exe --password-file D:\\aaemu-live-move-golden\\cap-pw.txt --login 127.0.0.1:28237 --user wp6a --artifact-dir C:\\AAEMU_DISK\\aaemu-client\\wt\\formulas\\data\\extract\\onfoot-update\\onfoot-update-20261027-r9\\mcp-mounted"
+  ],
+  "inputs": [
+   "client_input w 3000ms",
+   "client_input q 2000ms",
+   "client_input e 2000ms",
+   "client_input a 1500ms",
+   "client_input d 1500ms",
+   "client_input space 120ms",
+   "client_input w 2400ms",
+   "client_input space 120ms",
+   "client_input w 2600ms",
+   "client_input space 160ms",
+   "client_chat /move 4319.17 4461.99 123.79",
+   "client_chat /item add self 8159",
+   "client_input w 3000ms",
+   "client_input a 1500ms",
+   "client_input space 120ms"
+  ],
+  "phases": [
+   {
+    "name": "stand",
+    "session": "on_foot",
+    "duration": 2.6,
+    "events": [],
+    "frames": 63,
+    "samples": 56,
+    "position_rows": 86,
+    "position_error": null,
+    "render_frames": 61,
+    "frame_before": "66361",
+    "frame_after": "66481",
+    "state_before": "4342.9395 4466.0996 98.4553|0.0000 0.0000 1.6821|0.0000 0.0000 1.2318",
+    "state_after": "4342.9395 4466.0996 98.2515|0.0000 0.0000 1.6821|0.0000 0.0000 -0.1548",
+    "fall": false
+   },
+   {
+    "name": "forward",
+    "session": "on_foot",
+    "duration": 3.0,
+    "events": [
+     [
+      0.0,
+      "w",
+      3000
+     ]
+    ],
+    "frames": 73,
+    "samples": 64,
+    "position_rows": 100,
+    "position_error": null,
+    "render_frames": 69,
+    "frame_before": "66489",
+    "frame_after": "66625",
+    "state_before": "4342.9395 4466.0996 98.2193|0.0000 0.0000 1.6821|0.0000 0.0000 -0.1621",
+    "state_after": "4333.9756 4465.0981 98.7753|0.0000 0.0000 1.6821|0.0000 0.0000 0.6077",
+    "fall": false
+   },
+   {
+    "name": "strafe_q",
+    "session": "on_foot",
+    "duration": 2.2,
+    "events": [
+     [
+      0.0,
+      "q",
+      2000
+     ]
+    ],
+    "frames": 52,
+    "samples": 46,
+    "position_rows": 74,
+    "position_error": null,
+    "render_frames": 51,
+    "frame_before": "66639",
+    "frame_after": "66739",
+    "state_before": "4333.9756 4465.0981 98.8535|0.0000 0.0000 1.6821|0.0000 0.0000 0.2153",
+    "state_after": "4334.6348 4459.1909 98.3731|0.0000 0.0000 1.6821|0.0000 0.0000 0.9635",
+    "fall": false
+   },
+   {
+    "name": "strafe_e",
+    "session": "on_foot",
+    "duration": 2.2,
+    "events": [
+     [
+      0.0,
+      "e",
+      2000
+     ]
+    ],
+    "frames": 54,
+    "samples": 47,
+    "position_rows": 72,
+    "position_error": null,
+    "render_frames": 52,
+    "frame_before": "66749",
+    "frame_after": "66851",
+    "state_before": "4334.6348 4459.1909 98.6199|0.0000 0.0000 1.6821|0.0000 0.0000 0.8601",
+    "state_after": "4333.9619 4465.2148 98.7535|0.0000 0.0000 1.6821|0.0000 0.0000 0.2599",
+    "fall": false
+   },
+   {
+    "name": "turn_a",
+    "session": "on_foot",
+    "duration": 1.8,
+    "events": [
+     [
+      0.0,
+      "a",
+      1500
+     ]
+    ],
+    "frames": 47,
+    "samples": 40,
+    "position_rows": 61,
+    "position_error": null,
+    "render_frames": 44,
+    "frame_before": "66859",
+    "frame_after": "66947",
+    "state_before": "4333.9619 4465.2148 98.8061|0.0000 0.0000 1.6821|0.0000 0.0000 0.2621",
+    "state_after": "4333.9619 4465.2148 98.3239|0.0000 0.0000 -2.8905|0.0000 0.0000 -0.1283",
+    "fall": false
+   },
+   {
+    "name": "turn_d",
+    "session": "on_foot",
+    "duration": 1.8,
+    "events": [
+     [
+      0.0,
+      "d",
+      1500
+     ]
+    ],
+    "frames": 46,
+    "samples": 38,
+    "position_rows": 61,
+    "position_error": null,
+    "render_frames": 43,
+    "frame_before": "66955",
+    "frame_after": "67039",
+    "state_before": "4333.9619 4465.2148 98.3109|0.0000 0.0000 -2.8905|0.0000 0.0000 0.0285",
+    "state_after": "4333.9619 4465.2148 98.5444|0.0000 0.0000 1.7858|0.0000 0.0000 0.4005",
+    "fall": false
+   },
+   {
+    "name": "jump_stand",
+    "session": "on_foot",
+    "duration": 2.4,
+    "events": [
+     [
+      0.3,
+      "space",
+      120
+     ]
+    ],
+    "frames": 60,
+    "samples": 51,
+    "position_rows": 79,
+    "position_error": null,
+    "render_frames": 56,
+    "frame_before": "67049",
+    "frame_after": "67159",
+    "state_before": "4333.9619 4465.2148 98.6161|0.0000 0.0000 1.7858|0.0000 0.0000 0.3292",
+    "state_after": "4333.9619 4465.2148 98.8299|0.0000 0.0000 1.7858|0.0000 0.0000 0.3784",
+    "fall": false
+   },
+   {
+    "name": "jump_run",
+    "session": "on_foot",
+    "duration": 2.6,
+    "events": [
+     [
+      0.0,
+      "w",
+      2400
+     ],
+     [
+      0.9,
+      "space",
+      120
+     ]
+    ],
+    "frames": 61,
+    "samples": 54,
+    "position_rows": 86,
+    "position_error": null,
+    "render_frames": 59,
+    "frame_before": "67171",
+    "frame_after": "67287",
+    "state_before": "4333.9619 4465.2148 98.8764|0.0000 0.0000 1.7858|0.0000 0.0000 -1.3052",
+    "state_after": "4326.8691 4463.6699 98.1146|0.0000 0.0000 1.7858|0.0000 0.0000 -1.7570",
+    "fall": false
+   },
+   {
+    "name": "jump_run_b",
+    "session": "on_foot",
+    "duration": 2.8,
+    "events": [
+     [
+      0.0,
+      "w",
+      2600
+     ],
+     [
+      0.4,
+      "space",
+      160
+     ]
+    ],
+    "frames": 63,
+    "samples": 56,
+    "position_rows": 92,
+    "position_error": null,
+    "render_frames": 61,
+    "frame_before": "67295",
+    "frame_after": "67415",
+    "state_before": "4326.8691 4463.6699 98.0297|0.0000 0.0000 1.7858|0.0000 0.0000 -1.4849",
+    "state_after": "4319.1743 4461.9893 98.8502|0.0000 0.0000 1.7858|0.0000 0.0000 -1.4718",
+    "fall": false
+   },
+   {
+    "name": "fall",
+    "session": "on_foot",
+    "duration": 4.5,
+    "events": [],
+    "frames": 98,
+    "samples": 91,
+    "position_rows": 148,
+    "position_error": null,
+    "render_frames": 99,
+    "frame_before": "67423",
+    "frame_after": "67626",
+    "state_before": "4319.1743 4461.9893 98.7921|0.0000 0.0000 1.7858|0.0000 0.0000 -1.5544",
+    "state_after": "4319.1699 4461.9902 97.3155|0.0000 0.0000 0.0000|0.0000 0.0000 2.0000",
+    "fall": true
+   },
+   {
+    "name": "mounted_stand",
+    "session": "mounted",
+    "duration": 2.4,
+    "events": [],
+    "frames": 60,
+    "samples": 53,
+    "position_rows": 160,
+    "position_error": null,
+    "render_frames": 57,
+    "frame_before": "66608",
+    "frame_after": "66722",
+    "state_before": "4319.1660 4465.0112 100.6135|0.0000 -0.0001 0.0001|0.0000 0.0000 0.0000",
+    "state_after": "4319.1577 4465.0786 100.6119|0.0000 -0.0001 -0.0000|0.0000 0.0000 0.0000",
+    "fall": false
+   },
+   {
+    "name": "mounted_forward",
+    "session": "mounted",
+    "duration": 3.0,
+    "events": [
+     [
+      0.0,
+      "w",
+      3000
+     ]
+    ],
+    "frames": 73,
+    "samples": 64,
+    "position_rows": 200,
+    "position_error": null,
+    "render_frames": 69,
+    "frame_before": "66730",
+    "frame_after": "66866",
+    "state_before": "4319.1592 4465.0615 100.6527|-0.0001 0.0001 0.0000|0.0000 0.0000 0.0000",
+    "state_after": "4319.1641 4469.2563 100.4379|-0.0001 0.0000 -0.0004|0.0000 0.0000 0.0000",
+    "fall": false
+   },
+   {
+    "name": "mounted_turn",
+    "session": "mounted",
+    "duration": 1.8,
+    "events": [
+     [
+      0.0,
+      "a",
+      1500
+     ]
+    ],
+    "frames": 47,
+    "samples": 39,
+    "position_rows": 122,
+    "position_error": null,
+    "render_frames": 45,
+    "frame_before": "66882",
+    "frame_after": "66968",
+    "state_before": "4319.1782 4469.3271 100.3323|-0.0000 0.0000 -0.0000|0.0000 0.0000 0.0000",
+    "state_after": "4319.2773 4469.5439 100.3267|0.0000 0.0001 1.6588|0.0000 0.0000 0.0000",
+    "fall": false
+   },
+   {
+    "name": "mounted_jump",
+    "session": "mounted",
+    "duration": 2.4,
+    "events": [
+     [
+      0.3,
+      "space",
+      120
+     ]
+    ],
+    "frames": 59,
+    "samples": 53,
+    "position_rows": 158,
+    "position_error": null,
+    "render_frames": 57,
+    "frame_before": "66976",
+    "frame_after": "67090",
+    "state_before": "4319.2939 4469.5483 100.2738|-0.0001 0.0000 1.6587|0.0000 0.0000 0.0000",
+    "state_after": "4319.1519 4469.5254 100.3997|0.0000 -0.0000 1.6586|0.0000 0.0000 0.0000",
+    "fall": false
+   }
+  ],
+  "failures": [],
+  "provenance": {
+   "probe": {
+    "path": "C:\\AAEMU_DISK\\aaemu-client\\wt\\formulas\\tools\\onfoot_update_probe.py",
+    "sha256": "fde7669c018c7bea1b146e8a0c53168b007cdb6142f5a59541c1cb391b969f39"
+   },
+   "driver_dll": {
+    "path": "D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll",
+    "sha256": "a6ba1835b302961d082b878a1d3a574762b813a25e63cc5ea499598db798d9e7"
+   },
+   "lane": {
+    "path": "D:\\aaemu-wt\\move-golden",
+    "head": "a6181328645d1fd86da76b216b0ca7f86a61be82",
+    "branch": "recon/onfoot-trace"
+   },
+   "client": {
+    "path": "C:\\AAEMU_DISK\\aaemu-client\\wt\\formulas",
+    "head": "92e6d0e722a63b0f7a375448c06028d3c1054b61",
+    "branch": "recon/on-foot-update"
+   },
+   "client_binaries": [
+    {
+     "path": "D:\\AA1.2\\bin32\\archeage.exe",
+     "sha256": "a6fbd9ff58bf749fd995489f34acb01e1bc84d4d5a533721b0c017562766fc2a",
+     "time_date_stamp": 1413265250,
+     "size_of_image": 4078592,
+     "bytes": 4059144
+    },
+    {
+     "path": "D:\\AA1.2\\bin32\\x2game.dll",
+     "sha256": "3821c34366ff8b6f7aed95ba53d12216a5c31cb7c3407703d28eea639a621205",
+     "time_date_stamp": 1413265461,
+     "size_of_image": 30083584,
+     "bytes": 18483712
+    }
+   ],
+   "server_binaries": [
+    {
+     "path": "D:\\aaemu-live-move-golden\\bin\\aaemu-game.exe",
+     "sha256": "4ba75d4ad73796c535f567be16eeab1529e2dc4d2ce0641a37f6f768172bba4a"
+    },
+    {
+     "path": "D:\\aaemu-live-move-golden\\bin\\aaemu-login.exe",
+     "sha256": "32838cbb616a87edc5dc18efc14f57eb9ceda90fb893a66579b5c68dde7d3be9"
+    }
+   ]
+  },
+  "pids": [
+   {
+    "session": "on_foot",
+    "pid": 34696
+   },
+   {
+    "session": "mounted",
+    "pid": 49176
+   }
+  ],
+  "player_entity_id": 0,
+  "player_entity_ptr": "43d848d4",
+  "x2game": {
+   "base": 956235776,
+   "size": 30083584,
+   "stamp": 1413265461
+  },
+  "selftest": "0selftest ok cases=2",
+  "install": "0installed",
+  "trace_info": "0trace installed=1 targets=13 frame=2 rows=2 state=05330000 f0=39129800/len9 f1=39133280/len9 f2=3912dd40/len6 f3=3912b330/len6 f4=39118650/len9 f5=39113f60/len5 f6=39135ed0/len9 f7=39135fe0/len9 f8=3911feb0/len9 f9=3911eff0/len9 f10=3911c780/len6 f11=39117590/len6 f12=391387c0/len6 seq=0 ovf=0",
+  "stopped": [
+   34696,
+   49176
+  ],
+  "mount_debug": [
+   "pet_before=false",
+   "inventory_horse_slots=10,11,12,5,6,7,8,9",
+   "use_by_type=true",
+   "pet_before_mount=true",
+   "mount_entity=43617eac"
+  ],
+  "mount_entity_ptr": "43617eac",
+  "mount_actor": "5109f6f4",
+  "mount_actor_vtable": "399ac918"
+ },
+ "checks": [
+  {
+   "name": "stand local order",
+   "pass": true,
+   "detail": "[1, 4, 6, 7, 5, 12, 8, 9]"
+  },
+  {
+   "name": "stand rows/render-frames",
+   "pass": true,
+   "detail": "rows=63 render=61"
+  },
+  {
+   "name": "forward rows/render-frames",
+   "pass": true,
+   "detail": "rows=73 render=69"
+  },
+  {
+   "name": "strafe_q rows/render-frames",
+   "pass": true,
+   "detail": "rows=52 render=51"
+  },
+  {
+   "name": "strafe_e rows/render-frames",
+   "pass": true,
+   "detail": "rows=54 render=52"
+  },
+  {
+   "name": "turn_a rows/render-frames",
+   "pass": true,
+   "detail": "rows=47 render=44"
+  },
+  {
+   "name": "turn_d rows/render-frames",
+   "pass": true,
+   "detail": "rows=46 render=43"
+  },
+  {
+   "name": "jump_stand rows/render-frames",
+   "pass": true,
+   "detail": "rows=60 render=56"
+  },
+  {
+   "name": "jump_run rows/render-frames",
+   "pass": true,
+   "detail": "rows=61 render=59"
+  },
+  {
+   "name": "jump_run_b rows/render-frames",
+   "pass": true,
+   "detail": "rows=63 render=61"
+  },
+  {
+   "name": "mounted_stand rows/render-frames",
+   "pass": true,
+   "detail": "rows=60 render=57"
+  },
+  {
+   "name": "mounted_forward rows/render-frames",
+   "pass": true,
+   "detail": "rows=73 render=69"
+  },
+  {
+   "name": "mounted_turn rows/render-frames",
+   "pass": true,
+   "detail": "rows=47 render=45"
+  },
+  {
+   "name": "mounted_jump rows/render-frames",
+   "pass": true,
+   "detail": "rows=59 render=57"
+  },
+  {
+   "name": "fall state calls 10+11 per frame",
+   "pass": true,
+   "detail": "72/98 frames"
+  },
+  {
+   "name": "running jump peak > 0.3 m",
+   "pass": true,
+   "detail": "best=jump_run_b peak=0.92 m; jump_run=0.00, jump_run_b=0.92"
+  },
+  {
+   "name": "on-foot local never calls 0/2/3",
+   "pass": true,
+   "detail": "[]"
+  },
+  {
+   "name": "mounted rider keeps CPlayer chain",
+   "pass": true,
+   "detail": "[[1, 4, 6, 7, 5, 12, 8, 9, 10, 11]]"
+  },
+  {
+   "name": "mounted Quadruped chain 0/2/5",
+   "pass": true,
+   "detail": "[[0, 2, 5]]"
+  },
+  {
+   "name": "standing jump entity-z unchanged (root motion?)",
+   "pass": true,
+   "detail": "peak=0.14 m (informational)"
+  }
+ ]
+}

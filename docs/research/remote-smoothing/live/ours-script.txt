@@ -1,0 +1,7 @@
+feel SETUP
+lua if tutorial and tutorial.window then tutorial.window:Show(false) end
+wait 1
+feel START
+wait 90
+feel END
+quit now

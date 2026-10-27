@@ -1,0 +1,69 @@
+// FUN_3a9918bb - live linearised listing (W3 recon)
+// module x2game.dll live VA 0x3A9918BB (image VA 0x3A9918BB), RVA 0x19A18BB
+// classification: (b) - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time; live bytes equal x2game_unpacked.dll at this RVA; no table-indexed dispatch loop/handler table; real-operation ratio 0.38 (12/32); 1 block(s) use push-continuation / push-ret dispatch; 11 blocks reached; control flow is flattened, not a single linear function
+// blocks=11 instructions=32 jmp=10 jcc=0 call=0 ret=1 push_ret_blocks=1 vm_dispatch=0 truncated=False
+
+; --- block 0x39125632 (2 insns) ---
+39125632: 8d6424fc             lea      esp, [esp - 4]
+39125636: e9ceb5a601           jmp      0x3ab90c09
+;   edge jmp -> 0x3AB90C09 (inside)
+
+; --- block 0x393976CA (2 insns) ---
+393976CA: 8b4c2408             mov      ecx, dword ptr [esp + 8]
+393976CE: e954842d01           jmp      0x3a66fb27
+;   edge jmp -> 0x3A66FB27 (inside)
+
+; --- block 0x3A66FB27 (4 insns) ---
+3A66FB27: bacf941339           mov      edx, 0x391394cf
+3A66FB2C: 0f44ca               cmove    ecx, edx
+3A66FB2F: 894c2408             mov      dword ptr [esp + 8], ecx
+3A66FB33: e93e275200           jmp      0x3ab92276
+;   edge jmp -> 0x3AB92276 (inside)
+
+; --- block 0x3A67B9C2 (2 insns) ---
+3A67B9C2: 51                   push     ecx
+3A67B9C3: e98fe55200           jmp      0x3aba9f57
+;   edge jmp -> 0x3ABA9F57 (inside)
+
+; --- block 0x3A6AB032 (2 insns) ---
+3A6AB032: 837f2400             cmp      dword ptr [edi + 0x24], 0
+3A6AB036: e98709fdff           jmp      0x3a67b9c2
+;   edge jmp -> 0x3A67B9C2 (inside)
+
+; --- block 0x3A978F7F (2 insns) ---
+3A978F7F: 52                   push     edx
+3A978F80: e945e7a1fe           jmp      0x393976ca
+;   edge jmp -> 0x393976CA (inside)
+
+; --- block 0x3A9918BB (2 insns) ---
+3A9918BB: 896c24fc             mov      dword ptr [esp - 4], ebp
+3A9918BF: e96e3d79fe           jmp      0x39125632
+;   edge jmp -> 0x39125632 (inside)
+
+; --- block 0x3AB90C09 (4 insns) ---
+3AB90C09: 54                   push     esp
+3AB90C0A: 5d                   pop      ebp
+3AB90C0B: 897424fc             mov      dword ptr [esp - 4], esi
+3AB90C0F: e97d1a0000           jmp      0x3ab92691
+;   edge jmp -> 0x3AB92691 (inside)
+
+; --- block 0x3AB92276 (3 insns) ---
+3AB92276: 5a                   pop      edx
+3AB92277: 59                   pop      ecx
+3AB92278: c3                   ret
+
+; --- block 0x3AB92691 (5 insns) ---
+3AB92691: 8d6424fc             lea      esp, [esp - 4]
+3AB92695: 897c24fc             mov      dword ptr [esp - 4], edi
+3AB92699: 8d6424fc             lea      esp, [esp - 4]
+3AB9269D: 8b7d08               mov      edi, dword ptr [ebp + 8]
+3AB926A0: e98d89b1ff           jmp      0x3a6ab032
+;   edge jmp -> 0x3A6AB032 (inside)
+
+; --- block 0x3ABA9F57 (4 insns) ---
+3ABA9F57: 5e                   pop      esi
+3ABA9F58: 6880941339           push     0x39139480
+3ABA9F5D: 51                   push     ecx
+3ABA9F5E: e91cf0dcff           jmp      0x3a978f7f
+;   edge jmp -> 0x3A978F7F (inside)
+

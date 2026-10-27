@@ -1,0 +1,13 @@
+{
+  "name": "on_foot",
+  "description": "Run forward 5 s, strafe Q, then E, turn in place, jump.",
+  "start": {"x": 10512.0, "y": 15585.0, "z": 232.0, "yaw_deg": 0.0},
+  "mount": false,
+  "events": [
+    {"at": 0.0, "until": 5.0, "keys": ["w"], "label": "run"},
+    {"at": 5.5, "until": 7.5, "keys": ["q"], "label": "strafe_q"},
+    {"at": 8.0, "until": 10.0, "keys": ["e"], "label": "strafe_e"},
+    {"at": 10.5, "until": 12.5, "keys": ["a"], "label": "turn"},
+    {"at": 13.0, "until": 13.15, "keys": ["space"], "label": "jump"}
+  ]
+}

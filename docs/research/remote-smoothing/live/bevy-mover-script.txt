@@ -1,0 +1,27 @@
+feel SETUP
+lua if tutorial and tutorial.window then tutorial.window:Show(false) end
+wait 1
+feel START
+wait 15
+keydown w
+wait 1.0
+keydown a
+wait 0.55
+keyup a
+wait 0.45
+keydown d
+wait 0.65
+keyup d
+wait 0.85
+keyup w
+wait 0.2
+keydown w
+wait 1.5
+keyup w
+wait 0.3
+keydown a
+wait 0.7
+keyup a
+feel END
+wait 2
+quit now

@@ -1,0 +1,1645 @@
+{
+ "date": "2026-10-27T05:21:58",
+ "argv": [
+  "tools/movement_dump_probe.py",
+  "--slot",
+  "wp3",
+  "--lane",
+  "move-golden",
+  "--runs",
+  "2",
+  "--tag",
+  "movement-dump-20261027-r5"
+ ],
+ "analysis_argv": [
+  "tools/movement_dump_probe.py",
+  "--from-raw",
+  "data/extract/movement-dump-20261027-r5"
+ ],
+ "slot": "wp3",
+ "lane": "move-golden",
+ "runs": [
+  {
+   "index": 1,
+   "started": "2026-10-27T05:21:58",
+   "argv": [
+    "tools/movement_dump_probe.py",
+    "--slot",
+    "wp3",
+    "--lane",
+    "move-golden",
+    "--runs",
+    "2",
+    "--tag",
+    "movement-dump-20261027-r5"
+   ],
+   "commands": [
+    "D:\\aaemu-target\\move-golden\\live\\aaemu-clientdriver.exe mcp --dll D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll --client D:\\AA1.2\\bin32\\archeage.exe --launcher D:\\aaemu-live-move-golden\\bin\\aaemu-launcher.exe --password-file D:\\aaemu-live-move-golden\\cap-pw.txt --login 127.0.0.1:28237 --user wp3a --artifact-dir C:\\AAEMU_DISK\\aaemu-client\\wt\\glide\\data\\extract\\movement-dump-20261027-r5\\run-1\\mcp"
+   ],
+   "inputs": [],
+   "failures": [],
+   "pid": 27260,
+   "account": {
+    "slot": "wp3",
+    "role": "a",
+    "lane": "move-golden",
+    "user": "wp3a",
+    "character": "MgWp3a",
+    "character_id": 1005
+   },
+   "player": {
+    "entity_id": 4126,
+    "entity_ptr": "0x757F2924"
+   },
+   "anticheat": {
+    "modules": 157,
+    "bad": []
+   },
+   "state": "frame=66057 time=16.697983 pos=4365.03125,4389.68359,231.20627 angles=0.00000,0.00000,0.49474 vel=0.00000,0.00000,0.00000 anim=fist_relaxed_idle+fist_ba_relaxed_idle",
+   "modules": {
+    "x2game.dll": {
+     "name": "x2game.dll",
+     "base": 956235776,
+     "size": 30083584,
+     "path": "D:\\AA1.2\\bin32\\x2game.dll"
+    },
+    "cryaction.dll": {
+     "name": "cryaction.dll",
+     "base": 810483712,
+     "size": 5540352,
+     "path": "D:\\AA1.2\\bin32\\cryaction.dll"
+    }
+   },
+   "stops": [
+    {
+     "pid": 27260,
+     "taskkill": 128,
+     "stdout": "",
+     "stderr": "ERROR: The process \"27260\" not found."
+    }
+   ]
+  },
+  {
+   "index": 2,
+   "started": "2026-10-27T05:22:45",
+   "argv": [
+    "tools/movement_dump_probe.py",
+    "--slot",
+    "wp3",
+    "--lane",
+    "move-golden",
+    "--runs",
+    "2",
+    "--tag",
+    "movement-dump-20261027-r5"
+   ],
+   "commands": [
+    "D:\\aaemu-target\\move-golden\\live\\aaemu-clientdriver.exe mcp --dll D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll --client D:\\AA1.2\\bin32\\archeage.exe --launcher D:\\aaemu-live-move-golden\\bin\\aaemu-launcher.exe --password-file D:\\aaemu-live-move-golden\\cap-pw.txt --login 127.0.0.1:28237 --user wp3a --artifact-dir C:\\AAEMU_DISK\\aaemu-client\\wt\\glide\\data\\extract\\movement-dump-20261027-r5\\run-2\\mcp"
+   ],
+   "inputs": [],
+   "failures": [],
+   "pid": 58404,
+   "account": {
+    "slot": "wp3",
+    "role": "a",
+    "lane": "move-golden",
+    "user": "wp3a",
+    "character": "MgWp3a",
+    "character_id": 1005
+   },
+   "player": {
+    "entity_id": 4135,
+    "entity_ptr": "0x075F9404"
+   },
+   "anticheat": {
+    "modules": 157,
+    "bad": []
+   },
+   "state": "frame=65934 time=20.416595 pos=4365.03125,4389.68359,231.20627 angles=0.00000,0.00000,0.49474 vel=0.00000,0.00000,0.00000 anim=fist_relaxed_idle+fist_ba_relaxed_idle",
+   "modules": {
+    "x2game.dll": {
+     "name": "x2game.dll",
+     "base": 956235776,
+     "size": 30083584,
+     "path": "D:\\AA1.2\\bin32\\x2game.dll"
+    },
+    "cryaction.dll": {
+     "name": "cryaction.dll",
+     "base": 810483712,
+     "size": 5540352,
+     "path": "D:\\AA1.2\\bin32\\cryaction.dll"
+    }
+   },
+   "stops": [
+    {
+     "pid": 58404,
+     "taskkill": 128,
+     "stdout": "",
+     "stderr": "ERROR: The process \"58404\" not found."
+    }
+   ]
+  }
+ ],
+ "results": {
+  "FUN_3a979a34": {
+   "module": "x2game.dll",
+   "actual": true,
+   "rva": 26778164,
+   "image_va": 983013940,
+   "live_va": 983013940,
+   "size": 256,
+   "live_sha256": "fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f",
+   "packed_sha256": "72b621c70b96bd0133b58870776efa9f1f5c206cd71bdeed27f5751cc6aadc3b",
+   "unpacked_sha256": "fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f",
+   "mem_sha256": "fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.9174841465158625,
+   "entropy_packed": 7.155554431622167,
+   "entropy_unpacked": 5.9174841465158625,
+   "stats": {
+    "blocks": 20,
+    "instructions": 100,
+    "truncated": false,
+    "real_ops": 63,
+    "sse_ops": 4,
+    "control_ops": 20,
+    "jmp": 17,
+    "jcc": 1,
+    "call": 0,
+    "ret": 2,
+    "push": 12,
+    "pop": 5,
+    "push_ret_blocks": 3,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 37,
+     "jmp": 17,
+     "push": 12,
+     "lea": 10,
+     "pop": 5,
+     "xorpd": 2,
+     "movlpd": 2,
+     "cmovne": 2,
+     "sub": 2,
+     "add": 2,
+     "test": 2,
+     "ret": 2,
+     "or": 1,
+     "xor": 1,
+     "cmp": 1,
+     "je": 1,
+     "and": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.63,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.63 (63/100)",
+     "3 block(s) use push-continuation / push-ret dispatch",
+     "20 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_3a979a34.txt",
+   "raw": "run-1\\live-FUN_3a979a34.bin"
+  },
+  "FUN_3a6ab5f3": {
+   "module": "x2game.dll",
+   "actual": true,
+   "rva": 23836147,
+   "image_va": 980071923,
+   "live_va": 980071923,
+   "size": 338,
+   "live_sha256": "8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde",
+   "packed_sha256": "ca2fe24fa908a9afa2ecc48debb9200320070951e1da0c39653977c119d408ee",
+   "unpacked_sha256": "8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde",
+   "mem_sha256": "8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.191219459965202,
+   "entropy_packed": 7.353823205420984,
+   "entropy_unpacked": 5.191219459965202,
+   "stats": {
+    "blocks": 3,
+    "instructions": 91,
+    "truncated": false,
+    "real_ops": 78,
+    "sse_ops": 21,
+    "control_ops": 3,
+    "jmp": 3,
+    "jcc": 0,
+    "call": 0,
+    "ret": 0,
+    "push": 5,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 36,
+     "lea": 14,
+     "movss": 11,
+     "movq": 8,
+     "push": 5,
+     "pop": 4,
+     "jmp": 3,
+     "movzx": 3,
+     "fld": 2,
+     "fstp": 2,
+     "xorps": 1,
+     "rep movsd": 1,
+     "xor": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.8571428571428571,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.86 (78/91)",
+     "1 block(s) use push-continuation / push-ret dispatch"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_3a6ab5f3.txt",
+   "raw": "run-1\\live-FUN_3a6ab5f3.bin"
+  },
+  "FUN_3a98bb00": {
+   "module": "x2game.dll",
+   "actual": true,
+   "rva": 26852096,
+   "image_va": 983087872,
+   "live_va": 983087872,
+   "size": 256,
+   "live_sha256": "8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde",
+   "packed_sha256": "7663acb62da930bb0cf07220cf78626aeea685f481248a540e34bb98df86ffbd",
+   "unpacked_sha256": "8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde",
+   "mem_sha256": "8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.995980136326489,
+   "entropy_packed": 7.138014490232819,
+   "entropy_unpacked": 5.995980136326489,
+   "stats": {
+    "blocks": 160,
+    "instructions": 617,
+    "truncated": true,
+    "real_ops": 318,
+    "sse_ops": 154,
+    "control_ops": 160,
+    "jmp": 142,
+    "jcc": 10,
+    "call": 0,
+    "ret": 8,
+    "push": 40,
+    "pop": 16,
+    "push_ret_blocks": 11,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "jmp": 142,
+     "mov": 105,
+     "movss": 56,
+     "mulss": 46,
+     "push": 40,
+     "movaps": 31,
+     "lea": 30,
+     "addss": 16,
+     "pop": 16,
+     "shufps": 14,
+     "unpcklps": 12,
+     "xorps": 11,
+     "cmp": 10,
+     "addps": 10,
+     "mulps": 10,
+     "movq": 8,
+     "ret": 8,
+     "sub": 6,
+     "je": 5,
+     "comiss": 5,
+     "add": 4,
+     "subss": 4,
+     "andps": 3,
+     "cmovne": 3,
+     "jne": 2,
+     "xorpd": 2,
+     "movlpd": 2,
+     "and": 2,
+     "test": 2,
+     "rsqrtss": 2,
+     "xor": 1,
+     "cmove": 1,
+     "jbe": 1,
+     "divss": 1,
+     "jae": 1,
+     "cmovb": 1,
+     "or": 1,
+     "sqrtss": 1,
+     "cmovbe": 1,
+     "jb": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.5153970826580226,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.52 (318/617)",
+     "11 block(s) use push-continuation / push-ret dispatch",
+     "160 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_3a98bb00.txt",
+   "raw": "run-1\\live-FUN_3a98bb00.bin"
+  },
+  "FUN_3a9918bb": {
+   "module": "x2game.dll",
+   "actual": true,
+   "rva": 26876091,
+   "image_va": 983111867,
+   "live_va": 983111867,
+   "size": 256,
+   "live_sha256": "d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6",
+   "packed_sha256": "e6669e655f395174af31c1bf663e52f864cf87fe58ee06c47359426d52f002cc",
+   "unpacked_sha256": "d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6",
+   "mem_sha256": "d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 7.064589757880749,
+   "entropy_packed": 7.131083093706188,
+   "entropy_unpacked": 7.064589757880749,
+   "stats": {
+    "blocks": 11,
+    "instructions": 32,
+    "truncated": false,
+    "real_ops": 12,
+    "sse_ops": 0,
+    "control_ops": 11,
+    "jmp": 10,
+    "jcc": 0,
+    "call": 0,
+    "ret": 1,
+    "push": 5,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "jmp": 10,
+     "mov": 7,
+     "push": 5,
+     "pop": 4,
+     "lea": 3,
+     "cmove": 1,
+     "cmp": 1,
+     "ret": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.375,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.38 (12/32)",
+     "1 block(s) use push-continuation / push-ret dispatch",
+     "11 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_3a9918bb.txt",
+   "raw": "run-1\\live-FUN_3a9918bb.bin"
+  },
+  "thunk_FUN_3a979a34": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1265824,
+   "image_va": 957501600,
+   "live_va": 957501600,
+   "size": 256,
+   "live_sha256": "61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52",
+   "packed_sha256": "4964f7749c912ae66a1c2ac0573e28cf2948d21390595a7a76fde45a61939960",
+   "unpacked_sha256": "61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52",
+   "mem_sha256": "61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.999983103234558,
+   "entropy_packed": 7.158994214908246,
+   "entropy_unpacked": 5.999983103234558,
+   "stats": {
+    "blocks": 21,
+    "instructions": 101,
+    "truncated": false,
+    "real_ops": 63,
+    "sse_ops": 4,
+    "control_ops": 21,
+    "jmp": 18,
+    "jcc": 1,
+    "call": 0,
+    "ret": 2,
+    "push": 12,
+    "pop": 5,
+    "push_ret_blocks": 3,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 37,
+     "jmp": 18,
+     "push": 12,
+     "lea": 10,
+     "pop": 5,
+     "xorpd": 2,
+     "movlpd": 2,
+     "cmovne": 2,
+     "sub": 2,
+     "add": 2,
+     "test": 2,
+     "ret": 2,
+     "or": 1,
+     "xor": 1,
+     "cmp": 1,
+     "je": 1,
+     "and": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.6237623762376238,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.62 (63/101)",
+     "3 block(s) use push-continuation / push-ret dispatch",
+     "21 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-thunk_FUN_3a979a34.txt",
+   "raw": "run-1\\live-thunk_FUN_3a979a34.bin"
+  },
+  "thunk_FUN_3a6ab5f3": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1353248,
+   "image_va": 957589024,
+   "live_va": 957589024,
+   "size": 256,
+   "live_sha256": "ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4",
+   "packed_sha256": "c2ead1768e3f4e09157439a46fde3bc1d6c502930670f5f1cf6c03ca1c873cca",
+   "unpacked_sha256": "ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4",
+   "mem_sha256": "ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.625830598489825,
+   "entropy_packed": 5.668142497978896,
+   "entropy_unpacked": 5.625830598489825,
+   "stats": {
+    "blocks": 4,
+    "instructions": 92,
+    "truncated": false,
+    "real_ops": 78,
+    "sse_ops": 21,
+    "control_ops": 4,
+    "jmp": 4,
+    "jcc": 0,
+    "call": 0,
+    "ret": 0,
+    "push": 5,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 36,
+     "lea": 14,
+     "movss": 11,
+     "movq": 8,
+     "push": 5,
+     "pop": 4,
+     "jmp": 4,
+     "movzx": 3,
+     "fld": 2,
+     "fstp": 2,
+     "xorps": 1,
+     "rep movsd": 1,
+     "xor": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.8478260869565217,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.85 (78/92)",
+     "1 block(s) use push-continuation / push-ret dispatch"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-thunk_FUN_3a6ab5f3.txt",
+   "raw": "run-1\\live-thunk_FUN_3a6ab5f3.bin"
+  },
+  "thunk_FUN_3a98bb00": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1366592,
+   "image_va": 957602368,
+   "live_va": 957602368,
+   "size": 256,
+   "live_sha256": "00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723",
+   "packed_sha256": "4509c61c11e21aa8c3fd102bc31a8dfe3a44251745400dbd7fcb0326155739e4",
+   "unpacked_sha256": "00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723",
+   "mem_sha256": "00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.974173937987958,
+   "entropy_packed": 7.216529589725435,
+   "entropy_unpacked": 5.974173937987958,
+   "stats": {
+    "blocks": 160,
+    "instructions": 616,
+    "truncated": true,
+    "real_ops": 318,
+    "sse_ops": 154,
+    "control_ops": 160,
+    "jmp": 142,
+    "jcc": 10,
+    "call": 0,
+    "ret": 8,
+    "push": 39,
+    "pop": 16,
+    "push_ret_blocks": 11,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "jmp": 142,
+     "mov": 105,
+     "movss": 56,
+     "mulss": 46,
+     "push": 39,
+     "movaps": 31,
+     "lea": 30,
+     "addss": 16,
+     "pop": 16,
+     "shufps": 14,
+     "unpcklps": 12,
+     "xorps": 11,
+     "cmp": 10,
+     "addps": 10,
+     "mulps": 10,
+     "movq": 8,
+     "ret": 8,
+     "sub": 6,
+     "je": 5,
+     "comiss": 5,
+     "add": 4,
+     "subss": 4,
+     "andps": 3,
+     "cmovne": 3,
+     "jne": 2,
+     "xorpd": 2,
+     "movlpd": 2,
+     "and": 2,
+     "test": 2,
+     "rsqrtss": 2,
+     "xor": 1,
+     "cmove": 1,
+     "jbe": 1,
+     "divss": 1,
+     "jae": 1,
+     "cmovb": 1,
+     "or": 1,
+     "sqrtss": 1,
+     "cmovbe": 1,
+     "jb": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.5162337662337663,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.52 (318/616)",
+     "11 block(s) use push-continuation / push-ret dispatch",
+     "160 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-thunk_FUN_3a98bb00.txt",
+   "raw": "run-1\\live-thunk_FUN_3a98bb00.bin"
+  },
+  "thunk_FUN_3a9918bb": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1348720,
+   "image_va": 957584496,
+   "live_va": 957584496,
+   "size": 256,
+   "live_sha256": "663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a",
+   "packed_sha256": "29fe3d29e108f8f9f350b1713de94558b86757143fb393de9a596fef34cd55d3",
+   "unpacked_sha256": "663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a",
+   "mem_sha256": "663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.9944300367583425,
+   "entropy_packed": 7.142878210927493,
+   "entropy_unpacked": 5.9944300367583425,
+   "stats": {
+    "blocks": 12,
+    "instructions": 33,
+    "truncated": false,
+    "real_ops": 12,
+    "sse_ops": 0,
+    "control_ops": 12,
+    "jmp": 11,
+    "jcc": 0,
+    "call": 0,
+    "ret": 1,
+    "push": 5,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "jmp": 11,
+     "mov": 7,
+     "push": 5,
+     "pop": 4,
+     "lea": 3,
+     "cmove": 1,
+     "cmp": 1,
+     "ret": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.36363636363636365,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.36 (12/33)",
+     "1 block(s) use push-continuation / push-ret dispatch",
+     "12 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-thunk_FUN_3a9918bb.txt",
+   "raw": "run-1\\live-thunk_FUN_3a9918bb.bin"
+  },
+  "CActor::UpdateMovementRequest": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1214032,
+   "image_va": 957449808,
+   "live_va": 957449808,
+   "size": 512,
+   "live_sha256": "7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511",
+   "packed_sha256": "c1166cb5cf460b77c83ea4ae170a338a6af6cd928ed125100820d0c54ddc7676",
+   "unpacked_sha256": "7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511",
+   "mem_sha256": "7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.99495964362347,
+   "entropy_packed": 7.508311789584341,
+   "entropy_unpacked": 5.99495964362347,
+   "stats": {
+    "blocks": 64,
+    "instructions": 613,
+    "truncated": false,
+    "real_ops": 434,
+    "sse_ops": 177,
+    "control_ops": 104,
+    "jmp": 8,
+    "jcc": 53,
+    "call": 40,
+    "ret": 3,
+    "push": 43,
+    "pop": 9,
+    "push_ret_blocks": 4,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 162,
+     "movss": 86,
+     "push": 43,
+     "call": 40,
+     "je": 35,
+     "mulss": 35,
+     "test": 30,
+     "cmp": 24,
+     "addss": 17,
+     "lea": 16,
+     "movaps": 14,
+     "jne": 11,
+     "subss": 10,
+     "pop": 9,
+     "jmp": 8,
+     "xorpd": 8,
+     "movlpd": 8,
+     "xorps": 8,
+     "or": 7,
+     "xor": 7,
+     "add": 6,
+     "ucomiss": 4,
+     "lahf": 4,
+     "fstp": 3,
+     "ret": 3,
+     "jp": 3,
+     "js": 3,
+     "cvtps2pd": 2,
+     "sub": 1,
+     "jnp": 1,
+     "cvtsd2ss": 1,
+     "fld": 1,
+     "fsincos": 1,
+     "setg": 1,
+     "movzx": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.7079934747145188,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.71 (434/613)",
+     "4 block(s) use push-continuation / push-ret dispatch",
+     "64 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-CActor_UpdateMovementRequest.txt",
+   "raw": "run-1\\live-CActor_UpdateMovementRequest.bin"
+  },
+  "CPlayer::ProcessFrameMovement": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1335264,
+   "image_va": 957571040,
+   "live_va": 957571040,
+   "size": 512,
+   "live_sha256": "3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388",
+   "packed_sha256": "c8b3f7e91eec58abdb16e3dc1f289edcb9405235c8082b5015665c04f777f893",
+   "unpacked_sha256": "3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388",
+   "mem_sha256": "3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.746384250088708,
+   "entropy_packed": 7.497159010858502,
+   "entropy_unpacked": 5.746384250088708,
+   "stats": {
+    "blocks": 7,
+    "instructions": 140,
+    "truncated": false,
+    "real_ops": 100,
+    "sse_ops": 36,
+    "control_ops": 16,
+    "jmp": 0,
+    "jcc": 5,
+    "call": 9,
+    "ret": 2,
+    "push": 20,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 47,
+     "movss": 24,
+     "push": 20,
+     "call": 9,
+     "lea": 8,
+     "xorpd": 4,
+     "movlpd": 4,
+     "cmp": 4,
+     "je": 4,
+     "movq": 4,
+     "pop": 4,
+     "add": 2,
+     "ret": 2,
+     "sub": 1,
+     "test": 1,
+     "jne": 1,
+     "or": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.7142857142857143,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.71 (100/140)",
+     "1 block(s) use push-continuation / push-ret dispatch"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-CPlayer_ProcessFrameMovement.txt",
+   "raw": "run-1\\live-CPlayer_ProcessFrameMovement.bin"
+  },
+  "CPlayer::ProcessFrameMovementRotation": {
+   "module": "x2game.dll",
+   "actual": false,
+   "rva": 1334992,
+   "image_va": 957570768,
+   "live_va": 957570768,
+   "size": 512,
+   "live_sha256": "9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c",
+   "packed_sha256": "9e9fd4d9a3f62cd309182d3c8d4295c5f91638ecf5a25eed3c498f8c1b6651f7",
+   "unpacked_sha256": "9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c",
+   "mem_sha256": "9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c",
+   "live_equals_packed": false,
+   "live_equals_unpacked": true,
+   "live_equals_mem": true,
+   "first_diff_from_packed": 0,
+   "entropy_live": 5.592564411809516,
+   "entropy_packed": 7.447899634643744,
+   "entropy_unpacked": 5.592564411809516,
+   "stats": {
+    "blocks": 7,
+    "instructions": 98,
+    "truncated": false,
+    "real_ops": 60,
+    "sse_ops": 12,
+    "control_ops": 16,
+    "jmp": 0,
+    "jcc": 5,
+    "call": 9,
+    "ret": 2,
+    "push": 18,
+    "pop": 4,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 31,
+     "push": 18,
+     "call": 9,
+     "lea": 8,
+     "xorpd": 4,
+     "movlpd": 4,
+     "cmp": 4,
+     "je": 4,
+     "movss": 4,
+     "pop": 4,
+     "add": 2,
+     "ret": 2,
+     "sub": 1,
+     "test": 1,
+     "jne": 1,
+     "or": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.6122448979591837,
+    "reasons": [
+     "live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time",
+     "live bytes equal x2game_unpacked.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.61 (60/98)",
+     "1 block(s) use push-continuation / push-ret dispatch"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 956235776,
+     "end": 956239872,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 956239872,
+     "end": 986319360,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-CPlayer_ProcessFrameMovementRotation.txt",
+   "raw": "run-1\\live-CPlayer_ProcessFrameMovementRotation.bin"
+  },
+  "FUN_307c70b0": {
+   "module": "cryaction.dll",
+   "actual": true,
+   "rva": 2977968,
+   "image_va": 813461680,
+   "live_va": 813461680,
+   "size": 1024,
+   "live_sha256": "fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138",
+   "packed_sha256": "fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138",
+   "unpacked_sha256": "fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138",
+   "mem_sha256": null,
+   "live_equals_packed": true,
+   "live_equals_unpacked": true,
+   "live_equals_mem": null,
+   "first_diff_from_packed": null,
+   "entropy_live": 6.074430210587873,
+   "entropy_packed": 6.074430210587873,
+   "entropy_unpacked": 6.074430210587873,
+   "stats": {
+    "blocks": 35,
+    "instructions": 151,
+    "truncated": false,
+    "real_ops": 86,
+    "sse_ops": 4,
+    "control_ops": 35,
+    "jmp": 30,
+    "jcc": 1,
+    "call": 0,
+    "ret": 4,
+    "push": 21,
+    "pop": 9,
+    "push_ret_blocks": 5,
+    "vm_dispatch_hits": [],
+    "vm_dispatch_count": 0,
+    "mnemonics": {
+     "mov": 51,
+     "jmp": 30,
+     "push": 21,
+     "lea": 16,
+     "pop": 9,
+     "ret": 4,
+     "add": 3,
+     "cmp": 2,
+     "xorpd": 2,
+     "movlpd": 2,
+     "test": 2,
+     "cmovne": 2,
+     "sub": 2,
+     "or": 1,
+     "cmove": 1,
+     "xor": 1,
+     "je": 1,
+     "and": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.5695364238410596,
+    "reasons": [
+     "live bytes equal the shipped cryaction.dll at this RVA",
+     "no table-indexed dispatch loop/handler table",
+     "real-operation ratio 0.57 (86/151)",
+     "5 block(s) use push-continuation / push-ret dispatch",
+     "35 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 810483712,
+     "end": 810487808,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 810487808,
+     "end": 816024064,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_307c70b0.txt",
+   "raw": "run-1\\live-FUN_307c70b0.bin"
+  },
+  "FUN_306713f0": {
+   "module": "cryaction.dll",
+   "actual": false,
+   "rva": 1577968,
+   "image_va": 812061680,
+   "live_va": 812061680,
+   "size": 512,
+   "live_sha256": "2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c",
+   "packed_sha256": "2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c",
+   "unpacked_sha256": "2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c",
+   "mem_sha256": null,
+   "live_equals_packed": true,
+   "live_equals_unpacked": true,
+   "live_equals_mem": null,
+   "first_diff_from_packed": null,
+   "entropy_live": 5.881463418833717,
+   "entropy_packed": 5.881463418833717,
+   "entropy_unpacked": 5.881463418833717,
+   "stats": {
+    "blocks": 21,
+    "instructions": 228,
+    "truncated": false,
+    "real_ops": 166,
+    "sse_ops": 62,
+    "control_ops": 33,
+    "jmp": 7,
+    "jcc": 12,
+    "call": 12,
+    "ret": 2,
+    "push": 21,
+    "pop": 8,
+    "push_ret_blocks": 4,
+    "vm_dispatch_hits": [
+     [
+      812061889,
+      "jmp",
+      "dword ptr [eax*4 + 0x30671880]"
+     ],
+     [
+      812061889,
+      "jmp",
+      "dword ptr [eax*4 + 0x30671880]"
+     ],
+     [
+      812062140,
+      "jmp",
+      "dword ptr [eax*4 + 0x30671898]"
+     ],
+     [
+      812062140,
+      "jmp",
+      "dword ptr [eax*4 + 0x30671898]"
+     ],
+     [
+      812062421,
+      "jmp",
+      "dword ptr [edx*4 + 0x306718b0]"
+     ],
+     [
+      812062421,
+      "jmp",
+      "dword ptr [edx*4 + 0x306718b0]"
+     ]
+    ],
+    "vm_dispatch_count": 6,
+    "mnemonics": {
+     "mov": 71,
+     "movss": 32,
+     "movq": 22,
+     "push": 21,
+     "call": 12,
+     "cmp": 11,
+     "lea": 8,
+     "pop": 8,
+     "jmp": 7,
+     "add": 7,
+     "je": 6,
+     "xorpd": 4,
+     "movlpd": 4,
+     "jne": 3,
+     "or": 3,
+     "ja": 3,
+     "xor": 2,
+     "ret": 2,
+     "sub": 1,
+     "test": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.7280701754385965,
+    "reasons": [
+     "live bytes equal the shipped cryaction.dll at this RVA",
+     "6 table-indexed indirect dispatch site(s)",
+     "real-operation ratio 0.73 (166/228)",
+     "4 block(s) use push-continuation / push-ret dispatch",
+     "21 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 810483712,
+     "end": 810487808,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 810487808,
+     "end": 816024064,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_306713f0.txt",
+   "raw": "run-1\\live-FUN_306713f0.bin"
+  },
+  "FUN_30665500": {
+   "module": "cryaction.dll",
+   "actual": false,
+   "rva": 1529088,
+   "image_va": 812012800,
+   "live_va": 812012800,
+   "size": 512,
+   "live_sha256": "4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f",
+   "packed_sha256": "4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f",
+   "unpacked_sha256": "4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f",
+   "mem_sha256": null,
+   "live_equals_packed": true,
+   "live_equals_unpacked": true,
+   "live_equals_mem": null,
+   "first_diff_from_packed": null,
+   "entropy_live": 5.2931613415157885,
+   "entropy_packed": 5.2931613415157885,
+   "entropy_unpacked": 5.2931613415157885,
+   "stats": {
+    "blocks": 15,
+    "instructions": 153,
+    "truncated": false,
+    "real_ops": 111,
+    "sse_ops": 39,
+    "control_ops": 19,
+    "jmp": 3,
+    "jcc": 10,
+    "call": 4,
+    "ret": 2,
+    "push": 12,
+    "pop": 8,
+    "push_ret_blocks": 1,
+    "vm_dispatch_hits": [
+     [
+      812013162,
+      "jmp",
+      "dword ptr [eax*4 + 0x3066580c]"
+     ],
+     [
+      812013162,
+      "jmp",
+      "dword ptr [eax*4 + 0x3066580c]"
+     ]
+    ],
+    "vm_dispatch_count": 2,
+    "mnemonics": {
+     "mov": 42,
+     "movss": 24,
+     "push": 12,
+     "cmp": 9,
+     "pop": 8,
+     "je": 6,
+     "call": 4,
+     "xorpd": 4,
+     "movlpd": 4,
+     "fld": 4,
+     "fstp": 4,
+     "or": 3,
+     "jmp": 3,
+     "xorps": 3,
+     "mulss": 3,
+     "test": 2,
+     "xor": 2,
+     "lea": 2,
+     "add": 2,
+     "jge": 2,
+     "ret": 2,
+     "sub": 1,
+     "jne": 1,
+     "sete": 1,
+     "dec": 1,
+     "ja": 1,
+     "movsd": 1,
+     "cvtpd2ps": 1,
+     "movaps": 1
+    }
+   },
+   "classification": {
+    "code": "b",
+    "real_ratio": 0.7254901960784313,
+    "reasons": [
+     "live bytes equal the shipped cryaction.dll at this RVA",
+     "2 table-indexed indirect dispatch site(s)",
+     "real-operation ratio 0.73 (111/153)",
+     "1 block(s) use push-continuation / push-ret dispatch",
+     "15 blocks reached; control flow is flattened, not a single linear function"
+    ]
+   },
+   "exec_source": "live",
+   "exec_ranges": [
+    {
+     "start": 810483712,
+     "end": 810487808,
+     "protect": 128,
+     "section": null
+    },
+    {
+     "start": 810487808,
+     "end": 816024064,
+     "protect": 64,
+     "section": ".text"
+    }
+   ],
+   "listing": "run-1\\listing-FUN_30665500.txt",
+   "raw": "run-1\\live-FUN_30665500.bin"
+  }
+ },
+ "cross_run": {
+  "FUN_3a979a34": {
+   "hashes": [
+    "fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f",
+    "fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f"
+   ],
+   "identical": true
+  },
+  "FUN_3a6ab5f3": {
+   "hashes": [
+    "8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde",
+    "8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde"
+   ],
+   "identical": true
+  },
+  "FUN_3a98bb00": {
+   "hashes": [
+    "8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde",
+    "8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde"
+   ],
+   "identical": true
+  },
+  "FUN_3a9918bb": {
+   "hashes": [
+    "d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6",
+    "d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6"
+   ],
+   "identical": true
+  },
+  "thunk_FUN_3a979a34": {
+   "hashes": [
+    "61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52",
+    "61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52"
+   ],
+   "identical": true
+  },
+  "thunk_FUN_3a6ab5f3": {
+   "hashes": [
+    "ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4",
+    "ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4"
+   ],
+   "identical": true
+  },
+  "thunk_FUN_3a98bb00": {
+   "hashes": [
+    "00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723",
+    "00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723"
+   ],
+   "identical": true
+  },
+  "thunk_FUN_3a9918bb": {
+   "hashes": [
+    "663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a",
+    "663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a"
+   ],
+   "identical": true
+  },
+  "CActor::UpdateMovementRequest": {
+   "hashes": [
+    "7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511",
+    "7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511"
+   ],
+   "identical": true
+  },
+  "CPlayer::ProcessFrameMovement": {
+   "hashes": [
+    "3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388",
+    "3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388"
+   ],
+   "identical": true
+  },
+  "CPlayer::ProcessFrameMovementRotation": {
+   "hashes": [
+    "9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c",
+    "9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c"
+   ],
+   "identical": true
+  },
+  "FUN_307c70b0": {
+   "hashes": [
+    "fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138",
+    "fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138"
+   ],
+   "identical": true
+  },
+  "FUN_306713f0": {
+   "hashes": [
+    "2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c",
+    "2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c"
+   ],
+   "identical": true
+  },
+  "FUN_30665500": {
+   "hashes": [
+    "4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f",
+    "4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f"
+   ],
+   "identical": true
+  }
+ },
+ "deterministic_across_runs": true,
+ "x2game_decrypted_at_runtime": true,
+ "cryaction_plain_in_file": true,
+ "overall_classification": "b",
+ "code_caves": {
+  "x2game.dll": {
+   "name": ".reloc",
+   "rva": 23404544,
+   "size": 6679040,
+   "raw_size": 6679040,
+   "characteristics": 1073741888,
+   "executable": false
+  },
+  "cryaction.dll": {
+   "name": ".reloc",
+   "rva": 2850816,
+   "size": 2689536,
+   "raw_size": 2689536,
+   "characteristics": 1073741888,
+   "executable": false
+  }
+ },
+ "checks": [
+  {
+   "name": "no anti-cheat module",
+   "ok": true,
+   "detail": "[{'modules': 157, 'bad': []}, {'modules': 157, 'bad': []}]"
+  },
+  {
+   "name": "x2game and cryaction live modules found",
+   "ok": true,
+   "detail": "[['x2game.dll', 'cryaction.dll'], ['x2game.dll', 'cryaction.dll']]"
+  },
+  {
+   "name": "x2game targets equal the unpacked file",
+   "ok": true,
+   "detail": "live == x2game_unpacked.dll and live != shipped x2game.dll"
+  },
+  {
+   "name": "x2game targets differ from the shipped packed file",
+   "ok": true,
+   "detail": "runtime decryption observed"
+  },
+  {
+   "name": "cryaction target equals its file",
+   "ok": true,
+   "detail": "the shipped cryaction.dll already contains the code-cave bytes"
+  },
+  {
+   "name": "live bytes identical across fresh processes",
+   "ok": true,
+   "detail": "{'FUN_3a979a34': ['fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f', 'fc36076517d6da596f26f615c29ed6ddd0fb6d4a55064ce7e68052111c05dd5f'], 'FUN_3a6ab5f3': ['8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde', '8bdcc788af01fb2b74891c5eb9da9de669d8a82aa5ad6cd26823f2f1c2a97fde'], 'FUN_3a98bb00': ['8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde', '8f9e6283994080bd5052d634c5d6084814f236f8d9d2d27ea6ea57698f7e2cde'], 'FUN_3a9918bb': ['d99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6', 'd99781362f12ac5acc7118986690fb0bdc91fedcf25b8e76111ce3ea0e954df6'], 'thunk_FUN_3a979a34': ['61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52', '61cf5d7c7fe6cf1651f3950229836a73f2d5c3d18721cf3dda7d5a65692d4d52'], 'thunk_FUN_3a6ab5f3': ['ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4', 'ba96e4d5d19273f8314e791df790ec5d24a118815bf9e7dce900f72811dd4db4'], 'thunk_FUN_3a98bb00': ['00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723', '00f1ab62f20e8f16c4af1f8fc7d6cb53b87d5b58ac43f8ba5dd9eeb466fa8723'], 'thunk_FUN_3a9918bb': ['663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a', '663fd4a3efcc9e300ba4c3dd158efa58666691c1081a9ea71af782a9f77c7b5a'], 'CActor::UpdateMovementRequest': ['7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511', '7e96774bd9bbb01ae27e6db12017c2aa03067ef503805f2de14609b462e4a511'], 'CPlayer::ProcessFrameMovement': ['3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388', '3d72d16a0a2a13217533d71dc07bb875daad875d029f53a5909430c60598c388'], 'CPlayer::ProcessFrameMovementRotation': ['9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c', '9a3c9d6059d2186074e46d816d4aedb6102fb6400fa1097ffddb688d0674470c'], 'FUN_307c70b0': ['fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138', 'fe9f0e2c3904fef38988d2ab1e76f52cd051c3f1eb09f6c2c91c2ba516196138'], 'FUN_306713f0': ['2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c', '2bda465b67687a4ec99b4c396e83dd1fd6e8badb2bc41bfe76dff1caa398fe7c'], 'FUN_30665500': ['4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f', '4faed1f4028a9fc8e3bc46fddf74a4c59e3833171a84d29ca589644583b9045f']}"
+  },
+  {
+   "name": "FUN_3a979a34 disassembles",
+   "ok": true,
+   "detail": "100 instructions"
+  },
+  {
+   "name": "FUN_3a6ab5f3 disassembles",
+   "ok": true,
+   "detail": "91 instructions"
+  },
+  {
+   "name": "FUN_3a98bb00 disassembles",
+   "ok": true,
+   "detail": "617 instructions"
+  },
+  {
+   "name": "FUN_3a9918bb disassembles",
+   "ok": true,
+   "detail": "32 instructions"
+  },
+  {
+   "name": "FUN_307c70b0 disassembles",
+   "ok": true,
+   "detail": "151 instructions"
+  },
+  {
+   "name": "no virtual-machine dispatch table observed",
+   "ok": true,
+   "detail": "{'FUN_3a979a34': 0, 'FUN_3a6ab5f3': 0, 'FUN_3a98bb00': 0, 'FUN_3a9918bb': 0, 'FUN_307c70b0': 0}"
+  }
+ ],
+ "passed": 12,
+ "failed": 0,
+ "builds": {
+  "client": {
+   "path": "D:\\AA1.2\\bin32\\archeage.exe",
+   "sha256": "a6fbd9ff58bf749fd995489f34acb01e1bc84d4d5a533721b0c017562766fc2a",
+   "bytes": 4059144,
+   "image_base": 4128768,
+   "time_date_stamp": 1413265250,
+   "size_of_image": 4078592
+  },
+  "x2game_shipped": {
+   "path": "D:\\AA1.2\\bin32\\x2game.dll",
+   "sha256": "3821c34366ff8b6f7aed95ba53d12216a5c31cb7c3407703d28eea639a621205",
+   "bytes": 18483712,
+   "image_base": 956235776,
+   "time_date_stamp": 1413265461,
+   "size_of_image": 30083584
+  },
+  "x2game_unpacked": {
+   "path": "D:\\aa-re\\client12\\x2game_unpacked.dll",
+   "sha256": "5ae3cad0dd4b40ee3da09fdb573bd8d58f4d8a3a3776ef87b456eecbed02ef1d",
+   "bytes": 30072320,
+   "image_base": 956235776,
+   "time_date_stamp": 1413265461,
+   "size_of_image": 30083584
+  },
+  "cryaction": {
+   "path": "D:\\AA1.2\\bin32\\cryaction.dll",
+   "sha256": "1c0ca9a7f7aab883029b64adb6af4bdc76043fe2cf173f7fc9b0d1d7f62b0399",
+   "bytes": 5345280,
+   "image_base": 810483712,
+   "time_date_stamp": 1413265499,
+   "size_of_image": 5540352
+  },
+  "clientdriver": {
+   "path": "D:\\aaemu-target\\move-golden\\live\\aaemu-clientdriver.exe",
+   "sha256": "181e15ea19c115613b30c146d40a29cef0b6e907bd16708da7b10cb1a854fa2f",
+   "bytes": 1086464,
+   "image_base": 5368709120,
+   "time_date_stamp": 1793058034,
+   "size_of_image": 1101824
+  },
+  "driver_dll": {
+   "path": "D:\\aaemu-target\\move-golden\\aadriver-onfoot\\aadriver.dll",
+   "sha256": "a6ba1835b302961d082b878a1d3a574762b813a25e63cc5ea499598db798d9e7",
+   "bytes": 392192,
+   "image_base": 268435456,
+   "time_date_stamp": 1793064945,
+   "size_of_image": 430080
+  }
+ }
+}

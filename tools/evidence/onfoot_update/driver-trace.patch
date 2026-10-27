@@ -1,0 +1,738 @@
+From a6181328645d1fd86da76b216b0ca7f86a61be82 Mon Sep 17 00:00:00 2001
+From: stsiakal <spiros.tsiakalos1@gmail.com>
+Date: Tue, 27 Oct 2026 04:10:57 +0200
+Subject: [PATCH] tools: add a read-only per-frame call trace to the client
+ driver
+
+The movement recon needs to know which x2game actor-update functions run per frame for the local player. calls.tsv only shows direct calls, so the disassembly cannot answer for virtual slots.
+
+The driver now takes a 'K' trace request. It patches each requested x2game entry with a thunk that saves flags/registers, increments an in-DLL counter, records (function, ECX) and replays the original prologue before jumping back. A frame row is flushed at the System script-system Update; the prologue relocation refuses unknown encodings. Nothing in game state is written.
+
+- native/trace.{h,cpp}: detour generator, frame rows, dump/clear/install/uninstall/selftest.
+- native/trace-test.cpp + build.bat: stand-alone selftest on synthetic prologues (short mov and SEH entries), run by the native build.
+- native/aadriver.cpp: route K requests on the main thread and flush one row from the System Update hook.
+
+Deliberately unchanged: no game state writes, no vtable hacks, no anti-cheat interaction, the player build and all existing pipe operations.
+---
+ .../aaemu-clientdriver/native/aadriver.cpp    |  10 +-
+ .../aaemu-clientdriver/native/build.bat       |   6 +-
+ .../aaemu-clientdriver/native/trace-test.cpp  |  11 +
+ .../aaemu-clientdriver/native/trace.cpp       | 577 ++++++++++++++++++
+ rust/crates/aaemu-clientdriver/native/trace.h |  30 +
+ 5 files changed, 632 insertions(+), 2 deletions(-)
+ create mode 100644 rust/crates/aaemu-clientdriver/native/trace-test.cpp
+ create mode 100644 rust/crates/aaemu-clientdriver/native/trace.cpp
+ create mode 100644 rust/crates/aaemu-clientdriver/native/trace.h
+
+diff --git a/rust/crates/aaemu-clientdriver/native/aadriver.cpp b/rust/crates/aaemu-clientdriver/native/aadriver.cpp
+index bed6fd7ca..0823441e4 100644
+--- a/rust/crates/aaemu-clientdriver/native/aadriver.cpp
++++ b/rust/crates/aaemu-clientdriver/native/aadriver.cpp
+@@ -26,6 +26,7 @@
+ //      'A' <len> / 'D' <address>     allocate / free tracked scratch memory
+ //      'c' <target> <conv> ...       call an original client function (main thread, SEH)
+ //      'g' <target> <type>           peek a global / cvar value
++//      'K' <trace command>           read-only per-frame call trace (see trace.h)
+ //      'X'         unhook and unload the driver
+ //    response: status (1 byte: '0' ok, '1' Lua error, '2' driver error) + UTF-8 text
+ //
+@@ -43,6 +44,7 @@
+ #include "virtualpak.h"
+ #include "startup.h"
+ #include "memcall.h"
++#include "trace.h"
+ #ifndef AADRIVER_PLAYER
+ #include "visuals.h"
+ #include "input.h"
+@@ -234,6 +236,7 @@ static void drainQueue() {
+                 else if (r->op == 'D') r->reply = memcall::dealloc(r->code);
+                 else if (r->op == 'c') r->reply = memcall::call(r->code);
+                 else if (r->op == 'g') r->reply = memcall::peek(r->code);
++                else if (r->op == 'K') r->reply = trace::command(r->code);
+                 else r->reply = r->op == 'B' ? runExecuteBuffer(r->target, r->code) : runLua(r->op, r->code);
+             } };
+             Run::go(r);
+@@ -286,6 +289,11 @@ static void __fastcall HookUpdate(void* self, void* /*edx*/) {
+ #endif
+         }
+     }
++    // One trace row per engine frame: the System Lua state's Update is the first
++    // script tick of the frame; the actor update that follows fills the next row.
++    if (!g_unloading && GetCurrentThreadId() == g_mainTid && self == scriptSystemFor('S')) {
++        trace::frameBoundary();
++    }
+     g_origUpdate(self);
+     if (!g_unloading && GetCurrentThreadId() == g_mainTid &&
+         self == scriptSystemFor('U') && !g_auctionUiFailed) {
+@@ -545,7 +553,7 @@ static DWORD WINAPI serverThread(LPVOID) {
+             case 'I': reply = submit('I', 0, req.substr(1), 30000); break;
+             case 'V': reply = visuals::profile(req.substr(1)); break;
+             case 'S': case 'U': case 'T': reply = submit(op, 0, req.substr(1), 30000); break;
+-            case 'M': case 'R': case 'w': case 'A': case 'D': case 'c': case 'g':
++            case 'M': case 'R': case 'w': case 'A': case 'D': case 'c': case 'g': case 'K':
+                 reply = submit(op, 0, req.substr(1), 30000);
+                 break;
+             case 'B':
+diff --git a/rust/crates/aaemu-clientdriver/native/build.bat b/rust/crates/aaemu-clientdriver/native/build.bat
+index e63e3f0d7..fd1c87b66 100644
+--- a/rust/crates/aaemu-clientdriver/native/build.bat
++++ b/rust/crates/aaemu-clientdriver/native/build.bat
+@@ -18,7 +18,7 @@ if errorlevel 1 ( echo [!] auction UI resource build failed & exit /b 1 )
+ if "%AADRIVER_PLAYER%"=="1" (
+   cl /nologo /O2 /MT /EHsc /W4 /DAADRIVER_PLAYER /LD "%~dp0aadriver.cpp" "%~dp0memcall.cpp" "%~dp0pakio.cpp" "%~dp0startup.cpp" "%~dp0virtualpak.cpp" "%AADRIVER_OUT%\auction_ui.res" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\aadriver.dll" /link /NOLOGO kernel32.lib shell32.lib
+ ) else (
+-  cl /nologo /O2 /MT /EHsc /W4 /LD "%~dp0aadriver.cpp" "%~dp0memcall.cpp" "%~dp0visuals.cpp" "%~dp0pakio.cpp" "%~dp0startup.cpp" "%~dp0input.cpp" "%~dp0audio.cpp" "%~dp0virtualpak.cpp" "%AADRIVER_OUT%\auction_ui.res" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\aadriver.dll" /link /NOLOGO user32.lib kernel32.lib d3d11.lib dxgi.lib gdiplus.lib ole32.lib shell32.lib
++  cl /nologo /O2 /MT /EHsc /W4 /LD "%~dp0aadriver.cpp" "%~dp0memcall.cpp" "%~dp0trace.cpp" "%~dp0visuals.cpp" "%~dp0pakio.cpp" "%~dp0startup.cpp" "%~dp0input.cpp" "%~dp0audio.cpp" "%~dp0virtualpak.cpp" "%AADRIVER_OUT%\auction_ui.res" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\aadriver.dll" /link /NOLOGO user32.lib kernel32.lib d3d11.lib dxgi.lib gdiplus.lib ole32.lib shell32.lib
+ )
+ if errorlevel 1 ( echo [!] driver build failed & exit /b 1 )
+ cl /nologo /O2 /MT /EHsc /W4 "%~dp0startup-test.cpp" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\startup-test.exe" /link /NOLOGO kernel32.lib
+@@ -38,6 +38,10 @@ cl /nologo /O2 /MT /EHsc /W4 "%~dp0virtualpak-test.cpp" /Fo"%AADRIVER_OUT%\\" /F
+ if errorlevel 1 ( echo [!] virtual pak tests build failed & exit /b 1 )
+ "%AADRIVER_OUT%\virtualpak-test.exe"
+ if not "%errorlevel%"=="0" ( echo [!] virtual pak tests failed & exit /b 1 )
++cl /nologo /O2 /MT /EHsc /W4 "%~dp0trace.cpp" "%~dp0trace-test.cpp" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\trace-test.exe" /link /NOLOGO kernel32.lib
++if errorlevel 1 ( echo [!] trace tests build failed & exit /b 1 )
++"%AADRIVER_OUT%\trace-test.exe"
++if not "%errorlevel%"=="0" ( echo [!] trace tests failed & exit /b 1 )
+ cl /nologo /O2 /MT /W3 "%~dp0aainject.cpp" /Fo"%AADRIVER_OUT%\\" /Fe"%AADRIVER_OUT%\aainject.exe" /link /NOLOGO kernel32.lib
+ if errorlevel 1 ( echo [!] injector build failed & exit /b 1 )
+ echo [ok] %AADRIVER_OUT%\aadriver.dll
+diff --git a/rust/crates/aaemu-clientdriver/native/trace-test.cpp b/rust/crates/aaemu-clientdriver/native/trace-test.cpp
+new file mode 100644
+index 000000000..4ad3f5d7a
+--- /dev/null
++++ b/rust/crates/aaemu-clientdriver/native/trace-test.cpp
+@@ -0,0 +1,11 @@
++// Stand-alone check of the trace detour generator (no client needed).
++#define WIN32_LEAN_AND_MEAN
++#include <stdio.h>
++#include <string>
++#include "trace.h"
++
++int main() {
++    std::string reply = trace::command("selftest");
++    printf("%s\n", reply.c_str());
++    return (!reply.empty() && reply[0] == '0') ? 0 : 1;
++}
+diff --git a/rust/crates/aaemu-clientdriver/native/trace.cpp b/rust/crates/aaemu-clientdriver/native/trace.cpp
+new file mode 100644
+index 000000000..4bd83b987
+--- /dev/null
++++ b/rust/crates/aaemu-clientdriver/native/trace.cpp
+@@ -0,0 +1,577 @@
++// ============================================================================
++//  trace.cpp - per-frame call counter detours (observation only).
++//
++//  Each hooked function gets a small trampoline that
++//    pushfd / pushad
++//    counts[func]++ ; order[seq] = (func, ECX) ; seq++
++//    popad / popfd
++//    <relocated original prologue bytes>
++//    jmp addr + relocated_len
++//  so the hooked function sees exactly its original entry state. Only counters
++//  and the per-frame order buffer (owned by this DLL) are written.
++//
++//  All trace state is touched on the client main thread: the detours fire from
++//  the actor update, and frameBoundary()/command() run from the CScriptSystem
++//  hook / request queue on the same thread.
++// ============================================================================
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <string>
++#include <vector>
++#include "trace.h"
++
++namespace trace {
++namespace {
++
++const int kMaxFuncs = 32;
++const int kMaxEntries = 1024;
++const int kMaxRows = 200000;
++const size_t kMaxDumpBytes = 700u << 10;
++
++struct Entry {
++    uint32_t func;
++    uint32_t self;
++};
++
++struct State {
++    uint32_t seq;
++    uint32_t overflow;
++    uint32_t counts[kMaxFuncs];
++    uint32_t order_func[kMaxEntries];
++    uint32_t order_self[kMaxEntries];
++};
++
++struct Target {
++    uint32_t func;
++    uint32_t addr;
++    uint8_t  saved[16];
++    uint32_t saved_len;
++    uint8_t* thunk;
++    uint32_t thunk_size;
++};
++
++struct Row {
++    uint32_t frame;
++    uint32_t overflow;
++    uint32_t first;
++    uint32_t count;
++    uint32_t counts[kMaxFuncs];
++};
++
++State* g_state;
++Target g_targets[kMaxFuncs];
++int g_target_count;
++std::vector<Entry> g_entries;
++std::vector<Row> g_rows;
++uint32_t g_frame;
++bool g_installed;
++
++std::string err(const std::string& message) { return "2" + message; }
++
++std::string hex32(uint32_t value) {
++    char buf[16];
++    _snprintf_s(buf, sizeof(buf), _TRUNCATE, "%08x", value);
++    return buf;
++}
++
++std::vector<std::string> split(const std::string& text) {
++    std::vector<std::string> out;
++    size_t i = 0;
++    while (i < text.size()) {
++        while (i < text.size() && isspace((unsigned char)text[i])) ++i;
++        if (i == text.size()) break;
++        size_t start = i;
++        while (i < text.size() && !isspace((unsigned char)text[i])) ++i;
++        out.push_back(text.substr(start, i - start));
++    }
++    return out;
++}
++
++bool parse_u32(const std::string& text, int base, uint32_t* out) {
++    if (text.empty()) return false;
++    char* end = NULL;
++    unsigned long value = strtoul(text.c_str(), &end, base);
++    if (!end || *end != '\0') return false;
++    *out = (uint32_t)value;
++    return true;
++}
++
++// ---- minimal length decoder for the prologues we hook --------------------------------
++// Returns the length of one instruction, or 0 for an unsupported/undefined encoding.
++int modrm_tail(const uint8_t* p, int max, int at) {
++    if (at >= max) return 0;
++    uint8_t modrm = p[at];
++    int mod = modrm >> 6;
++    int rm = modrm & 7;
++    int len = 1;
++    if (mod != 3 && rm == 4) {             // SIB
++        if (at + len >= max) return 0;
++        uint8_t sib = p[at + len];
++        ++len;
++        int base = sib & 7;
++        if (mod == 0 && base == 5) len += 4;
++    }
++    if (mod == 0) {
++        if (rm == 5) len += 4;
++    } else if (mod == 1) {
++        len += 1;
++    } else if (mod == 2) {
++        len += 4;
++    }
++    return at + len <= max ? len : 0;
++}
++
++int instruction_length(const uint8_t* p, int max) {
++    int i = 0;
++    for (;;) {
++        if (i >= max) return 0;
++        uint8_t b = p[i];
++        if (b == 0x64 || b == 0x65 || b == 0x66 || b == 0x67 ||
++            b == 0xF0 || b == 0xF2 || b == 0xF3) { ++i; continue; }
++        break;
++    }
++    uint8_t op = p[i];
++    if (op >= 0x50 && op <= 0x5F) return i + 1;    // push/pop r32
++    if (op == 0x6A) return i + 2;                  // push imm8
++    if (op == 0x68) return i + 5;                  // push imm32
++    if (op == 0x90 || op == 0x9C || op == 0x9D || op == 0xC3 || op == 0xCC) return i + 1;
++    if (op == 0xA0 || op == 0xA1 || op == 0xA2 || op == 0xA3) return i + 5;
++    if (op >= 0xB8 && op <= 0xBF) return i + 5;    // mov r32, imm32
++    if (op == 0x0F) {
++        if (i + 1 >= max) return 0;
++        uint8_t op2 = p[i + 1];
++        // xmm loads/stores and xorps/andps etc.: modrm follows
++        if (op2 == 0x57 || op2 == 0x10 || op2 == 0x11 || op2 == 0x28 ||
++            op2 == 0x29 || op2 == 0x6E || op2 == 0x7E || op2 == 0x1F) {
++            int tail = modrm_tail(p, max, i + 2);
++            return tail ? i + 2 + tail : 0;
++        }
++        return 0;
++    }
++    switch (op) {
++    case 0x01: case 0x03: case 0x09: case 0x21: case 0x29: case 0x2B:
++    case 0x31: case 0x33: case 0x39: case 0x3B: case 0x80: case 0x81:
++    case 0x83: case 0x84: case 0x85: case 0x87: case 0x88: case 0x89:
++    case 0x8A: case 0x8B: case 0x8D: case 0xC0: case 0xC1: case 0xC6:
++    case 0xC7: case 0xD1: case 0xFE: case 0xFF:
++        break;
++    default:
++        return 0;
++    }
++    int tail = modrm_tail(p, max, i + 1);
++    if (!tail) return 0;
++    int len = i + 1 + tail;
++    if (op == 0x80 || op == 0x83 || op == 0xC0 || op == 0xC6) len += 1;
++    else if (op == 0x81 || op == 0xC1 || op == 0xC7) len += 4;
++    return len <= max ? len : 0;
++}
++
++int prologue_length(const uint8_t* p, int max) {
++    int len = 0;
++    while (len < 5) {
++        int one = instruction_length(p + len, max - len);
++        if (one <= 0) return 0;
++        len += one;
++    }
++    return len;
++}
++
++// ---- state ----------------------------------------------------------------------------
++void reset_state() {
++    if (g_state) {
++        memset(g_state, 0, sizeof(*g_state));
++    }
++}
++
++void emit8(std::vector<uint8_t>& code, uint8_t value) { code.push_back(value); }
++
++void emit32(std::vector<uint8_t>& code, uint32_t value) {
++    for (int i = 0; i < 4; ++i) code.push_back((uint8_t)(value >> (8 * i)));
++}
++
++uint8_t* build_thunk(const Target& target) {
++    const uint32_t state = (uint32_t)(uintptr_t)g_state;
++    const uint32_t seq_off = (uint32_t)offsetof(State, seq);
++    const uint32_t ovf_off = (uint32_t)offsetof(State, overflow);
++    const uint32_t counts_off = (uint32_t)offsetof(State, counts);
++    const uint32_t func_off = (uint32_t)offsetof(State, order_func);
++    const uint32_t self_off = (uint32_t)offsetof(State, order_self);
++
++    std::vector<uint8_t> code;
++    emit8(code, 0x9C);                    // pushfd
++    emit8(code, 0x60);                    // pushad
++    emit8(code, 0xB8); emit32(code, state);// mov eax, state
++    emit8(code, 0x8B); emit8(code, 0x90); emit32(code, seq_off);   // mov edx,[eax+seq]
++    emit8(code, 0x81); emit8(code, 0xFA); emit32(code, kMaxEntries); // cmp edx, cap
++    size_t jae_at = code.size();
++    emit8(code, 0x73); emit8(code, 0);    // jae overflow
++    // order_func[edx] = func ; order_self[edx] = ecx (ecx still the original)
++    emit8(code, 0xC7); emit8(code, 0x84); emit8(code, 0x90);
++    emit32(code, func_off); emit32(code, target.func);
++    emit8(code, 0x89); emit8(code, 0x8C); emit8(code, 0x90);
++    emit32(code, self_off);
++    emit8(code, 0x42);                    // inc edx
++    emit8(code, 0x89); emit8(code, 0x90); emit32(code, seq_off);   // mov [eax+seq],edx
++    size_t jmp_at = code.size();
++    emit8(code, 0xEB); emit8(code, 0);    // jmp done
++    size_t overflow_at = code.size();
++    emit8(code, 0xFF); emit8(code, 0x80); emit32(code, ovf_off);   // inc [eax+ovf]
++    size_t done_at = code.size();
++    emit8(code, 0xFF); emit8(code, 0x80);
++    emit32(code, counts_off + target.func * 4);                   // inc [eax+counts+func]
++    emit8(code, 0x61);                    // popad
++    emit8(code, 0x9D);                    // popfd
++    code.insert(code.end(), target.saved, target.saved + target.saved_len);
++    size_t jmp_back_at = code.size();
++    emit8(code, 0xE9); emit32(code, 0);   // jmp addr+saved_len
++    int jae_rel = (int)overflow_at - (int)(jae_at + 2);
++    int jmp_rel = (int)done_at - (int)(jmp_at + 2);
++    if (jae_rel < -128 || jae_rel > 127 || jmp_rel < -128 || jmp_rel > 127) return NULL;
++    code[jae_at + 1] = (uint8_t)(int8_t)jae_rel;
++    code[jmp_at + 1] = (uint8_t)(int8_t)jmp_rel;
++
++    uint8_t* memory = (uint8_t*)VirtualAlloc(NULL, code.size(), MEM_COMMIT | MEM_RESERVE,
++                                             PAGE_EXECUTE_READWRITE);
++    if (!memory) return NULL;
++    int32_t back_rel = (int32_t)(target.addr + target.saved_len) -
++                       (int32_t)((uint32_t)(uintptr_t)memory + (uint32_t)jmp_back_at + 5);
++    for (int i = 0; i < 4; ++i) code[jmp_back_at + 1 + i] = (uint8_t)((uint32_t)back_rel >> (8 * i));
++    memcpy(memory, code.data(), code.size());
++    FlushInstructionCache(GetCurrentProcess(), memory, code.size());
++    return memory;
++}
++
++bool resolve_target(const std::string& token, uint32_t* out, std::string* error) {
++    size_t plus = token.find('+');
++    if (plus == std::string::npos) {
++        *error = "target '" + token + "' is not <module>+<rva>";
++        return false;
++    }
++    std::string module_name = token.substr(0, plus);
++    HMODULE module = GetModuleHandleA(module_name.c_str());
++    if (!module && module_name.find('.') == std::string::npos) {
++        module = GetModuleHandleA((module_name + ".dll").c_str());
++    }
++    if (!module) {
++        *error = "module not loaded: " + module_name;
++        return false;
++    }
++    uint32_t rva = 0;
++    if (!parse_u32(token.substr(plus + 1), 16, &rva)) {
++        *error = "bad RVA in '" + token + "'";
++        return false;
++    }
++    *out = (uint32_t)(uintptr_t)module + rva;
++    return true;
++}
++
++void restore_targets() {
++    for (int i = 0; i < g_target_count; ++i) {
++        Target& t = g_targets[i];
++        if (t.thunk) {
++            DWORD old = 0;
++            if (VirtualProtect((void*)t.addr, t.saved_len, PAGE_EXECUTE_READWRITE, &old)) {
++                memcpy((void*)t.addr, t.saved, t.saved_len);
++                VirtualProtect((void*)t.addr, t.saved_len, old, &old);
++                FlushInstructionCache(GetCurrentProcess(), (void*)t.addr, t.saved_len);
++            }
++            VirtualFree(t.thunk, 0, MEM_RELEASE);
++            t.thunk = NULL;
++        }
++    }
++    g_target_count = 0;
++    g_installed = false;
++}
++
++bool patch_entry(Target& t, std::string* error) {
++    std::vector<uint8_t> patch(t.saved_len, 0x90);
++    patch[0] = 0xE9;
++    int32_t rel = (int32_t)(uintptr_t)t.thunk - (int32_t)(t.addr + 5);
++    for (int b = 0; b < 4; ++b) patch[1 + b] = (uint8_t)((uint32_t)rel >> (8 * b));
++    DWORD old = 0;
++    if (!VirtualProtect((void*)t.addr, t.saved_len, PAGE_EXECUTE_READWRITE, &old)) {
++        *error = "VirtualProtect failed";
++        return false;
++    }
++    memcpy((void*)t.addr, patch.data(), patch.size());
++    VirtualProtect((void*)t.addr, t.saved_len, old, &old);
++    FlushInstructionCache(GetCurrentProcess(), (void*)t.addr, t.saved_len);
++    return true;
++}
++
++// Exercises the generated thunk on a synthetic function: the only way to know the
++// detour preserves registers/flags and still executes the relocated prologue.
++std::string selftest() {
++    if (g_installed) return err("selftest needs the game hooks to be uninstalled");
++    if (!g_state) {
++        g_state = (State*)VirtualAlloc(NULL, sizeof(State), MEM_COMMIT | MEM_RESERVE,
++                                       PAGE_READWRITE);
++        if (!g_state) return err("selftest state allocation failed");
++    }
++    reset_state();
++    struct Case { const uint8_t* code; int size; uint32_t expect_calls; const char* label; };
++    static const uint8_t short_code[] = {0xB8, 0x34, 0x12, 0x00, 0x00, 0xC3};
++    static const uint8_t seh_code[] = {0x55, 0x8B, 0xEC, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00,
++                                       0x5D, 0xC3};
++    const Case cases[] = {
++        {short_code, (int)sizeof(short_code), 1, "mov eax,0x1234;ret"},
++        {seh_code, (int)sizeof(seh_code), 1, "push ebp;mov ebp,esp;mov eax,fs:[0];pop ebp;ret"},
++    };
++    std::string detail;
++    bool ok = true;
++    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
++        uint8_t* stub = (uint8_t*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE,
++                                               PAGE_EXECUTE_READWRITE);
++        if (!stub) { ok = false; detail += " alloc"; break; }
++        memset(stub, 0xCC, 64);
++        memcpy(stub, cases[c].code, cases[c].size);
++        Target t;
++        memset(&t, 0, sizeof(t));
++        t.func = (uint32_t)c;
++        t.addr = (uint32_t)(uintptr_t)stub;
++        memcpy(t.saved, stub, sizeof(t.saved));
++        t.saved_len = (uint32_t)prologue_length(t.saved, (int)sizeof(t.saved));
++        if (t.saved_len < 5) { ok = false; detail += " decode"; VirtualFree(stub, 0, MEM_RELEASE); break; }
++        t.thunk = build_thunk(t);
++        if (!t.thunk) { ok = false; detail += " thunk"; VirtualFree(stub, 0, MEM_RELEASE); break; }
++        std::string error;
++        if (!patch_entry(t, &error)) {
++            ok = false; detail += " "; detail += error;
++            VirtualFree(t.thunk, 0, MEM_RELEASE);
++            VirtualFree(stub, 0, MEM_RELEASE);
++            break;
++        }
++        typedef int (__cdecl *Fn)();
++        Fn fn = (Fn)(void*)stub;
++        int first = fn();
++        int second = fn();
++        uint32_t calls = g_state->counts[c];
++        uint32_t seq = g_state->seq;
++        bool good = calls == 2 && seq == 2;
++        if (c == 0 && (first != 0x1234 || second != 0x1234)) good = false;
++        if (!good) {
++            ok = false;
++            char buf[128];
++            _snprintf_s(buf, sizeof(buf), _TRUNCATE, " case%u(eax=%x/%x calls=%u seq=%u)",
++                        (unsigned)c, first, second, calls, seq);
++            detail += buf;
++        }
++        memcpy(stub, t.saved, t.saved_len);
++        FlushInstructionCache(GetCurrentProcess(), stub, t.saved_len);
++        VirtualFree(t.thunk, 0, MEM_RELEASE);
++        VirtualFree(stub, 0, MEM_RELEASE);
++        reset_state();
++    }
++    return ok ? "0selftest ok cases=2" : "2selftest failed:" + detail;
++}
++
++bool install(const std::vector<std::string>& tokens, std::string* reply) {
++    if (g_installed) return false;
++    if (tokens.empty() || (int)tokens.size() > kMaxFuncs) {
++        *reply = err("install expects 1..32 <module>+<rva> targets");
++        return false;
++    }
++    if (!g_state) {
++        g_state = (State*)VirtualAlloc(NULL, sizeof(State), MEM_COMMIT | MEM_RESERVE,
++                                       PAGE_READWRITE);
++        if (!g_state) { *reply = err("trace state allocation failed"); return false; }
++    }
++    reset_state();
++    g_target_count = 0;
++    for (size_t i = 0; i < tokens.size(); ++i) {
++        Target t;
++        memset(&t, 0, sizeof(t));
++        t.func = (uint32_t)i;
++        std::string error;
++        if (!resolve_target(tokens[i], &t.addr, &error)) {
++            *reply = err(error);
++            restore_targets();
++            return false;
++        }
++        MEMORY_BASIC_INFORMATION mbi;
++        if (!VirtualQuery((void*)t.addr, &mbi, sizeof(mbi)) ||
++            mbi.State != MEM_COMMIT) {
++            *reply = err("target not committed: " + tokens[i]);
++            restore_targets();
++            return false;
++        }
++        memcpy(t.saved, (void*)t.addr, sizeof(t.saved));
++        if (t.saved[0] == 0xE9 || t.saved[0] == 0xCC) {
++            *reply = err("target already patched: " + tokens[i]);
++            restore_targets();
++            return false;
++        }
++        int len = prologue_length(t.saved, (int)sizeof(t.saved));
++        if (len < 5) {
++            *reply = err("cannot relocate prologue of " + tokens[i] +
++                         " (bytes " + hex32(*(uint32_t*)t.saved) + ")");
++            restore_targets();
++            return false;
++        }
++        t.saved_len = (uint32_t)len;
++        t.thunk = build_thunk(t);
++        if (!t.thunk) {
++            *reply = err("thunk allocation failed for " + tokens[i]);
++            restore_targets();
++            return false;
++        }
++        t.thunk_size = 0;
++        g_targets[g_target_count++] = t;
++    }
++    // Patch only after every thunk is ready, so a failure cannot leave a mixed set.
++    for (int i = 0; i < g_target_count; ++i) {
++        Target& t = g_targets[i];
++        std::string error;
++        if (!patch_entry(t, &error)) {
++            *reply = err(error + " at " + tokens[i]);
++            restore_targets();
++            return false;
++        }
++    }
++    g_installed = true;
++    g_frame = 0;
++    *reply = "0installed";
++    return true;
++}
++
++void push_row() {
++    if (!g_state) return;
++    if ((int)g_rows.size() >= kMaxRows) {
++        g_state->seq = 0;
++        g_state->overflow = 0;
++        memset(g_state->counts, 0, sizeof(g_state->counts));
++        return;
++    }
++    Row row;
++    memset(&row, 0, sizeof(row));
++    row.frame = g_frame++;
++    row.overflow = g_state->overflow;
++    row.first = (uint32_t)g_entries.size();
++    row.count = g_state->seq < (uint32_t)kMaxEntries ? g_state->seq : (uint32_t)kMaxEntries;
++    memcpy(row.counts, g_state->counts, sizeof(row.counts));
++    for (uint32_t i = 0; i < row.count; ++i) {
++        Entry entry;
++        entry.func = g_state->order_func[i];
++        entry.self = g_state->order_self[i];
++        g_entries.push_back(entry);
++    }
++    g_rows.push_back(row);
++    g_state->seq = 0;
++    g_state->overflow = 0;
++    memset(g_state->counts, 0, sizeof(g_state->counts));
++}
++
++std::string dump(uint32_t start, uint32_t count) {
++    if (!g_installed) return err("trace is not installed");
++    if (start > g_rows.size()) start = (uint32_t)g_rows.size();
++    uint32_t end = start + count;
++    if (end > g_rows.size()) end = (uint32_t)g_rows.size();
++    std::string out = "0rows=" + std::to_string((unsigned long long)g_rows.size()) +
++                      " frame=" + std::to_string((unsigned long long)g_frame);
++    for (uint32_t r = start; r < end; ++r) {
++        const Row& row = g_rows[r];
++        char head[256];
++        _snprintf_s(head, sizeof(head), _TRUNCATE,
++                    "\nK %u %u %u", row.frame, row.overflow, row.count);
++        out += head;
++        for (int f = 0; f < g_target_count; ++f) {
++            if (row.counts[f]) {
++                char one[32];
++                _snprintf_s(one, sizeof(one), _TRUNCATE, " %d:%u", f, row.counts[f]);
++                out += one;
++            }
++        }
++        for (uint32_t e = 0; e < row.count; ++e) {
++            const Entry& entry = g_entries[row.first + e];
++            if (out.size() > kMaxDumpBytes) {
++                return out + "\n2dump truncated; request fewer rows";
++            }
++            out += "\nE ";
++            out += std::to_string((unsigned long long)entry.func);
++            out += " ";
++            out += hex32(entry.self);
++        }
++        if (out.size() > kMaxDumpBytes) {
++            return out + "\n2dump truncated; request fewer rows";
++        }
++    }
++    return out;
++}
++
++std::string info() {
++    char buf[256];
++    std::string out = "0trace";
++    _snprintf_s(buf, sizeof(buf), _TRUNCATE, " installed=%d targets=%d frame=%u rows=%u state=%p",
++                g_installed ? 1 : 0, g_target_count, g_frame, (unsigned)g_rows.size(),
++                (void*)g_state);
++    out += buf;
++    for (int i = 0; i < g_target_count; ++i) {
++        _snprintf_s(buf, sizeof(buf), _TRUNCATE, " f%d=%08x/len%u",
++                    i, g_targets[i].addr, g_targets[i].saved_len);
++        out += buf;
++    }
++    _snprintf_s(buf, sizeof(buf), _TRUNCATE, " seq=%u ovf=%u",
++                g_state ? g_state->seq : 0, g_state ? g_state->overflow : 0);
++    out += buf;
++    return out;
++}
++
++} // namespace
++
++bool active() { return g_installed; }
++
++void frameBoundary() {
++    if (g_installed) push_row();
++}
++
++std::string command(const std::string& spec) {
++    std::vector<std::string> parts = split(spec);
++    if (parts.empty()) return err("trace expects install/info/clear/dump/uninstall");
++    const std::string& verb = parts[0];
++    if (verb == "install") {
++        std::vector<std::string> targets(parts.begin() + 1, parts.end());
++        std::string reply;
++        if (install(targets, &reply)) return reply;
++        return reply.empty() ? err("install failed") : reply;
++    }
++    if (verb == "uninstall") {
++        bool was = g_installed;
++        restore_targets();
++        return was ? "0uninstalled" : err("trace is not installed");
++    }
++    if (verb == "selftest") return selftest();
++    if (verb == "resolve") {
++        if (parts.size() != 2) return err("resolve expects one token");
++        uint32_t raw = 0;
++        if (!parse_u32(parts[1], 0, &raw)) return err("bad raw token");
++        char buf[96];
++        _snprintf_s(buf, sizeof(buf), _TRUNCATE, "0raw=0x%08x x2game=0x%08x",
++                    raw, (unsigned)(uintptr_t)GetModuleHandleA("x2game.dll"));
++        return buf;
++    }
++    if (verb == "info") return info();
++    if (verb == "clear") {
++        if (!g_installed) return err("trace is not installed");
++        g_rows.clear();
++        g_entries.clear();
++        g_frame = 0;
++        reset_state();
++        return "0cleared";
++    }
++    if (verb == "dump") {
++        uint32_t start = 0, count = 50;
++        if (parts.size() == 2) {
++            if (!parse_u32(parts[1], 10, &count)) return err("bad dump count");
++        } else if (parts.size() >= 3) {
++            if (!parse_u32(parts[1], 10, &start) ||
++                !parse_u32(parts[2], 10, &count)) return err("bad dump start/count");
++        }
++        return dump(start, count);
++    }
++    return err("unknown trace command '" + verb + "'");
++}
++
++} // namespace trace
+diff --git a/rust/crates/aaemu-clientdriver/native/trace.h b/rust/crates/aaemu-clientdriver/native/trace.h
+new file mode 100644
+index 000000000..63a9da8f9
+--- /dev/null
++++ b/rust/crates/aaemu-clientdriver/native/trace.h
+@@ -0,0 +1,30 @@
++// ============================================================================
++//  trace.h - read-only per-frame call trace for aadriver.
++//
++//  Installs entry detours on x2game.dll functions that only count calls and
++//  record (function id, ECX) in memory; the target prologue is replayed in the
++//  detour, so the game's registers, stack and flags are unchanged. No game
++//  state is written. A frame boundary is taken from CScriptSystem::Update of
++//  the System Lua state (aadriver's existing hook).
++//
++//  Pipe op 'K' payload commands (run on the client main thread):
++//    install <module>+<rva> ...   patch the listed functions
++//    info                         hook/frame/row counters
++//    clear                        drop rows and pending entries
++//    dump <start> <max>           rows as "K ..." / "E ..." lines
++//    uninstall                    restore the original prologues
++// ============================================================================
++#pragma once
++
++#include <string>
++
++namespace trace {
++
++std::string command(const std::string& spec);
++
++// Called at the start of CScriptSystem::Update for the System Lua state.
++void frameBoundary();
++
++bool active();
++
++} // namespace trace
+-- 
+2.55.0.windows.3
+

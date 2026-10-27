@@ -8,6 +8,7 @@
 /tools/before/*.exe
 
 __pycache__/
+/data/decompile_validation/
 /data/baked/
 /web/client/pkg/
 /web/client/login/

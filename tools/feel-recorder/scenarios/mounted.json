@@ -1,0 +1,14 @@
+{
+  "name": "mounted",
+  "description": "Summon and mount the horse, gallop forward 6 s, Q+W and E+W diagonals, turn, stop.",
+  "start": {"x": 10512.0, "y": 15585.0, "z": 232.0, "yaw_deg": 0.0},
+  "mount": true,
+  "item": 8159,
+  "events": [
+    {"at": 0.0, "until": 6.0, "keys": ["w"], "label": "gallop"},
+    {"at": 6.5, "until": 8.5, "keys": ["q", "w"], "label": "q_w"},
+    {"at": 9.0, "until": 11.0, "keys": ["e", "w"], "label": "e_w"},
+    {"at": 11.5, "until": 13.5, "keys": ["a"], "label": "turn"},
+    {"at": 13.5, "until": 15.5, "keys": [], "label": "stop"}
+  ]
+}

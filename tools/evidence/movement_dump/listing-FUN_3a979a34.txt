@@ -1,0 +1,166 @@
+// FUN_3a979a34 - live linearised listing (W3 recon)
+// module x2game.dll live VA 0x3A979A34 (image VA 0x3A979A34), RVA 0x1989A34
+// classification: (b) - live bytes differ from the shipped packed file but equal the unpacked image: the pages are decrypted at run time; live bytes equal x2game_unpacked.dll at this RVA; no table-indexed dispatch loop/handler table; real-operation ratio 0.63 (63/100); 3 block(s) use push-continuation / push-ret dispatch; 20 blocks reached; control flow is flattened, not a single linear function
+// blocks=20 instructions=100 jmp=17 jcc=1 call=0 ret=2 push_ret_blocks=3 vm_dispatch=0 truncated=False
+
+; --- block 0x391250E3 (1 insns) ---
+391250E3: e9a8830100           jmp      0x3913d490
+;   edge jmp -> 0x3913D490 (inside)
+
+; --- block 0x39125108 (1 insns) ---
+39125108: e99fbb5701           jmp      0x3a6a0cac
+;   edge jmp -> 0x3A6A0CAC (inside)
+
+; --- block 0x3912510F (1 insns) ---
+3912510F: e9b7c09900           jmp      0x39ac11cb
+;   edge jmp -> 0x39AC11CB (inside)
+
+; --- block 0x39125142 (1 insns) ---
+39125142: e97ed0ae01           jmp      0x3ac121c5
+;   edge jmp -> 0x3AC121C5 (inside)
+
+; --- block 0x3912515B (1 insns) ---
+3912515B: e9942fa801           jmp      0x3aba80f4
+;   edge jmp -> 0x3ABA80F4 (inside)
+
+; --- block 0x39125163 (1 insns) ---
+39125163: e9968a7e01           jmp      0x3a90dbfe
+;   edge jmp -> 0x3A90DBFE (inside)
+
+; --- block 0x3913D490 (12 insns) ---
+3913D490: 090dc887af39         or       dword ptr [0x39af87c8], ecx
+3913D496: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+3913D49B: 8b00                 mov      eax, dword ptr [eax]
+3913D49D: 894c24fc             mov      dword ptr [esp - 4], ecx
+3913D4A1: 8d6424fc             lea      esp, [esp - 4]
+3913D4A5: 6838c69a39           push     0x399ac638
+3913D4AA: 8d6424fc             lea      esp, [esp - 4]
+3913D4AE: 890424               mov      dword ptr [esp], eax
+3913D4B1: b94884af39           mov      ecx, 0x39af8448
+3913D4B6: c745fc00000000       mov      dword ptr [ebp - 4], 0
+3913D4BD: 6808511239           push     0x39125108
+3913D4C2: e9e976ecff           jmp      0x39004bb0
+;   edge tail-call -> 0x39004BB0 (inside)
+;   edge tail-cont -> 0x39125108 (inside)
+
+; --- block 0x39AC11CB (10 insns) ---
+39AC11CB: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+39AC11D0: 660f57c0             xorpd    xmm0, xmm0
+39AC11D4: 33c9                 xor      ecx, ecx
+39AC11D6: 660f138540ffffff     movlpd   qword ptr [ebp - 0xc0], xmm0
+39AC11DE: 660f57c0             xorpd    xmm0, xmm0
+39AC11E2: 660f138548ffffff     movlpd   qword ptr [ebp - 0xb8], xmm0
+39AC11EA: 898d50ffffff         mov      dword ptr [ebp - 0xb0], ecx
+39AC11F0: 898d54ffffff         mov      dword ptr [ebp - 0xac], ecx
+39AC11F6: 388897000000         cmp      byte ptr [eax + 0x97], cl
+39AC11FC: 0f84613f66ff         je       0x39125163
+;   edge jcc -> 0x39125163 (inside)
+;   edge fall -> 0x39AC1202 (inside)
+
+; --- block 0x39AC1202 (1 insns) ---
+39AC1202: e93b3f66ff           jmp      0x39125142
+;   edge jmp -> 0x39125142 (inside)
+
+; --- block 0x3A6A05E6 (5 insns) ---
+3A6A05E6: ba9e511239           mov      edx, 0x3912519e
+3A6A05EB: 0f45ca               cmovne   ecx, edx
+3A6A05EE: 894c2408             mov      dword ptr [esp + 8], ecx
+3A6A05F2: 5a                   pop      edx
+3A6A05F3: e99d654c00           jmp      0x3ab66b95
+;   edge jmp -> 0x3AB66B95 (inside)
+
+; --- block 0x3A6A0CAC (2 insns) ---
+3A6A0CAC: c745fcffffffff       mov      dword ptr [ebp - 4], 0xffffffff
+3A6A0CB3: e95744a8fe           jmp      0x3912510f
+;   edge jmp -> 0x3912510F (inside)
+
+; --- block 0x3A90DBFE (2 insns) ---
+3A90DBFE: 8b4e04               mov      ecx, dword ptr [esi + 4]
+3A90DC01: e9063a0800           jmp      0x3a99160c
+;   edge jmp -> 0x3A99160C (inside)
+
+; --- block 0x3A979A34 (38 insns) ---
+3A979A34: 8d6424fc             lea      esp, [esp - 4]
+3A979A38: 891c24               mov      dword ptr [esp], ebx
+3A979A3B: 8bdc                 mov      ebx, esp
+3A979A3D: 83ec08               sub      esp, 8
+3A979A40: 83e4f0               and      esp, 0xfffffff0
+3A979A43: 83c404               add      esp, 4
+3A979A46: 8d6424fc             lea      esp, [esp - 4]
+3A979A4A: 892c24               mov      dword ptr [esp], ebp
+3A979A4D: 8b6b04               mov      ebp, dword ptr [ebx + 4]
+3A979A50: 896c2404             mov      dword ptr [esp + 4], ebp
+3A979A54: 8bec                 mov      ebp, esp
+3A979A56: 64a100000000         mov      eax, dword ptr fs:[0]
+3A979A5C: 6aff                 push     -1
+3A979A5E: 68a7479339           push     0x399347a7
+3A979A63: 894424fc             mov      dword ptr [esp - 4], eax
+3A979A67: 8d6424fc             lea      esp, [esp - 4]
+3A979A6B: 64892500000000       mov      dword ptr fs:[0], esp
+3A979A72: 895c24fc             mov      dword ptr [esp - 4], ebx
+3A979A76: 8d6424fc             lea      esp, [esp - 4]
+3A979A7A: 81ecb8000000         sub      esp, 0xb8
+3A979A80: 8d6424fc             lea      esp, [esp - 4]
+3A979A84: 893424               mov      dword ptr [esp], esi
+3A979A87: 51                   push     ecx
+3A979A88: 5e                   pop      esi
+3A979A89: b901000000           mov      ecx, 1
+3A979A8E: 8d6424fc             lea      esp, [esp - 4]
+3A979A92: 893c24               mov      dword ptr [esp], edi
+3A979A95: 840dc887af39         test     byte ptr [0x39af87c8], cl
+3A979A9B: 68e3501239           push     0x391250e3
+3A979AA0: 50                   push     eax
+3A979AA1: 51                   push     ecx
+3A979AA2: 8b442408             mov      eax, dword ptr [esp + 8]
+3A979AA6: b90f511239           mov      ecx, 0x3912510f
+3A979AAB: 0f45c1               cmovne   eax, ecx
+3A979AAE: 89442408             mov      dword ptr [esp + 8], eax
+3A979AB2: 59                   pop      ecx
+3A979AB3: 58                   pop      eax
+3A979AB4: c3                   ret
+;   edge push-cont -> 0x391250E3 (inside)
+
+; --- block 0x3A99160C (3 insns) ---
+3A99160C: 8b790c               mov      edi, dword ptr [ecx + 0xc]
+3A99160F: c745fc01000000       mov      dword ptr [ebp - 4], 1
+3A991616: e9d6520500           jmp      0x3a9e68f1
+;   edge jmp -> 0x3A9E68F1 (inside)
+
+; --- block 0x3A9BFD4A (4 insns) ---
+3A9BFD4A: 51                   push     ecx
+3A9BFD4B: 52                   push     edx
+3A9BFD4C: 8b4c2408             mov      ecx, dword ptr [esp + 8]
+3A9BFD50: e99108ceff           jmp      0x3a6a05e6
+;   edge jmp -> 0x3A6A05E6 (inside)
+
+; --- block 0x3A9E68F1 (2 insns) ---
+3A9E68F1: 897da0               mov      dword ptr [ebp - 0x60], edi
+3A9E68F4: e9b33e1c00           jmp      0x3abaa7ac
+;   edge jmp -> 0x3ABAA7AC (inside)
+
+; --- block 0x3AB66B95 (2 insns) ---
+3AB66B95: 59                   pop      ecx
+3AB66B96: c3                   ret
+
+; --- block 0x3ABA80F4 (3 insns) ---
+3ABA80F4: a1d8b15b3a           mov      eax, dword ptr [0x3a5bb1d8]
+3ABA80F9: 83c404               add      esp, 4
+3ABA80FC: e962d057fe           jmp      0x39125163
+;   edge jmp -> 0x39125163 (inside)
+
+; --- block 0x3ABAA7AC (3 insns) ---
+3ABAA7AC: 85ff                 test     edi, edi
+3ABAA7AE: 6877511239           push     0x39125177
+3ABAA7B3: e99255e1ff           jmp      0x3a9bfd4a
+;   edge jmp -> 0x3A9BFD4A (inside)
+
+; --- block 0x3AC121C5 (7 insns) ---
+3AC121C5: 8d8d40ffffff         lea      ecx, [ebp - 0xc0]
+3AC121CB: c78550ffffff4884af39 mov      dword ptr [ebp - 0xb0], 0x39af8448
+3AC121D5: 8b9098000000         mov      edx, dword ptr [eax + 0x98]
+3AC121DB: 8d6424fc             lea      esp, [esp - 4]
+3AC121DF: 890c24               mov      dword ptr [esp], ecx
+3AC121E2: 685b511239           push     0x3912515b
+3AC121E7: ffe2                 jmp      edx
+;   edge push-cont -> 0x3912515B (inside)
+
