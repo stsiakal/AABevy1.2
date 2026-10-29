@@ -18,13 +18,13 @@ use aa_anim::{Animator, Cal, Character, ClipLibrary};
 use aa_net::model::{Attachment, Equipment, ModelParams, Movement, UnitKind};
 use aa_net::state::{Player, Units};
 use aa_net::{Event, NetEvent, Pos};
-use aa_world::coords::bevy_to_cry;
+use aa_world::{TerrainQuery, WorldCollision, coords::{bevy_to_cry, cry_to_bevy}};
 use bevy::prelude::*;
 
 use super::anim::{Locomotion, Motion, bind_clip};
 use super::camera::OrbitCamera;
-use super::data::{Db, MountSpeed};
-use super::player::{LocalPlayer, Mover, SendState, placement};
+use super::data::{AttachPointStrings, Db, MountSpeed};
+use super::player::{HEIGHT, LocalPlayer, Mover, RADIUS, STEP_UP, SendState, floor_at, placement};
 use super::units::{RemoteUnit, Views};
 
 /// The rider states of `player_full_body.xml` (`Horse_*` :1460, `Lion_*` :1601, `Bear_*` :1285, `Wildboar_*` :1839,
@@ -179,9 +179,50 @@ const GET_OFF_END: &str = "fist_ac_horse_l_getoff_end";
 /// not its length (the clips are 0.6-2.7 s long).
 const GAIT_BLEND: f32 = 0.2;
 
-/// The bone of a mount a rider at `point` sits on (`model_attach_point_strings`: `$driver` is `bone_spine_driver`).
-fn seat_bone(point: u8) -> &'static str {
-    if point <= 1 { "bone_spine_driver" } else { "bone_spine_passenger" }
+/// Where a rider sits: a creature mount's bone, or a vehicle body's `$` helper (`$driver`, `$passenger0`, ...).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Seat {
+    Bone(String),
+    Helper(String),
+}
+
+/// The seat of attach `point` from `model_attach_point_strings`: vehicle models use the prefab helper (their body is a
+/// `.chr` without a rider Animator), creatures the actor bone. Each point keeps its own row, including 3..8.
+fn seat_target(vehicle: bool, strings: Option<AttachPointStrings>, point: u8) -> Seat {
+    let bone = |s: AttachPointStrings| s.actor.map(Seat::Bone);
+    let helper = |s: AttachPointStrings| {
+        s.prefab
+            .map(|name| Seat::Helper(name.trim_start_matches('$').to_string()))
+    };
+    let target = if vehicle {
+        strings
+            .clone()
+            .and_then(helper)
+            .or_else(|| strings.and_then(bone))
+    } else {
+        strings
+            .clone()
+            .and_then(bone)
+            .or_else(|| strings.and_then(helper))
+    };
+    target.unwrap_or_else(|| {
+        Seat::Bone(
+            if point <= 1 {
+                "bone_spine_driver"
+            } else {
+                "bone_spine_passenger"
+            }
+            .into(),
+        )
+    })
+}
+
+fn seat_of(db: &Db, mount_model: u32, point: u8) -> Seat {
+    seat_target(
+        db.vehicle_look(mount_model).is_some(),
+        db.attach_point_strings(point),
+        point,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -484,6 +525,10 @@ pub struct Rider {
     unit: u32,
     mount: u32,
     point: u8,
+    seat: Seat,
+    /// A vehicle seat's own loop (`attach_anims`, e.g. the wagon driver's `fist_ac_steer_sit_idle`) instead of the
+    /// mount's rider states: the mount's speed does not change it.
+    posed: bool,
     clips: RiderClips,
     anim: RiderAnim,
     /// The mount's base run speed (m/s): PseudoSpeed 1 in the graph, see [`gait`].
@@ -497,6 +542,7 @@ impl Rider {
     /// get-on reason (1..4; the local request's `FUN_3909ae90` or the attach reply's) of a fresh attach, `None` for a
     /// rider that was already seated (it streamed in riding, or the player entity was built again), which starts in
     /// the riding loops.
+    #[allow(clippy::too_many_arguments)]
     fn bind(
         db: &Db,
         clips: &ClipLibrary,
@@ -509,13 +555,33 @@ impl Rider {
     ) -> Option<Rider> {
         let pose = db.mount_pose(mount_model);
         let kind = MountKind::of(pose);
-        let states = rider_states(pose);
         let run_speed = db.mount_speed(mount_model).run;
+        let seat = seat_of(db, mount_model, mount.point);
         let cal = Cal::shared(&character.assets.cal).ok()?;
         let bind = |name: &str| bind_rider_clip(&animator.rig, &cal, clips, name);
-        let idle = bind(kind.idle()).or_else(|| bind("fist_ba_relaxed_idle"))?;
-        let run = bind(kind.run()).or_else(|| bind(kind.run_fallback()));
-        let walk = bind(kind.walk()).or_else(|| run.clone());
+        // a vehicle seat's `attach_anims` row names the clip its rider sits in (the wagon driver steers); it replaces
+        // the mount's rider set. Without a row (every creature, a vehicle seat 1.2 has none for) the mount's rider
+        // states play as before.
+        let seat_clip = db
+            .attach_anim(mount_model, mount.point)
+            .and_then(|action| db.anim_action_clip(action))
+            .and_then(|name| bind(&name));
+        let posed = seat_clip.is_some();
+        let states = !posed && rider_states(pose);
+        let idle = match seat_clip.clone() {
+            Some(clip) => clip,
+            None => bind(kind.idle()).or_else(|| bind("fist_ba_relaxed_idle"))?,
+        };
+        let run = if posed {
+            None
+        } else {
+            bind(kind.run()).or_else(|| bind(kind.run_fallback()))
+        };
+        let walk = if posed {
+            None
+        } else {
+            bind(kind.walk()).or_else(|| run.clone())
+        };
         let idle_to_run = if states {
             bind(kind.idle_to_run()).or_else(|| kind.idle_to_run_fallback().and_then(bind))
         } else {
@@ -555,6 +621,8 @@ impl Rider {
             unit,
             mount: mount.obj_id,
             point: mount.point,
+            seat,
+            posed,
             clips,
             anim,
             run_speed,
@@ -575,6 +643,8 @@ impl Rider {
         if !animator.starts_enabled() {
             return false;
         }
+        // a vehicle seat's pose is a loop: the mount's movement does not change it
+        let speed = if self.posed { 0.0 } else { speed };
         let step = self
             .anim
             .advance(dt, speed, self.run_speed, self.clips.run.is_some());
@@ -627,13 +697,53 @@ fn unseat(world: &mut World, entity: Entity) {
     }
 }
 
-/// Where the seat bone of a mount is now (Bevy coordinates): the bone's place on the mount's last drawn pose, carried to where
-/// the mount stands in this frame (`now`), so a rider does not trail a moving mount by a frame.
-fn seat_world(mount: Entity, now: &Transform, animator: &Animator, point: u8, globals: &Query<&GlobalTransform>) -> Vec3 {
-    let bone = animator.rig.skeleton.bones.iter().position(|b| b.name == seat_bone(point)).and_then(|i| animator.bones.get(i));
-    match (globals.get(mount), bone.and_then(|b| globals.get(*b).ok())) {
-        (Ok(root), Some(bone)) => now.transform_point(root.affine().inverse().transform_point3(bone.translation())),
-        _ => now.translation,
+/// A vehicle body helper in the mount root's frame (the helper is Cry model space, the root Bevy space).
+fn helper_seat(now: &Transform, helpers: &super::vehicle::SeatHelpers, name: &str) -> Option<Vec3> {
+    helpers
+        .0
+        .get(name)
+        .map(|helper| now.transform_point(cry_to_bevy(helper.translation.into())))
+}
+
+/// Where the seat of a mount is now (Bevy coordinates): a bone's place on the mount's last drawn pose, or a vehicle
+/// body's `$` helper, carried to where the mount stands in this frame (`now`), so a rider does not trail it by a frame.
+#[allow(clippy::too_many_arguments)]
+fn seat_world(
+    mount: Entity,
+    model_id: u32,
+    now: &Transform,
+    animator: Option<&Animator>,
+    helpers: Option<&super::vehicle::SeatHelpers>,
+    seat: &Seat,
+    globals: &Query<&GlobalTransform>,
+    missing: &mut std::collections::HashSet<(u32, String)>,
+) -> Vec3 {
+    match seat {
+        Seat::Bone(name) => {
+            let bone = animator.and_then(|a| {
+                a.rig
+                    .skeleton
+                    .bones
+                    .iter()
+                    .position(|b| b.name.eq_ignore_ascii_case(name))
+                    .and_then(|i| a.bones.get(i))
+            });
+            match (globals.get(mount), bone.and_then(|b| globals.get(*b).ok())) {
+                (Ok(root), Some(bone)) => now
+                    .transform_point(root.affine().inverse().transform_point3(bone.translation())),
+                _ => now.translation,
+            }
+        }
+        Seat::Helper(name) => {
+            if let Some(point) = helpers.and_then(|h| helper_seat(now, h, name)) {
+                return point;
+            }
+            // the fallback is the mount's origin: report it once per (model, helper), not every frame
+            if missing.insert((model_id, name.clone())) {
+                debug!("mount model {model_id}: no ${name} seat helper, seating at its origin");
+            }
+            now.translation
+        }
     }
 }
 
@@ -772,13 +882,24 @@ pub fn start_stop_riding(
 }
 
 /// Puts the riders on their mounts' seats and plays the rider clips for the gait of the mount.
+#[allow(clippy::type_complexity)]
 pub fn pose_riders(
     time: Res<Time>,
     net: Res<Units>,
     views: Res<Views>,
     mut riders: Query<(&mut RemoteUnit, &mut Transform, &mut Rider, &mut Animator)>,
-    mounts: Query<(&RemoteUnit, &Transform, &Animator, &Motion), Without<Rider>>,
+    mounts: Query<
+        (
+            &RemoteUnit,
+            &Transform,
+            Option<&Animator>,
+            Option<&super::vehicle::SeatHelpers>,
+            Option<&Motion>,
+        ),
+        Without<Rider>,
+    >,
     globals: Query<&GlobalTransform>,
+    mut missing: Local<std::collections::HashSet<(u32, String)>>,
 ) {
     let dt = time.delta_secs();
     for (mut unit, mut transform, mut rider, mut animator) in &mut riders {
@@ -788,9 +909,24 @@ pub fn pose_riders(
         }
         let mounted = views.unit_entity(rider.mount).and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
         let (pos, facing, speed, tempo) = match mounted {
-            Some((e, (mount, now, mount_animator, motion))) => {
-                let world = seat_world(e, now, mount_animator, rider.point, &globals);
-                (bevy_to_cry(world), mount.facing, motion.speed, mount_animator.speed)
+            Some((e, (mount, now, mount_animator, helpers, motion))) => {
+                let model_id = net.by_id.get(&mount.obj_id).map_or(0, |u| u.model_id);
+                let world = seat_world(
+                    e,
+                    model_id,
+                    now,
+                    mount_animator,
+                    helpers,
+                    &rider.seat,
+                    &globals,
+                    &mut missing,
+                );
+                (
+                    bevy_to_cry(world),
+                    mount.facing,
+                    motion.map_or(0.0, |m| m.speed),
+                    mount_animator.map_or(1.0, |a| a.speed),
+                )
             }
             None => {
                 // the mount left the view: stay with where the server says it is, or where the rider stands if the
@@ -840,6 +976,182 @@ fn start_dismount(world: &mut World, entity: Entity) -> bool {
         return false;
     };
     rider.anim.begin_dismount()
+}
+
+/// The side `FUN_3909b1a0` picks for the get-off: the left candidate when its capsule is free, else the right one,
+/// else the mount's own position (`DismountSide::Mount`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DismountSide {
+    Left,
+    Right,
+    Mount,
+}
+
+/// The 1.0 m forward and 1.5 m left offsets of the side probe (`FUN_3909b1a0`, `DAT_39ac3888` / `DAT_39ac388c`).
+const SIDE_FORWARD: f32 = 1.0;
+const SIDE_LATERAL: f32 = 1.5;
+
+/// The controller's window (`FUN_390aaff0`): 1000 ms, 500 ms for reason 9 (a normal `UnMountMate`).
+fn dismount_duration(reason: u8) -> f32 {
+    if reason == 9 { 0.5 } else { 1.0 }
+}
+
+/// The controller hands the rider to the normal state after 100 ms (`FUN_390aaff0`).
+const DISMOUNT_HANDOFF: f32 = 0.1;
+
+/// The z of the type-10 request (`DAT_39ac3890` 4.0): the upward velocity at the detach (m/s).
+const DISMOUNT_LIFT: f32 = 4.0;
+
+/// The get-off clip's root motion after the controller window (captured 0.5-0.8 s): 0.61 m forward and 0.19 m right.
+/// The type-10 request does not explain this second phase; this is a documented stand-in for the clip's root motion.
+const SETTLE_FORWARD: f32 = 0.61;
+const SETTLE_RIGHT: f32 = 0.19;
+const SETTLE_TIME: f32 = 0.3;
+
+/// The 1.2 reason branches of `FUN_390a2e90`: 9 / 10 / 0xb / 0xd take the side placement; 3 / 8 / 0xc stand at the
+/// mount. The `(1,6)` call of every other reason is not modelled (it also stands at the mount).
+fn side_placement(reason: u8) -> bool {
+    matches!(reason, 9 | 10 | 11 | 13)
+}
+
+/// `FUN_3909b1a0`'s candidate point of a side, in the mount's frame: `forward * 1.0 + left * 1.5` (right mirrored).
+fn side_point(mount: Vec3, yaw: f32, side: DismountSide) -> Vec3 {
+    if side == DismountSide::Mount {
+        return mount;
+    }
+    let forward = super::player::forward(yaw);
+    let left = Vec2::new(-forward.y, forward.x);
+    let lateral = if side == DismountSide::Left {
+        SIDE_LATERAL
+    } else {
+        -SIDE_LATERAL
+    };
+    Vec3::new(
+        mount.x + forward.x * SIDE_FORWARD + left.x * lateral,
+        mount.y + forward.y * SIDE_FORWARD + left.y * lateral,
+        mount.z,
+    )
+}
+
+/// `FUN_3933be30` sweeps the capsule along the unit direction (`local_28`) instead of testing only the endpoint; four
+/// capsule samples along mount -> candidate stand in for that sweep.
+fn swept(mount: Vec3, candidate: Vec3, blocked: &impl Fn(Vec3) -> bool) -> bool {
+    (1..=4).any(|i| blocked(mount.lerp(candidate, i as f32 / 4.0)))
+}
+
+/// The side of `FUN_3909b1a0`: the left candidate when `blocked` says its swept capsule is free, else the right one,
+/// else the mount (`blocked` is the remake's approximation of `FUN_3933be30`).
+fn dismount_side(mount: Vec3, yaw: f32, blocked: impl Fn(Vec3) -> bool) -> DismountSide {
+    let left = side_point(mount, yaw, DismountSide::Left);
+    let right = side_point(mount, yaw, DismountSide::Right);
+    if !swept(mount, left, &blocked) {
+        DismountSide::Left
+    } else if !swept(mount, right, &blocked) {
+        DismountSide::Right
+    } else {
+        DismountSide::Mount
+    }
+}
+
+/// The captured second phase of the get-off (0.5-0.8 s) in the mount's frame: 0.61 m forward and 0.19 m right.
+fn settle_vector(yaw: f32) -> Vec2 {
+    super::player::forward(yaw) * SETTLE_FORWARD + super::player::right(yaw) * SETTLE_RIGHT
+}
+
+/// The local player's get-off placement (`FUN_3909b4a0`, stepped by `FUN_390aaff0`). `FUN_3909b4a0` puts the side
+/// probe xy (1.0 m forward + 1.5 m left) and z 4.0 into a type-10 request; the model treats that xy as a velocity (m/s)
+/// for the controller's window, under gravity and the player's collision, then plays the get-off clip's root motion.
+#[derive(Component, Clone, Copy, Debug)]
+pub(crate) struct DismountMove {
+    pos: Vec3,
+    /// The request's xy velocity (m/s): the probe vector per second.
+    request: Vec2,
+    /// The clip's root motion after the window (m), in world xy.
+    settle: Vec2,
+    velocity: Vec3,
+    elapsed: f32,
+    duration: f32,
+    landed: bool,
+    /// Where the mount stood at the detach and the way it faced: the trace's frame.
+    mount: Vec3,
+    yaw: f32,
+}
+
+impl DismountMove {
+    fn new(reason: u8, mount: Vec3, yaw: f32, from: Vec3, request: Vec2, settle: Vec2) -> Self {
+        DismountMove {
+            pos: from,
+            request,
+            settle,
+            velocity: Vec3::new(request.x, request.y, DISMOUNT_LIFT),
+            elapsed: 0.0,
+            duration: dismount_duration(reason),
+            landed: false,
+            mount,
+            yaw,
+        }
+    }
+
+    /// Advances the move: the request velocity for the controller window, gravity and the floor, then the root motion.
+    /// `floor` and `slide` are the player controller's own ground and capsule queries.
+    pub(crate) fn step(
+        &mut self,
+        dt: f32,
+        gravity: f32,
+        floor: impl Fn(Vec3) -> f32,
+        slide: impl Fn(Vec3, Vec2) -> Vec3,
+    ) -> bool {
+        self.elapsed += dt;
+        if self.elapsed <= self.duration {
+            let p = slide(self.pos, self.request * dt);
+            self.pos.x = p.x;
+            self.pos.y = p.y;
+            self.velocity.z -= gravity * dt;
+            self.pos.z += self.velocity.z * dt;
+        } else {
+            let before = ((self.elapsed - dt - self.duration) / SETTLE_TIME).clamp(0.0, 1.0);
+            let after = ((self.elapsed - self.duration) / SETTLE_TIME).clamp(0.0, 1.0);
+            let p = slide(self.pos, self.settle * (after - before));
+            self.pos.x = p.x;
+            self.pos.y = p.y;
+            if !self.landed {
+                self.velocity.z -= gravity * dt;
+                self.pos.z += self.velocity.z * dt;
+            }
+        }
+        let ground = floor(self.pos);
+        if self.pos.z <= ground && self.velocity.z <= 0.0 {
+            self.pos.z = ground;
+            self.velocity.z = 0.0;
+            self.landed = true;
+        } else if self.landed {
+            self.pos.z = ground;
+        }
+        self.done()
+    }
+
+    pub(crate) fn pos(&self) -> Vec3 {
+        self.pos
+    }
+
+    /// Where the mount stood when the rider detached (its feet, in game coordinates).
+    pub(crate) fn mount(&self) -> Vec3 {
+        self.mount
+    }
+
+    /// The mount's facing at the detach (radians).
+    pub(crate) fn yaw(&self) -> f32 {
+        self.yaw
+    }
+
+    pub(crate) fn done(&self) -> bool {
+        self.elapsed >= self.duration + SETTLE_TIME
+    }
+
+    /// The controller handed the rider to the normal state after 100 ms (`FUN_390aaff0`).
+    pub(crate) fn handed_off(&self) -> bool {
+        self.elapsed >= DISMOUNT_HANDOFF
+    }
 }
 
 /// Plays the get-off start/loop/end clips of the riders that detached and lets them walk once the clips are over.
@@ -916,15 +1228,43 @@ pub fn track_local_mount(
     db: Option<Res<Db>>,
     clips: Res<ClipLibrary>,
     views: Res<Views>,
+    terrain: Res<TerrainQuery>,
+    collision: Res<WorldCollision>,
+    mut events: MessageReader<NetEvent>,
     (mut seat_state, mut send): (ResMut<LocalMount>, ResMut<SendState>),
     mut mount_reason: ResMut<MountReason>,
-    mut local: Query<(Entity, &mut Mover, Option<&Rider>, Option<&Character>, Option<&Animator>), With<LocalPlayer>>,
+    mut local: Query<
+        (
+            Entity,
+            &mut Mover,
+            Option<&Rider>,
+            Option<&Character>,
+            Option<&Animator>,
+            Option<&mut DismountMove>,
+            &Transform,
+        ),
+        With<LocalPlayer>,
+    >,
     mut cameras: Query<&mut OrbitCamera>,
     mut units: Query<(&mut RemoteUnit, Has<Driven>)>,
+    mut fallback_reason: Local<bool>,
 ) {
+    // the reason of this frame's SCUnitDetached (the server echoes the CSUnMountMate reason: 9 unmount, 10 dismiss)
+    let mut detach_reason = None;
+    for NetEvent(event) in events.read() {
+        if let Event::UnitDetached { obj_id, reason } = event
+            && player.spawn.as_ref().is_some_and(|s| s.obj_id == *obj_id)
+        {
+            detach_reason = Some(*reason);
+        }
+    }
     // a mount that left the view is let go of (the server detaches the riders before it despawns a mate)
     let attached = player.spawn.as_ref().and_then(|s| s.unit.attached_to).filter(|a| net.by_id.contains_key(&a.obj_id));
-    let Ok((entity, mut mover, rider, character, animator)) = local.single_mut() else { return };
+    let Ok((entity, mut mover, rider, character, animator, dismount, shown)) = local.single_mut() else { return };
+    // the get-off placement is over: `player::control_player` has set the landing, drop the controller
+    if dismount.is_some_and(|step| step.done()) {
+        commands.entity(entity).remove::<DismountMove>();
+    }
     let old = seat_state.0;
     if old.map(|s| (s.mount, s.point)) != attached.map(|a| (a.obj_id, a.point)) {
         // the mate the player drove goes back to its movement packets, from where it stands
@@ -956,7 +1296,68 @@ pub fn track_local_mount(
                 }
                 info!("riding {} at point {}: {:?}", a.obj_id, a.point, seat_state.0.map(|s| s.speed));
             }
-            None => info!("got off the mount at ({:.1}, {:.1}, {:.1})", mover.pos.x, mover.pos.y, mover.pos.z),
+            None => {
+                // FUN_390a2e90 / FUN_3909b1a0: the side probe (left, then right, else the mount), then the type-10
+                // request; the server places a remote rider itself and that path stays in place for now
+                let reason = match detach_reason {
+                    Some(reason) => reason,
+                    None => {
+                        if !*fallback_reason {
+                            *fallback_reason = true;
+                            warn!(
+                                "SCUnitDetached for the local player without a reason: assuming 9"
+                            );
+                        }
+                        9
+                    }
+                };
+                let mount = mover.pos;
+                // a vehicle seat (a `$` helper: a cart's bench, a carriage's back seat) is well off the vehicle's origin
+                // and the 1.5 m horse probe does not fit its body: the rider gets off where it sits (unverified)
+                let vehicle = rider.is_some_and(|r| matches!(r.seat, Seat::Helper(_)));
+                let side = if side_placement(reason) && !vehicle {
+                    let blocked = |p: Vec3| {
+                        let ground =
+                            floor_at(&terrain, &collision, Vec3::new(p.x, p.y, mount.z), STEP_UP);
+                        collision
+                            .push_out(Vec3::new(p.x, p.y, ground), RADIUS, HEIGHT, STEP_UP)
+                            .blocked
+                    };
+                    dismount_side(mount, mover.facing, blocked)
+                } else {
+                    DismountSide::Mount
+                };
+                let request = if side == DismountSide::Mount {
+                    Vec2::ZERO
+                } else {
+                    side_point(mount, mover.facing, side).truncate() - mount.truncate()
+                };
+                let settle = if side == DismountSide::Mount {
+                    Vec2::ZERO
+                } else {
+                    settle_vector(mover.facing)
+                };
+                let lift = old.map_or(0.0, |s| s.lift);
+                // the visual seat `pose_local_rider` last drew; a horse's seat is over its origin
+                let from = if vehicle {
+                    bevy_to_cry(shown.translation)
+                } else {
+                    mount + Vec3::Z * lift
+                };
+                let step = DismountMove::new(reason, mount, mover.facing, from, request, settle);
+                // the visual is at the seat: the same frame's control starts from there, not from the mount's feet
+                mover.pos = from;
+                commands.queue(move |world: &mut World| {
+                    if !start_dismount(world, entity) {
+                        unseat(world, entity);
+                    }
+                    world.entity_mut(entity).insert(step);
+                });
+                info!(
+                    "got off the mount at ({:.1}, {:.1}, {:.1}) reason {reason}: {side:?} request ({:.2}, {:.2}) m/s",
+                    mount.x, mount.y, mount.z, request.x, request.y
+                );
+            }
         }
         mover.velocity = Vec3::ZERO;
         mover.vz = 0.0;
@@ -977,6 +1378,7 @@ pub fn track_local_mount(
     );
     match action {
         SeatAction::Mount | SeatAction::Remount => {
+            commands.entity(entity).remove::<DismountMove>();
             let Some(a) = attached else { return };
             let (Some(db), Some(character), Some(animator)) = (db.as_deref(), character, animator) else { return };
             let model = net.by_id.get(&a.obj_id).map_or(0, |u| u.model_id);
@@ -1048,14 +1450,25 @@ pub fn drive_mount(
 }
 
 /// Puts the local player on its mount's seat and plays the rider clips for the mount's gait.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn pose_local_rider(
     time: Res<Time>,
     mut seat: ResMut<LocalMount>,
     views: Res<Views>,
+    net: Res<Units>,
     mut riders: Query<(&Mover, &mut Transform, &mut Rider, &mut Animator), With<LocalPlayer>>,
-    mounts: Query<(&Transform, &Animator, &Motion), (With<RemoteUnit>, Without<LocalPlayer>)>,
+    mounts: Query<
+        (
+            &RemoteUnit,
+            &Transform,
+            Option<&Animator>,
+            Option<&super::vehicle::SeatHelpers>,
+            Option<&Motion>,
+        ),
+        (With<RemoteUnit>, Without<LocalPlayer>),
+    >,
     globals: Query<&GlobalTransform>,
+    mut missing: Local<std::collections::HashSet<(u32, String)>>,
 ) {
     let (Some(s), Ok((mover, mut transform, mut rider, mut animator))) = (seat.0, riders.single_mut()) else { return };
     if rider.dismounting() {
@@ -1063,7 +1476,23 @@ pub fn pose_local_rider(
     }
     let mounted = views.unit_entity(s.mount).and_then(|e| mounts.get(e).ok().map(|m| (e, m)));
     let (pos, speed, tempo) = match mounted {
-        Some((e, (now, mount_animator, motion))) => (bevy_to_cry(seat_world(e, now, mount_animator, s.point, &globals)), motion.speed, mount_animator.speed),
+        Some((e, (mount, now, mount_animator, helpers, motion))) => {
+            let model_id = net.by_id.get(&mount.obj_id).map_or(0, |u| u.model_id);
+            (
+                bevy_to_cry(seat_world(
+                    e,
+                    model_id,
+                    now,
+                    mount_animator,
+                    helpers,
+                    &rider.seat,
+                    &globals,
+                    &mut missing,
+                )),
+                motion.map_or(0.0, |m| m.speed),
+                mount_animator.map_or(1.0, |a| a.speed),
+            )
+        }
         None => (mover.pos, 0.0, 1.0),
     };
     *transform = placement(pos, mover.facing, 1.0);
@@ -1136,6 +1565,199 @@ pub fn fake_mount(time: Res<Time>, player: Res<Player>, mut units: ResMut<Units>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn attach(actor: &str, prefab: &str) -> AttachPointStrings {
+        AttachPointStrings {
+            actor: Some(actor.into()),
+            prefab: Some(prefab.into()),
+        }
+    }
+
+    #[test]
+    fn seat_points_use_their_own_bone_or_prefab_helper() {
+        let cases = [
+            (
+                false,
+                "bone_spine_driver",
+                "$driver",
+                1,
+                Seat::Bone("bone_spine_driver".into()),
+            ),
+            (
+                false,
+                "bone_spine_passenger5",
+                "$passenger5",
+                7,
+                Seat::Bone("bone_spine_passenger5".into()),
+            ),
+            (true, "bone_spine_driver", "$driver", 1, Seat::Helper("driver".into())),
+            (
+                true,
+                "bone_spine_passenger",
+                "$passenger0",
+                2,
+                Seat::Helper("passenger0".into()),
+            ),
+            (
+                true,
+                "bone_spine_passenger1",
+                "$passenger1",
+                3,
+                Seat::Helper("passenger1".into()),
+            ),
+        ];
+        for (vehicle, actor, prefab, point, want) in cases {
+            assert_eq!(seat_target(vehicle, Some(attach(actor, prefab)), point), want);
+        }
+        assert_eq!(
+            seat_target(true, None, 1),
+            Seat::Bone("bone_spine_driver".into()),
+            "a model without a row keeps the old bone"
+        );
+    }
+
+    #[test]
+    fn a_vehicle_seat_uses_the_body_helper_without_an_animator() {
+        let now = Transform::from_xyz(100.0, 5.0, 200.0).with_rotation(Quat::from_rotation_y(0.5));
+        let mut helpers = crate::ingame::vehicle::SeatHelpers::default();
+        let local = Vec3::new(-0.02, -0.50, 1.35);
+        helpers.0.insert(
+            "driver".into(),
+            bevy::math::Affine3A::from_translation(local),
+        );
+        let expected = now.transform_point(cry_to_bevy(local));
+        let seat = Seat::Helper("driver".into());
+        let placed = match seat {
+            Seat::Helper(name) => helper_seat(&now, &helpers, &name),
+            Seat::Bone(_) => None,
+        };
+        assert_eq!(placed, Some(expected));
+    }
+
+    /// A vehicle root is a bare model root: no rider Animator and no `Motion`. The local seat must still resolve the
+    /// body's `$driver` helper instead of falling back to the cart's origin (the driver standing at its feet).
+    #[test]
+    fn the_local_driver_sits_on_the_vehicle_helper_without_an_animator_or_motion() {
+        use crate::ingame::units::{RemoteUnit, Views};
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(Units::default())
+            .add_systems(Update, pose_local_rider);
+        let cart_pos = Vec3::new(100.0, 200.0, 5.0);
+        let local = Vec3::new(-0.02, -0.50, 1.35);
+        let mut helpers = crate::ingame::vehicle::SeatHelpers::default();
+        helpers.0.insert("driver".into(), bevy::math::Affine3A::from_translation(local));
+        let cart = app
+            .world_mut()
+            .spawn((RemoteUnit::fixture(7, cart_pos), placement(cart_pos, 0.0, 1.0), helpers))
+            .id();
+        let mut views = Views::default();
+        views.fixture_unit(7, cart);
+        app.insert_resource(views);
+        app.insert_resource(LocalMount(Some(LocalSeat {
+            mount: 7,
+            point: 1,
+            drives: true,
+            cart: true,
+            speed: MountSpeed::default(),
+            lift: 0.0,
+        })));
+        let (mut rider, animator) = stepped_rider(riding());
+        rider.seat = Seat::Helper("driver".into());
+        let player = app
+            .world_mut()
+            .spawn((
+                LocalPlayer { obj_id: 5 },
+                Mover {
+                    pos: cart_pos,
+                    facing: 0.0,
+                    vz: 0.0,
+                    grounded: true,
+                    velocity: Vec3::ZERO,
+                    swim: None,
+                    wading: 0.0,
+                },
+                Transform::default(),
+                rider,
+                animator,
+            ))
+            .id();
+        app.update();
+        let placed = app.world().get::<Transform>(player).unwrap().translation;
+        let expected = cry_to_bevy(cart_pos) + cry_to_bevy(local);
+        assert!(placed.distance(expected) < 1e-4, "local driver at {placed:?}, expected {expected:?}");
+        let lift = app.world().resource::<LocalMount>().0.unwrap().lift;
+        assert!((lift - 1.35).abs() < 1e-4, "seat lift {lift}");
+    }
+
+    #[test]
+    #[ignore = "requires the game database"]
+    fn the_farm_wagon_driver_sits_in_the_steering_pose() {
+        let Some(db) = Db::open() else { return };
+        // slave 60 -> model 1008 -> models.sub_id 38 (`VehicleModel`) -> attach_anims (owner 38, point 1) -> action 12
+        let action = db.attach_anim(1008, 1).expect("the wagon driver's attach_anims row");
+        assert_eq!(action, 12);
+        assert_eq!(
+            db.anim_action_clip(action).as_deref(),
+            Some("fist_ac_steer_sit_idle")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the game database"]
+    fn a_creature_mount_keeps_its_rider_states() {
+        let Some(db) = Db::open() else { return };
+        assert_eq!(
+            db.attach_anim(139, 1),
+            None,
+            "the horse has no attach_anims row, so its rider states play"
+        );
+        let pose = db.mount_pose(139);
+        assert_eq!(MountKind::of(pose), MountKind::Horse);
+        assert!(rider_states(pose));
+    }
+
+    #[test]
+    #[ignore = "requires the game database"]
+    fn a_vehicle_seat_without_a_row_keeps_the_mount_rider_set() {
+        let Some(db) = Db::open() else { return };
+        assert!(
+            db.attach_anim(1008, 1).is_some(),
+            "the driver's seat has the steering pose"
+        );
+        assert_eq!(
+            db.attach_anim(1008, 2),
+            None,
+            "the wagon's passenger seat falls back to the mount's rider set (the horse loops of pose 0)"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the game database"]
+    fn the_real_mounts_have_their_own_seat_strings() {
+        let Some(db) = Db::open() else { return };
+        assert_eq!(
+            seat_of(&db, 1008, 1),
+            Seat::Helper("driver".into()),
+            "farm wagon point 1"
+        );
+        assert_eq!(
+            seat_of(&db, 106, 2),
+            Seat::Helper("passenger0".into()),
+            "carriage point 2"
+        );
+        assert_eq!(
+            seat_of(&db, 106, 3),
+            Seat::Helper("passenger1".into()),
+            "carriage point 3 is not bone_spine_passenger"
+        );
+        assert_eq!(
+            seat_of(&db, 139, 1),
+            Seat::Bone("bone_spine_driver".into()),
+            "horse point 1 stays a bone"
+        );
+    }
 
     /// A rider whose one-shots last 1 s (get-on), 0.6 / 0.45 s (the gait transition clips) and 0.67 / 0.5 / 0.83 s
     /// (get-off).
@@ -1752,6 +2374,194 @@ mod tests {
         }
     }
 
+    /// One frame of the placement with the flat floor and no walls, for the capture test; `dt` 5 ms.
+    fn step_once(step: &mut DismountMove, floor: f32) {
+        step.step(0.005, 25.0, |_| floor, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+    }
+
+    #[test]
+    fn the_side_placement_tries_the_left_then_the_right_then_the_mount() {
+        // FUN_3909b1a0: forward * 1.0 + left * 1.5, yaw 0 faces north
+        let mount = Vec3::new(10.0, 20.0, 30.0);
+        let left = side_point(mount, 0.0, DismountSide::Left);
+        let right = side_point(mount, 0.0, DismountSide::Right);
+        assert!(
+            (left - Vec3::new(8.5, 21.0, 30.0)).length() < 1e-6,
+            "{left:?}"
+        );
+        assert!(
+            (right - Vec3::new(11.5, 21.0, 30.0)).length() < 1e-6,
+            "{right:?}"
+        );
+        assert_eq!(side_point(mount, 0.0, DismountSide::Mount), mount);
+        assert_eq!(dismount_side(mount, 0.0, |_| false), DismountSide::Left);
+        assert_eq!(
+            dismount_side(mount, 0.0, |p| (p - left).length() < 1e-6),
+            DismountSide::Right,
+            "a blocked left endpoint takes the right side"
+        );
+        // FUN_3933be30 sweeps the capsule along the direction, so a wall between the mount and the endpoint blocks too
+        let wall = mount.lerp(left, 0.5);
+        assert_eq!(
+            dismount_side(mount, 0.0, |p| (p - wall).length() < 0.01),
+            DismountSide::Right,
+            "a wall halfway along the left sweep"
+        );
+        assert_eq!(
+            dismount_side(mount, 0.0, |_| true),
+            DismountSide::Mount,
+            "both sides blocked: the mount pose at ground height"
+        );
+    }
+
+    #[test]
+    fn the_dismount_offsets_are_in_the_mount_frame() {
+        let mount = Vec3::new(10.0, 20.0, 30.0);
+        // yaw pi/2 faces west: forward (-1, 0), left (0, -1)
+        let yaw = std::f32::consts::FRAC_PI_2;
+        assert!(
+            (side_point(mount, yaw, DismountSide::Left) - Vec3::new(9.0, 18.5, 30.0)).length()
+                < 1e-6
+        );
+        assert!(
+            (side_point(mount, yaw, DismountSide::Right) - Vec3::new(9.0, 21.5, 30.0)).length()
+                < 1e-6
+        );
+        // the captured root motion: 0.61 m forward and 0.19 m right of the mount
+        assert!((settle_vector(yaw) - Vec2::new(-0.61, 0.19)).length() < 1e-6);
+        assert!((settle_vector(0.0) - Vec2::new(0.19, 0.61)).length() < 1e-6);
+    }
+
+    #[test]
+    fn the_unmount_controller_lasts_one_second_and_half_for_reason_nine() {
+        // FUN_390aaff0: 1000 ms, 500 ms for reason 9 (UnMountMate); dismiss and the other detaches take 1000 ms
+        assert_eq!(dismount_duration(9), 0.5);
+        for reason in [0, 10, 11, 13] {
+            assert_eq!(dismount_duration(reason), 1.0, "reason {reason}");
+        }
+        assert!(
+            side_placement(9) && side_placement(10) && side_placement(11) && side_placement(13)
+        );
+        for reason in [0, 3, 8, 12] {
+            assert!(!side_placement(reason), "reason {reason}");
+        }
+        let mut step = DismountMove::new(9, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::new(0.0, -1.0), Vec2::ZERO);
+        assert!(!step.handed_off());
+        step.step(0.005, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(!step.handed_off(), "5 ms < 100 ms");
+        step.step(0.095, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(step.handed_off(), "the 100 ms hand-off");
+        assert!(!step.done());
+        step.step(0.4, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(
+            step.elapsed >= step.duration,
+            "the 500 ms controller is over"
+        );
+        assert!(!step.done(), "the root motion runs to 0.8 s");
+        step.step(0.31, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(step.done());
+        // reason 10 keeps the request for 1000 ms
+        let mut dismiss = DismountMove::new(10, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::new(0.0, -1.0), Vec2::ZERO);
+        dismiss.step(0.8, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(!dismiss.done(), "reason 10 is still in its window at 0.8 s");
+        dismiss.step(0.2, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(!dismiss.done());
+        dismiss.step(0.31, 25.0, |_| -100.0, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        assert!(dismiss.done());
+    }
+
+    #[test]
+    fn the_type_10_request_is_the_probe_velocity_with_the_4_m_s_hop() {
+        // xy = the probe vector per second, z = the 4.0 of DAT_39ac3890; 0.5 s at 1.803 m/s and gravity 25
+        let mut step = DismountMove::new(9, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::new(0.0, -1.803), Vec2::ZERO);
+        for _ in 0..100 {
+            step_once(&mut step, -100.0);
+        }
+        assert!((step.pos().y + 0.9015).abs() < 0.02, "{:?}", step.pos());
+        // semi-implicit Euler gives -1.15625; the analytic value is -1.125
+        assert!(
+            (step.pos().z + 1.15625).abs() < 0.02,
+            "z at 0.5 s: 4 * 0.5 - 25 * 0.5^2 / 2 = -1.125, got {}",
+            step.pos().z
+        );
+        // the peak of the 4.0 m/s hop under gravity 25 is 4^2 / (2 * 25) = 0.32 m
+        let mut hop = DismountMove::new(9, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::ZERO, Vec2::ZERO);
+        let mut peak = 0.0f32;
+        for _ in 0..80 {
+            step_once(&mut hop, -100.0);
+            peak = peak.max(hop.pos().z);
+        }
+        assert!((peak - 0.32).abs() < 0.02, "peak {peak:.3}");
+    }
+
+    #[test]
+    fn the_dismiss_window_travels_twice_as_far() {
+        let floor = -100.0;
+        let mut nine = DismountMove::new(9, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::new(0.0, -1.803), Vec2::ZERO);
+        for _ in 0..100 {
+            nine.step(0.005, 25.0, |_| floor, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        }
+        let mut ten = DismountMove::new(10, Vec3::ZERO, 0.0, Vec3::ZERO, Vec2::new(0.0, -1.803), Vec2::ZERO);
+        for _ in 0..200 {
+            ten.step(0.005, 25.0, |_| floor, |p, d| p + Vec3::new(d.x, d.y, 0.0));
+        }
+        assert!((nine.pos().y + 0.9015).abs() < 0.02, "{:?}", nine.pos());
+        assert!((ten.pos().y + 1.803).abs() < 0.03, "{:?}", ten.pos());
+        assert!(ten.pos().y < nine.pos().y * 1.95);
+    }
+
+    /// The captured `c_dismount` (`native.json`, 2026-10-28): the mount's last `CSMoveUnit` before the detach, the
+    /// rider's 0.5 s sample and its end. The simulation is the type-10 mechanism (velocity for 0.5 s, gravity 25, a
+    /// flat floor at the landing) plus the 0.61 m forward / 0.19 m right root motion; it is not tuned to the samples.
+    #[test]
+    fn the_captured_dismount_follows_the_type_10_velocity() {
+        let mount = Vec3::new(4366.246, 4148.8926, 98.6693);
+        let seat = Vec3::new(4366.2314, 4148.8804, 100.1661);
+        // the mount's direction byte 44: 44 * 2 pi / 128 = 123.75 degrees
+        let yaw = 44.0 * std::f32::consts::TAU / 128.0;
+        assert_eq!(dismount_side(mount, yaw, |_| false), DismountSide::Left);
+        let request = side_point(mount, yaw, DismountSide::Left).truncate() - mount.truncate();
+        // the probe is (0.002, -1.803), ~world -Y: x stays at 4366.23 while y drops
+        assert!(
+            request.x.abs() < 0.01 && (request.y + 1.803).abs() < 0.01,
+            "{request:?}"
+        );
+        let mut step = DismountMove::new(9, mount, yaw, seat, request, settle_vector(yaw));
+        let mut peak = seat.z;
+        while step.elapsed < 0.5 - 1e-6 {
+            step_once(&mut step, 98.5);
+            peak = peak.max(step.pos().z);
+        }
+        let half = step.pos();
+        let captured_half = Vec2::new(4366.2363, 4148.1133);
+        let half_error = (half.truncate() - captured_half).length();
+        assert!(
+            half_error < 0.2,
+            "0.5 s: simulated {half:?} vs captured {captured_half:?}: {half_error:.3} m"
+        );
+        assert!(
+            (half.x - seat.x).abs() < 0.02,
+            "x stays at the seat: {:.3}",
+            half.x
+        );
+        // captured max z 100.5408 - seat 100.1661 = 0.375 m; the impulse peak is 0.32 m
+        let hop = peak - seat.z;
+        assert!(
+            (hop - 0.375).abs() < 0.1,
+            "hop {hop:.3} m vs captured 0.375"
+        );
+        while !step.done() {
+            step_once(&mut step, 98.5);
+        }
+        let captured_end = Vec2::new(4365.6245, 4147.931);
+        let end_error = (step.pos().truncate() - captured_end).length();
+        assert!(
+            end_error < 0.2,
+            "end: simulated {:?} vs captured {captured_end:?}: {end_error:.3} m",
+            step.pos()
+        );
+    }
+
     #[test]
     fn only_the_driver_s_seat_steers() {
         let seat = |point| {
@@ -1819,6 +2629,8 @@ mod tests {
             unit: 7,
             mount: 5,
             point: 1,
+            seat: Seat::Bone("bone_spine_driver".to_string()),
+            posed: false,
             clips,
             anim,
             run_speed: 9.0,
