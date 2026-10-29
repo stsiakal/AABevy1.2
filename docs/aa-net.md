@@ -100,6 +100,60 @@ and skipped: frames are length delimited, so an unknown or undecodable packet ne
 the stream (inside a `DD04` batch see "Compressed packet batches"). The packets the lane can still
 send undecoded are listed in "Small server messages" at the end, with who owns them.
 
+## Vehicles (CSMoveUnit types)
+
+`CSMoveUnit` (0x089) is shared by every moving object; the first body byte is the move type
+(`FUN_397c0470`, types 0-5):
+
+| type | owner | body after the type byte |
+|---|---|---|
+| 1 | player / NPC / mate | time, flags, 9-byte position, velocity `i16×3` (1/1024 m/s), direction / tilt, delta movement, stance, alertness, actor flags (+ fall velocity) |
+| 2 | land vehicle (cart, car, tractor) | time, flags, position, velocity `i16×3` (1.2 client scale `30/32767`, i.e. m/s × 1092), rotation `i16×3` (the scalar is rebuilt), angular velocity `f32×3`, steering `f32`, wheel count `u8`, wheel angular velocities `f32 × count` |
+| 3 | ship | time, flags, position, velocity, rotation `i16×3`, angular velocity `f32×3`, steering `i8`, throttle `i8`, zone `u16`, stuck `u8` |
+| 4 | ship request | time, flags, throttle `i8`, steering `i8` (no position) |
+| 5 | transfer | time, flags, position, velocity (50/32767), rotation `i16×3`, angular velocity, steering `i32`, path point `i32`, speed `f32`, reverse `bool` |
+
+The type-2 and type-4 codecs are the 1.2 serializer `FUN_397c0470` (case 2 and case 4) in
+`aa_net::vehicle`; `FUN_3961e2c0` is the 9-byte position codec, `FUN_397ad8c0` the 30/32767
+velocity codec and `FUN_397ae020` the quaternion writer. The goldens under
+`crates/aa-net/src/vehicle/goldens/` were recorded from the running 1.2 client and are byte /
+bits exact; they do not establish the runtime scales below.
+
+* `Command::MoveVehicle(VehicleMoveRequest)` writes `CSMoveUnit` type 2 for the controlled object.
+  `VehicleMoveRequest::from_parts` takes metres, a quaternion `[x, y, z, w]`, m/s, rad/s,
+  steering and wheel angular velocities; it checks the BC3 id, type 2, at most 18 wheels and
+  finite values. The driver admission, input, send pump and kinematic controller live in
+  `aa-client` (`ingame/cart.rs`): it writes the cart's type-2 body on a 100 ms gate checked
+  once per frame (also when still) and seeds the time in the session.
+* `ShipControlRequest` (type 4) writes through the same serializer (`MoveUnit::write_to`), so the
+  type-4 layout exists once.
+* Received type 2 is decoded into `model::Movement::vehicle`
+  (`VehicleMove { rotation, angular_velocity, steering, wheel_ang_vel }`); `vehicle_yaw` keeps
+  its old value from the quaternion. Type 3 still keeps only `vehicle_yaw`.
+
+### Live checks
+
+The 2026-10-29 drive of a Farm Wagon (slave 60, model 1008) confirmed, over 857 type-2
+bodies:
+
+- the pump's 100 ms gate is checked once per frame and has no change test: a still cart is
+  resent, 36 bodies in 5 s at the hidden client's 22.5 FPS (143 ms median, once per 3 frames);
+- the velocity scale is the 1.2 client's `30/32767` = m/s × 1092 (1/2048 would be 1.86× off);
+- wheel count 0: the Farm Wagon sends no wheel angular velocities (the body ends after the
+  steering float);
+- steering is the key input through a frame-quantised ramp (0.484 two frames in, then 1.0;
+  0.269/-0.752 on release) and `angVel.z = 0.4 * steering` rad/s; flags are 0 on every body,
+  with no `scType`/`phase` block (bit 0 was only seen on on-foot bodies);
+- the position is the cart's world position, the velocity is world-space 3D, and the
+  (x,y,z)-short quaternion's yaw matches the client's rendered yaw.
+
+Still pending:
+
+- the server's handling and echo of type-2 bodies (the capture has no S->C lines): whether it
+  corrects the driver's pose, and whether the driver's own broadcast is applied;
+- wheel angular velocity units/sign for a vehicle whose wheel flag is set;
+- the `camera_distance` consumer and the `Bone_spindle`/wheel update formulas.
+
 ## Compressed packet batches
 
 `DD04` carries a raw RFC 1951 DEFLATE stream without a zlib/gzip header or checksum.
@@ -157,7 +211,8 @@ the alternate backend selected when Bevy features are unified.
 | `login` | `ClientMsg::{auth, ListWorlds, EnterWorld, ...}` / `ServerMsg`, `World`, `WorldList`, `WorldQueue`, `WorldCookie`, `AccountInfo`, `trion_ticket`, `Secret` |
 | `game` | `ClientMsg` / `ServerMsg` (`encode(counter)` / `decode(frame)`), `LeaveTarget`, `VisualOptions` |
 | `stream` | `ClientMsg::Join` / `ServerMsg` |
-| `model` | `Character`, `CharacterState`, `CreateCharacter`, `ModelParams` + `FaceModel` (full customization), `Equipment` / `Item` (28 slots, `model::slot`), `Unit` / `UnitKind`, `Movement`, `Doodad`, `ChatMessage`, `race`, `gender`, `chat_type`, `stance` |
+| `model` | `Character`, `CharacterState`, `CreateCharacter`, `ModelParams` + `FaceModel` (full customization), `Equipment` / `Item` (28 slots, `model::slot`), `Unit` / `UnitKind`, `Movement`, `VehicleMove`, `Doodad`, `ChatMessage`, `race`, `gender`, `chat_type`, `stance` |
+| `vehicle` | 1.2 move codecs: `FUN_3961e2c0` position, `FUN_397ad8c0` velocity, `FUN_397ae020` quaternion, `FUN_397c0470` `MoveUnit` types 0-5, `VehicleMoveRequest` (CS089 type 2) |
 
 ### Transport
 
@@ -199,7 +254,8 @@ needs no sequence number: `time` is milliseconds since the session started and o
 Commands (`session::Command`):
 `Login`, `RefreshWorldList`, `EnterWorld { world_id }`, `CancelEnterWorld`, `ConnectToWorld`,
 `RefreshCharacters`, `CreateCharacter(CreateCharacter)`, `DeleteCharacter`, `CancelDeleteCharacter`,
-`EnterGame { character_id }` (select, spawn, notify in game), `Move(MoveCommand)`, `Chat`,
+`EnterGame { character_id }` (select, spawn, notify in game), `Move(MoveCommand)`,
+`MoveVehicle(VehicleMoveRequest)`, `Chat`,
 `LeaveWorld(Quit | CharacterSelect)`, `CancelLeave`, `ReturnToWorldSelect`, `Disconnect`.
 
 Events (`session::Event`), in the order of a normal run:
@@ -533,7 +589,7 @@ byte for byte against the server's own test vectors. `bc` is the 3-byte object i
 |---|---|---|
 | `Npc { obj_id, target_changed }` | `CSInteractNPC` 0x065: `bc` npc, `bool` | sets the interaction object (and the target), answers an empty `SCAiAggro` (skipped) |
 | `NpcEnd { obj_id }` | `CSInteractNPCEnd` 0x066: `bc` | none |
-| `Start { npc_obj_id, obj_id, extra_info, pick_id, mouse_button, modifier_keys }` | `CSStartInteraction` 0x068: `bc bc i32 i32 u8 i32` | `SCNpcInteractionSkillList` (the NPC's function skills) |
+| `Start { npc_obj_id, obj_id, extra_info, pick_id, mouse_button, modifier_keys }` | `CSStartInteraction` 0x068: `bc bc i32 i32 u8 i32` | `SCNpcInteractionSkillList` (the NPC's or slave's interaction skills) |
 | `QuestStart { quest_id, npc_obj_id, doodad_obj_id, sphere_id }` | `CSStartQuestContext` 0x0d5: `u32 bc bc u32` | `SCQuestContextStarted` (+ `Updated`), nothing when refused |
 | `QuestComplete { quest_id, npc_obj_id, doodad_obj_id, selected }` | `CSCompleteQuestContext` 0x0d6: `u32 bc bc i32` | `SCQuestContextCompleted`, `SCExpChanged`, items / money |
 | `QuestDrop { quest_id }` | `CSDropQuestContext` 0x0d7: `u32` | `SCQuestContextUpdated` with status 4 (dropped) |
@@ -681,7 +737,7 @@ unit tests here repeat:
 |---|---|---|
 | `SCOneUnitMovement` 0x06c | `UnitMoved` | `bc id`, type byte, `MoveType.Write` |
 | `SCUnitMovements` 0x06b | one `UnitMoved` per entry | `u16 count` (at most 400), per entry `bc id` and `MoveType.Write` **without** the type byte: the real client takes the type from the object, here every entry is read as a unit movement (players, NPCs, mounts). The lane server has the writer but never sends it (every NPC step is a `SCOneUnitMovement`, 10 per second per moving NPC); it is decoded for the real servers |
-| `SCUnitAttached` 0x076 | `UnitAttached` | `bc rider`, `u8 attach point` (1 driver, 2.. passengers), `bc mount`, `u8 reason`; `Unit::attached_to` |
+| `SCUnitAttached` 0x076 | `UnitAttached` | `bc rider`, `u8 attach point` (1 driver, 2.. passengers), `bc mount`, `u8 reason`; `Unit::attached_to` keeps all four fields. Live capture 2026-10-28: the whole frame is 14 bytes (8 body bytes); the S->C log has only opcode + byte count, so the reply's reason value is not in the capture. AAEmu echoes `CSMountMate`'s reason (`mates.rs:340-344`) and sends `bond_kind` for slave seats (`slaves.rs:1383-1387`); the original server is unverified. The 1.2 reader names the byte `reason` (`FUN_397c60c0`) and the attach model maps 2/3/4 else 1 before `FUN_390bb4d0` calls `FUN_39153b60` |
 | `SCUnitDetached` 0x077 | `UnitDetached` | `bc rider`, `u8 reason` |
 | `SCUnitModelPostureChanged` 0x103 | `UnitPosture` | `bc id`, `Unit.ModelPosture` (posture byte, loot flag, per posture: 4 = `u32 anim_actions.id` + `bool activate`); `Unit::anim_action` is the pose an NPC stands in (`SCUnitState` carries it too) |
 | `SCCombatFirstHit` 0x089 | `CombatFirstHit` | `bc victim`, `bc hitter`, `u32 hit type` |
@@ -2190,6 +2246,17 @@ The native Lua `X2SiegeWeapon:SetSiegeWeaponName(name)` wrapper394aa0c0 normaliz
 name helper and sends034; `DiscardSiegeWeapon()` wrapper394aa090 ->39345aa0 chooses an unbind
 path based on current attachment. Dismiss39345bf0 sends030 and clears local native presentation;
 the network resource still waits for actual server lifecycle events. Native UI planning is root work.
+
+Native slave boarding (corrected 2026-10-28; the earlier "a slave bind never sends 0x068" claim
+was wrong): the click dispatcher `FUN_390f3780` -> `FUN_393be030` sends `CSChangeTarget` 0x02c
+(when the slave is not the target) and `CSStartInteraction` 0x068 (`extra_info`1, mouse3) for the
+slave. `SCNpcInteractionSkillList` 0x07b -> `FUN_393be850` -> `FUN_393be280` acts on the FIRST
+skill immediately: 12076 -> the 3.0 m reach `FUN_393bf270` (`DAT_39ac79fc`9.0; 3.5 m with target
+flag+0x3c26) -> `FUN_393bf310` -> `FUN_39362f50` -> `FUN_393464a0` -> `CSBindSlave`031 (u16 TL);
+13863/19165 -> `CSStartSkill`. The 2026-10-28 capture recorded the 0x068 body
+`3c 5f 00 00 00 00 01 00 00 00 00 00 00 00 03 00 00 00 00` for cart bc 0x5f3c. The decision
+belongs to the app (`hud/slave.rs`, `docs/aa-client-units.md` S5); `aa-net` carries the exact
+packets.
 
 Only valid InWorld requests write the socket; success there emits `SlaveEvent::Requested(command)`.
 Invalid fields emit `RequestRejected { command, message }`, and no connection/server silence cannot
