@@ -91,6 +91,7 @@ Logs go to `%LOCALAPPDATA%\AABevy1.2\logs\` (the last 10 runs); `AA_LOG_FILE` ov
 | `aa-cry` | CryEngine formats: DDS, `.mtl`, `.cgf` / `.chr` meshes, materials and shaders |
 | `aa-anim` | Animations, character assembly, customization, cloth physics |
 | `aa-world` | Terrain, objects, vegetation, water, sky, streaming, collision |
+| `aa-physics` | The server's CryPhysics port (aaemu-physics) as the client's fixed-step world |
 | `aa-fx` | The particle system for the game's effect libraries |
 | `aa-audio` | FMOD (FSB5 / FEV) playback and reverb |
 | `aa-net` | Login and game protocol client for AAEmu |

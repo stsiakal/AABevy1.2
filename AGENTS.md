@@ -19,6 +19,7 @@ practical details an agent needs to work unattended.
 | `aa-anim` | Animations (`.caf` / `.dba`), `.cdf` characters, character assembly and customization |
 | `aa-fx` | The particle system for the game's effect libraries |
 | `aa-world` | Terrain, objects, vegetation, water, sky and time of day, streaming, collision |
+| `aa-physics` | Client owner of the server's `aaemu-physics` (CryPhysics port): fixed-step world |
 | `aa-audio`, `aa-midi` | FMOD banks (FSB5 / FEV) and reverb; the music sheets |
 | `aa-net` | Login and game protocol client for AAEmu |
 | `aa-client` | The app: screen flow, in-game systems, HUD; wires the other crates together |

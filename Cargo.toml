@@ -19,6 +19,10 @@ aa-world = { path = "crates/aa-world" }
 aa-net = { path = "crates/aa-net" }
 aa-audio = { path = "crates/aa-audio" }
 
+# The server's CryPhysics port (GPL-3.0-or-later), pinned by revision; the 1.2 client's
+# cryphysics.dll is the same engine generation (docs/aa-physics.md).
+aaemu-physics = { git = "https://github.com/AAEmu/AAEmu-1.2-Rust.git", rev = "b87b6554630e87e142d5e68b76f8c400dc6bb02c" }
+
 bevy = { version = "0.20", default-features = false, features = ["2d", "3d", "ui", "dds", "tga", "jpeg"] }
 # native only (aa-cry adds them): on WebGPU they push the PBR fragment stage past 16 samplers
 mlua = { version = "0.12", features = ["lua51", "vendored"] }

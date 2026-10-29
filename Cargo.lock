@@ -195,6 +195,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aa-physics"
+version = "0.1.0"
+dependencies = [
+ "aaemu-physics",
+]
+
+[[package]]
 name = "aa-ui"
 version = "0.1.0"
 dependencies = [
@@ -250,6 +257,11 @@ dependencies = [
  "web-time",
  "wesl",
 ]
+
+[[package]]
+name = "aaemu-physics"
+version = "0.1.0"
+source = "git+https://github.com/AAEmu/AAEmu-1.2-Rust.git?rev=b87b6554630e87e142d5e68b76f8c400dc6bb02c#b87b6554630e87e142d5e68b76f8c400dc6bb02c"
 
 [[package]]
 name = "ab_glyph"

@@ -1,0 +1,9 @@
+[package]
+name = "aa-physics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Client-side owner of one aaemu-physics (CryPhysics port) world: fixed 25 Hz steps and a small world builder"
+
+[dependencies]
+aaemu-physics.workspace = true
