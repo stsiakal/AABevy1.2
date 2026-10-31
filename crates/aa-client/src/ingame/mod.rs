@@ -46,6 +46,8 @@ pub(crate) mod cart;
 pub(crate) mod combat;
 pub(crate) mod creature;
 pub(crate) mod data;
+#[cfg(test)]
+mod farm_audit;
 mod dev;
 pub(crate) mod cutdown;
 pub(crate) mod doodad_affordance;
@@ -91,9 +93,7 @@ use bevy::prelude::*;
 use crate::Screen;
 pub(crate) use dev::DevOptions;
 pub(crate) use camera::OrbitCamera;
-pub(crate) use anim::LocalJump;
-#[cfg(test)]
-pub(crate) use anim::Motion;
+pub(crate) use anim::{LocalJump, Motion};
 pub(crate) use mount::{LocalMount, MountReason, driver_seat, track_local_mount};
 #[cfg(test)]
 pub(crate) use swim::ActorParams;
