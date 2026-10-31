@@ -47,6 +47,8 @@ pub(crate) mod combat;
 pub(crate) mod creature;
 pub(crate) mod data;
 mod dev;
+pub(crate) mod cutdown;
+pub(crate) mod doodad_affordance;
 pub(crate) mod doodad_visual;
 pub(crate) mod doodad_model;
 pub(crate) mod emote;
@@ -67,6 +69,7 @@ pub(crate) mod quest_depth_of_field;
 pub(crate) mod quest_framing;
 mod remote;
 pub(crate) mod seating;
+mod ship;
 mod skill_motion;
 mod sounds;
 mod stealth;
@@ -88,7 +91,10 @@ use bevy::prelude::*;
 use crate::Screen;
 pub(crate) use dev::DevOptions;
 pub(crate) use anim::LocalJump;
-pub(crate) use mount::{LocalMount, MountReason};
+pub(crate) use mount::{LocalMount, MountReason, driver_seat, track_local_mount};
+#[cfg(test)]
+pub(crate) use mount::LocalSeat;
+pub(crate) use ship::{ShipDrive, leave_before_unbind};
 
 /// The world the in-game screen plays in.
 pub const WORLD: &str = "main_world";
@@ -143,7 +149,9 @@ impl Plugin for InGamePlugin {
             .init_resource::<mount::LocalMount>()
             .init_resource::<cart::CartDrive>()
             .init_resource::<mount::MountReason>()
+            .init_resource::<ship::ShipDrive>()
             .init_resource::<cam_fov::CamFov>()
+            .init_resource::<camera::VehicleCamera>()
             .init_resource::<camera::CameraFollowed>()
             .init_resource::<quest_camera::QuestShot>()
             .init_resource::<quest_camera::QuestTalkCamera>()
@@ -160,6 +168,7 @@ impl Plugin for InGamePlugin {
             .add_plugins(prewarm::plugin)
             .add_plugins(units::plugin)
             .add_plugins(doodad_visual::plugin)
+            .add_plugins(doodad_affordance::plugin)
             .add_plugins(world_switch::plugin)
             .add_plugins(attachments::plugin)
             .add_plugins(gear_refresh::plugin)
@@ -181,9 +190,20 @@ impl Plugin for InGamePlugin {
                         camera::orbit_input.run_if(in_state(Screen::InGame)).run_if(teleport::idle).run_if(quest_camera::off),
                         player::follow_server,
                         sprint::drive_sprint.run_if(in_state(Screen::InGame)),
-                        mount::track_local_mount,
+                        track_local_mount,
+                        camera::vehicle_camera,
+                        ship::board_deck
+                            .run_if(in_state(Screen::InGame))
+                            .run_if(teleport::idle)
+                            .after(units::move_units),
+                        ship::deck_control
+                            .run_if(in_state(Screen::InGame))
+                            .run_if(teleport::idle)
+                            .after(units::move_units),
                         player::control_player.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         cart::drive_cart.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
+                        ship::reset_on_teleport.run_if(in_state(Screen::InGame)),
+                        ship::drive_ship.run_if(in_state(Screen::InGame)).run_if(teleport::idle),
                         (mount::drive_mount, mount::pose_local_rider).chain().after(units::move_units),
                         camera::follow_player,
                     )
@@ -277,6 +297,7 @@ fn leave_game(
     // a logout mid-Dash or mid-jump must not carry its state (the end-of-Dash FOV fade) into the next world
     commands.insert_resource(sprint::Sprint::default());
     commands.insert_resource(mount::LocalMount::default());
+    commands.insert_resource(camera::VehicleCamera::default());
     commands.insert_resource(cart::CartDrive::default());
     commands.insert_resource(mount::MountReason::default());
     commands.insert_resource(player::PlayerInput::default());
