@@ -65,6 +65,10 @@ pub enum Request {
     TargetByName { name: String },
     /// A received slave binding request (`SlaveCommand::{Bind,Unbind}`).
     Slave(aa_net::slave_control::SlaveCommand),
+    /// `CSStartSkill` for an interaction skill whose target is a unit (the slave's 13863 passenger
+    /// seat): a plain unit-caster request, with no learned-skill or action-bar gate. The server
+    /// owns the skill's requirements.
+    UseSkill { skill_id: u32, target_obj_id: u32 },
     ItemEffect { character_id: u32, request: aa_net::item_effect::ItemEffectRequest },
     ItemLook { character_id: u32, request: aa_net::look_conversion::ItemLookRequest },
     /// `CSStartInteraction` 0x068, for an NPC's function or a slave's interaction skill list.
@@ -106,6 +110,15 @@ pub struct HudData {
     pub player_entity: Option<Entity>,
     pub pos: Vec3,
     pub yaw: f32,
+    /// The slave whose point-1 seat is a turret (`ingame::LocalMount::turret_seat`): the
+    /// engine's general `VehicleModel` seat flag, which also covers drivable catapults and tanks.
+    /// The bar is narrower (a stationary turret shows the point-1 attached skill; a cart keeps
+    /// its mount skills), and the camera aim needs a `BallisticPos`/`ArtilleryPos` skill.
+    pub turret_seat: Option<u32>,
+    /// The manned cannon's turret aim and arc impact point (`ingame::turret::Sight`): a fire
+    /// skill with a BallisticPos target goes out with this spot instead of the selected unit, and
+    /// its `refusal` blocks the click (`FUN_390f3b20`).
+    pub turret: Option<crate::ingame::turret::Sight>,
     /// The ranks of the learned skills (`Skills::known`), for the skill tooltips.
     pub skill_levels: std::collections::HashMap<u32, u8>,
     pub passive_buffs: Vec<u32>,
@@ -203,6 +216,8 @@ impl Default for HudData {
             player_entity: None,
             pos: Vec3::ZERO,
             yaw: 0.0,
+            turret_seat: None,
+            turret: None,
             skill_levels: Default::default(),
             passive_buffs: Vec::new(),
             cooldowns: Default::default(),
@@ -852,6 +867,10 @@ pub fn refresh_snapshot(world: &mut World, bridge: &Shared) {
     data.player_entity = entity;
     data.pos = pos;
     data.yaw = yaw;
+    data.turret_seat = world
+        .get_resource::<crate::ingame::LocalMount>()
+        .and_then(crate::ingame::LocalMount::turret_seat);
+    data.turret = world.get_resource::<crate::ingame::turret::Sight>().copied();
     let character = spawn.character();
     let game = data.game.clone();
     let game = game.get();
@@ -1061,6 +1080,9 @@ pub fn handle_requests(
                 }
                 net.write(NetCommand(Command::Slave(command)));
             }
+            Request::UseSkill { skill_id, target_obj_id } => {
+                net.write(NetCommand(Command::UseSkill { skill_id, target_obj_id }));
+            }
             Request::SellBackpack { obj_id } => { net.write(NetCommand(Command::SellBackpackGoods { obj_id })); }
             Request::ChatCommand(command) => { net.write(NetCommand(Command::ChatCommand(command))); }
             Request::TargetByName { name } => {
@@ -1142,7 +1164,16 @@ pub fn handle_requests(
                 panels::use_slot(slot, &env, &flight, &bar, &inventory, &target, &mut pressed, &mut failed);
             }
             Request::UseModeAction { slot } => {
-                let data = bridge.0.borrow();
+                let mut data = bridge.0.borrow_mut();
+                let slot = slot - 1;
+                if let Some(function) = super::mode_actions::function_at(&data, slot) {
+                    super::mode_actions::run_function(
+                        &mut data,
+                        function,
+                        web_time::Instant::now(),
+                    );
+                    continue;
+                }
                 let env = Env::of(
                     &data,
                     Some(&skills),
@@ -1151,7 +1182,7 @@ pub fn handle_requests(
                 );
                 super::mode_actions::use_slot(
                     &data,
-                    slot - 1,
+                    slot,
                     &env,
                     &mut flight,
                     &target,

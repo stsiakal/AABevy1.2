@@ -97,6 +97,10 @@ pub enum MoveState {
     Jump,
     /// In the air without a jump, or on the way down: no ground under the feet.
     Fall,
+    /// Hanging from a ladder, rope or net: actor flag `0x40` and the [`crate::climb`] data follow.
+    /// A supporting-object block (`0x20`) is written too when `support.world` is set (a ladder on a
+    /// moving hull).
+    Hang,
 }
 
 /// A movement the app wants to send for the local player. All fields are public; build one with
@@ -201,7 +205,7 @@ impl MoveCommand {
         m.actor_flags = match self.state {
             MoveState::Ground => actor_flags::STANDING_ON_SOLID,
             MoveState::Jump => actor_flags::JUMPING,
-            MoveState::Fall => 0,
+            MoveState::Fall | MoveState::Hang => 0,
         };
         if self.state == MoveState::Jump {
             m.flags = move_flags::JUMPING;
@@ -214,15 +218,22 @@ impl MoveCommand {
             m.fall_vel = self.fall_vel;
         }
         if let Some(support) = &self.support {
-            // The 2026-10-29 deck capture has header 0x40 on every standing/walking packet
-            // (idle included: neither MOVING nor STOPPING) and 0x44 only on the jump; the
-            // actor block keeps the ground bits, plus 0x04 on a deck jump (0x34).
-            m.flags &= !(move_flags::MOVING | move_flags::STOPPING);
-            m.flags |= move_flags::STANDING_ON_OBJECT;
-            m.actor_flags |= actor_flags::STANDING_ON_OBJECT;
-            if self.state == MoveState::Jump {
-                m.flags |= move_flags::STOPPING;
-                m.actor_flags |= actor_flags::STANDING_ON_SOLID;
+            // The supporting-object block is only present when there is a world frame (a deck, a
+            // ladder on a moving hull). A plain hang carries the climbing bit alone.
+            if support.world.is_some() {
+                // The 2026-10-29 deck capture has header 0x40 on every standing/walking packet
+                // (idle included: neither MOVING nor STOPPING) and 0x44 only on the jump; the
+                // actor block keeps the ground bits, plus 0x04 on a deck jump (0x34).
+                m.flags &= !(move_flags::MOVING | move_flags::STOPPING);
+                m.flags |= move_flags::STANDING_ON_OBJECT;
+                m.actor_flags |= actor_flags::STANDING_ON_OBJECT;
+                if self.state == MoveState::Jump {
+                    m.flags |= move_flags::STOPPING;
+                    m.actor_flags |= actor_flags::STANDING_ON_SOLID;
+                }
+            }
+            if support.climb.is_some() {
+                m.actor_flags |= actor_flags::HANGING_FROM_OBJECT;
             }
             m.support = Some(support.clone());
         }
@@ -259,6 +270,12 @@ pub enum Command {
     /// Select the character and enter the world (select, spawn, notify in game).
     EnterGame { character_id: u32 },
     Move(MoveCommand),
+    /// `CSHang` for the local player and `target_obj_id` (a climb doodad): the server makes it the
+    /// sticky parent and broadcasts `SCHung`. Admission (an own unit, a climbable target in reach)
+    /// is the app's; the session only checks the nonzero 24-bit ids.
+    Hang { target_obj_id: u32 },
+    /// `CSUnhang` with `reason` (no target on the wire; the server uses the sticky parent).
+    Unhang { reason: i32 },
     /// Drive a controlled land vehicle (cart, car, tractor) with the native
     /// `CSMoveUnit` type-2 body. The session fills the send time. There is no
     /// driver/controller admission yet.
@@ -308,6 +325,12 @@ pub enum Command {
     /// 0 / object 0); otherwise it must be a nonzero 24-bit unit ID (self buffs name the mate).
     /// No local learned-skill gate or automatic target/slot/auto-use choice is imposed.
     UseMateSkill { skill_id: u32, mate_obj_id: u32, mount_skill_id: u32, target_obj_id: u32 },
+    /// Cast a slave/mate skill at a spot of the ground: the native `Position` target
+    /// (`SkillTarget::POSITION`, `long_position`, `rot`, two empty object ids). The server's
+    /// cannon test (`flow_tests::ship_cannon_gunner_seat_skill_and_leaving`) sends the same:
+    /// caster `Mount { cannon, mount_skill }` and `SkillCastTarget::Position`. Whether a cannon
+    /// uses the straight aim point or a solved ballistic one is capture-pending (S12-C1).
+    UseMateSkillAt { skill_id: u32, mate_obj_id: u32, mount_skill_id: u32, pos: Pos, rot: f32 },
     /// Cast `skill_id` at a spot of the ground (area skills).
     UseSkillAt { skill_id: u32, pos: Pos },
     /// Cancel the cast or channel of the player: `tl` is the timeline of a plain skill (`SkillStarted::tl`), `plot_tl` the one
@@ -409,6 +432,9 @@ pub enum Command {
     Actability(crate::actability::ActabilityCommand),
     Mate(crate::mate::MateCommand),
     Slave(crate::slave_control::SlaveCommand),
+    /// Aim the manned turret/slave `unit_id` at a pitch and yaw in its model frame, radians.
+    /// The app owns the 200 ms change-only throttle.
+    TurretState { unit_id: u32, pitch: f32, yaw: f32 },
     UnbondDoodad(crate::UnbondDoodadRequest),
     /// Legacy unscoped transport API; new app actions should capture persistent identity below.
     Auction(crate::auction::AuctionCommand),
@@ -469,6 +495,25 @@ fn mate_skill_message(
             mount_skill_id,
         },
         target: SkillTarget::unit(target_obj_id),
+    }
+}
+
+fn mate_skill_at_message(
+    skill_id: u32,
+    self_obj_id: u32,
+    mate_obj_id: u32,
+    mount_skill_id: u32,
+    pos: Pos,
+    rot: f32,
+) -> game::ClientMsg {
+    game::ClientMsg::StartSkill {
+        skill_id,
+        self_obj_id,
+        caster: StartCaster::Mount {
+            obj_id: mate_obj_id,
+            mount_skill_id,
+        },
+        target: SkillTarget::position_rot(pos, rot),
     }
 }
 
@@ -582,8 +627,10 @@ pub enum Event {
     /// `obj_id` got off its mount and stands where the mount is.
     UnitDetached { obj_id: u32, reason: u8 },
     /// An NPC took (`activate`) or left an idle pose: `anim_action` is an `anim_actions.id`, `kind` the `ModelPostureType`.
-    UnitPosture { obj_id: u32, kind: u8, anim_action: u32, activate: bool },
+    UnitPosture { obj_id: u32, kind: u8, anim_action: u32, activate: bool, turret: Option<crate::turret::TurretAim> },
     UnitPoints { obj_id: u32, hp: i32, mp: i32 },
+    /// A turret aim request was refused locally (a zero/too-large unit or a non-finite angle).
+    TurretStateRejected { unit_id: u32, pitch: f32, yaw: f32, message: String },
     EnvDamage(crate::combat_status::EnvironmentDamage),
     SetBreath { breath: u32 },
     /// Received local dive/surface report. No Lua event or breathing timer is synthesized.
@@ -805,6 +852,7 @@ pub enum Event {
     ItemOperationError(crate::items::ItemOperationError),
     Gimmick(crate::gimmick::GimmickEvent),
     Housing(crate::housing::HousingEvent),
+    Shipyard(crate::shipyard::ShipyardEvent),
     Farm(crate::farm::FarmEvent),
     Coffer(crate::coffer::CofferEvent),
     Radar(crate::radar::RadarEvent),
@@ -1013,6 +1061,18 @@ async fn recv_stream(c: &mut Option<StreamConn>) -> net::Result<stream::ServerMs
         Some(c) => c.recv().await,
         None => std::future::pending().await,
     }
+}
+
+/// The `CSStartSkill` message of [`Command::UseSkill`]: a unit caster, a unit target and no
+/// skill object (`target_obj_id` 0 means the caster).
+pub fn use_skill_message(skill_id: u32, self_obj_id: u32, target_obj_id: u32) -> game::ClientMsg {
+    let target_obj_id = if target_obj_id == 0 { self_obj_id } else { target_obj_id };
+    game::ClientMsg::StartSkill { skill_id, self_obj_id, caster: StartCaster::Unit, target: SkillTarget::unit(target_obj_id) }
+}
+
+/// The wire body [`Command::UseSkill`] sends, through the same message the session encodes.
+pub fn use_skill_body(skill_id: u32, self_obj_id: u32, target_obj_id: u32) -> Vec<u8> {
+    use_skill_message(skill_id, self_obj_id, target_obj_id).encode_body()
 }
 
 impl Session {
@@ -1271,6 +1331,20 @@ impl Session {
                 self.send_game(game::ClientMsg::SelectCharacter { id: character_id }).await;
             }
             Command::Move(m) => self.send_move(self.self_obj, m).await,
+            Command::Hang { target_obj_id } => {
+                if self.phase == Phase::InWorld
+                    && let Ok(request) = crate::HangingRequest::hang(self.self_obj, target_obj_id)
+                {
+                    self.send_game(game::ClientMsg::Hanging(request)).await;
+                }
+            }
+            Command::Unhang { reason } => {
+                if self.phase == Phase::InWorld
+                    && let Ok(request) = crate::HangingRequest::unhang(self.self_obj, reason)
+                {
+                    self.send_game(game::ClientMsg::Hanging(request)).await;
+                }
+            }
             Command::MoveUnit { obj_id, movement } => self.send_move(obj_id, movement).await,
             Command::MoveVehicle(request) => self.send_move_vehicle(request).await,
             Command::ShipControl(request) => self.send_ship_control(request).await,
@@ -1793,8 +1867,7 @@ impl Session {
                 }
             }
             Command::UseSkill { skill_id, target_obj_id } => {
-                let target = SkillTarget::unit(if target_obj_id == 0 { self.self_obj } else { target_obj_id });
-                self.start_skill(skill_id, StartCaster::Unit, target).await;
+                self.use_skill(skill_id, target_obj_id).await;
             }
             Command::UseDoodadSkill { skill_id, doodad_obj_id } => {
                 let target = if skill_id == 0 { Err("interaction skill ID must be nonzero") } else { SkillTarget::doodad(doodad_obj_id) };
@@ -1835,6 +1908,30 @@ impl Session {
                     self.emit(Event::Mate(crate::mate::MateEvent::SkillRejected { skill_id, mate_obj_id, mount_skill_id, target_obj_id, message: message.into() }));
                 } else if self.phase == Phase::InWorld && self.send_game(mate_skill_message(skill_id, self.self_obj, mate_obj_id, mount_skill_id, target_obj_id)).await {
                     self.emit(Event::Mate(crate::mate::MateEvent::SkillRequested { skill_id, mate_obj_id, mount_skill_id, target_obj_id }));
+                }
+            }
+            Command::TurretState { unit_id, pitch, yaw } => {
+                let valid = unit_id != 0 && unit_id <= 0xffffff && pitch.is_finite() && yaw.is_finite();
+                if !valid {
+                    self.emit(Event::TurretStateRejected { unit_id, pitch, yaw, message: "turret unit must be a nonzero 24-bit id and the aim finite".into() });
+                } else {
+                    self.send_game(game::ClientMsg::TurretState(crate::turret::TurretState::new(unit_id, pitch, yaw))).await;
+                }
+            }
+            Command::UseMateSkillAt { skill_id, mate_obj_id, mount_skill_id, pos, rot } => {
+                let error = if skill_id == 0 || mount_skill_id == 0 {
+                    Some("combat skill and mount skill IDs must be nonzero")
+                } else if mate_obj_id == 0 || mate_obj_id > 0xffffff {
+                    Some("mate caster must be nonzero 24-bit")
+                } else if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() || !rot.is_finite() {
+                    Some("skill position and facing must be finite")
+                } else {
+                    None
+                };
+                if let Some(message) = error {
+                    self.emit(Event::Mate(crate::mate::MateEvent::SkillAtRejected { skill_id, mate_obj_id, mount_skill_id, pos, rot, message: message.into() }));
+                } else if self.phase == Phase::InWorld && self.send_game(mate_skill_at_message(skill_id, self.self_obj, mate_obj_id, mount_skill_id, pos, rot)).await {
+                    self.emit(Event::Mate(crate::mate::MateEvent::SkillAtRequested { skill_id, mate_obj_id, mount_skill_id, pos, rot }));
                 }
             }
             Command::StopCasting { tl, plot_tl } => {
@@ -2137,7 +2234,7 @@ impl Session {
             M::UnitAttached { obj_id, mount, point, reason } => self.emit(Event::UnitAttached { obj_id, mount, point, reason }),
             M::UnitDetached { obj_id, reason } => self.emit(Event::UnitDetached { obj_id, reason }),
             M::UnitPosture { obj_id, posture } => {
-                self.emit(Event::UnitPosture { obj_id, kind: posture.kind, anim_action: posture.anim_action, activate: posture.activate });
+                self.emit(Event::UnitPosture { obj_id, kind: posture.kind, anim_action: posture.anim_action, activate: posture.activate, turret: posture.turret });
                 if let Some(house) = posture.house {
                     self.emit(Event::Housing(crate::housing::HousingEvent::UnitPosture { obj_id, posture: house }));
                 }
@@ -2284,6 +2381,7 @@ impl Session {
             M::ItemOperationError(e) => self.emit(Event::ItemOperationError(e)),
             M::Gimmick(e) => self.emit(Event::Gimmick(e)),
             M::Housing(e) => self.emit(Event::Housing(e)),
+            M::Shipyard(e) => self.emit(Event::Shipyard(e)),
             M::Farm(e) => self.emit(Event::Farm(e)),
             M::Coffer(e) => self.emit(Event::Coffer(e)),
             M::Radar(e) => self.emit(Event::Radar(e)),
@@ -2383,6 +2481,14 @@ impl Session {
         if let Err(message)=command.validate(){self.emit(Event::Auction(crate::auction::AuctionEvent::RequestRejected{command,message:message.into()}));}
         else if self.send_game(game::ClientMsg::Auction(command.clone())).await{self.emit(Event::Auction(crate::auction::AuctionEvent::Requested(command)));}
         else{self.emit(Event::Auction(crate::auction::AuctionEvent::RequestRejected{command,message:"auction request was not sent".into()}));}
+    }
+
+    async fn use_skill(&mut self, skill_id: u32, target_obj_id: u32) {
+        if self.phase != Phase::InWorld {
+            tracing::warn!("skill {skill_id} ignored: not in the world");
+            return;
+        }
+        self.send_game(use_skill_message(skill_id, self.self_obj, target_obj_id)).await;
     }
 
     async fn start_skill(&mut self, skill_id: u32, caster: StartCaster, target: SkillTarget) {
@@ -2983,7 +3089,7 @@ mod tests {
         let (evt,mut events)=unbounded_channel();
         let mut session=Session::new(evt,ClientOptions::default());
         session.game_msg(Ok(game::ServerMsg::Batch(vec![game::ServerMsg::UnitPosture{obj_id:99,posture},game::ServerMsg::Snow(true)]))).await;
-        assert!(matches!(events.try_recv(),Ok(Event::UnitPosture{obj_id:99,kind:1,anim_action:0,activate:false})));
+        assert!(matches!(events.try_recv(),Ok(Event::UnitPosture{obj_id:99,kind:1,anim_action:0,activate:false,turret:None})));
         assert!(matches!(events.try_recv(),Ok(Event::Housing(HousingEvent::UnitPosture{obj_id:99,posture:house})) if house == posture.house.unwrap()));
         assert!(matches!(events.try_recv(),Ok(Event::Snow(true))));
         assert!(events.try_recv().is_err());
@@ -3238,6 +3344,24 @@ mod tests {
         ]))).await;
         for _ in 0..2 { assert!(matches!(events.try_recv(), Ok(Event::Housing(actual)) if actual == expected)); }
         assert!(matches!(events.try_recv(), Ok(Event::Housing(HousingEvent::Demolished { tl_id: 7 }))));
+        assert!(matches!(events.try_recv(), Ok(Event::Snow(true))));
+        assert!(events.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn shipyard_state_reaches_the_bridge_in_order() {
+        use crate::shipyard::ShipyardEvent;
+        let (evt, mut events) = unbounded_channel();
+        let mut session = Session::new(evt, ClientOptions::default());
+        let expected = ShipyardEvent::State(crate::shipyard::tests::snapshot());
+        session.game_msg(Ok(game::ServerMsg::Batch(vec![
+            game::ServerMsg::Shipyard(expected.clone()),
+            game::ServerMsg::Shipyard(expected.clone()),
+            game::ServerMsg::Snow(true),
+        ]))).await;
+        for _ in 0..2 {
+            assert!(matches!(events.try_recv(), Ok(Event::Shipyard(actual)) if actual == expected));
+        }
         assert!(matches!(events.try_recv(), Ok(Event::Snow(true))));
         assert!(events.try_recv().is_err());
     }
@@ -4774,6 +4898,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hang_and_unhang_commands_write_the_native_bodies() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (tx, _events) = unbounded_channel();
+        let mut session = Session::new(tx, ClientOptions::default());
+        let (connection, accepted) = tokio::join!(GameConn::connect(&address), listener.accept());
+        let (mut peer, _) = accepted.unwrap();
+        session.game = Some(connection.unwrap());
+        session.phase = Phase::InWorld;
+        session.self_obj = 0x112233;
+
+        session.command(Command::Hang { target_obj_id: 0xaabbcc }).await;
+        let n = peer.read_u16_le().await.unwrap();
+        let mut frame = vec![0; n as usize];
+        peer.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame[4..6], &[0xcb, 0]);
+        assert_eq!(&frame[6..], &[0x33, 0x22, 0x11, 0xcc, 0xbb, 0xaa]);
+
+        session.command(Command::Unhang { reason: 6 }).await;
+        let n = peer.read_u16_le().await.unwrap();
+        let mut frame = vec![0; n as usize];
+        peer.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame[4..6], &[0xcc, 0]);
+        assert_eq!(&frame[6..], &[0x33, 0x22, 0x11, 6, 0, 0, 0]);
+    }
+
+    #[tokio::test]
     async fn ship_control_sends_the_type_4_body_with_the_session_time() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap().to_string();
@@ -4868,6 +5019,42 @@ mod tests {
         assert_eq!(MoveCommand { moving: false, ..base.clone() }.to_movement(0).flags, 0x40);
         let jump = MoveCommand { state: MoveState::Jump, ..base }.to_movement(0);
         assert_eq!((jump.flags, jump.actor_flags), (0x44, 0x34));
+    }
+
+    #[test]
+    fn a_plain_hang_carries_only_the_climb_bit_and_gc_id_one() {
+        use crate::model::MoveSupport;
+        let bits = crate::climb::pack_ladder(1.25, 0.0);
+        let hang = MoveCommand {
+            stance: stance::CROUCH,
+            support: Some(MoveSupport { obj_id: 1, climb: Some(bits), ..MoveSupport::default() }),
+            ..MoveCommand::new(Pos::new(10.0, 20.0, 30.0), 0.0).with_state(MoveState::Hang)
+        }
+        .to_movement(0);
+        assert_eq!(hang.flags, move_flags::MOVING);
+        assert_eq!(hang.actor_flags, actor_flags::HANGING_FROM_OBJECT);
+        assert_eq!(hang.stance, stance::CROUCH);
+        assert_eq!(hang.support.as_ref().unwrap().obj_id, 1);
+        assert_eq!(hang.support.as_ref().unwrap().climb, Some(bits));
+
+        // A ladder on a moving hull also carries the standing-on-object block: both flags.
+        let hull = MoveCommand {
+            pos: Pos::new(0.5, 1.0, 2.0),
+            support: Some(MoveSupport {
+                obj_id: 8911,
+                kind: 1,
+                part: 24,
+                world: Some((Pos::new(4308.5, 4128.0, 100.5), [0, 0, -37])),
+                climb: Some(bits),
+            }),
+            ..MoveCommand::new(Pos::new(0.5, 1.0, 2.0), 0.0).with_state(MoveState::Hang)
+        }
+        .to_movement(0);
+        assert_eq!(hull.flags, move_flags::STANDING_ON_OBJECT);
+        assert_eq!(hull.actor_flags, 0x60);
+        assert_eq!(hull.support.as_ref().unwrap().obj_id, 8911);
+        assert_eq!(hull.support.as_ref().unwrap().part, 24);
+        assert_eq!(hull.support.as_ref().unwrap().climb, Some(bits));
     }
 
     #[test]
@@ -5807,4 +5994,68 @@ mod tests {
         }
     }
 
+    /// A cannon's fire skill is a normal slave-bar skill with a ground target. The server's
+    /// `ship_cannon_gunner_seat_skill_and_leaving` sends exactly this shape: `Mount` caster,
+    /// `SkillCastTarget::Position { obj_id: 0, x, y, z, rot, obj_id1: 0, obj_id2: 0 }`.
+    /// The body is checked field by field against `skill::write_start_skill`.
+    #[test]
+    fn a_mate_skill_at_a_position_writes_the_native_mount_and_position_target() {
+        use crate::buff::caster_kind;
+        use crate::skill::target_kind;
+        let pos = Pos::new(130.25, 131.5, 100.0);
+        let message = mate_skill_at_message(10473, 0x11_2233, 0xaa_bbcc, 16, pos, 0.5);
+        let body = message.encode_body();
+        let mut r = crate::wire::Reader::new(&body);
+        assert_eq!(r.u32().unwrap(), 10473);
+        assert_eq!(r.u8().unwrap(), caster_kind::MOUNT);
+        assert_eq!(r.bc().unwrap(), 0xaa_bbcc);
+        assert_eq!(r.u32().unwrap(), 16);
+        assert_eq!(r.u8().unwrap(), target_kind::POSITION);
+        assert_eq!(r.long_position().unwrap(), pos);
+        assert_eq!(r.f32().unwrap(), 0.5);
+        assert_eq!(r.bc().unwrap(), 0);
+        assert_eq!(r.bc().unwrap(), 0);
+        assert_eq!(r.u8().unwrap(), 0);
+        assert!(r.is_empty());
+    }
+
+    /// Path A of `FUN_390f3b20`: skill 17742 (`mount_skills` 116), the cannon slave as the
+    /// `Mount` caster, a `Position` target at the solved impact point, `posRot` 0 and the flag
+    /// byte 0 (no skill object).
+    #[test]
+    fn a_cannon_shot_is_the_mount_skill_at_a_position_with_rot_zero() {
+        use crate::buff::caster_kind;
+        use crate::skill::target_kind;
+        let pos = Pos::new(24163.5, 15512.25, 82.5);
+        let message = mate_skill_at_message(17742, 0x11_2233, 0x00_0077, 116, pos, 0.0);
+        let body = message.encode_body();
+        assert_eq!(
+            body,
+            [
+                0x4e, 0x45, 0, 0, // skill 17742
+                3, 0x77, 0, 0, // Mount caster, slave 77
+                116, 0, 0, 0, // mount_skills.id
+                1, // Position target
+                0, 0, 0, 0, 0, 0x38, 0xe6, 0x05, // x
+                0, 0, 0, 0, 0, 0x84, 0xc9, 0x03, // y
+                0, 0, 0xa5, 0x42, // z 82.5
+                0, 0, 0, 0, // posRot 0
+                0, 0, 0, // objId1 invalid
+                0, 0, 0, // objId2 invalid
+                0, // no skill object
+            ]
+        );
+        let mut r = crate::wire::Reader::new(&body);
+        assert_eq!(r.u32().unwrap(), 17742);
+        assert_eq!(r.u8().unwrap(), caster_kind::MOUNT);
+        assert_eq!(r.bc().unwrap(), 0x77);
+        assert_eq!(r.u32().unwrap(), 116);
+        assert_eq!(r.u8().unwrap(), target_kind::POSITION);
+        assert_eq!(r.long_position().unwrap(), pos);
+        assert_eq!(r.f32().unwrap(), 0.0);
+        assert_eq!(r.bc().unwrap(), 0);
+        assert_eq!(r.bc().unwrap(), 0);
+        assert_eq!(r.u8().unwrap(), 0);
+        assert!(r.is_empty());
+    }
 }

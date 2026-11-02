@@ -19,6 +19,8 @@ pub fn default_login() -> String {
 }
 
 pub mod trial;
+pub mod turret;
+pub use turret::{TurretAim, TurretState};
 pub use trial::{TrialCommand, TrialCrimeRecord, TrialDefendantData, TrialEvent, TrialHistory, TrialNotice, TrialRecords, TrialRulingStatus, Trials};
 pub mod crime;
 pub mod duel;
@@ -51,6 +53,7 @@ pub mod auction;
 pub mod buff;
 pub mod bank;
 mod compression;
+pub mod climb;
 pub mod clock;
 pub use clock::{ServerClock, NativeTimeKeeper, ClockSample};
 pub mod combat_status;
@@ -60,6 +63,7 @@ pub mod friend;
 pub mod game;
 pub mod gimmick;
 pub mod housing;
+pub mod shipyard;
 pub mod farm;
 pub mod coffer;
 pub mod radar;
@@ -118,6 +122,7 @@ pub use game::LeaveTarget;
 pub use bank::{BankCommand, BankEvent};
 pub use radar::{FishRadar, FishRadarContact, ShipRadar, ShipRadarContact, RadarEvent, RadarToggle, TransferRadar, TransferRadarContact};
 pub use housing::{ConstructHouseTax, House, HouseCommand, HouseFarm, HouseSale, HouseSnapshot, HouseTaxInfo, Houses, HousingAttachment, HousingEvent, housing_attachments};
+pub use shipyard::{ShipyardEvent, ShipyardState, Shipyards};
 pub use coffer::{Coffer, CofferCommand, CofferContents, CofferEvent};
 pub use farm::{CommonFarmEntry, CommonFarmList, CreateDoodad, FarmEvent, Farms, ShowCommonFarm};
 pub use gimmick::{Gimmick, GimmickEvent, GimmickJoint, GimmickMovement, GimmickSpawn, Gimmicks};

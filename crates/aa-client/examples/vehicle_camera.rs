@@ -100,6 +100,7 @@ fn main() -> AppExit {
             aa_dev::DevPlugin,
             aa_cry::CryPlugin,
             aa_anim::AnimPlugin,
+            ingame::vehicle::VehiclePlugin,
             aa_anim::facial::FacialPlugin,
             aa_world::pipelines::build,
         ))
@@ -312,6 +313,7 @@ fn player_spawn() -> aa_net::PlayerSpawn {
             attached_to: None,
             doodad_bond: None,
             house_posture: None,
+            turret: None,
             state_attachments: None,
         },
     }

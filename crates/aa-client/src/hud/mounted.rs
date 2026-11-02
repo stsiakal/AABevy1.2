@@ -97,7 +97,11 @@ enum Link {
 struct Actor {
     name: Vec<u8>,
     slave_template: Option<u32>,
+    /// `UnitKind::Mate.owner_id`, the character the mate belongs to (the native `+0x420`).
+    mate_owner: Option<u32>,
     slave_tl: Option<u16>,
+    /// `UnitKind::Slave.id`: 7 siege weapon, 8 ship cannon/equipment. A cart is 6.
+    slave_kind: Option<u32>,
     /// Latest replicated unit-movement velocity, in (m/s)^2, and when it arrived. The native
     /// unbind check reads an engine getter (`vtable+0xa4`, `FUN_39345aa0`); this source is
     /// unverified.
@@ -173,11 +177,18 @@ impl View {
         if unit.obj_id == 0 || self.actors.contains_key(&unit.obj_id) {
             return;
         }
-        let (slave_template, slave_tl) = match unit.kind {
+        let (slave_template, slave_tl, slave_kind) = match unit.kind {
             UnitKind::Slave {
-                tl_id, template_id, ..
-            } => (Some(template_id), Some(tl_id)),
-            _ => (None, None),
+                id,
+                tl_id,
+                template_id,
+                ..
+            } => (Some(template_id), Some(tl_id), Some(id)),
+            _ => (None, None, None),
+        };
+        let mate_owner = match unit.kind {
+            UnitKind::Mate { owner_id, .. } => Some(owner_id),
+            _ => None,
         };
         let now = Instant::now();
         self.actors.insert(
@@ -185,7 +196,9 @@ impl View {
             Actor {
                 name: c_name(&unit.name),
                 slave_template,
+                mate_owner,
                 slave_tl,
+                slave_kind,
                 speed_squared: movement_speed_squared(unit.movement.as_ref()),
                 speed_at: unit.movement.as_ref().map(|_| now),
                 link: snapshot_link(unit),
@@ -252,21 +265,64 @@ impl View {
         }
     }
 
-    /// The slave the local player drives (the driver's seat, attach point 1) and its template id: the source
-    /// of the slave skill bar (`slave_mount_skills`). A passenger seat, a mate and walking read `None`; the
-    /// capture's bar came with `CSBindSlave driver=true` and `SCUnitAttached` point 1.
+    /// The slave the local player drives (the driver's seat, attach point 1) and its template id.
+    /// A passenger seat, a mate and walking read `None`; the bar itself is built from
+    /// [`View::slave_seat`] now, so this is kept for the seat tests.
+    #[allow(dead_code)]
     pub(super) fn driver_slave(&self) -> Option<(u32, u32)> {
+        self.driver_slave_kind()
+            .map(|(obj_id, template, _)| (obj_id, template))
+    }
+
+    /// The driver's slave with its `slave_kind_id`: a kind-7/8 slave with a gunner bar uses its
+    /// `mount_attached_skills` skill (14372/24501/20161), not the slave's own mount-skill list.
+    #[allow(dead_code)]
+    pub(super) fn driver_slave_kind(&self) -> Option<(u32, u32, u32)> {
         let link = self.player_attachment()?;
         if !crate::ingame::driver_seat(link.point) {
             return None;
         }
         let actor = self.slave(link.obj_id)?;
-        Some((link.obj_id, actor.slave_template?))
+        Some((link.obj_id, actor.slave_template?, actor.slave_kind?))
     }
 
-    /// Whether the player sits on a unit that is not a slave (a mate: riding a mount).
+    /// The slave seat the local player sits on, whichever attach point: `FUN_39345f10`
+    /// returns the slave for any seat and the point in `local_8` (1 = driver, 2.. = passenger).
+    /// The passenger's bar is built from the same seat (`FUN_39204500`).
+    pub(super) fn slave_seat(&self) -> Option<(u32, u32, u32, u8)> {
+        let link = self.player_attachment()?;
+        let actor = self.slave(link.obj_id)?;
+        Some((
+            link.obj_id,
+            actor.slave_template?,
+            actor.slave_kind?,
+            link.point,
+        ))
+    }
+
+    /// Whether the player sits on a loaded unit that is not a slave (a mate: riding a mount).
     pub(super) fn riding_mate(&self) -> bool {
-        self.player_attachment().is_some_and(|link| self.slave(link.obj_id).is_none())
+        self.player_attachment().is_some_and(|link| {
+            self.actors
+                .get(&link.obj_id)
+                .is_some_and(|actor| actor.slave_template.is_none())
+        })
+    }
+
+    /// `FUN_392045f0`'s mate function slot: the parent is a mate (kind 5) and
+    /// `FUN_3933b1b0(parent) == 0`. That predicate is 1 when the mate's owner is the local
+    /// character (the client's other paths use it to act through the player's own mount), so
+    /// riding the player's own pet gets no `command_unmount` here. Which native mate field the
+    /// spawn's `owner_id` maps to (`+0x420` or another id) is unproven: the port uses the
+    /// received `UnitKind::Mate.owner_id`.
+    pub(super) fn mate_unmount(&self) -> bool {
+        let Some(link) = self.player_attachment() else {
+            return false;
+        };
+        self.actors
+            .get(&link.obj_id)
+            .and_then(|actor| actor.mate_owner)
+            .is_some_and(|owner| self.character != Some(owner))
     }
 
     /// The slave SCSlaveBound marked as the player's, with its timeline id.
@@ -275,8 +331,9 @@ impl View {
         Some((id, self.slave(id)?.slave_tl?))
     }
 
-    /// The slave the player leaves with `DiscardSiegeWeapon`: the seated one (the attachment wins,
-    /// as for the boarding checks), else the SCSlaveBound fallback, with its timeline id.
+    /// The seated slave with its timeline id, for the passenger `FUN_39362170` branch of
+    /// `DiscardSiegeWeapon` (no bound master). The native bound branch never uses it: both its
+    /// speed check and its packet name the SCSlaveBound slave.
     pub(super) fn discard_slave(&self) -> Option<(u32, u16)> {
         if let Some(link) = self.player_attachment()
             && let Some(actor) = self.slave(link.obj_id)

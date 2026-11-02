@@ -17,3 +17,5 @@ __pycache__/
 /reference/**/*.png
 /reference/**/*.jpg
 /tools/evidence/**/*native-vs-ours.*
+**/shots/*.png
+**/parity/**/*.png

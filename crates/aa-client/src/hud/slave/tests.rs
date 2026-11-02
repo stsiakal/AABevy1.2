@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use aa_net::interaction::{Interact, InteractEvent};
-use aa_net::model::{Attachment, Movement, Unit, UnitKind};
+use aa_net::model::{Attachment, Movement, Unit, UnitKind, UnitStateAttachments};
 use aa_net::slave::SlaveEvent;
 use aa_net::slave_control::SlaveCommand;
 use aa_net::state::Units;
@@ -77,9 +77,13 @@ fn send(state: &Shared, units: &Units) -> Vec<Command> {
         .collect()
 }
 
+fn world(units: &Units) -> impl Fn(u32) -> Option<(Vec3, f32)> + '_ {
+    move |id| units.get(id).and_then(|u| crate::ingame::units::unit_world_pose_in(u, units))
+}
+
 fn bind(state: &Shared, units: &Units, target: u32) -> Outcome {
     let mut data = state.borrow_mut();
-    super::bind(&mut data, units, target)
+    super::bind(&mut data, units, target, &world(units))
 }
 
 fn runtime() -> UiRuntime {
@@ -150,7 +154,7 @@ fn skill_list(obj_id: u32, skills: &[u32]) -> Event {
 }
 
 fn receive(state: &Shared, units: &Units, event: &Event) -> Outcome {
-    super::receive(&mut state.borrow_mut(), units, event)
+    super::receive(&mut state.borrow_mut(), units, event, &world(units))
 }
 
 #[test]
@@ -286,7 +290,7 @@ fn the_occupy_skill_out_of_three_metres_sends_nothing() {
 
 #[test]
 fn the_occupy_skill_is_only_the_first_skill_and_other_skills_do_nothing() {
-    for skills in [&[0][..], &[13863], &[19165], &[0, 12076], &[]] {
+    for skills in [&[0][..], &[19165], &[0, 12076], &[]] {
         let (state, units) = setup(&[slave(20, 8, Vec3::new(1.0, 0.0, 0.0))]);
         assert_eq!(
             receive(&state, &units, &skill_list(20, skills)),
@@ -295,6 +299,147 @@ fn the_occupy_skill_is_only_the_first_skill_and_other_skills_do_nothing() {
         );
         assert!(send(&state, &units).is_empty(), "{skills:?}");
     }
+}
+
+#[test]
+fn the_seat_skills_map_to_their_attach_points() {
+    assert_eq!(SlaveSeat::of_skill(12076), Some(SlaveSeat::Driver));
+    assert_eq!(SlaveSeat::of_skill(13863), Some(SlaveSeat::Passenger));
+    assert_eq!(SlaveSeat::of_skill(19165), None, "destroy is not a seat");
+}
+
+#[test]
+fn the_passenger_skill_in_reach_sends_cs_start_skill_with_the_slave_as_target() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(2.99, 0.0, 0.0))]);
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[13863])),
+        Outcome::Sent
+    );
+    let commands = send(&state, &units);
+    assert_eq!(commands.len(), 1, "{commands:?}");
+    assert!(matches!(
+        &commands[0],
+        Command::UseSkill {
+            skill_id: 13863,
+            target_obj_id: 20
+        }
+    ));
+    // The server's CSStartSkill reader: u32 skill, u8 caster kind 0 + bc, u8 target kind 0 + bc,
+    // flag 0 (13 bytes). The player is 100 in the fixture spawn.
+    let body = aa_net::game::ClientMsg::StartSkill {
+        skill_id: 13863,
+        self_obj_id: 100,
+        caster: aa_net::skill::StartCaster::Unit,
+        target: aa_net::skill::SkillTarget::unit(20),
+    }
+    .encode_body();
+    assert_eq!(
+        body,
+        [
+            0x27, 0x36, 0, 0, // 13863
+            0, 0x64, 0, 0, // caster: unit, player 100
+            0, 0x14, 0, 0, // target: unit, slave 20
+            0, // no skill object
+        ],
+        "byte for byte as the server reader consumes it"
+    );
+}
+
+#[test]
+fn the_server_attach_writer_frames_point_two_for_our_reader() {
+    // The server's SCUnitAttachedPacket writer: bc child, u8 point, bc parent, u8 reason.
+    let mut w = aa_net::wire::Writer::new();
+    w.bc(100).u8(2).bc(20).u8(0);
+    let body = w.finish();
+    assert_eq!(body.len(), 8);
+    let mut frame = vec![0xDD, 0x01, 0x0E, 0x00];
+    frame.extend(aa_net::opcodes::sc::SCUnitAttachedPacket.to_le_bytes());
+    frame.extend(&body);
+    assert_eq!(
+        aa_net::game::ServerMsg::decode(&frame).unwrap(),
+        aa_net::game::ServerMsg::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 2,
+            reason: 0
+        }
+    );
+}
+
+#[test]
+fn the_passenger_skill_reach_is_the_interaction_reach() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(3.0, 0.0, 0.0))]);
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[13863])),
+        Outcome::Refused(0x9a)
+    );
+    assert!(send(&state, &units).is_empty());
+    let mut mate = crate::hud::expansion::fixture::spawn().unit;
+    mate.obj_id = 31;
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(3.4, 0.0, 0.0)), mate]);
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 31,
+            point: 1,
+            reason: 0,
+        },
+    );
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[13863])),
+        Outcome::Sent,
+        "a mate seat widens the interaction reach to 3.5 m and has no mounted refusal (S11-C5)"
+    );
+}
+
+#[test]
+fn a_dead_slave_is_refused_for_the_passenger_skill_too() {
+    let mut cart = slave(20, 8, Vec3::new(1.0, 0.0, 0.0));
+    cart.dead = true;
+    let (state, units) = setup(&[cart]);
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[13863])),
+        Outcome::Refused(0x144),
+        "FUN_39362f50 refuses a dead target for 13863/19165 with 0x144"
+    );
+    assert!(send(&state, &units).is_empty());
+}
+
+#[test]
+fn switching_from_a_passenger_seat_to_the_driver_seat_needs_a_detach() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(1.0, 0.0, 0.0))]);
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 2,
+            reason: 0,
+        },
+    );
+    // The occupy skill on the slave we already sit on is silent: 1.2 has no seat-change request.
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[12076])),
+        Outcome::Silent
+    );
+    assert!(send(&state, &units).is_empty());
+    // Leave, then board the driver's seat with the ordinary bind route.
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitDetached {
+            obj_id: 100,
+            reason: 0,
+        },
+    );
+    assert_eq!(
+        receive(&state, &units, &skill_list(20, &[12076])),
+        Outcome::Sent
+    );
+    assert_eq!(
+        state.borrow().requests,
+        vec![Request::Slave(SlaveCommand::Bind { tl_id: 8 })]
+    );
 }
 
 #[test]
@@ -587,7 +732,7 @@ fn only_a_mate_seat_switches_the_interaction_reach_to_three_point_five_metres() 
     assert_eq!(interact_reach(&state.borrow()), INTERACT_REACH);
     // The reach is measured from the seat, so the checks do not use the stale HUD point.
     assert_eq!(
-        player_centre(&state.borrow(), &units),
+        player_centre(&state.borrow(), &world(&units)),
         Vec3::new(0.0, 0.0, 0.0)
     );
     // Riding a mate (any unit that is not a slave) is mounted.
@@ -702,7 +847,7 @@ fn discard_siege_weapon_sends_unbind_for_the_bound_slave() {
 }
 
 #[test]
-fn discard_uses_the_seated_slave_without_a_bound_reply() {
+fn a_point_1_seat_without_a_master_bound_reply_is_silent() {
     let (state, _units) = setup(&[
         slave(20, 8, Vec3::new(1.0, 0.0, 0.0)),
         slave(21, 9, Vec3::new(2.0, 0.0, 0.0)),
@@ -717,16 +862,66 @@ fn discard_uses_the_seated_slave_without_a_bound_reply() {
             reason: 0,
         },
     );
-    assert_eq!(discard(&state), Outcome::Sent);
-    // the seat wins over a SCSlaveBound naming another slave
+    // `FUN_39345aa0` needs `this+0x14`: an SCSlaveBound naming the local player as master.
+    // Without it `FUN_39362170` sends nothing for an attachment at point 1.
+    assert_eq!(discard(&state), Outcome::Silent);
+    // The bound slave wins over the seat: `FUN_39345aa0` sends `this+0x14` (slave 20's
+    // timeline 8), not the seat's slave 21 (timeline 9).
     bound(&state, 20);
     assert_eq!(discard(&state), Outcome::Sent);
     assert_eq!(
         state.borrow().requests,
-        vec![
-            Request::Slave(SlaveCommand::Unbind { tl_id: 9 }),
-            Request::Slave(SlaveCommand::Unbind { tl_id: 9 }),
-        ]
+        vec![Request::Slave(SlaveCommand::Unbind { tl_id: 8 })]
+    );
+}
+
+/// `FUN_39345aa0` speed-checks the bound slave (`this+0x18`), not the seat's: a fast seat does
+/// not refuse a standing bound slave, and a fast bound slave refuses while the seat stands.
+#[test]
+fn the_unbind_speed_check_uses_the_bound_slave() {
+    let (state, _units) = setup(&[
+        slave(20, 8, Vec3::new(1.0, 0.0, 0.0)),
+        slave(21, 9, Vec3::new(2.0, 0.0, 0.0)),
+    ]);
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 21,
+            point: 1,
+            reason: 0,
+        },
+    );
+    bound(&state, 20);
+    let mut fast_seat = Movement::unit(Pos::default(), 0.0, 1);
+    fast_seat.velocity = [6 * 1024, 0, 0];
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitMoved {
+            obj_id: 21,
+            movement: fast_seat,
+        },
+    );
+    assert_eq!(
+        discard(&state),
+        Outcome::Sent,
+        "the seated slave 21 is fast, the bound slave 20 stands"
+    );
+    state.borrow_mut().requests.clear();
+
+    let mut fast_bound = Movement::unit(Pos::default(), 0.0, 2);
+    fast_bound.velocity = [6 * 1024, 0, 0];
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitMoved {
+            obj_id: 20,
+            movement: fast_bound,
+        },
+    );
+    assert_eq!(
+        discard(&state),
+        Outcome::Refused(MSG_SLAVE_SHUT_OFF_TO_UNBIND),
+        "the bound slave 20 is fast even though the seat 21 stands"
     );
 }
 
@@ -834,6 +1029,7 @@ fn a_ship_driver_leave_sends_the_final_helm_zero_before_the_unbind() {
             drives: true,
             cart: false,
             ship: true,
+            turret: false,
             speed: Default::default(),
             lift: 0.0,
         })))
@@ -1224,4 +1420,333 @@ fn the_driven_cart_uses_the_controller_speed() {
     assert_eq!(discard(&state), Outcome::Refused(0x67));
     state.borrow_mut().mounted.local_cart = Some((20, -4.0));
     assert_eq!(discard(&state), Outcome::Sent);
+}
+
+#[test]
+fn an_attached_child_bind_uses_its_world_point_not_the_local_offset() {
+    let parent = slave(60, 8, Vec3::new(-98.0, 0.0, 0.0));
+    let mut child = slave(7, 8, Vec3::new(100.0, 0.0, 0.0));
+    child.state_attachments = Some(UnitStateAttachments {
+        first_point: 3,
+        first_obj_id: Some(60),
+        bonding_obj_id: None,
+    });
+    let (state, units) = setup(&[parent, child]);
+    assert_eq!(
+        bind(&state, &units, 7),
+        Outcome::Sent,
+        "the child's world point is 2 m away; its local offset is 100 m"
+    );
+    let (state, units) = setup(&[slave(60, 8, Vec3::new(-98.0, 0.0, 0.0)), {
+        let mut child = slave(7, 8, Vec3::new(100.0, 0.0, 0.0));
+        child.state_attachments = Some(UnitStateAttachments {
+            first_point: 3,
+            first_obj_id: Some(60),
+            bonding_obj_id: None,
+        });
+        child
+    }]);
+    assert_eq!(
+        receive(&state, &units, &skill_list(7, &[12076])),
+        Outcome::Sent,
+        "the interaction range check also uses the child's world point"
+    );
+}
+
+/// A slave within `_DAT_399d3230` 6.25 -> 2.5 m surface gap is a candidate whatever the facing;
+/// the native key `gap - (1 + facing)` only orders the one set (`FUN_393601a0`,
+/// `FUN_3902ed20`). In front gives 0, beside 1 and behind 2 here.
+#[test]
+fn the_candidate_is_any_slave_in_front_beside_or_behind_within_2_5_metres() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(0.0, 2.0, 0.0))]);
+    state
+        .borrow_mut()
+        .game
+        .0
+        .set(crate::hud::data::GameData::default())
+        .ok()
+        .unwrap();
+    let candidate = super::candidate(&state.borrow(), &units).expect("2 m in front");
+    assert_eq!(candidate.obj_id, 20);
+    assert_eq!(candidate.skills, vec![12076]);
+    assert_eq!(candidate.template, 60);
+    assert_eq!(candidate.key, 0.0, "gap 2 - (1 + facing 1)");
+
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(0.0, 3.0, 0.0))]);
+    state
+        .borrow_mut()
+        .game
+        .0
+        .set(crate::hud::data::GameData::default())
+        .ok()
+        .unwrap();
+    assert_eq!(
+        super::candidate(&state.borrow(), &units),
+        None,
+        "3 m is past the 2.5 m candidate reach"
+    );
+
+    for (at, expected, label) in [
+        (Vec3::new(0.0, -2.0, 0.0), 2.0, "behind"),
+        (Vec3::new(2.0, 0.0, 0.0), 1.0, "beside"),
+    ] {
+        let (state, units) = setup(&[slave(20, 8, at)]);
+        state
+            .borrow_mut()
+            .game
+            .0
+            .set(crate::hud::data::GameData::default())
+            .ok()
+            .unwrap();
+        let candidate = super::candidate(&state.borrow(), &units)
+            .unwrap_or_else(|| panic!("{label}: {at:?} is within the reach"));
+        assert_eq!(candidate.obj_id, 20, "{label}");
+        assert_eq!(candidate.key, expected, "{label}: gap 2 - (1 + facing)");
+    }
+}
+
+/// While seated the HUD position and yaw can stay at the boarding point (the server moves only
+/// the slave): the candidate is measured from the attached unit's replicated position and yaw.
+#[test]
+fn the_candidate_is_measured_from_the_seat_and_its_facing() {
+    let (state, units) = setup(&[
+        slave(20, 8, Vec3::new(10.0, 10.0, 0.0)),
+        slave(21, 9, Vec3::new(10.0, 12.0, 0.0)),
+    ]);
+    state
+        .borrow_mut()
+        .game
+        .0
+        .set(crate::hud::data::GameData::default())
+        .ok()
+        .unwrap();
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 1,
+            reason: 1,
+        },
+    );
+    {
+        let mut data = state.borrow_mut();
+        data.pos = Vec3::new(10.0, 20.0, 0.0);
+        data.yaw = std::f32::consts::PI;
+    }
+    let candidate = super::candidate(&state.borrow(), &units).expect("2 m from the wagon");
+    assert_eq!(candidate.obj_id, 21);
+    assert_eq!(
+        candidate.dist, 2.0,
+        "from the wagon, not the stale HUD point"
+    );
+    assert_eq!(
+        candidate.key, 0.0,
+        "from the wagon's yaw, not the stale yaw"
+    );
+}
+
+/// `player+0x3b94` (`FUN_393635e0`): while sitting on a bonded seat doodad 1.2 builds no
+/// interaction candidate, so neither the slave prompt nor the doodad bar appears.
+#[test]
+fn no_candidate_while_sitting_on_a_seat_doodad() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(0.0, 1.0, 0.0))]);
+    state
+        .borrow_mut()
+        .game
+        .0
+        .set(crate::hud::data::GameData::default())
+        .ok()
+        .unwrap();
+    assert!(super::candidate(&state.borrow(), &units).is_some());
+    state.borrow_mut().doodad.seated = true;
+    assert_eq!(super::candidate(&state.borrow(), &units), None);
+}
+
+#[test]
+fn the_candidate_adds_the_passenger_seat_only_when_the_model_has_a_free_point_2() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(0.0, 1.0, 0.0))]);
+    {
+        let data = state.borrow_mut();
+        let mut game = crate::hud::data::GameData::default();
+        game.mode_actions.fixture_passenger_point(60, 1008, true);
+        data.game.0.set(game).ok().unwrap();
+    }
+    assert_eq!(
+        super::candidate(&state.borrow(), &units).unwrap().skills,
+        vec![12076, 13863]
+    );
+    // another unit on point 2 makes the seat not free (`FUN_390c9f40(2) == 0`)
+    let mut passenger = crate::hud::fixture_spawn().unit;
+    passenger.obj_id = 30;
+    passenger.attached_to = Some(Attachment {
+        obj_id: 20,
+        point: 2,
+        reason: 0,
+    });
+    let mut units = units;
+    units.by_id.insert(30, passenger);
+    assert_eq!(
+        super::candidate(&state.borrow(), &units).unwrap().skills,
+        vec![12076]
+    );
+}
+
+#[test]
+fn no_candidate_while_riding_a_mate_or_bound_to_the_slave() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(0.0, 1.0, 0.0))]);
+    state
+        .borrow_mut()
+        .game
+        .0
+        .set(crate::hud::data::GameData::default())
+        .ok()
+        .unwrap();
+    let mut mate = crate::hud::fixture_spawn().unit;
+    mate.obj_id = 40;
+    mate.kind = UnitKind::Mate {
+        tl_id: 9,
+        template_id: 1,
+        owner_id: 100,
+    };
+    crate::hud::mounted::receive(&state, &Event::UnitSpawned(Box::new(mate)));
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 40,
+            point: 1,
+            reason: 0,
+        },
+    );
+    assert!(state.borrow().mounted.riding_mate());
+    assert_eq!(
+        super::candidate(&state.borrow(), &units),
+        None,
+        "riding a mate"
+    );
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitDetached {
+            obj_id: 100,
+            reason: 0,
+        },
+    );
+    bound(&state, 20);
+    assert_eq!(
+        super::candidate(&state.borrow(), &units),
+        None,
+        "bound to that slave"
+    );
+}
+
+#[test]
+fn the_unbind_function_slot_sends_cs_discard_slave() {
+    let (state, units) = setup(&[slave(20, 8, Vec3::new(1.0, 0.0, 0.0))]);
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 1,
+            reason: 1,
+        },
+    );
+    bound(&state, 20);
+    let outcome = crate::hud::mode_actions::run_function(
+        &mut state.borrow_mut(),
+        crate::hud::mode_actions::Function::Unbind,
+        Instant::now(),
+    );
+    assert_eq!(outcome, Outcome::Sent);
+    assert_eq!(
+        state.borrow().requests,
+        vec![Request::Slave(SlaveCommand::Unbind { tl_id: 8 })]
+    );
+    assert!(matches!(
+        send(&state, &units).as_slice(),
+        [Command::Slave(SlaveCommand::Unbind { tl_id: 8 })]
+    ));
+}
+
+#[test]
+fn the_unbind_function_slot_refuses_above_five_metres_per_second_with_0x67() {
+    let (state, _units) = setup(&[slave(20, 8, Vec3::new(1.0, 0.0, 0.0))]);
+    let rt = runtime();
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 1,
+            reason: 1,
+        },
+    );
+    bound(&state, 20);
+    let mut movement = Movement::unit(Pos::default(), 0.0, 1);
+    movement.velocity = [6 * 1024, 0, 0];
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitMoved {
+            obj_id: 20,
+            movement,
+        },
+    );
+    let outcome = crate::hud::mode_actions::run_function(
+        &mut state.borrow_mut(),
+        crate::hud::mode_actions::Function::Unbind,
+        Instant::now(),
+    );
+    assert_eq!(outcome, Outcome::Refused(0x67));
+    assert!(state.borrow().requests.is_empty());
+    crate::hud::mode_actions::ready(Some(&rt), &state);
+    rt.lua
+        .load("assert(sys[1]=='text:SLAVE_SHUT_OFF_TO_UNBIND')")
+        .exec()
+        .unwrap();
+}
+
+#[test]
+fn a_passenger_unbind_is_throttled_to_1500_ms_without_a_speed_check() {
+    let (state, _units) = setup(&[slave(20, 8, Vec3::new(1.0, 0.0, 0.0))]);
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitAttached {
+            obj_id: 100,
+            mount: 20,
+            point: 2,
+            reason: 0,
+        },
+    );
+    let mut movement = Movement::unit(Pos::default(), 0.0, 1);
+    movement.velocity = [6 * 1024, 0, 0];
+    crate::hud::mounted::receive(
+        &state,
+        &Event::UnitMoved {
+            obj_id: 20,
+            movement,
+        },
+    );
+    let start = Instant::now();
+    let run = |at| {
+        crate::hud::mode_actions::run_function(
+            &mut state.borrow_mut(),
+            crate::hud::mode_actions::Function::Unbind,
+            at,
+        )
+    };
+    assert_eq!(run(start), Outcome::Sent, "no speed check in FUN_39362170");
+    assert_eq!(
+        run(start + Duration::from_millis(500)),
+        Outcome::Silent,
+        "inside the 1500 ms window"
+    );
+    assert_eq!(run(start + Duration::from_millis(1500)), Outcome::Sent);
+    assert_eq!(
+        state.borrow().requests,
+        vec![
+            Request::Slave(SlaveCommand::Unbind { tl_id: 8 }),
+            Request::Slave(SlaveCommand::Unbind { tl_id: 8 }),
+        ]
+    );
 }
