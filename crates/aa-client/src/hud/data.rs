@@ -248,11 +248,20 @@ pub struct GameData {
     pub(super) vehicle_boxes: Mutex<HashMap<u32, Option<(Vec3, Vec3)>>>,
     /// `zones.zone_key` -> (zone group id, protecting faction id).
     pub zones: HashMap<u32, (u32, u32)>,
+    /// `conflict_zones.zone_group_id` -> (`closed`, `peace_protected_faction_id`): the static
+    /// conflict-zone row (`FUN_397f2080`). A group without a row is a home zone.
+    pub conflict_zones: HashMap<u32, (bool, u32)>,
     /// `zone_groups.id` -> name, map rectangle.
     pub zone_groups: HashMap<u32, ZoneGroup>,
+    /// `zones.zone_key` -> `zones.zone_climate_id` (`FUN_39032470`).
+    pub zone_climate: HashMap<u32, u32>,
+    /// `zone_climate_elems.zone_climate_id` -> its `climate_id`s.
+    pub zone_climate_elems: HashMap<u32, Vec<u32>>,
     /// Item grades by the number the server and the icons use (`item_grades.grade_order`): English name and
     /// colour (`FFBA976D`).
     pub grades: HashMap<i64, (String, String)>,
+    /// `item_grades.id` -> `refund_multiplier` (100 = the template refund): the fish refund at a grade.
+    pub refund_multipliers: HashMap<u32, f32>,
     /// `world_groups.id` -> map rectangle: 2 the world, 3 / 4 / 5 the western / eastern / origin continent.
     pub world_rects: HashMap<u32, [f32; 4]>,
     /// `system_factions.id` -> English name.
@@ -783,6 +792,31 @@ impl GameData {
             }
         }
         {
+            let mut q = conn.prepare("SELECT zone_group_id, closed, peace_protected_faction_id FROM conflict_zones")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                let Some(group) = r.get::<_, Option<u32>>(0)? else { continue };
+                data.conflict_zones.insert(group, (any_flag(r, 1)?, any_int(r, 2)?.max(0) as u32));
+            }
+        }
+        {
+            let mut q = conn.prepare("SELECT zone_key, zone_climate_id FROM zones WHERE zone_climate_id IS NOT NULL AND zone_climate_id <> 0")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                data.zone_climate.insert(r.get(0)?, r.get(1)?);
+            }
+        }
+        {
+            let mut q = conn.prepare("SELECT zone_climate_id, climate_id FROM zone_climate_elems")?;
+            let mut rows = q.query([])?;
+            while let Some(r) = rows.next()? {
+                data.zone_climate_elems
+                    .entry(r.get(0)?)
+                    .or_default()
+                    .push(r.get(1)?);
+            }
+        }
+        {
             let mut q = conn.prepare("SELECT id, name, display_text, x, y, w, h FROM zone_groups")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
@@ -799,11 +833,12 @@ impl GameData {
             }
         }
         {
-            let mut q = conn.prepare("SELECT id, grade_order, color_argb FROM item_grades")?;
+            let mut q = conn.prepare("SELECT id, grade_order, color_argb, refund_multiplier FROM item_grades")?;
             let mut rows = q.query([])?;
             while let Some(r) = rows.next()? {
                 let id: u32 = r.get(0)?;
                 data.grades.insert(any_int(r, 1)?, (name("item_grades", id, None), r.get::<_, Option<String>>(2)?.unwrap_or_default()));
+                data.refund_multipliers.insert(id, any_int(r, 3)? as f32);
             }
         }
         {
