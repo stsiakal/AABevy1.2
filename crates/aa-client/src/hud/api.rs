@@ -46,6 +46,9 @@ pub enum Request {
     SetActionBarPage { page: u8 },
     /// `HUD.request("use_bag", slot)`: a right click on the bag item in real slot `slot` (1 based).
     UseBag { slot: usize },
+    /// `HUD.request("use_equip", slot)`: use the item worn in equipment slot `slot` (1 based,
+    /// `X2Equipment.UseEquippedItemByType`).
+    UseEquip { slot: usize },
     /// `HUD.request("resurrect", inPlace)`: the death window's buttons (`X2Player:Resurrect(inPlace)`).
     Resurrect { in_place: bool },
     LearnSkill { id: u32 },
@@ -150,6 +153,11 @@ pub struct HudData {
     pub loot: super::loot::LootView,
     /// The NPC talked to, the quest dialog and the quest rows the scripts read (`dialog.rs`).
     pub dialog: super::dialog::DialogView,
+    /// The areas `SCShowQuestArea` placed (drawn by `quest_areas.rs`), oldest first, append only
+    /// (capped at 256).
+    pub quest_areas: Vec<aa_net::quest::QuestArea>,
+    /// Bumped when an area is added, so `quest_areas.rs` rebuilds its geometry.
+    pub quest_area_version: u64,
     /// The player is away from the keyboard ("-Away-" under the name plate, `plates::track_idle`).
     pub afk: bool,
     /// When the player may stand up again after dying (HUD clock, ms): `X2Player:GetResurrectionCountdown` counts down to it.
@@ -250,6 +258,8 @@ impl Default for HudData {
             casts: Default::default(),
             loot: Default::default(),
             dialog: Default::default(),
+            quest_areas: Vec::new(),
+            quest_area_version: 0,
             afk: false,
             death_ends: Default::default(),
             death_started: Default::default(),
@@ -314,6 +324,63 @@ const INGAME_LUA: &str = include_str!("ingame.lua");
 pub(super) const RESURRECT_RETRY_MS: u64 = 10_000;
 /// Where the road map images sit in the roadmap window (generated from the client's `map/road_map_list.lua`).
 const ROAD_FRAMES_LUA: &str = include_str!("road_frames.lua");
+
+/// `X2Time.GetLocalTime` / `TimeToDate`: the report and mail windows' date fields. The native
+/// `GetLocalTime` (`FUN_394b33b0`) formats the current file time with `XlUI64toA` and returns a
+/// decimal string, which `TimeToDate(timeString)` (`FUN_394b3600`) parses back with `XlAtoUI64`;
+/// this returns the Unix seconds as that string and takes a string or a number. The native reads
+/// the local clock; this uses UTC (no time zone database: no crate in the build gives the local
+/// offset on the desktop), so a shown time is off by the player's UTC offset.
+fn install_time(lua: &Lua) -> mlua::Result<()> {
+    let time: Table = lua.globals().get("X2Time")?;
+    time.set(
+        "GetLocalTime",
+        lua.create_function(|_, _: MultiValue| {
+            let secs = web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            Ok(secs.to_string())
+        })?,
+    )?;
+    time.set(
+        "TimeToDate",
+        lua.create_function(|lua, (_this, ts): (Value, Value)| {
+            let ts = match ts {
+                Value::String(s) => s.to_str().ok().and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0),
+                Value::Integer(n) => n,
+                Value::Number(n) => n as i64,
+                _ => 0,
+            };
+            let days = ts.div_euclid(86_400);
+            let secs = ts.rem_euclid(86_400);
+            let z = days + 719_468;
+            let era = z.div_euclid(146_097);
+            let doe = z - era * 146_097;
+            let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+            let mut year = yoe + era * 400;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let day = doy - (153 * mp + 2) / 5 + 1;
+            let mut month = mp + if mp < 10 { 3 } else { -9 };
+            if month <= 2 {
+                year += 1;
+            }
+            if month <= 0 {
+                month += 12;
+            }
+            let t = lua.create_table()?;
+            t.set("year", year)?;
+            t.set("month", month)?;
+            t.set("day", day)?;
+            t.set("hour", secs / 3_600)?;
+            t.set("minute", (secs / 60) % 60)?;
+            t.set("second", secs % 60)?;
+            Ok(t)
+        })?,
+    )?;
+    Ok(())
+}
 
 /// Install the game API into a fresh runtime, before the stage's scripts run.
 pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
@@ -422,6 +489,9 @@ pub fn install(rt: &mut UiRuntime, bridge: &Shared) -> mlua::Result<()> {
     super::appellation::install(lua, bridge)?;
     super::portal::install(lua, bridge)?;
     super::doodad::install(lua, bridge)?;
+    super::books::install(lua, bridge)?;
+    super::ucc::install(lua)?;
+    install_time(lua)?;
     super::store::services::load_script(lua)?;
     super::duel::install(lua, bridge)?;
     super::trial::install(lua, bridge)?;
@@ -518,6 +588,7 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                     slot: num(1) as usize },
                 "use_pet_action" => Request::UsePetAction { slot: num(1).max(1) as usize },
                 "use_bag" => Request::UseBag { slot: num(1).max(1) as usize },
+                "use_equip" => Request::UseEquip { slot: num(1).max(1) as usize },
                 "resurrect" => Request::Resurrect { in_place: num(1) != 0 },
                 "learn_skill" => Request::LearnSkill { id: num(1).max(0) as u32 },
                 "learn_buff" => Request::LearnBuff { id: num(1).max(0) as u32 },
@@ -527,18 +598,18 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                     let npc_token = if old == super::skillbook::NO_ABILITY {
                         None
                     } else {
-                        let Some(scope) = super::store::services::allows(&b.borrow(), super::store::services::ABILITY) else { return Ok(()) };
+                        let Some(scope) = super::store::services::allows(&b.borrow(), super::store::services::ABILITY) else { return Ok(false) };
                         Some(scope.token())
                     };
                     Request::SwapAbility { old, ability: num(2).clamp(0, 255) as u8, npc_token }
                 },
                 other => {
                     warn!("hud: unknown request {other:?}");
-                    return Ok(());
+                    return Ok(false);
                 }
             };
             b.borrow_mut().requests.push(request);
-            Ok(())
+            Ok(true)
         })?,
     )?;
     // `X2Action:GetActionBarPage` / `SetActionBarPage`: the scripts' page API is 1 based, the
@@ -644,6 +715,13 @@ fn install_functions(lua: &Lua, hud: &Table, bridge: &Shared) -> mlua::Result<()
                 info.map(|i| i.level),
             ))
         })?,
+    )?;
+    // `items.impl_id` (`ItemImplEnum`): `X2Quest.IsQuestStartItem` is `impl_id` 10
+    // (`FUN_3949c880`).
+    let b = bridge.clone();
+    hud.raw_set(
+        "item_impl",
+        lua.create_function(move |_, id: u32| Ok(b.borrow().game.get().and_then(|g| g.items.get(&id)).map(|i| i.impl_id)))?,
     )?;
     // the player's Character Info numbers (`tipcalc/charstats.rs`): UnitInfo / UnitModifierInfo
     for (name, modifiers) in [("player_info", false), ("player_modifiers", true)] {
@@ -1255,6 +1333,11 @@ pub fn handle_requests(
                 let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
                 panels::use_bag_slot(slot - 1, &env, &flight, &inventory, &target, &mut pressed, &mut failed);
             }
+            Request::UseEquip { slot } => {
+                let data = bridge.0.borrow();
+                let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
+                panels::use_equipped_slot(slot - 1, &env, &flight, &inventory, &target, &mut pressed, &mut failed);
+            }
             Request::Resurrect { in_place } => {
                 // `FUN_39186e70` (`X2Player:Resurrect`): the native sends only while the death
                 // timestamp is set and the server's resurrect wait has run out; an in-place
@@ -1308,11 +1391,25 @@ pub fn mark_pushed(bridge: &Shared) {
 
 /// Push what changed into the Lua state and raise the events the scripts listen for.
 pub fn push_changes(rt: &UiRuntime, bridge: &Shared) {
-    super::mode_actions::push_slots(rt, bridge);
-    super::pets::push(rt, bridge);
-    push_state(rt, bridge);
+    use aa_cry::prof::scope;
+    {
+        let _t = scope("hud.push.mode_slots");
+        super::mode_actions::push_slots(rt, bridge);
+    }
+    {
+        let _t = scope("hud.push.pets");
+        super::pets::push(rt, bridge);
+    }
+    {
+        let _t = scope("hud.push.state");
+        push_state(rt, bridge);
+    }
     // after the state: the character window's handler reads HUD.state (level, ...)
-    push_character_stats(rt, bridge);
+    {
+        let _t = scope("hud.push.stats");
+        push_character_stats(rt, bridge);
+    }
+    let _t = scope("hud.push.panels");
     push_panels(rt, bridge);
 }
 
@@ -1358,6 +1455,7 @@ fn push_panels(rt: &UiRuntime, bridge: &Shared) {
     }
     let lua = &rt.lua;
     let Ok(hud) = lua.globals().raw_get::<Table>("HUD") else { return };
+    let push_timer = aa_cry::prof::scope("hud.panels.push");
     let changed = match panels::push(lua, &hud, &new, Some(&old)) {
         Ok(c) => c,
         Err(e) => {
@@ -1365,11 +1463,15 @@ fn push_panels(rt: &UiRuntime, bridge: &Shared) {
             return;
         }
     };
+    drop(push_timer);
+    let slots_timer = aa_cry::prof::scope("hud.panels.refresh_slots");
     if changed.slots
         && let Err(e) = rt.refresh_slots()
     {
         warn!("hud: refresh slots: {e}");
     }
+    drop(slots_timer);
+    let _target_timer = aa_cry::prof::scope("hud.panels.target_events");
     if changed.bank {
         rt.fire_event("BANK_UPDATE", (-1i64, -1i64));
     }
@@ -1401,10 +1503,13 @@ fn push_state(rt: &UiRuntime, bridge: &Shared) {
     let Some(old) = old else { return };
     let lua = &rt.lua;
     let Ok(hud) = lua.globals().raw_get::<Table>("HUD") else { return };
+    let snapshot_timer = aa_cry::prof::scope("hud.state.snapshot");
     if let Err(e) = push_snapshot(lua, &hud, &new) {
         warn!("hud: state: {e}");
         return;
     }
+    drop(snapshot_timer);
+    let _events_timer = aa_cry::prof::scope("hud.state.events");
     let script_id = super::unit_id::from_private(&new.unit_id).unwrap_or_default();
     let id = script_id.as_str();
     if (old.hp, old.max_hp) != (new.hp, new.max_hp) {
@@ -1650,6 +1755,21 @@ mod tests {
             bridge.borrow().requests,
             vec![Request::UsePetAction { slot: 2 }]
         );
+    }
+
+    #[test]
+    fn bag_use_by_type_sees_the_queued_use_through_every_use_slot_wrapper() {
+        // `X2Bag:UseItemByType` reads `AAUI.UseSlot`'s answer: the skillbook and look-conversion wrappers pass it through.
+        let mut rt = UiRuntime::new("en_us", 1280.0, 720.0).unwrap();
+        let bridge = Rc::new(RefCell::new(HudData::default()));
+        install(&mut rt, &bridge).unwrap();
+        rt.lua.load(r#"
+            HUD.bag_slots = 4
+            HUD.bag = { [1] = { id = 777, count = 1 } }
+            assert(X2Bag:UseItemByType(777) == true)
+            assert(X2Bag:UseItemByType(9) == false)
+        "#).exec().unwrap();
+        assert_eq!(bridge.borrow().requests, vec![Request::UseBag { slot: 1 }]);
     }
 
     #[test]

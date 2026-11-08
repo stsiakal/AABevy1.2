@@ -403,7 +403,9 @@ An item slot is dark when its stack is empty or its use skill is (a potion goes 
 global cooldown are not reasons: their sweeps show them.
 
 Before it sends `UseSkill` / `UseItem`, `use_slot` / `use_bag_slot` ask the same rules (`Env::precheck`): a use that cannot work is
-not sent and says why. The shared `ground_target::route` then applies the 1.2 linked-item rule (`FUN_393925c0`,
+not sent and says why; the skill's own cooldown (`COOLDOWN_TIME`) is asked there too, ahead of the mana as `FUN_390b7b00` does
+(the cooldown at 390B7D51, the cost at 390B7D7E), so a skill on its cooldown with too little mana says "Can't be used right now."
+whether or not the GCD runs. The shared `ground_target::route` then applies the 1.2 linked-item rule (`FUN_393925c0`,
 `ingame::linked_skill`): a skill with `skills.link_equip_slot_id` (14901 "Use Glider") is cast as the equipped item's use skill
 with the item as caster, and an empty slot, an unknown item template (743838-743839) or a wrong-type slot raises the local 326
 `MUST_EQUIP_PROPER_ITEM` with no packet. This
@@ -416,8 +418,7 @@ is refused as `URK_EQUIP_ITEM` with no packet (never an Item cast with skill 0).
 right now."; any remaining time of it counts, also one as short as the global cooldown). The log has one line per change of the dark set:
 `hud: dark slots [(2, "TOO_FAR_RANGE"), (4, "TOO_FAR_RANGE")]; target Some("Solzreed Fox") at Some(11.7) m`.
 
-Holding a key or clicking fast must not flood the server, so a press is first held back without a word (`Env::held_back`, no
-`UseFailed`, nothing sent), by any of:
+Holding a key or clicking fast must not flood the server, so a press is first held back (`Env::held_back`, nothing sent), by any of:
 
 * the skill is the cast or channel the player is in the middle of (the slot stays lit, but a second press would only be refused);
 * the global cooldown of the last own cast has more than 100 ms left (`Env::gcd_left`, the estimate `cooldown::gcd_at` also draws
@@ -429,7 +430,29 @@ Holding a key or clicking fast must not flood the server, so a press is first he
   player started) or `last_failure` (the server refused one) is newer than it, or after 500 ms. Presses of ignore-gcd skills neither
   set it nor wait for it.
 
-The server holds these back as well (`COOLDOWN_TIME` during the global cooldown); the client just does not ask.
+A held-back press still shows the native refusal (`Env::held_back_refusal` -> `UseFailed`, still nothing sent). The native
+unit skill check behind the `CanUseSkill` accessor (`FUN_390b7b00`, disassembled at 390B7B00-390B7DC9) asks, in this order:
+the prison (0x1a), the player's life (`SOURCE_ALIVE` 3 / `SOURCE_DIED` 2), 0x29 and 0x28, the buff restrictions (stun
+`CANNOT_CAST_IN_STUN` 0x13, blank-minded 0x16, silence 0x17, crippled 0x18), none of them gated by the caller's check flags;
+then any ongoing cast, `ON_CASTING` 7 ("Already performing an action."), written for the cast handle (`+0x3ac4`/`+0x3ac8`, the
+Lua `IsCasting`) and the channel handle (`+0x3acc`/`+0x3ad0`, `IsChanneling`) alike: nothing in the function writes
+`CANNOT_CAST_IN_CHANNELING` 0x19, so a press inside the GCD during another skill's channel says `ON_CASTING` too (a
+`stop_channeling` skill still passes, since the caller's 0x800 cast-check flag, from the VM-obfuscated `CanUseSkill`, is
+unrecovered; `why_not`/`precheck` after the GCD still say 0x19 for a channel, a follow-up); then `COOLDOWN_TIME` 8 with `FUN_3989a400`
+(1931224-1931240): the skill's own/tag cooldown is detail 1 and only when that is done, for a skill that does not ignore the
+GCD (`+0xdc == 0`), the running global cooldown is detail 2; then mana (`LACK_MANA` 0xb). `held_back_refusal` follows it: the
+life and buff rules (`why_not`'s, the dead player skipping the buff rules), then the cast, then the cooldowns; the prison, 0x29
+and 0x28 have no client data. A player stunned inside the GCD therefore hears the stun, not the cooldown. `FUN_39390900`
+(742279) prints the text through `FUN_39897990`'s result names and hides only result 8 detail 2, so a GCD-only press is silent
+natively; detail 1 prints `skill_cooldown_time` ("Can't be used right now."). Nothing
+on the bar press path (`FUN_393989e0` 748802-748918 -> `FUN_39390900`) writes `NOT_NOW` 0x2c: the 0x2c writers are the
+pet/mate-bar checks. The 2026-11-03 capture pressed Charge five times in one GCD: one `CSStartSkill`, no queue, and "Can't be
+used right now." at 185.5-190 s because Charge was on its own 12 s cooldown (detail 1); B4's press 0.44 s into the Insidious
+Whisper cast, another skill's cast inside the GCD, showed "Already performing an action." (the cast check comes first). The
+auto attack latch and an unanswered press stay silent, as `FUN_393989e0` returns without a result for the latch and the
+in-flight wait is this client's own guard. The `ingame/combat.rs` clip half of the acceptance-batch regression
+(`the_charge_acceptance_plot_step_starts_the_clip_without_a_start_or_fire`) returns early when the game data or the base
+rig/CAL is missing, so it passes vacuously in such runs; the `aa-net` state half always checks the GCD, cooldown and cast.
 
 Checked on the lane server with account `bevyhud` (`shots/hud/r5/`): a fox 10.7 m away darkens Triple Slash, Melee Attack and Kick but not
 Shoot Arrow (range 20, bow worn) (`far.png`); the angry rat walking up lights them one by one (log); `--hud-sim mp=10` darkens only
@@ -452,7 +475,8 @@ prints the text `skill_<name>` of the system texts through `formatSkillMessage`,
 (`systemAlertWindow:AddMessageRefresh`). `arg1` names the item or buff a requirement wants. Texts seen: `NO_TARGET` "Select a target.",
 `TOO_FAR_RANGE` "Target is too far.", `TOO_CLOSE_RANGE` "Target is too close.", `LACK_MANA` "Insufficient mana to use this.",
 `INVALID_TARGET` "Invalid target.", `SOURCE_DIED` "Can't be used while dead.", `SOURCE_ALIVE` "Can only be used while dead.",
-`URK_COMBAT` "Can't be used in combat.", `ON_CASTING` "Already performing an action.", `COOLDOWN_TIME` "Can't be used right now.".
+`URK_COMBAT` "Can't be used in combat.", `ON_CASTING` "Already performing an action.", `COOLDOWN_TIME` "Can't be used right now.",
+`NOT_NOW` "Can't be used right now.".
 
 A refusal also speaks: the character's `<race>_<gender>_system_message` sound pack (86 to 98, `sound_packs`) has one voice line per
 result (`FAILURE`, `NO_TARGET`, `LACK_HEALTH`, `LACK_MANA`, `OBSTACLE`, `OUTOF_HEIGHT`, `TOO_CLOSE_RANGE`, `OUTOF_ANGLE`; all the
@@ -603,6 +627,174 @@ clears the NPC before raising the event, and skips a second event while directin
 a Reward step has `QuestActSupplySelectiveItem` and no reward is selected, and error 12 when the quest is
 in progress and not let-it-done. Nothing is sent for those. Local refusal events fire after the
 HUD state is released so the original handlers can query it and close their window.
+
+### Quest items on the tracker
+
+`quest.lua` serves the original `quest_context_notifier.alb` and `centermessage/additem.alb` calls:
+
+* `X2Quest:GetUseTypeQuestItems(qtype, checkState)` (`FUN_394a55a0`): the kind-3 `SupplyItem`
+  targets with `show_action_bar`, then the Progress `ObjItemUse` targets. With `checkState` it
+  answers nil for a quest in status 2/3/4, or for a completed non-repeatable quest (the completed
+  bit is ignored when `quest_contexts.repeatable` is set). An empty list is nil too
+  (`FUN_394a55a0` builds the table only for a non-empty list).
+* `X2Quest:GetUseTypeQuestItemsByObjIndex(qtype, objIdx)` (`FUN_394a58d0`): the supplied items
+  assigned to objective `objIdx` plus that objective's `ObjItemUse` items. The index is 1 based over
+  the not-done Progress components (the native increments before comparing); the counted act types
+  are the set `FUN_397d6640` builds for `FUN_397d5b90` (the `FUN_397d3370` types plus `ObjAggro`,
+  which `FUN_397d3370` never meets, so an aggro step is never done). A supply item is
+  assigned by `FUN_394a2930`'s first test: the item's use skill's `skill_products` (the native
+  skill list at `+0x1f8`) name one of the objective's act item ids; objective 1 takes the ones
+  unrelated to any other objective. Its second test (effect list `+0x1e8`, effect `+0x1c` type 0x18
+  sub-type 0x1b, the contains checks) is not recovered. `ObjItemGather` / `EtcItemObtain` only feed
+  that relation and are never returned (and are not use-skill filtered). An unknown template
+  answers an empty table.
+* Every item must pass `FUN_394a55a0`'s filter (also `FUN_3949e280` / `FUN_394a58d0`): the item exists
+  (`FUN_39695dc0`) and has a `use_skill_id` (`+0x98`); the skill itself is not resolved, so quest
+  1010's item 13919 and quest 1394's item 14177 count although their use skills have no `skills` row.
+  Only the supply relation (`FUN_394a2930`) resolves the skill.
+* `X2Quest:IsQuestStartItem(itemType)` (`FUN_3949c880`): the item's `items.impl_id` is 10.
+* `X2Quest:IsUseItemInActiveQuest(itemType)` (`FUN_3949e280`): the item is a `SupplyItem` or an
+  `ObjItemUse` target of an active quest, with the same use-skill filter.
+* `X2Quest:NowIsAggroComponent` (`FUN_394a53c0`) takes the first act in `FUN_397d5b90`'s counted
+  set, not the first act: the set `FUN_397d6640` builds (the `FUN_397d3370` types plus `ObjAggro`).
+* `X2Bag:FindFirstBagSlotItemByItemType` / `UseItemByType` (`FUN_3944dee0` / `FUN_3944d590`) and
+  `X2Equipment:FindEquippedItemByType` / `UseEquippedItemByType` (`FUN_3946ee10` /
+  `FUN_39470aa0`): the item button's `UpdateUsage` / `OnClick`; using it goes through the normal
+  bag / worn item use (`HUD.request("use_bag")` / `"use_equip"`). The tests drive the original
+  notifier helper (proto 47) and the original added-item message. `UseEquippedItemByType` is false,
+  and nothing is sent, when `FUN_3946e770` refuses the worn item: its `items.impl_id` is not 1, 2, 22
+  or 24 (Lua), or its use skill does not resolve (`panels::use_equipped_slot`). The skill is
+  `items.use_skill_id`: `FUN_397cf7a0`'s `item_grade_skills` choice for impl 1 / 2 / 24 and the
+  "Fists" refusal are not modelled (no tracker item in the DB has grade skills). A worn item whose
+  skill does not resolve still answers true in Lua, as the check runs after the request.
+
+### Restarting a main quest
+
+`X2Quest:QuestContextRestart(qtype)` (`FUN_3949b780` -> `FUN_3937b200`) sends `CSRestartMainQuest`
+0x0fd (one `u32` quest id). `FUN_3937b200` first ignores a quest that is not active or already
+completed (silently, without touching the throttle); `FUN_3937a8d0` then applies the 3 s throttle
+(`DAT_39ac7598`), the main-quest detail (`detail_id` 2) and at least as many free bag slots as the
+kind-3 `SupplyItem` counts it hands out again (error 5; a missing/non-main template is error 0xc
+through `QUEST_ERROR_INFO`). The server answers with a normal Started / Updated, so the journal and
+tracker follow through `sync_quests`.
+
+`FUN_3937b200` also sets the restart flag `byte_3a173744` for any active, not completed quest, before
+the throttle and the error 5 / 0xc checks, so the flag is set even when the send is refused
+(`DialogView::restart_pending`). The next Started (`FUN_3937b5b0`) raises `QUEST_CHAT_RESTART` (246)
+and clears the flag instead of running the start component's follow-up (`FUN_39378580`: its
+`DOODAD_PHASE_MSG` lines, voice and queued directing task, not modelled in Bevy). A Started of a
+hidden quest (detail 5, `FUN_397d3540`) takes the other branch and leaves the flag alone. No original
+script registers 246, so nothing visible changes yet.
+
+### Hidden-report and task quests
+
+The server does not send these windows: the client raises the events from the quest packet handlers.
+`sync_quests` now matches them:
+
+* a Started packet whose quest is hidden (`quest_contexts.detail_id` 5) raises only
+  `QUEST_HIDDEN_READY` when it is already ready (status 3), with no `QUEST_CONTEXT_UPDATED`
+  "started", no condition event and no started jingle; every started task quest (6) raises
+  `QUEST_TASK_STARTED` (`FUN_3937b5b0`; no 1.2 script registers the task-started event, but the
+  native raises it);
+* an Updated packet that leaves a task quest ready raises `QUEST_TASK_READY`; a hidden quest raises
+  only `QUEST_HIDDEN_READY` when ready, and skips the normal "updated", objective and "dropped"
+  events and the dropped jingle (`FUN_3937bdf0` jumps past them; the failed jingle comes before
+  that test and still plays);
+* a Completed packet for a hidden quest raises `QUEST_HIDDEN_COMPLETE` (`FUN_3937bb60`);
+* at world entry, and after every completion, the first active hidden quest that is ready raises
+  `QUEST_HIDDEN_READY` (`FUN_39376a70`, called from `FUN_3937bb60` and the world start).
+
+They fire in the native order: a start raises "started", `QUEST_TASK_STARTED`, then the
+"started" condition; an update raises `QUEST_TASK_READY` before "updated" and the objective events;
+a completion raises "completed", `QUEST_HIDDEN_COMPLETE`, the follow-up `QUEST_HIDDEN_READY`, then
+the "completed" condition.
+
+All four carry the quest id as the only argument. The original scripts then drive the windows:
+`quest_context_hidden_report.alb` calls `ShowHiddenQuestReport(qtype)` on the ready event and
+`HideHiddenQuestReport()` on the complete event, and `quest_context_task.alb` opens its report from
+`QUEST_TASK_READY` (its report registers that handler on the first open; the task marker's OnClick
+opens the journal or the report). The module tests load the World stage: the real
+`hiddenQuestReport` widget is hidden before `QUEST_HIDDEN_READY`, shown after it, and hidden again
+on `QUEST_HIDDEN_COMPLETE`; the task report is created hidden, a PROGRESS->READY transition through
+`sync_quests` raises `QUEST_TASK_READY` and shows it, and the marker's OnClick opens
+`taskQuest.journal`.
+
+The getters these windows read that were still stubs now follow the natives:
+
+* `X2Quest:GetFirstObjectiveCount(qtype)` (`FUN_394a4c30`): the amount of the first Progress
+  component's first counted act (`FUN_397d5b90` -> `FUN_397d3440`). `FUN_397d3440` has an amount
+  only for act types 0, 1, 2, 4, 5, 0x31 (`ObjZoneKill`, `count_pk + count_npc`) and 0x32
+  (`ObjCraft`); the others count 0, and a missing quest/Progress component/counted act answers 0.
+* `X2Quest:GetObjectiveComponentCount(qtype)` (`FUN_394a4ae0`): the template's Progress components
+  (not the objectives of the step the quest is at).
+
+### Score and linked quests
+
+* `X2Quest:IsScoreQuest(qtype)` (`FUN_397d3600`) is `quest_contexts.score > 0`.
+* `GetScoreQuestDoneScore` (`FUN_3949cc10`) is that `score` (0 without one).
+* `GetScoreQuestCurrentScore` (`FUN_3949cb00` -> `FUN_397d5c10`) multiplies each Progress
+  component's counter by its first counted act's amount for act types 0, 1, 2, 4, 5 and 0x2b; an
+  inactive or unknown quest answers 0. The native does not test `score`, so a quest with those acts
+  can answer above 0 without being a score quest (the scripts only ask after `IsScoreQuest`).
+* `GetScoreQuestObjective` (`FUN_3949ca70` -> `FUN_397d4660`) is the `quest_names` row with
+  `quest_name_kind_id` 2, else the empty string. `quest_contexts.name` is not used.
+* `GetLinkedQuestSummary` (`FUN_394a4dc0`) is the first Progress component's
+  `quest_component_texts` kind-4 text, else the first Ready component's, or nil. The native copies
+  the text (`FUN_3901aa10`) and expands its macros (`FUN_39435050`) before pushing the result, so
+  the getter returns the expanded text (for example `@NPC_NAME(614)` becomes the NPC's name).
+* `GetLinkedQuestObjectives` (`FUN_394a4fc0`) is an array of `{ obj, count }`, one row per Progress
+  component with a counted act; `count` is `FUN_397d3440`'s amount. A quest with no Progress
+  components lists each Ready component with the first of the locale's `report_alias` /
+  `talk_report_npc` / `find_report_doodad` texts (category 6) whose `[~qst_...~]` macro resolves,
+  and count 0. The macros (`FUN_392dd880` / `FUN_392dd910` / `FUN_392dd970`) read the first
+  `ConReportNpc` act of the quest's Ready components: its alias when `use_alias` is set (else the
+  first `ConReportDoodad` act's), its NPC's name, and the first `ConReportDoodad` act's doodad
+  name; Rust resolves them and Lua substitutes them, so quest 330 lists "Report to Woodcutter
+  Gallagher". When none resolves there is no row, as in the native. The substitution is plain
+  text: the Korean `|1과;와;` particle choice after the name is not applied (approximate). An
+  unknown quest answers nil. The objective text is the act alias, else the component's
+  kind-4 text, else the act description: the native formats the act through `FUN_392d9640` and
+  `objective_ptn`, whose alias substitution is not recovered, so the text is approximate.
+
+### Main-quest cutscene replay
+
+`X2Quest:GetMainQuestCutSceneReplayList()` (`FUN_39378e10` -> `FUN_393781a0`) returns nil when there
+is nothing to replay, else an array of `{ name, cinema }`. The native keeps a vector of
+(quest, cinema) pairs: `FUN_3937b540` appends a completed main quest's component cinemas whose
+`cinemas.replay` is set, once per component. `FUN_3937c940` clears and rebuilds it from the
+completed blocks on `SCCompletedQuests`, then sorts by `quest_contexts.chapter_idx` and `quest_idx`
+(`FUN_39377f30` compares the quest context's `+0x08` then `+0x24`; the stable order keeps a quest's
+components in component order). The native appends in template-table order, so Bevy walks the
+quests by ascending id and equal keys keep that order (quests 213, 2315 and 2350 at chapter 1,
+quest 8). That is exact for 32 entries or fewer, where MSVC's `std::sort` (`FUN_3937b130`) is an
+insertion sort; above that its introsort is not reproduced. A completion at runtime (`FUN_3937bb60` -> `FUN_3937b540` ->
+`FUN_3937b2d0` push_back) is appended unsorted until the next rebuild. The Bevy getter reads the
+same vector: `Event::CompletedQuests` rebuilds and sorts it, `Event::QuestCompleted` appends. When a
+component has no `quest_components.cinema_id`, `FUN_393780a0` falls back to the component's skill:
+the first `CinemaEffect` in `skill_effects` -> `effects.actual_id` -> `cinema_effects.cinema_id` ->
+`cinemas`, with the same `cinemas.replay` filter (quest 3556's component 17120 and skill 17610
+resolve to `sl_ha_024`).
+
+The Past tab (`quest_list/tab_past.alb`) lists `%d. <name>` and its replay button calls
+`X2Player:PlayCinema(<cinema>)`. `FUN_39495550` ignores the empty name, then `FUN_391e2a70` loads
+`worlds/main_world/cinemas/<name>.xml` and sends `CSStartedCinema` (0x0cf). Bevy's `play_cinema`
+uses the same `CinemaPlayer` as a quest movie (camera tracks, input block) and does not mark it
+played, so the same movie may be replayed; while a movie is already running it does nothing, like
+the native's early return. That shared player also sends `CSCompletedCinema` (0x0ce) at the end, as
+a quest movie does; the native replay path shows only the 0x0cf send, so the completion report for
+a replay is an inference, not captured.
+
+### Server-shown quest areas
+
+`SCShowQuestArea` 0x1af (`QuestArea` in aa-net) is a `u32` type, fixed-point Cry-space `i64` x /
+`i64` y, `f32` z and `f32` radius. `OnShowQuestArea` (`FUN_391df7b0` -> `FUN_393840b0`) appends
+`{type, position, radius}` to `DAT_3a173d80` (`FUN_393833f0` push_back, no replace). There is no
+debug-cvar gate: `FUN_393822f0` draws every frame a red (204, 49, 49, 255) sphere of that radius
+and a white `"stype: %u"` label: `FUN_3963b590(type)` reads the `spheres` table (`+0x9db4`) and only
+a found record (its first field, the id) gets a label. Bevy keeps the same append-only list (capped
+at 256) and, only with the `--quest-area-geometry` dev flag (the server never sends 0x1af),
+converts the position with `aa_world::cry_to_bevy`, draws the sphere, and puts the white label on
+the HUD layer in screen coordinates (`hud/quest_areas.rs`, scale `2^-44` from `FUN_3961de30`).
 
 ### Quest cinemas
 
@@ -1098,9 +1290,12 @@ the item-count query counts only nonzero instances with valid item definitions
 
 Ctrl-E opens the original mailbox locally. It chooses a currently visible NaviOpenMailbox
 function group within the lane's five-metre 2D send radius, when available; inbox reading also
-works without a mailbox. Native393b1040 emits numeric doodad ID plus boolean true; there is no
-invented interaction acknowledgement. The broader native interaction chooser and exact automatic
-end-distance behavior are still pending.
+works without a mailbox. The same window opens from the Mailbox doodad's own bar action
+(`DoodadFuncNaviOpenMailbox` maps to skill 11400; `hud/doodad/local.rs`). Native393b1040 emits
+numeric doodad ID plus boolean true; there is no invented interaction acknowledgement. Opened from
+the doodad, the mailbox is interaction state 4: it ends like the other doodad interactions, on
+walk-away or when another interaction opens (`INTERACTION_END`; see `docs/aa-client-doodads.md`).
+Ctrl-E's open has no such end yet.
 
 The NPC talk/use reach is the common interaction reach of `FUN_393bf270` / `FUN_39093860`: a 3D
 surface gap strictly under `DAT_39ac79fc` 9.0 (3.0 m), or `DAT_39ac7a00` 12.25 (3.5 m) for a **dead
@@ -1845,7 +2040,33 @@ mate attachment, including another owner's/passenger seat. PetState is a string,
 any seat on the same owned pet. GetMountSkill returns BOOL learned/needdiver and NUMBER skillUsable;
 required level is source-proven skills.ability_level. Live capture 2026-10-28: skillUsable is1 only
 while mounted (0 on foot); the target_type_id6 display-usability bypass (3933b7a7) stays ready in
-either state. The server's cooldowns are not modeled locally.
+either state.
+
+Pet slot cooldowns and auto-use (2026-11-06). `sub_3933c3b0` (x2game12.c:681096) answers a slot's cooldown as the
+larger of the mount skill's and that of the first `mount_attached_skills` rider skill whose attach point is the
+player's seat (1 while driving this mate, else 0; `sub_3989a3e0` on each), and none while the mate's level is under
+the skill's. The cast sends without a local cooldown refusal (`FUN_3933e630`), so it is display only.
+`HUD.pet_slot` sets `cd_end` / `cd_total` from `cooldown::mount_display_at` (the slave bar's estimate, which also
+holds the `SCMateState` seed with its received total, see docs/aa-net.md) against `cooldown::display_at` of that
+rider skill, and the pet `AAUI.SlotContent` wrapper turns them into the slot's `cooldown`. The slots ask for their
+content only on a refresh and a mate's cooldown changes no `Pet`, so `owned::push` compares the displayed slots'
+cooldowns each frame and refreshes the slots when one starts or ends (the slave bar's `slots_dirty`).
+
+A right click on a pet slot (`AAUI.UseSlot`, `HUD.pet_toggle_auto`) never casts: it runs the slot and level checks of
+the cast and then reads mate field `+52`, the AI mode. That field is the spawn's `userState` (`sub_3989a910` reads it
+at struct `+16`, `sub_3933fd00` passes it to `sub_3933ac10` as `a7`), `sub_3933c8f0` rewrites it on every mode
+command (0 stand, 1 passive, 2 protective, 3 aggressive) and the owner getting on the mate sets it to 0 until they get
+off (`sub_3933e600` saves it, `sub_3933e3a0` restores it). With the mode at 2 or more, `sub_3933c750` flips the slot's
+auto-use byte and `sub_3933bbf0` fires 282 `PET_AUTO_SKILL_CHANGED`; under 2 it fires 283
+`FAILED_TO_SET_PET_AUTO_SKILL` and changes nothing (the original `pet.lua` then says "Skills that require a rider
+can't be auto-cast." for a mountable pet and "Auto use is only allowed during attack and defense." for another).
+`X2Mate:GetAutoStartMountSkill(i)` returns the byte of displayed slot `i`. `sub_3933ac10` starts it at 1 only when
+the spawn's `itemId` (`+24` / `+28`) is 0 and never for a slot whose first attach row is not the driver's, so an
+item-summoned mate starts with every byte 0; a mode under 2 (stand, passive, riding) clears every byte
+(`sub_3933c4e0`). A mode command and getting on or off fire 282 again for a mate with a seatless skill (`+36`), so
+the bar re-reads the bytes. Approximate: action 3 is mapped to the right button (inferred); a toggle on a slot above
+the mate's level shows no 0x2c refusal (1.2 does, `LABEL_6`); the 282 of a mode change also needs the mate's AI
+table in 1.2, which is not modeled; the auto-used skills are not cast (needs the battle-pet AI).
 
 Rename uses the original dialog and sends the current mate timeline, with character/object/TL/
 stored-mate identity checked again at dispatch. Receipt remains name authority. Passive requests
@@ -3472,3 +3693,46 @@ helm camera is captured (doodads, 2026-10-30): camera mode 1, wanted = max 25.0 
 `cargo run -p aa-client --example options_hang -- --headless --mute` boots the real World-stage HUD,
 raises `open_config`, opens the original Options frame and fails if the open plus the next tick take
 more than 3 s. The incremental TextBox refit it guards is described in `docs/aa-ui.md`.
+
+## Local doodad-use gate and glider back slot (2026-11-06)
+
+`FUN_393b3d50` (`x2game12.c:784121`, called from the doodad-use paths `FUN_393b3ec0` and `FUN_393b7440`) refuses a doodad
+use before any packet. `sub_39428370` raises the alert and does not return, so each refusal is the only message:
+dead 332 (`player+0x3c26`), gliding 334 (buff list holds the gliding record `off_3999CFDC`), hanging 223; then a skill
+with `source_mount` (`desc +0x14B`, `skills.source_mount`, loader `39731870` column 0x61) passes. Any other use while
+the player is attached (`player+0x3af0`) refuses with 102 `SLAVE_UNBIND_FIRST` when the unit is a slave and 222
+`CANNOT_INTERACT_WHILE_MOUNTING` otherwise, except `source_mount_mate` skills (`desc +0x14C`, column 0x62) on a mate.
+If the option object `dword_39ADB2A0` (vfunc +8) returns 1 the messages are skipped and, within 3.0 m of the doodad
+(`sub_39093800`), the mate is left with `CSUnMountMate` reason 9 (`sub_39361E80(9)`) or the slave unbound
+(`sub_39345AA0`); in or out of the 3 m the function returns 1 and the use goes on. `FUN_393b3ec0` (the bar / key use)
+runs the gate before its range check, so a refused use never walks; `FUN_393b7440` (a pick from the interaction list)
+walks first and gates after its range check.
+
+`hud/doodad.rs` runs `use_gate` in `execute` before the labor and attachment checks, and for a bar use out of reach
+before `defer_action` starts the walk. The state comes from `HudData.snapshot.dead`, `Gliding::flying()`, a `Ladder`
+on the player and `LocalMount` / the spawn's `attached_to`; the unit is a slave when the seat is a cart, a ship or a
+turret (`LocalSeat.cart || ship || turret`, all `UnitKind::Slave`). The flags come from `Tables::mount_flags` (`skills.source_mount`, `source_mount_mate`; 1741
+skills have `source_mount` t only, 45 both, 10 `source_mount_mate` only); a skill missing from the table is left to the
+server. Refusals go through `ShowError` (an `ErrorMessageType`, as 102 is elsewhere) and send no `CSStartSkill`.
+
+`hud/drag.rs` (`FUN_394e41f0`): wearing a glider (`item_backpacks.backpack_type_id` 2) in the back slot while the
+worn backpack is a glider too raises 543 `CANNOT_CHANGE_BACKPACK_IN_GLIDING` during a flight and sends no `SwapItems`
+(bag move and equip alike). The decompile limits it to glider for glider; a worn backpack of another kind raises 315
+`BACKPACK_OCCUPIED` first, flying or not, which is not checked here (the server answers it). Taking the worn glider off
+into an empty bag slot is not refused locally either: both worn-slot moves (`FUN_394e88e0`, x2game12.c:1042630, and
+`FUN_394e8b30`) call `FUN_394e41f0` only for an item going into the worn slot; with an empty bag side they check only 323,
+208 and 202 (none of them the flight) and send, and 543 has no other raise site in x2game. So `Req::Unequip` in flight
+goes out and the player sees the server's 543, as in 1.2 (the live check's `HUD.drag_unequip(27)`, 2026-11-07,
+`data/local/transport/live/glider/s14.log`, is the original's behaviour).
+
+Approximate / capture-pending:
+
+* The auto-dismount option `dword_39ADB2A0` is not identified: `hud::doodad::View.auto_dismount` defaults off, so the message
+  branch runs. When on, only the mate (`unmount`, reason 9) is wired; the slave unbind is not. Out of 3 m the use goes
+  on still mounted, as natively. A bar use between the 2.1 m reach and 3 m walks first and dismounts on arrival, where
+  the native client dismounts before the walk.
+* The right-click path (`right_click`) still walks to an out-of-reach doodad before the gate runs on arrival; which native
+  path a right click takes is not traced.
+* The hanging refusal also requires `*(doodad+128) == dword_39AC785C` natively (not identified); any ladder grab refuses.
+* A spawn attached without a `LocalMount` counts as a mate.
+* Local NPC interactions (`Command::Interact`, `hud/api.rs`) are not on this path and are unchanged.

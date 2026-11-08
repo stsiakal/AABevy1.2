@@ -192,7 +192,7 @@ impl SlotSnap {
     }
 }
 
-fn cooldown_slot(cooldown: Option<(u32, u32)>, start: Instant) -> Option<(u64, u32)> {
+pub(in crate::hud) fn cooldown_slot(cooldown: Option<(u32, u32)>, start: Instant) -> Option<(u64, u32)> {
     // quantized to a quarter second: the end time of a running cooldown must not jitter
     let (left, total) = cooldown?;
     if left == 0 {
@@ -236,15 +236,44 @@ fn action_skill_slot(
     skill: u32,
     start: Instant,
 ) -> SlotSnap {
+    let cooldown = cooldown_slot(action_skill_cooldown(game, skills, inventory, skill, Instant::now()), start);
+    skill_slot_of(game, skill, cooldown)
+}
+
+/// `(left, total)` ms of the cooldown an action-bar skill slot shows (before [`cooldown_slot`] puts it on the HUD clock): the
+/// converted skill's for a linked skill. The skill trace reads it every frame.
+pub(crate) fn action_skill_cooldown(
+    game: Option<&GameData>,
+    skills: Option<&Skills>,
+    inventory: Option<&Inventory>,
+    skill: u32,
+    now: Instant,
+) -> Option<(u32, u32)> {
     let effective = match crate::ingame::linked_skill::resolve_with(skill, inventory, game) {
         crate::ingame::linked_skill::LinkedUse::Converted { skill, .. } => skill,
         _ => skill,
     };
-    let cooldown = game.and_then(|g| {
-        let skills = skills?;
-        cooldown_slot(super::cooldown::display_at(g, skills, effective, Instant::now()), start)
-    });
-    skill_slot_of(game, skill, cooldown)
+    super::cooldown::display_at(game?, skills?, effective, now)
+}
+
+/// What `X2Action:GetActionCooldownEx` answers for a skill slot: the pair the slot shows ([`action_skill_cooldown`]) and the
+/// skill's own pair without the global cooldown, both (left, total) ms.
+pub(crate) fn action_skill_cooldown_ex(
+    game: Option<&GameData>,
+    skills: Option<&Skills>,
+    inventory: Option<&Inventory>,
+    skill: u32,
+    now: Instant,
+) -> Option<((u32, u32), (u32, u32))> {
+    let effective = match crate::ingame::linked_skill::resolve_with(skill, inventory, game) {
+        crate::ingame::linked_skill::LinkedUse::Converted { skill, .. } => skill,
+        _ => skill,
+    };
+    let (game, skills) = (game?, skills?);
+    Some((
+        super::cooldown::display_at(game, skills, effective, now)?,
+        super::cooldown::own_at(game, skills, effective, now)?,
+    ))
 }
 
 pub(in crate::hud) fn skill_slot(game: Option<&GameData>, skills: Option<&Skills>, skill: u32, start: Instant) -> SlotSnap {
@@ -731,7 +760,9 @@ pub struct Changed {
 
 /// Use what is in global action bar slot `slot` (1 based): cast the skill, use the item. What the client already knows is
 /// refused (no target, too far, no mana ...) is not sent: the alert says why instead ([`UseFailed`]). A press that waits for
-/// the global cooldown, the cast it repeats or the answer to the last press is dropped without an alert ([`Env::held_back`]).
+/// the global cooldown, the cast it repeats or the answer to the last press is not sent ([`Env::held_back`]); it still shows the
+/// native refusal when there is one ([`Env::held_back_refusal`]: the life and buff rules, another cast, the skill's own
+/// cooldown), and a GCD-only or unanswered press stays silent.
 #[allow(clippy::too_many_arguments)]
 pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
     let Some(action) = bar.get(slot) else { return };
@@ -739,6 +770,10 @@ pub fn use_slot(slot: usize, env: &Env, flight: &InFlight, bar: &ActionBar, inve
     match action.kind {
         ActionKind::Spell | ActionKind::RidePetSpell => {
             let skill = action.id as u32;
+            if let Some(f) = env.held_back_refusal(skill, flight) {
+                failed.write(UseFailed { skill, result: f.result, value: f.value, server: false });
+                return;
+            }
             if env.held_back(skill, flight) {
                 return;
             }
@@ -776,10 +811,28 @@ pub fn use_bag_slot(slot: usize, env: &Env, flight: &InFlight, inventory: &Inven
     }
 }
 
+/// Use a worn item (the tracker's item of an equipment slot, `X2Equipment.UseEquippedItemByType`).
+/// `FUN_3946e770` refuses before any send when the use skill does not resolve (`FUN_396f6390`); it
+/// takes `items.use_skill_id`, not the grade skill `FUN_397cf7a0` picks for impl 1 / 2 / 24.
+pub fn use_equipped_slot(slot: usize, env: &Env, flight: &InFlight, inventory: &Inventory, target: &Target, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
+    let Some(Some(item)) = inventory.equipment.slots.get(slot) else { return };
+    let Some(game) = env.game else { return };
+    if !game.items.get(&item.template_id).is_some_and(|i| i.use_skill != 0 && game.skills.contains_key(&i.use_skill)) {
+        return;
+    }
+    use_item(item, env, flight, target.obj_id.unwrap_or(0), net, failed);
+}
+
 fn use_item(item: &aa_net::model::Item, env: &Env, flight: &InFlight, target_obj_id: u32, net: &mut MessageWriter<SkillPressed>, failed: &mut MessageWriter<UseFailed>) {
     let skill_id = env.game.and_then(|g| g.items.get(&item.template_id)).map_or(0, |i| i.use_skill);
-    if skill_id != 0 && env.held_back(skill_id, flight) {
-        return;
+    if skill_id != 0 {
+        if let Some(f) = env.held_back_refusal(skill_id, flight) {
+            failed.write(UseFailed { skill: skill_id, result: f.result, value: f.value, server: false });
+            return;
+        }
+        if env.held_back(skill_id, flight) {
+            return;
+        }
     }
     if let Some((skill, f)) = env.precheck_item(item.template_id) {
         failed.write(UseFailed { skill, result: f.result, value: f.value, server: false });
@@ -809,6 +862,7 @@ pub fn action_keys(
     if let Some(slot) = script.take_slot() {
         // `take_slot` is the 0-based display cell (`slotN` in the script is 1 based).
         let page = bridge.0.borrow().action_page;
+        crate::skilltrace::press(slot + 1);
         if let Some(slot) = ActionBar::display_slot_on(page, slot) {
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
@@ -844,6 +898,7 @@ pub fn action_keys(
         }
         if action == "action_bar_button" && (1..=58).contains(&slot) {
             let page = bridge.0.borrow().action_page;
+            crate::skilltrace::press(slot as usize);
             let Some(slot) = ActionBar::display_slot_on(page, slot as usize - 1) else { continue };
             let data = bridge.0.borrow();
             let env = Env::of(&data, Some(&skills), buffs.of(skills.obj_id), Some(&inventory));
@@ -1254,8 +1309,9 @@ mod tests {
         skills.native_tag_cooldowns[0].cooldown.total_ms = 0;
         assert_eq!(skill_slot(Some(&game), Some(&skills), 7, start).cooldown.map(|(_, total)| total), Some(0));
 
-        // A longer observed cast still wins, with its own DB duration, as before.
-        skills.last_used.insert(7, Instant::now());
+        // A longer observed cast still wins, with its own DB duration, when the received timer is older than the cast's answer
+        // (here 3 s before it); a timer that came with the cast would be its answer and show instead (`cooldown::observed_at`).
+        skills.last_used.insert(7, start + std::time::Duration::from_secs(3));
         assert_eq!(skill_slot(Some(&game), Some(&skills), 7, start).cooldown.map(|(_, total)| total), Some(10_000));
         skills.last_used.clear();
         skills.native_tag_cooldowns[0].reset = true;

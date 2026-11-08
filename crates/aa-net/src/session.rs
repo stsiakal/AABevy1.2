@@ -402,6 +402,10 @@ pub enum Command {
     House(crate::housing::HouseCommand),
     /// Plant `item_id` as the doodad template `id` (`CSCreateDoodad`).
     CreateDoodad(crate::farm::CreateDoodad),
+    /// A client-side doodad func advances the phase (`CSChangeDoodadPhasePacket`).
+    ChangeDoodadPhase { obj_id: u32, skill_id: u32, next_phase: u32, func_id: u32 },
+    /// `CSReportCrimePacket` from `X2Trial.ReportCrime`: the evidence doodad's func context.
+    ReportCrime { obj_id: u32, skill_id: u32, next_phase: i32, func_id: u32, msg: String },
     /// Open or close a coffer, move items in and out ([`crate::coffer`]).
     Coffer(crate::coffer::CofferCommand),
     /// Ask for the player's planted public-farm crops (`CSRequestCommonFarmList`).
@@ -775,6 +779,8 @@ pub enum Event {
     QuestUnitReqFailed(crate::quest::QuestUnitReqFailed),
     /// A quest mail was sent (`SCQuestMailSent`); the UI shows `QUEST_MAIL_SENT`.
     QuestMailSent(crate::quest::QuestMailSent),
+    /// `SCShowQuestArea`: the server placed a quest's area (`event::Event::QuestArea` for the HUD).
+    QuestArea(crate::quest::QuestArea),
     /// An NPC's function list, a doodad's quest offer, NPC chat ([`crate::interaction::InteractEvent`]).
     Interaction(crate::interaction::InteractEvent),
     Shop(crate::shop::ShopEvent),
@@ -1024,6 +1030,14 @@ impl Client {
     /// A clonable sender for commands, for code that does not own the client.
     pub fn sender(&self) -> UnboundedSender<Command> {
         self.commands.clone()
+    }
+
+    /// A client without a session: the test holds the other ends (the commands it sends, the events it gets).
+    #[cfg(all(test, feature = "bevy"))]
+    pub(crate) fn detached() -> (Self, UnboundedReceiver<Command>, UnboundedSender<Event>) {
+        let (commands, cmd_rx) = unbounded_channel();
+        let (evt_tx, events) = unbounded_channel();
+        (Self { commands, events }, cmd_rx, evt_tx)
     }
 }
 
@@ -1886,6 +1900,16 @@ impl Session {
                     self.send_game(game::ClientMsg::CreateDoodad(request)).await;
                 }
             }
+            Command::ChangeDoodadPhase { obj_id, skill_id, next_phase, func_id } => {
+                if self.phase == Phase::InWorld && (1..=0xff_ffff).contains(&obj_id) {
+                    self.send_game(game::ClientMsg::ChangeDoodadPhase { obj_id, skill_id, next_phase, func_id }).await;
+                }
+            }
+            Command::ReportCrime { obj_id, skill_id, next_phase, func_id, msg } => {
+                if self.phase == Phase::InWorld && (1..=0xff_ffff).contains(&obj_id) {
+                    self.send_game(game::ClientMsg::ReportCrime { obj_id, skill_id, next_phase, func_id, msg }).await;
+                }
+            }
             Command::Coffer(command) => {
                 if self.phase == Phase::InWorld && self.self_obj != 0 && command.validate().is_ok() {
                     self.send_game(game::ClientMsg::Coffer(command)).await;
@@ -2354,6 +2378,7 @@ impl Session {
             M::QuestContextFailed(failed) => self.emit(Event::QuestContextFailed(failed)),
             M::QuestUnitReqFailed(failed) => self.emit(Event::QuestUnitReqFailed(failed)),
             M::QuestMailSent(sent) => self.emit(Event::QuestMailSent(sent)),
+            M::QuestArea(area) => self.emit(Event::QuestArea(area)),
             M::Interaction(e) => self.emit(Event::Interaction(e)),
             M::Shop(e) => self.emit(Event::Shop(e)),
             M::Party(e) => self.emit(Event::Party(e)),
