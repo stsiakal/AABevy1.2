@@ -337,14 +337,18 @@ in), the idles do not. That was cause 4 of `docs/research/equipment-attach.md`.
   inferred, as is `spring_tension.z` (1-3, possibly the mass, unused). The decay follows `CRopeEntity`'s target-pose spring
   (`sub_350E2450`, `<re-notes>\cryphysics\notes\entities.md` 4.2): vertex `i` of `n` gets `k * (1 - i * decay / n)`. There are no
   rope joint limits in the data (`min`, `spring_angle` are 0), so each family gets a fixed cone per segment around its animated
-  direction (robe / cloak 75°, skirt 60°, calf / sleeve 45°, hair 35°, breast 15°). No `.chrparams` exist in the 1.2 pak; the
+  direction (robe / cloak 75°, skirt 60°, calf / sleeve 45°, hair 20°, breast 15°). No `.chrparams` exist in the 1.2 pak; the
   `.cdf` files have no physics block.
 * **Solver.** It is a Verlet rope per chain, in world space, so the cloth keeps its inertia when the character runs, turns or
   stops. Each step applies, per vertex, the absolute damping and a spring towards "simulated parent vertex + animated segment"
   (stiffness from the data, clamped to stay stable at the step). A damper pulls the velocity towards the animated vertex's motion,
   at the rate `dampingAnim + 2 * 0.35 * sqrt(k)`. Then, root to tip: the cone, the body capsules, and the exact segment length
   (follow the leader, the root vertex pinned to its animated bone). The air drag is left out because the clip already trails the
-  cloth, so drag would count it twice. The simulation adds only the lag on starts, stops and turns, the sway and the swing
+  cloth, so drag would count it twice. Hair vertices also move at most 1 m/s relative to their animated position: movement starts and stops at
+  once (0 to 7 m/s in one frame), and the soft hair tips (a braid's spring is 40 / s² at the tip) saturated the cone on every
+  start and stop and snapped to the opposite edge, a braid flipping from behind the head to in front of the shoulder between
+  two frames (up to 23 cm per 1/15 s update; capped, under 7 cm: `rope::tests::hair_turns_without_jumping`). The 1 m/s and
+  20° are tuned on the `rope` example, not measured on the original. The simulation adds only the lag on starts, stops and turns, the sway and the swing
   outward in a turn, and the body pushing the cloth.
 * **Gravity.** The authored shapes already hang under gravity, so a chain gets only the gravity its parent bone's tilt since the
   bind pose adds: `g - tilt * g`, with `tilt` = parent model rotation x inverse bind rotation. An upright body keeps every rope
@@ -494,7 +498,12 @@ client draws Tumon's face, chest and arms in one tone. So a face on its `face00`
 (`character::part_skin_tune`); `skin_tune` with its tint stays only for a face on another texture (ferre fur-skin, a
 `face01` fallback). The `skin_tune` rows and `body_skin_tune` above were fitted while faces were painted on the premade
 `face01_df` (darker: ×0.37 Nuian male to ×0.99 hariharan female, yellower), so the creation screen's face tone moved
-with this change and is judged again by eye. Face decals do not change the skin outside their shapes (compared with
+with this change. Judged again (2026-11-08): with only the body's grey tune the faces came out a saturated pink to red
+(nose / cheek patch red/green 2.9 to 3.3 against 1.7 to 2.3 in the captures, Nuian female and Elf male worst), so a face on
+`face00` now also gets `face00_tune` (per model, fitted to the median linear colour of that patch in
+`reference/character_create/step2_*` with `examples/compare`, two passes, every channel within 5 %), and the body gets
+the same hue at its own brightness (`face00_tune / luma`): with the face alone corrected the necks stood out pink.
+The elf female's chest cutout still matches its capture. The ferre keep their fur faces' tune. Face decals do not change the skin outside their shapes (compared with
 and without in `faces`, same pixels).
 
 Body skin (elf female chest cutout). The starter costume `el_f_login001` has a heart-shaped cutout
